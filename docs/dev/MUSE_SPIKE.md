@@ -1,0 +1,250 @@
+# M0 Muse spike — protocol notes and offline client
+
+LIVE status: **blocked: no authorized test account**. Nothing in this pass opened a socket to muse.ai, `hatch.metaaivm.com`, or any other Muse host. There was no login and no cookie. The spike’s tests fail if the spike modules name those hosts or import a network client.
+
+Pinned source: [nikships/muse-cli](https://github.com/nikships/muse-cli) commit `ebcb6310432ad2d39927bcb59e686330b0538310` (2026-10-03T11:59:33-04:00), package version 0.3.2. Protocol write-up: `docs/PROTOCOL.md` at that commit. Implementation read beside it: `src/muse_cli/gateway.py`, `cli.py`, `chat.py`, `routes.json`, `desc0.bin`, `desc1.bin`. MIT, `Copyright (c) 2026 Nik Ships`. The spike reimplements the framing. It does not copy `gateway.py` and it does not vendor the descriptor binaries.
+
+Labels used below:
+
+- **Documented** — stated in `docs/PROTOCOL.md` at that commit.
+- **Code** — present in the Python at that commit and not stated as a protocol rule in `PROTOCOL.md`.
+- **Inference** — a reading that B09 should keep, which a LIVE session can still overturn.
+
+## 1. What the minimal client has to do
+
+SDS §8 and PLAN M0: auth, create a session, send once, read history, correlate by stream id, one receive consumer, bounded frames, no partial success. SPEC §6 states:
+
+```text
+prepared → submitting → sent | send_uncertain | failed_before_send
+sent / send_uncertain → reply_observed → closed
+```
+
+`closed` is the host’s `answered` / `needs_more_data` / `abandoned`. No gateway frame means closed. `close_exchange` is not a remote cancel.
+
+## 2. Endpoints and where tokens appear
+
+**Documented** (`PROTOCOL.md` “Layers” and “Details”):
+
+1. `POST https://muse.ai/api/auth/check` with the cookie jar returns JSON `access_token`.
+2. `GET https://muse.ai/api/session` returns the assigned VM id. HTTP 200 with `{"status":"unavailable","vm_resolution_issue":{"kind":"retryable"}}` means the VM is restarting, which the client treats as a clean error rather than a missing key.
+3. `POST https://muse.ai/api/hatch/token` with JSON `{vmAddress, vmName}` returns a hatch `token`.
+4. WebSocket `wss://hatch.metaaivm.com/v1/noise?vm_id=<id>&auth_token=<hatch token>`. The host is the shared hatch host, not the per-VM hostname. Plain TLS without a Chrome fingerprint is reset at the edge.
+
+**Code** (`gateway.py`): the hatch token is `urllib.parse.quote`’d into `auth_token`. `fetch_access_token` sends `Authorization: Bearer <access_token>` to muse.ai. POSTs set `Sec-Fetch-Site`, `Sec-Fetch-Mode`, and `Sec-Fetch-Dest` because **documented** behavior is that muse.ai returns 403 without them. `WebSocket.connect(..., impersonate="chrome", verify=True)`. The comment in `gateway.py` says `curl_cffi`’s default `verify=None` would disable TLS verification, so the client passes `verify=True`. B09 must keep verification on (SDS §8).
+
+The hatch token sits in the WSS query string. The access token sits in an Authorization header. Cookies sit in the Cookie header. Diagnostics, exceptions, and logs have to run through a redactor before they are stored. The spike’s `redact()` replaces `auth_token=`, `access_token=`, `hatch_sess=`, and `Bearer ` values. A test feeds `auth_token=supersecret` and asserts the secret is gone.
+
+**Code** (`cli.py` `cmd_wake`): `POST https://muse.ai/api/hatch/vm/wake` with `{vm_id, retry_count}`. That is operator recovery when `/api/session` says the VM is down. It is not part of the discussion state machine.
+
+**Inference:** a hatch token is minted per command in this client (`Gateway.__init__` always calls `fetch_hatch_token` unless one was injected). How long a token stays valid on an open socket is not in the sources. Mid-connection expiry is an open LIVE question.
+
+## 3. Handshake and crypto
+
+**Documented:** Noise_XX, pattern `Noise_XX_25519_AESGCM_SHA256`, empty payloads both ways. This account’s client negotiates standard mode (empty msg3). An attested mode with SNP attestation and HMAC exists in the web client for other configurations. The CLI does not implement that mode.
+
+**Code:** `NoiseConnection.from_name(b"Noise_XX_25519_AESGCM_SHA256")`, initiator, static key `os.urandom(32)`, then `write_message(b"")`, read message 2, `write_message(b"")`. Handshake messages are the Noise tokens; the application payloads are empty.
+
+**Spike:** `spikes/muse/handshake.py` runs the same pattern with `noiseprotocol==0.3.1` (MIT, depends on `cryptography`, which provides X25519 / AES-GCM / SHA-256). Two in-memory parties exchange three empty payloads, then one encrypted client frame and one encrypted server frame. A second finished handshake’s responder decrypting the first session’s ciphertext raises `noise.exceptions.NoiseInvalidMessage`. No cipher is implemented in the spike. The attested/RV mode is not implemented and must not be invented to “get through” (PLAN §8, SDS §8).
+
+Checked on 2026-10-13: `uv run --python 3.12 spikes/muse/handshake.py` and `uv run --python 3.14 spikes/muse/handshake.py` both printed `handshake_finished: true` and `other_session_rejected: true`.
+
+## 4. Frame format
+
+**Documented:** `NoiseTransportFrame{chunk_id(i64), chunk_index, total_chunks, payload}` is protobuf, then Noise-transport encrypted, then one WebSocket binary frame. Inside the payload, a request is `ServiceRequest{service, payload = ServiceFrame{stream_id, request = ApplicationRequest{verb, path, headers, body, end_body}}}`. A response is `ServiceResponse` wrapping `ServiceFrame` with `ApplicationResponse{status, headers, body, end_body}` and further `body_chunk` frames until `end_body`. Stream ids start at 1. Services: daemon 0, sentinel 1, vault 2, authd 3.
+
+**Code / descriptors:** field numbers are not in `PROTOCOL.md`. They were read from `desc0.bin` and `desc1.bin` with `google.protobuf` on 2026-10-13. `desc1.bin` is proto3. Service enums: `SERVICE_DAEMON=0`, `SERVICE_SENTINEL=1`, `SERVICE_VAULT=2`, `SERVICE_AUTHD=3`. Reset codes: `CODE_UNSPECIFIED=0`, `CANCELLED=1`, `TIMEOUT=2`, `PROTOCOL_ERROR=3`, `REFUSED_STREAM=4`, `INTERNAL_ERROR=5`, `SERVICE_UNAVAILABLE=6`.
+
+| Message | Field numbers |
+|---|---|
+| `ingress_rev_proxy.NoiseTransportFrame` | 1 `chunk_id` int64, 2 `chunk_index` uint32, 3 `total_chunks` uint32, 4 `payload` bytes. Each field is proto3 optional (synthetic oneof), so explicit zeros are on the wire. |
+| `hatch.noise.ServiceRequest` | 1 `service` enum, 2 `payload` bytes. Plain proto3: `service = 0` is omitted. |
+| `hatch.noise.ServiceResponse` | 1 `payload` bytes. |
+| `hatch.noise.ServiceFrame` | 1 `stream_id` int64, oneof `kind`: 2 `request`, 3 `response`, 4 `body_chunk`, 5 `reset`. |
+| `hatch.noise.Header` | 1 `key`, 2 `value`, strings. |
+| `hatch.noise.ApplicationRequest` | 1 `verb`, 2 `path`, 3 repeated `headers`, 4 `body`, 5 `end_body`. |
+| `hatch.noise.ApplicationResponse` | 1 `status` int32, 2 repeated `headers`, 3 `body`, 4 `end_body`. |
+| `hatch.noise.BodyChunk` | 1 `data`, 2 `end_body`. |
+| `hatch.noise.Reset` | 1 `code`, 2 `reason`. |
+
+The spike codec in `spikes/muse/framing.py` was checked against `protobuf` 7.36.2 parsing those two descriptor binaries. Serialized bytes matched for a daemon request with a negative `chunk_id`, a sentinel request (`service = 1`), a finished and an unfinished application response, a mid body chunk, a final body chunk, and a reset. That check used the local clone; it is not a unit test in the repo, because the binaries stay outside the repo.
+
+**Code:** `gateway.py` always sends `total_chunks = 1`, `chunk_index = 0`, and on read it parses one `NoiseTransportFrame` and does not concatenate chunks. **Spike policy, aligned with SDS §8:** `total_chunks != 1` or `chunk_index != 0` is `E_PROTOCOL_MISMATCH`. A partial chunk is not a successful body.
+
+**Code:** every `ApplicationRequest` gets an `x-request-id` header set to a new UUID, and a `content-type: application/json` header when the body is non-empty. Nothing in `cli.py` or `chat.py` reads `x-request-id` back from history.
+
+**Documented** size limits: none. **Spike policy** (not a server limit): frame plaintext cap 256 KiB (`MAX_FRAME_BYTES`), reassembled body cap 1 MiB (`MAX_BODY_BYTES`), at most 32 frames for other stream ids while waiting (`MAX_SKIPPED_FRAMES`). SPEC’s 48 KiB packet and 8 KiB question caps sit above this and still apply to what we put in the body.
+
+## 5. Stream ids, send acknowledgement, history
+
+**Documented / code:** `Gateway.stream` starts at 1 and increments per `_open`. The unary reader ignores frames whose `stream_id` is not the id just opened. Two concurrent `_read_frame` callers split Noise state and the failure is fatal (`BAD_DECRYPT`). The client serializes receives with a lock and still requires exactly one consumer. Subscriptions start a second thread; `cmd_send` does not use them for that reason.
+
+**Documented:** `chat.stream`’s own response stream carries only the send echo, then ends. Live `chat.subscribe` events use different shapes (`delta.text_append` with `message_seq` and text chunks, `delta.message_done` with the full transcript) and only cover the main chat. Threaded replies do not arrive as live events. `send` polls `chat.history` instead. History is the source of truth.
+
+**Code** (`cmd_send` / `Chat.send`): `_open("chat.stream")` returns as soon as the request frame is written. `sent: true` is printed at that moment, before the stream’s application response is read. The following poll looks only for assistant replies. The send echo is not inspected. Frames for that stream id are skipped by later `call_json` reads (`if sf.stream_id != sid: continue`), so the echo can be discarded.
+
+**Inference for B09, stricter than muse-cli’s `sent: true`:** a send is `sent` only when one of these is in hand:
+
+1. The `chat.stream` application response for that stream id is complete (`end_body`) and the status is 2xx. `PROTOCOL.md` calls that body the send echo. The echo’s JSON shape was not captured offline.
+2. A `message.user` history event in the same session with `seq` greater than the baseline, whose text equals the sent text, or which echoes the client request marker.
+
+If bytes were handed to the transport and neither (1) nor (2) is visible, the state is `send_uncertain`. A missing assistant message does not mean the send failed (SPEC §6, PLAN §8). There is no automatic retry.
+
+`failed_before_send` only when no frame bytes were handed to the transport. A Noise encrypt that never ran, or a write that raised before the frame was queued, qualifies. A timeout after `send` returned does not.
+
+**Documented** history:
+
+- `chat.history` is GET query parameters only. `transcript_mode` is rejected; omit it. `session_id` selects a side chat. `limit` works.
+- Events use `event_name` `message.user` or `message.assistant`. Text is in both the top level and `payload.display_text` (the client also falls back to `payload.content`).
+- A genuine assistant reply has an empty `reply_to_message_id`. Proactive pushes (the doc names Telegram drafts and background task updates) are self-referential there. That is how `send` separates a reply from background chatter.
+
+**Code** (`is_reply`, `fmt_event`, `Chat.new_replies`):
+
+- Baseline is the max `seq` from `chat.history` with `limit` 1 in the same scope, taken before `_open`. A failure of that read leaves baseline 0.
+- A reply candidate has `event_name == message.assistant`, `seq > baseline`, empty `reply_to_message_id` (top level or payload), non-empty text, and a non-empty `payload.status`. The comment says a reply still being written has no status yet, and to wait for `"completed"`. The condition itself is any truthy status.
+- `fmt_event` exposes `seq`, `role` (payload role or else `event_name`), `message_id`, and text.
+- `sessions.list` rows include `session_id`, `title`, `is_thread`, `pinned`, `archived`, `updated_at_ms`.
+- `session.start` body is `{"method":"/api/session/start","params":{"origin":"fresh","lifecycle":"persistent","title"?}}`. The HTTP route is `POST /session/start` (`routes.json`). The client accepts `session_id` or `id` on the result. Rename is a flat `{session_id, title}`.
+- `chat.stream` body is `{items:[{type,text}], node_id, capabilities, session_id?}`. `node_id` is a client hex stored in config (`secrets.token_hex(8)` or `MUSE_NODE_ID`), not a per-exchange id.
+- GET calls move a dict body onto the query string (`request()` in `gateway.py`). `cmd_history` therefore sends `limit` and optional `session_id` as the query.
+
+**Code** pagination: the client never sends a cursor. `routes.json` also has `GET /chat/history-window` (`chat.history_window`) and `GET /chat/message` (`chat.message_get`). Neither is called. **Inference:** do not depend on `history_window` until a LIVE call shows its parameters. Polling `limit` can miss or repeat events if the session grows during the poll. SPEC wants a stable snapshot per page. B09 should keep the raw events and a cursor of its own (`last seq` it has stored), and treat a gap as incomplete rather than as a full transcript.
+
+**Documented** ordering: history `seq` is the order `is_reply` and `Chat.events` sort by. Live deltas use `message_seq`, which is a different channel and is not the P0 wait path. `chunk_id` is a random int64 per outbound frame (`struct.unpack("<q", os.urandom(8))`), not a chat sequence number.
+
+**Code** progress and multi-part: on the unary path, body bytes are concatenated from `response.body` and `body_chunk.data` until `end_body`. On the subscribe path, `delta.text_append` chunks and `delta.message_done` carry the transcript. `Chat.send` keeps listening for 10 seconds after the first reply because follow-up assistant messages are normal (`QUIET = 10`). For one exchange, more than one qualifying assistant message is **ambiguous** (SPEC §6). The spike stores that as `ambiguous` and does not attach either message. Extra text stays on the discussion as unattached, including text that arrives after `closed`. It is not the next question’s reply.
+
+**Code** errors:
+
+- `AuthError` when `auth/check`, `hatch/token`, or cookie parsing fails, or `/api/session` is non-200. The message tells the operator to re-export cookies.
+- `GatewayError` when `/api/session` is 200 without `vm_id` (VM unavailable), when the application status is outside 2xx, when a stream `reset` arrives, or when JSON says `ok: false`.
+- `TimeoutError` when no application response arrives before the deadline. `status is None` after the loop is that timeout, including the case where only body chunks arrived.
+- JSON is not required for success at the transport layer. `call_json` raises on non-JSON. SPEC says a natural-language reply with no JSON is still a reply. B09 parses history events leniently and keeps the raw text.
+
+**Inference:** non-empty `payload.status` means the text is finished enough to observe. It does not mean the research is done, and it does not mean `closed`. The string `"completed"` is what the comment names; other truthy values are accepted by the code. LIVE has to list the real enum.
+
+## 6. State machine, with the evidence for each step
+
+| Transition | What proves it | Label |
+|---|---|---|
+| `prepared` → `submitting` | Local row exists (discussion, packet, grant, baseline `seq`, question bytes) and exactly one send is about to be written. | SDS §8. Not a gateway frame. |
+| `submitting` → `failed_before_send` | The transport was not given a frame. Grant uses may be released. | SDS §8. Spike `delivery_state(wrote_any_bytes=False)`. |
+| `submitting` → `sent` | Finished 2xx `ApplicationResponse` on the send’s stream id (`end_body` set), or a same-session `message.user` with `seq > baseline` matching the sent text or the request marker. | Echo: **documented** as “send echo” on `chat.stream`, shape **not** captured. User echo: **inference** on **documented** `message.user` events. muse-cli’s `sent: true` is earlier than this and is not the rule B09 should copy. |
+| `submitting` → `send_uncertain` | A frame was handed off, then the deadline passed with no 2xx completion and no user echo. | SPEC §6. Absence of an assistant reply is not evidence of non-delivery. |
+| `sent` or `send_uncertain` → `reply_observed` | Exactly one event with the same session id, `event_name == message.assistant`, `seq > baseline`, empty `reply_to_message_id`, non-empty text, non-empty `payload.status`. | `reply_to` rule is **documented**. Status gate is **code**. Session match is **code** (`session_id` query) plus SDS. |
+| `reply_observed` → `closed` | Host sets `answered`, `needs_more_data`, or `abandoned`. | SPEC §6. |
+| no transition on remote cancel | `chat.cancel` is not in the minimal set. Report `not_supported` / unknown. | SDS §8. |
+
+Association refuses “the latest assistant message”:
+
+- An assistant event whose `session_id` is some other session is counted and ignored, even if its `seq` is the largest in the batch.
+- A same-session event with a non-empty `reply_to_message_id` is background, not the reply.
+- An event with `seq <= baseline` is history from before this exchange.
+- Two qualifying replies are `ambiguous`. The exchange stays `sent` or `send_uncertain` until a human or a later unique observation resolves it. The spike does not pick the first one the way `cmd_send` does. That difference is deliberate: SPEC says ambiguity is stored, not paired.
+- A late qualifying reply can move `send_uncertain` to `reply_observed` without a second send.
+
+`x-request-id` is the request marker the current client generates. **Inference:** it is not a confirmed correlation id, because this client never reads it back. B09 should still store it on the exchange (SDS already says correlation uses a request marker). LIVE has to show whether history echoes it, echoes `node_id`, or echoes only the user text. Until then, text-equal `message.user` plus `seq > baseline` in the scoped session is the user-echo test the spike implements.
+
+Session create, same idea (SDS §8): write the local discussion and an open attempt, then `session.start`. The remote id is what completes the mapping. On timeout, `open_uncertain`. `sessions.list` must identify the row by `session_id`, not by title. Not finding a row does not prove the create never happened. The spike does not call `session.start`. It only documents the body.
+
+## 7. Routes to keep and routes to leave out
+
+Minimal set for B09:
+
+| Kind | Call | Why |
+|---|---|---|
+| HTTPS | `POST /api/auth/check` | Access token from the operator’s cookie jar. |
+| HTTPS | `GET /api/session` | VM id. Unavailable is not an auth failure. |
+| HTTPS | `POST /api/hatch/token` | Token for the socket. Never log it. |
+| WSS | `/v1/noise` on `hatch.metaaivm.com` | The only gateway transport. |
+| Gateway | `session.start` `POST /session/start` | Create the remote session. |
+| Gateway | `sessions.list` `GET /api/session/list` | Reconcile a create. Match `session_id`. |
+| Gateway | `chat.stream` `POST /chat/stream` | The one send. |
+| Gateway | `chat.history` `GET /chat/history` | Baseline and replies. Query: `limit`, optional `session_id`. Omit `transcript_mode`. |
+
+Service id for all four gateway routes is daemon 0. `routes.json` leaves `service` unset on them, and `gateway.py` maps a missing service to daemon.
+
+Deliberately excluded:
+
+- `cmd_raw` and the rest of the 258 routes.
+- `update.py`, `site/`, the muse-cli skill, feed, goals, ideas, themes.
+- `chat.subscribe`, `chat.stream_events`, and other `*.subscribe` routes as the way to see a reply.
+- `chat.cancel`, `chat.delete_turn`, session pin / archive / delete.
+- `chat.history_window` and `chat.message_get` until a LIVE call shows they add a stable cursor. They are not required to explain send and history.
+- Wake, as an operator action outside the exchange state machine.
+- Auth export and any Chrome remote-debugging automation inside the library.
+- Harness edits, attested Noise, and any handshake we would be inventing.
+
+## 8. The offline spike
+
+Layout:
+
+| File | Role |
+|---|---|
+| `spikes/muse/framing.py` | Protobuf wire codec, size caps, `redact`, `E_PROTOCOL_MISMATCH` / `E_LIMIT_REACHED`. |
+| `spikes/muse/loop.py` | One receive consumer, in-process byte pipe, scripted fake gateway. |
+| `spikes/muse/associate.py` | Delivery state and reply association. |
+| `spikes/muse/handshake.py` | PEP 723 script. `uv run --python 3.12 spikes/muse/handshake.py`. |
+| `spikes/muse/test_spike.py` | Pytest. No network. |
+
+`handshake.py` metadata:
+
+```text
+requires-python = ">=3.12"
+dependencies = ["noiseprotocol==0.3.1"]
+```
+
+Tests, both run on 2026-10-13 after the final tree (23 passed each time):
+
+```text
+uv run --python 3.12 --with pytest pytest spikes/muse -q
+uv run --with pytest pytest spikes/muse -q
+```
+
+`uv run --python 3.12 --with ruff ruff check spikes/muse` was clean.
+
+The tests cover:
+
+- A decoy response on another stream id does not complete the request. The matching stream id does.
+- Body chunks concatenate, and success is returned only with `end_body`.
+- Status 200 with `end_body` false and no further frame raises `IncompleteBody`.
+- A frame larger than 256 KiB, and a reassembly past the body cap, raise `FrameTooLarge` (`E_LIMIT_REACHED`).
+- ServiceFrame field 6 raises `ProtocolMismatch` (“unknown frame type”).
+- `total_chunks = 2` is `ProtocolMismatch`, not a partial success.
+- A second `ReceiveLoop` enter while one is held is refused.
+- A reset frame is not a success.
+- A negative `chunk_id` round-trips.
+- An assistant event for another session is not the reply, including when it is the latest event in the batch.
+- Two same-session candidates stay `ambiguous` and are not paired.
+- A user echo moves a timed-out send to `sent`. No echo leaves `send_uncertain`. No bytes written is `failed_before_send` even if an assistant event is already in the list.
+- A late unique reply moves `send_uncertain` to `reply_observed`.
+- An explicit foreign `session_id` is not overwritten by the history query’s session.
+- `auth_token=` values do not survive `redact`.
+- The Noise_XX handshake, encrypted round trip, and cross-session reject run via `uv run` on Python 3.12.
+
+The fake gateway is `FakeGateway` on `InProcessLink`. It never listens on a port.
+
+## 9. Open questions only a LIVE session can answer
+
+1. The JSON shape of the `chat.stream` send echo, and which fields are stable.
+2. Whether `message.user` appears with a new `seq` before the assistant reply, so a timeout poll can prove delivery from the echo alone.
+3. Whether `x-request-id`, `node_id`, or any other client marker is stored on the user event. If none are, text match in the scoped session is the only user echo.
+4. The `payload.status` enum. The code treats any non-empty value as ready. The comment names `completed`.
+5. Parameters of `chat.history_window`, and whether `chat.history` can page older than `limit` without skipping or duplicating when new messages arrive.
+6. Server limits on frame size, body size, and `limit`.
+7. Hatch-token lifetime and what a mid-socket expiry looks like (close, reset code, HTTP status).
+8. Whether two sessions with the same title are always distinguished by `session_id` in `sessions.list`, and whether `session.start` returns `session_id` or `id` in current responses.
+9. Whether any account still negotiates the attested Noise mode. If it does, B09 stops with `E_PROTOCOL_MISMATCH` rather than implementing attestation.
+10. Whether the Chrome TLS fingerprint is still required, and which `curl_cffi` impersonation string the edge accepts.
+11. Rate-limit responses and `Retry-After` on auth and on `chat.stream`. Safe-read retries must not resend a chat.
+
+## 10. Concrete inputs for B09
+
+- Pin `noiseprotocol==0.3.1` and use `cryptography` only through it. Pattern `Noise_XX_25519_AESGCM_SHA256`, empty handshake payloads, `verify=True`, Chrome impersonation via `curl_cffi==0.16.3`. Do not add the `websockets` package for this gateway.
+- One receive loop per gateway connection. P0 is serial unary calls. Do not subscribe while a unary read is in progress.
+- Copy the spike’s caps as a starting point (256 KiB frame, 1 MiB body) and keep SPEC’s 48 KiB / 8 KiB caps on what the body is allowed to contain.
+- Persist on the exchange, which SDS §4 already sketches (`baseline`, `state`, remote session id, message `seq` / role / raw status / association): the outbound text (or its digest), the `x-request-id`, the stream id of that attempt, and whether any frame bytes were handed off. `models.py` is owned by B02–B04. If the first schema omits the marker or the outbound digest, add them before B09 merges. This pass did not edit `src/`.
+- Implement `delivery_state` and `associate_reply` from `spikes/muse/associate.py` rather than muse-cli’s `sent: true` after `_open` and “first matching reply”.
+- On `E_PROTOCOL_MISMATCH` (unknown field, multi-chunk frame, attested handshake), stop. Do not weaken TLS or the handshake.
+- Redact query tokens before any log, exception string, or event row.
+- Keep the route allowlist in §7. A method outside it is a programming error, not a `raw` escape hatch.
+- LIVE remains blocked until an operator authorizes an account. Fixture plus `blocked` is the honest result until then.
