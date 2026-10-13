@@ -226,8 +226,10 @@ The verifier is required; the core provides no permissive default and does not m
 permits. For `external_submit`, the helper commits `submitting` before returning.
 A second call to submit on that step is refused. Exceptions, cancellation or a process
 crash after this boundary leave uncertainty rather than scheduling another send.
-The feature must persist its discussion/exchange intent and reserve permit use *before*
-this call; later receipts/history belong in its domain tables. Epoch is local fencing,
+The feature must persist its discussion/exchange intent before this call. B08's standard
+verifier reserves the permit use inside this call's transaction, together with the
+submission intent; do not reserve it a second time beforehand. Later receipts/history
+belong in domain tables. Epoch is local fencing,
 not remote exactly-once. A tiny gap between local verification and external action
 cannot be removed by a local SQLite transaction.
 
@@ -405,6 +407,13 @@ the fifteen MCP tool registry. `--provider`/`--account` label an auth import; pe
 supports `--scope-file` (JSON object), those labels, `--issuer`, `--expires-at`, `--max-uses`
 and `--exact-digest`. These fields express local intent; only safety validates and issues
 permission. Model output and arbitrary `approved` fields cannot create grants.
+
+B08's implemented safety APIs and exact scope formats are documented in
+[SAFETY_API.md](SAFETY_API.md). This adds human-only `permit revoke`/`permit list`,
+private-file auth references, a per-request URL hook and the external-action verifier.
+No safety auth/permit function is added to the MCP tool registry. Feature owners must
+integrate the per-request network hook and the database-only verifier; a seed check or
+caller-supplied approval/digest alone does not authorize an external action.
 
 Each feature declares its own capabilities and registers its own operation names:
 

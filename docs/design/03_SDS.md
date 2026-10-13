@@ -220,6 +220,23 @@ schema transitions. Job `started_at` persists the first-claim wall-clock boundar
 step `uncertain_state` persists the recovery classification independently of registry
 availability. These are additions to the tables above, not separate stores/queues.
 
+### B08 safety implementation clarifications
+
+[Safety API](../dev/SAFETY_API.md) defines the URL request/redirect/subresource hook,
+separately named localhost fixture checker, private-file secret fallback and typed
+access/share scope formats. There is no OS-keyring implementation in this build.
+Access scopes bind exact action digests; share scopes bind stored packet digests or
+an immutable displayed set of original evidence refs. Operator/host question semantics
+remain a stated responsibility, not an automatic legality/privacy proof.
+
+The standard external verifier reserves use inside `before_external_action`'s
+transaction alongside submission intent. Durable identifier/hash-only reservation events
+use the existing `events` table; do not prune them while recoverable/uncertain work needs
+them. Uncertain intent/action checks block fresh request keys and permits. No schema or
+migration is added. Per-request policy alone cannot constrain an unguarded dependency's
+DNS, proxy or subresources: un-interceptable backends require process egress controls
+and a tested host set before exposing arbitrary URL acquisition.
+
 Job-list cursors fix creation-order membership using a row high-water mark; statuses
 are read live and physical job deletion/reordering is not exposed. MCP job_list requires
 project_id; CLI jobs list may show the workspace with optional --project/--cursor/--limit.
