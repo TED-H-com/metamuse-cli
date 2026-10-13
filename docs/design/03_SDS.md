@@ -226,3 +226,29 @@ project_id; CLI jobs list may show the workspace with optional --project/--curso
 Operation registration assigns one side-effect class to all steps of that operation;
 feature owners must keep external submission separate from independently retryable
 read/reconciliation work. Migration SQL remains the authoritative database definition.
+
+### B07/B11 content implementation clarifications
+
+Content requests, outputs and recovery rules: [docs/dev/CONTENT_API.md](../dev/CONTENT_API.md).
+Search uses exact case-sensitive substring matching, without Traditional/Simplified or
+Unicode conversion, and saves exact latest-revision membership in private runtime markers.
+Opaque cursors bind project and query; later revisions/inserts cannot change page membership.
+Deletion or loss of visibility fails rather than skipping a reference. No migration is added.
+
+Packet digests are SHA-256 of exact redacted rendered UTF-8 bytes, including source labels
+and limitations; the 48-KiB limit applies after rendering/redaction. Draft digests cover
+canonical full text/platform/variant/refs/assets/preferences. Explicit preference scope is
+this_draft only. Preview reports code points, UTF-16 units and UTF-8 bytes, not graphemes;
+platform limits remain unknown with warnings until a source and date are recorded.
+
+Private text/Markdown/JSONL exports retain original text; CSV neutralizes initial formula
+characters. Bundle exports contain redacted records and asset metadata only, not opaque
+media bytes. Automatic redaction is a guard, not a guarantee. A full media archive is
+pending. Manifest payload members have hashes/sizes; the manifest excludes its own hash
+and is verified against its exact stored bytes. Ready state follows fsync and rename.
+No export publishes/uploads; handled failures clean owned artifacts and crashes may leave
+orphans. Retention/cleanup of runtime search markers and orphan directories remains pending.
+
+Schema-1 transcript visibility uses item/asset relations. Project-only nullable-asset
+transcripts await migration 002 and coordinated content-helper/core-validator adaptation.
+The B07/B11 fixture evidence does not claim that pending integration or any LIVE result.

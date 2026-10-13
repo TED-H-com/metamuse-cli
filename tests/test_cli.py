@@ -120,7 +120,7 @@ def test_cli_projects_jobs_worker(tmp_path, capsys):
         ["permit", "create", "--project", "prj_fixture", "--kind", "share", "--request-key", "one"],
     ],
 )
-def test_registered_stubs_return_unsupported(tmp_path, capsys, command):
+def test_registered_commands_report_errors_for_missing_data(tmp_path, capsys, command):
     command = list(command)
     for index, value in enumerate(command):
         if value in ("missing.json", "missing.txt"):
@@ -133,7 +133,10 @@ def test_registered_stubs_return_unsupported(tmp_path, capsys, command):
             )
             command[index] = str(path)
     code, result, _ = run(tmp_path, capsys, command)
-    assert code == 4 and result["error"]["code"] == "E_UNSUPPORTED"
+    if command[0] in ("search", "packet", "draft", "export"):
+        assert code == 2 and result["error"]["code"] == "E_REFERENCE_INVALID"
+    else:
+        assert code == 4 and result["error"]["code"] == "E_UNSUPPORTED"
 
 
 def test_invalid_args_clean_envelope(tmp_path, capsys):
