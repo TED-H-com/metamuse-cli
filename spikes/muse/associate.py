@@ -1,10 +1,14 @@
 """Map gateway evidence onto the SPEC §6 exchange states.
 
-prepared → submitting → sent | send_uncertain | send_rejected | failed_before_send
-sent / send_uncertain → reply_observed | ambiguous → closed
+prepared → submitting → sent | send_uncertain | failed_before_send
+sent / send_uncertain → reply_observed → closed
 
-`closed` is a host settlement (answered / needs_more_data / abandoned). No
-gateway frame produces it. This module never resends.
+``ambiguous`` is an association result, not an exchange state. ``closed`` is
+a host settlement and does not reopen. This module never resends.
+
+An application error after bytes were handed off is attempt evidence. The
+exchange stays ``send_uncertain`` until a clean acknowledgement or this
+exchange's user echo. The echo promotes it to ``sent``.
 
 Provenance
 ----------
@@ -25,25 +29,26 @@ The copyright line and the MIT permission notice are copied in
 
 What changed:
 
-- A candidate must follow this exchange's own user turn. The turn is an
-  exact text match or an exact request-marker match. ``req-1`` does not
-  match ``req-10``.
+- A candidate must follow this exchange's own user turn. Identical text with
+  a different request marker is not that turn. ``req-1`` does not match
+  ``req-10`` or ``req-2``.
 - A late answer with no such turn, a manual user message between the turn
-  and the assistant, or another user turn still open before the echo, is
-  not paired. Unresolved events are retained.
+  and the assistant, or another user turn before the echo, is not paired.
+  While the caller says an earlier exchange in the session is still
+  unresolved, an assistant message after the echo is not paired either.
 - When the event carries ``time_ms``, a stamp earlier than the local submit
   time is not this attempt. muse-cli does not read that field.
-- Observations accumulate and de-duplicate. Ambiguity stays until a later
-  observation of the same event positively disqualifies a candidate (a
-  ``reply_to_message_id`` appears) or the host names one message id. A
-  shorter later poll does not resolve it.
+- Observations accumulate. The same session, event name, and seq are one
+  event when a message id appears later. Ambiguity records the competing
+  candidate keys. It clears only when one of those keys is disqualified on
+  that event, or the host names one of them. Another event gaining
+  ``reply_to_message_id``, or a competitor moving to a progress status, does
+  not resolve it.
 - Completion requires a status in an explicit calibrated set. The default
-  set is empty. ``running`` and any other unknown value are progress. The
-  upstream truthy check is not adopted. The comment in ``is_reply`` names
-  ``completed``; that word is not a LIVE-verified enum.
-- A finished HTTP 2xx body whose JSON ``ok`` is false is ``send_rejected``.
-  A non-2xx finished status is the same. Neither one is delivery, and
-  neither one is retried.
+  set is empty. ``running`` and any other unknown value are progress.
+- ``ok: false``, a non-2xx status, and a body that is not a JSON object
+  (including undecodable bytes) are attempt evidence. They are not an
+  exchange state and they do not block a later echo.
 """
 
 from __future__ import annotations
@@ -51,17 +56,22 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from framing import redact
+
 PREPARED = "prepared"
 SUBMITTING = "submitting"
 SENT = "sent"
 SEND_UNCERTAIN = "send_uncertain"
-SEND_REJECTED = "send_rejected"
 FAILED_BEFORE_SEND = "failed_before_send"
 REPLY_OBSERVED = "reply_observed"
 CLOSED = "closed"
 AMBIGUOUS = "ambiguous"
 PROGRESS = "progress"
 NONE = "none"
+
+EVIDENCE_ACKED = "acked"
+EVIDENCE_APP_ERROR = "app_error"
+EVIDENCE_UNDECIDED = "undecided"
 
 # Upstream cli.py says to wait for "completed" and then accepts any truthy
 # status. LIVE has not listed the enum. B09 must not treat that word as
@@ -71,6 +81,7 @@ UNVERIFIED_UPSTREAM_COMPLETE = frozenset({"completed"})
 CALIBRATED_COMPLETE_STATUSES: frozenset[str] = frozenset()
 
 _MARKER_KEYS = ("request_marker", "x-request-id", "client_request_id")
+_OPEN_EXCHANGE = (SENT, SEND_UNCERTAIN, AMBIGUOUS)
 
 
 @dataclass(frozen=True)
@@ -80,6 +91,17 @@ class Exchange:
     sent_text: str
     request_marker: str
     submitted_at_ms: int | None = None
+    # Caller fact: another exchange in this session is still unpaired.
+    # Not a field muse-cli returns.
+    earlier_unresolved: bool = False
+
+
+@dataclass(frozen=True)
+class AttemptEvidence:
+    """Application result of one send attempt. Not an exchange state."""
+
+    verdict: str
+    detail: str = ""
 
 
 @dataclass
@@ -88,18 +110,30 @@ class ObservationMemory:
 
     events: dict[tuple, dict] = field(default_factory=dict)
     ambiguous: bool = False
-    eliminated: set[tuple] = field(default_factory=set)
+    competing: set[tuple] = field(default_factory=set)
+    disqualified: set[tuple] = field(default_factory=set)
 
     def note(self, events: list[dict]) -> None:
         for event in events:
-            key = _event_key(event)
-            prev = self.events.get(key)
-            if prev is None:
-                self.events[key] = _copy_event(event)
+            ident = _identity(event)
+            current = self.events.get(ident)
+            if current is not None and _can_enrich(current, event):
+                self._store(ident, current, event)
                 continue
-            if _reply_to(event) and not _reply_to(prev):
-                self.eliminated.add(key)
-            self.events[key] = _merge(prev, event)
+            if current is None:
+                self.events[ident] = _copy_event(event)
+                continue
+            alt = ident + (_message_id(event),)
+            prev = self.events.get(alt)
+            if prev is None:
+                self.events[alt] = _copy_event(event)
+            else:
+                self._store(alt, prev, event)
+
+    def _store(self, key: tuple, prev: dict, event: dict) -> None:
+        if key in self.competing and _reply_to(event) and not _reply_to(prev):
+            self.disqualified.add(key)
+        self.events[key] = _merge(prev, event)
 
 
 @dataclass(frozen=True)
@@ -175,13 +209,23 @@ def _message_id(event: dict) -> str:
     return str(event.get("message_id") or payload.get("message_id") or "")
 
 
-def _event_key(event: dict) -> tuple:
+def _identity(event: dict) -> tuple:
     return (
         str(event.get("session_id") or ""),
         str(event.get("event_name") or ""),
         _seq(event),
-        _message_id(event),
     )
+
+
+def _can_enrich(prev: dict, new: dict) -> bool:
+    """Same row when a message id arrives, or when the ids agree."""
+    if _identity(prev) != _identity(new):
+        return False
+    previous_id = _message_id(prev)
+    new_id = _message_id(new)
+    if not previous_id or not new_id:
+        return True
+    return previous_id == new_id
 
 
 def _event_time_ms(event: dict) -> int | None:
@@ -237,6 +281,9 @@ def _is_our_echo(exchange: Exchange, event: dict) -> bool:
         return False
     if _before_submit(exchange, event):
         return False
+    # A marker for a different request wins over identical text.
+    if _marker_conflict(exchange, event):
+        return False
     if _text(event) == exchange.sent_text:
         return True
     return _marker_echoed(event, exchange.request_marker)
@@ -245,8 +292,8 @@ def _is_our_echo(exchange: Exchange, event: dict) -> bool:
 def user_echo(exchange: Exchange, events: list[dict]) -> dict | None:
     """Earliest same-session user event after the baseline that is this send.
 
-    Text must equal the sent text. A request marker must equal a marker field.
-    Substring matches are not delivery evidence.
+    Text must equal the sent text, unless a marker field names a different
+    request. A matching marker field must equal the marker exactly.
     """
     matches = [event for event in events if _is_our_echo(exchange, event)]
     if not matches:
@@ -280,7 +327,7 @@ def _other_user(exchange: Exchange, event: dict, echo: dict) -> bool:
         return False
     if _seq(event) <= exchange.baseline_seq:
         return False
-    if _event_key(event) == _event_key(echo):
+    if _can_enrich(event, echo):
         return False
     return not _is_our_echo(exchange, event)
 
@@ -375,6 +422,7 @@ def associate_reply(
     memory = prior.memory if prior is not None else ObservationMemory()
     memory.note(events)
     world = list(memory.events.values())
+    index = {id(event): key for key, event in memory.events.items()}
     statuses = (
         CALIBRATED_COMPLETE_STATUSES if complete_statuses is None else complete_statuses
     )
@@ -389,7 +437,6 @@ def associate_reply(
     assistants = _same_session_assistants(exchange, world)
 
     if len(echoes) > 1:
-        memory.ambiguous = True
         return _result(AMBIGUOUS, None, ignored, [], assistants, memory)
     if not echoes:
         return _result(NONE, None, ignored, [], assistants, memory)
@@ -411,73 +458,84 @@ def associate_reply(
         else:
             writing.append(event)
 
-    earlier = _earlier_user(exchange, world, echo)
-    if earlier and completes:
-        memory.ambiguous = True
-        if host_decision is not None:
-            chosen = _match_decision(completes, host_decision)
-            if chosen is not None:
-                memory.ambiguous = False
-                return _result(REPLY_OBSERVED, chosen, ignored, progress, [], memory)
-        return _result(AMBIGUOUS, None, ignored, progress, completes + writing, memory)
-
     if len(completes) > 1:
         memory.ambiguous = True
+        for event in completes:
+            memory.competing.add(index[id(event)])
 
-    if host_decision is not None:
-        chosen = _match_decision(completes, host_decision)
-        if chosen is None:
-            if completes:
-                memory.ambiguous = True
-            state = AMBIGUOUS if memory.ambiguous else NONE
-            return _result(state, None, ignored, progress, completes or writing, memory)
+    live = [event for event in completes if index[id(event)] not in memory.disqualified]
+    picked = _host_pick(memory, index, live, host_decision)
+    if picked is not None:
         memory.ambiguous = False
-        return _result(REPLY_OBSERVED, chosen, ignored, progress, [], memory)
+        return _result(REPLY_OBSERVED, picked, ignored, progress, [], memory)
+
+    if (exchange.earlier_unresolved or _earlier_user(exchange, world, echo)) and live:
+        return _result(AMBIGUOUS, None, ignored, progress, live + writing, memory)
 
     if memory.ambiguous:
-        if len(completes) == 1 and memory.eliminated:
+        cleared = memory.competing & memory.disqualified
+        if cleared and len(live) == 1 and index[id(live[0])] in memory.competing:
             memory.ambiguous = False
-            return _result(REPLY_OBSERVED, completes[0], ignored, progress, [], memory)
-        retained = completes if completes else writing
+            return _result(REPLY_OBSERVED, live[0], ignored, progress, [], memory)
+        retained = live if live else writing
         return _result(AMBIGUOUS, None, ignored, progress, retained, memory)
 
-    if len(completes) == 1:
-        return _result(REPLY_OBSERVED, completes[0], ignored, progress, [], memory)
-    if len(completes) > 1:
-        return _result(AMBIGUOUS, None, ignored, progress, completes, memory)
+    if len(live) == 1:
+        return _result(REPLY_OBSERVED, live[0], ignored, progress, [], memory)
+    if len(live) > 1:
+        return _result(AMBIGUOUS, None, ignored, progress, live, memory)
     if progress:
         return _result(PROGRESS, None, ignored, progress, writing, memory)
     return _result(NONE, None, ignored, [], writing, memory)
 
 
-def _application_verdict(
+def _host_pick(
+    memory: ObservationMemory,
+    index: dict[int, tuple],
+    live: list[dict],
+    host_decision: str | None,
+) -> dict | None:
+    if host_decision is None:
+        return None
+    chosen = _match_decision(live, host_decision)
+    if chosen is None:
+        return None
+    key = index[id(chosen)]
+    if memory.competing and key not in memory.competing:
+        return None
+    return chosen
+
+
+def attempt_evidence(
     *,
     stream_complete: bool,
     stream_status: int | None,
     body: bytes | None,
-) -> str:
-    """Return ``acked``, ``rejected``, or ``pending``.
+) -> AttemptEvidence:
+    """Classify the application body without choosing an exchange state.
 
-    Mirrors ``Gateway.request`` / ``call_json`` at the pinned muse-cli commit:
-    a finished status outside 2xx is an error, and a JSON object with
-    ``ok is False`` is an error. An empty or non-object body is not confirmation
-    here, which is stricter than treating an empty payload as ``{}``.
+    ``app_error`` matches muse-cli ``Gateway.request`` (status outside 2xx)
+    and ``call_json`` (JSON object with ``ok is False``). Those exceptions do
+    not prove the send had no side effect. An empty, non-object, or
+    undecodable body is ``undecided``, not an acknowledgement.
     """
     if not stream_complete or stream_status is None:
-        return "pending"
+        return AttemptEvidence(EVIDENCE_UNDECIDED, "response incomplete")
     if stream_status < 200 or stream_status >= 300:
-        return "rejected"
+        return AttemptEvidence(EVIDENCE_APP_ERROR, f"status {stream_status}")
     if not body:
-        return "pending"
+        return AttemptEvidence(EVIDENCE_UNDECIDED, "empty body")
     try:
         payload = json.loads(body)
-    except json.JSONDecodeError:
-        return "pending"
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return AttemptEvidence(EVIDENCE_UNDECIDED, "body is not json")
     if not isinstance(payload, dict):
-        return "pending"
+        return AttemptEvidence(EVIDENCE_UNDECIDED, "body is not an object")
     if payload.get("ok") is False:
-        return "rejected"
-    return "acked"
+        error = payload.get("error")
+        detail = f"ok false: {error}" if isinstance(error, str) else "ok false"
+        return AttemptEvidence(EVIDENCE_APP_ERROR, redact(detail))
+    return AttemptEvidence(EVIDENCE_ACKED, "")
 
 
 def delivery_state(
@@ -489,39 +547,38 @@ def delivery_state(
     events: list[dict],
     body: bytes | None = None,
 ) -> str:
-    """Decide sent / uncertain / rejected / failed after a single attempt.
+    """Return a SPEC §6 state. This function does not resend.
 
-    A finished 2xx JSON object whose ``ok`` is not false is the send
-    acknowledgement. A same-session exact user echo is the other positive
-    evidence. ``ok: false`` and a non-2xx finished status are rejections:
-    bytes were handed off, so this is not ``failed_before_send``, and the
-    attempt is not retried. Anything else stays ``send_uncertain``.
+    No bytes handed off is ``failed_before_send``. A clean JSON acknowledgement
+    or this exchange's user echo is ``sent``. An application error, a non-JSON
+    body, or silence after the handoff is ``send_uncertain``. The error itself
+    is ``attempt_evidence`` and must be stored beside the state. A later echo
+    still promotes ``send_uncertain`` to ``sent``.
     """
     if not wrote_any_bytes:
         return FAILED_BEFORE_SEND
-    verdict = _application_verdict(
+    evidence = attempt_evidence(
         stream_complete=stream_complete,
         stream_status=stream_status,
         body=body,
     )
-    if verdict == "rejected":
-        return SEND_REJECTED
-    if verdict == "acked" or user_echo(exchange, events) is not None:
+    if evidence.verdict == EVIDENCE_ACKED or user_echo(exchange, events) is not None:
         return SENT
     return SEND_UNCERTAIN
 
 
-def observe(delivery: str, association: Association) -> str:
-    """Move to reply_observed only on a unique tied match.
+def observe(exchange_state: str, association: Association) -> str:
+    """Move ``sent`` or ``send_uncertain`` to ``reply_observed`` on one tied reply.
 
-    Rejection and failure stay where they are. Ambiguity stays ambiguous so
-    a later poll cannot turn it back into a clean send waiting for "the" reply.
-    ``delivery_state`` still reports whether the attempt itself was accepted.
+    ``ambiguous`` is not produced from a SPEC state. If the caller stored that
+    association label in the exchange slot, a resolved association moves it to
+    ``reply_observed``. ``closed``, ``reply_observed``, and
+    ``failed_before_send`` do not reopen. Nothing here resends.
     """
-    if delivery in (FAILED_BEFORE_SEND, SEND_REJECTED):
-        return delivery
-    if association.state == AMBIGUOUS:
-        return AMBIGUOUS
-    if association.state == REPLY_OBSERVED and delivery in (SENT, SEND_UNCERTAIN):
+    if exchange_state in (CLOSED, REPLY_OBSERVED, FAILED_BEFORE_SEND):
+        return exchange_state
+    if association.state == REPLY_OBSERVED and exchange_state in _OPEN_EXCHANGE:
         return REPLY_OBSERVED
-    return delivery
+    if exchange_state == AMBIGUOUS and association.state == AMBIGUOUS:
+        return AMBIGUOUS
+    return exchange_state

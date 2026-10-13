@@ -33,7 +33,7 @@ SOFTWARE.
 | Spike file | Upstream paths at that commit | What changed |
 |---|---|---|
 | `spikes/muse/framing.py` | `docs/PROTOCOL.md`; field numbers in `src/muse_cli/desc0.bin` and `desc1.bin` | New protobuf codec. `gateway.py` was not copied. The descriptor binaries are not in this repo. Plaintext frames are capped at 65519 bytes. |
-| `spikes/muse/associate.py` | `src/muse_cli/cli.py` `is_reply` and `fmt_event`; `src/muse_cli/chat.py` `Chat.new_replies`; `src/muse_cli/gateway.py` `call_json` (`ok is False`) | Tied to this exchange’s user turn. Marker match is exact. Ambiguity is cumulative and sticky. Only a calibrated status completes. `ok: false` is `send_rejected` and is not resent. The truthy status check is not adopted. |
+| `spikes/muse/associate.py` | `src/muse_cli/cli.py` `is_reply` and `fmt_event`; `src/muse_cli/chat.py` `Chat.new_replies`; `src/muse_cli/gateway.py` `call_json` (`ok is False`) | Tied to this exchange’s user turn. A conflicting marker wins over identical text. Ambiguity is cumulative and clears only for a competing candidate. Only a calibrated status completes. `ok: false` and a non-2xx status are attempt evidence `app_error`; the exchange stays `send_uncertain` until this exchange’s user echo promotes it to `sent`. Nothing is resent. The truthy status check is not adopted. |
 | `spikes/muse/loop.py` | `src/muse_cli/gateway.py` `_read_frame` and `Gateway.request` | New receive loop. Ownership is on the link. The deadline uses `time.monotonic`. A frame budget was added. |
 | `spikes/muse/handshake.py` | `docs/PROTOCOL.md` Noise_XX pattern and empty payloads | Uses the `noiseprotocol` library. Does not copy the gateway handshake code. |
 
