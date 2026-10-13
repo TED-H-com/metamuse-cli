@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "EvidenceRef": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "item_revision",
+            "transcript_segment",
+            "draft_revision"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "id": {
+          "maxLength": 128,
+          "minLength": 3,
+          "title": "Id",
+          "type": "string"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "kind",
+        "id",
+        "revision"
+      ],
+      "title": "EvidenceRef",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "draft_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Draft Id",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "text": {
+      "maxLength": 1000000,
+      "title": "Text",
+      "type": "string"
+    },
+    "platform": {
+      "title": "Platform",
+      "type": "string"
+    },
+    "variant": {
+      "additionalProperties": true,
+      "title": "Variant",
+      "type": "object"
+    },
+    "facts_refs": {
+      "items": {
+        "$ref": "#/$defs/EvidenceRef"
+      },
+      "title": "Facts Refs",
+      "type": "array"
+    },
+    "assets": {
+      "items": {
+        "maxLength": 128,
+        "minLength": 3,
+        "type": "string"
+      },
+      "title": "Assets",
+      "type": "array"
+    },
+    "preferences": {
+      "additionalProperties": true,
+      "title": "Preferences",
+      "type": "object"
+    },
+    "digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Digest",
+      "type": "string"
+    }
+  },
+  "required": [
+    "draft_id",
+    "revision",
+    "text",
+    "platform",
+    "digest"
+  ],
+  "title": "DraftRevision",
+  "type": "object"
+}

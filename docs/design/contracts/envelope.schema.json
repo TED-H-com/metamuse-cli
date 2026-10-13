@@ -1,90 +1,86 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "contract_version": {
-      "const": "1.1"
-    },
-    "request_id": {
-      "type": "string",
-      "minLength": 3,
-      "maxLength": 128
-    },
-    "status": {
+  "$defs": {
+    "ErrorCode": {
       "enum": [
-        "ok",
-        "accepted",
-        "partial",
-        "error"
-      ]
+        "E_INPUT_INVALID",
+        "E_REFERENCE_INVALID",
+        "E_SCOPE_REQUIRED",
+        "E_SCOPE_DENIED",
+        "E_AUTH_REQUIRED",
+        "E_DEPENDENCY_MISSING",
+        "E_UNSUPPORTED",
+        "E_PROTOCOL_MISMATCH",
+        "E_ACCESS_DENIED",
+        "E_CHECKPOINT_REQUIRED",
+        "E_RATE_LIMITED",
+        "E_SELECTOR_DRIFT",
+        "E_NETWORK_TIMEOUT",
+        "E_JOB_BUSY",
+        "E_IDEMPOTENCY_CONFLICT",
+        "E_EXTERNAL_STATE_UNKNOWN",
+        "E_STORAGE",
+        "E_LIMIT_REACHED",
+        "E_DATA_STALE",
+        "E_RESOURCE_UNAVAILABLE"
+      ],
+      "title": "ErrorCode",
+      "type": "string"
     },
-    "data": {
-      "type": [
-        "object",
-        "array",
-        "null"
-      ]
-    },
-    "error": {
-      "anyOf": [
-        {
-          "type": "object",
-          "properties": {
-            "code": {
-              "type": "string",
-              "pattern": "^E_[A-Z_]+$"
-            },
-            "message": {
-              "type": "string",
-              "maxLength": 1000000
-            },
-            "retry_class": {
-              "enum": [
-                "never",
-                "safe_read",
-                "reconcile",
-                "user_action"
-              ]
-            }
-          },
-          "required": [
-            "code",
-            "message",
-            "retry_class"
-          ],
-          "additionalProperties": false
+    "ErrorDetail": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
         },
-        {
-          "type": "null"
+        "message": {
+          "maxLength": 1000000,
+          "title": "Message",
+          "type": "string"
+        },
+        "retry_class": {
+          "enum": [
+            "never",
+            "safe_read",
+            "reconcile",
+            "user_action"
+          ],
+          "title": "Retry Class",
+          "type": "string"
+        },
+        "next_action": {
+          "anyOf": [
+            {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Action"
         }
-      ]
-    },
-    "warnings": {
-      "type": "array",
-      "items": {
-        "type": "string",
-        "maxLength": 1000000
-      }
-    },
-    "next_cursor": {
-      "type": [
-        "string",
-        "null"
-      ]
+      },
+      "required": [
+        "code",
+        "message",
+        "retry_class"
+      ],
+      "title": "ErrorDetail",
+      "type": "object"
     }
   },
-  "required": [
-    "contract_version",
-    "request_id",
-    "status",
-    "data",
-    "error",
-    "warnings",
-    "next_cursor"
-  ],
   "additionalProperties": false,
   "allOf": [
     {
+      "else": {
+        "properties": {
+          "error": {
+            "type": "null"
+          }
+        }
+      },
       "if": {
         "properties": {
           "status": {
@@ -98,41 +94,93 @@
             "type": "null"
           },
           "error": {
-            "type": "object",
-            "properties": {
-              "code": {
-                "type": "string",
-                "pattern": "^E_[A-Z_]+$"
-              },
-              "message": {
-                "type": "string",
-                "maxLength": 1000000
-              },
-              "retry_class": {
-                "enum": [
-                  "never",
-                  "safe_read",
-                  "reconcile",
-                  "user_action"
-                ]
-              }
-            },
-            "required": [
-              "code",
-              "message",
-              "retry_class"
-            ],
-            "additionalProperties": false
-          }
-        }
-      },
-      "else": {
-        "properties": {
-          "error": {
-            "type": "null"
+            "type": "object"
           }
         }
       }
     }
-  ]
+  ],
+  "properties": {
+    "contract_version": {
+      "const": "1.1",
+      "default": "1.1",
+      "title": "Contract Version",
+      "type": "string"
+    },
+    "request_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Request Id",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "accepted",
+        "partial",
+        "error"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "data": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "items": {},
+          "type": "array"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Data"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ErrorDetail"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "warnings": {
+      "items": {
+        "maxLength": 1000000,
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    },
+    "next_cursor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Next Cursor"
+    }
+  },
+  "required": [
+    "contract_version",
+    "request_id",
+    "status",
+    "data",
+    "error",
+    "warnings",
+    "next_cursor"
+  ],
+  "title": "Envelope",
+  "type": "object"
 }

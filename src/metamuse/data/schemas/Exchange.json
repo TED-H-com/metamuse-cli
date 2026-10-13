@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "discussion_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Discussion Id",
+      "type": "string"
+    },
+    "job_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Job Id"
+    },
+    "request_key": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Request Key",
+      "type": "string"
+    },
+    "question": {
+      "maxLength": 1000000,
+      "title": "Question",
+      "type": "string"
+    },
+    "packet_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Packet Id",
+      "type": "string"
+    },
+    "digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Digest",
+      "type": "string"
+    },
+    "permit_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Permit Id",
+      "type": "string"
+    },
+    "baseline": {
+      "additionalProperties": true,
+      "title": "Baseline",
+      "type": "object"
+    },
+    "state": {
+      "default": "prepared",
+      "title": "State",
+      "type": "string"
+    },
+    "outcome": {
+      "anyOf": [
+        {
+          "enum": [
+            "answered",
+            "needs_more_data",
+            "abandoned"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Outcome"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "discussion_id",
+    "request_key",
+    "question",
+    "packet_id",
+    "digest",
+    "permit_id"
+  ],
+  "title": "Exchange",
+  "type": "object"
+}

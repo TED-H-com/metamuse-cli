@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "kind": {
+      "title": "Kind",
+      "type": "string"
+    },
+    "scope": {
+      "additionalProperties": true,
+      "title": "Scope",
+      "type": "object"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider"
+    },
+    "account": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account"
+    },
+    "issuer": {
+      "title": "Issuer",
+      "type": "string"
+    },
+    "issued_at": {
+      "title": "Issued At",
+      "type": "string"
+    },
+    "expires_at": {
+      "title": "Expires At",
+      "type": "string"
+    },
+    "max_uses": {
+      "minimum": 1,
+      "title": "Max Uses",
+      "type": "integer"
+    },
+    "used": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Used",
+      "type": "integer"
+    },
+    "revoked": {
+      "default": false,
+      "title": "Revoked",
+      "type": "boolean"
+    },
+    "exact_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exact Digest"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "kind",
+    "scope",
+    "issuer",
+    "issued_at",
+    "expires_at",
+    "max_uses"
+  ],
+  "title": "Permit",
+  "type": "object"
+}

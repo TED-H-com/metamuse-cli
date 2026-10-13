@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "draft_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Draft Id",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "draft_id",
+    "revision"
+  ],
+  "title": "DraftPreviewRequest",
+  "type": "object"
+}

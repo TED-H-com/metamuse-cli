@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "discussion_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Discussion Id",
+      "type": "string"
+    },
+    "packet_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Packet Id",
+      "type": "string"
+    },
+    "question": {
+      "maxLength": 8192,
+      "minLength": 1,
+      "title": "Question",
+      "type": "string"
+    },
+    "share_grant_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Share Grant Id",
+      "type": "string"
+    },
+    "request_key": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Request Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "discussion_id",
+    "packet_id",
+    "question",
+    "share_grant_id",
+    "request_key"
+  ],
+  "title": "MuseSendRequest",
+  "type": "object"
+}

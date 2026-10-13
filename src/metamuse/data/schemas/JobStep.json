@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "job_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Job Id",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 0,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "target": {
+      "additionalProperties": true,
+      "title": "Target",
+      "type": "object"
+    },
+    "checkpoint": {
+      "additionalProperties": true,
+      "title": "Checkpoint",
+      "type": "object"
+    },
+    "state": {
+      "default": "queued",
+      "enum": [
+        "queued",
+        "running",
+        "submitting",
+        "succeeded",
+        "partial",
+        "failed",
+        "cancelled",
+        "open_uncertain",
+        "send_uncertain",
+        "needs_reconcile"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "attempts": {
+      "default": 0,
+      "title": "Attempts",
+      "type": "integer"
+    },
+    "retries": {
+      "default": 0,
+      "title": "Retries",
+      "type": "integer"
+    },
+    "side_effect_class": {
+      "enum": [
+        "none",
+        "safe_read",
+        "external_submit"
+      ],
+      "title": "Side Effect Class",
+      "type": "string"
+    },
+    "uncertain_state": {
+      "default": "needs_reconcile",
+      "enum": [
+        "open_uncertain",
+        "send_uncertain",
+        "needs_reconcile"
+      ],
+      "title": "Uncertain State",
+      "type": "string"
+    },
+    "worker_epoch": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Worker Epoch"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    }
+  },
+  "required": [
+    "id",
+    "job_id",
+    "sequence",
+    "target",
+    "side_effect_class"
+  ],
+  "title": "JobStep",
+  "type": "object"
+}

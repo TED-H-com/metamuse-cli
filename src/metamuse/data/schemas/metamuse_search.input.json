@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "cursor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cursor"
+    },
+    "limit": {
+      "default": 50,
+      "maximum": 200,
+      "minimum": 1,
+      "title": "Limit",
+      "type": "integer"
+    },
+    "query": {
+      "maxLength": 1000000,
+      "title": "Query",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "query"
+  ],
+  "title": "SearchRequest",
+  "type": "object"
+}

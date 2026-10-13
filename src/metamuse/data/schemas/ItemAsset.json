@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "item_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Item Id",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "asset_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "relation": {
+      "title": "Relation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "item_id",
+    "revision",
+    "asset_id",
+    "relation"
+  ],
+  "title": "ItemAsset",
+  "type": "object"
+}

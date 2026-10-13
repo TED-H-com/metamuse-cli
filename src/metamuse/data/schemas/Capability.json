@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "implementation": {
+      "enum": [
+        "absent",
+        "implemented"
+      ],
+      "title": "Implementation",
+      "type": "string"
+    },
+    "verification": {
+      "enum": [
+        "unverified",
+        "fixture_passed",
+        "live_verified",
+        "regressed"
+      ],
+      "title": "Verification",
+      "type": "string"
+    },
+    "environment": {
+      "enum": [
+        "ready",
+        "missing_dependency",
+        "needs_auth",
+        "unavailable"
+      ],
+      "title": "Environment",
+      "type": "string"
+    },
+    "permission": {
+      "enum": [
+        "not_configured",
+        "granted_scope",
+        "denied"
+      ],
+      "title": "Permission",
+      "type": "string"
+    },
+    "effective": {
+      "title": "Effective",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "name",
+    "implementation",
+    "verification",
+    "environment",
+    "permission",
+    "effective"
+  ],
+  "title": "Capability",
+  "type": "object"
+}

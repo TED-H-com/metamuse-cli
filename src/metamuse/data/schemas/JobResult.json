@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "coverage_status": {
+      "default": "unknown",
+      "enum": [
+        "unknown",
+        "scope_satisfied",
+        "bounded",
+        "partial"
+      ],
+      "title": "Coverage Status",
+      "type": "string"
+    },
+    "requested_scope": {
+      "additionalProperties": true,
+      "title": "Requested Scope",
+      "type": "object"
+    },
+    "observed_scope": {
+      "additionalProperties": true,
+      "title": "Observed Scope",
+      "type": "object"
+    },
+    "stop_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stop Reason"
+    },
+    "missing_fields": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing Fields",
+      "type": "array"
+    },
+    "data": {
+      "additionalProperties": true,
+      "title": "Data",
+      "type": "object"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "title": "JobResult",
+  "type": "object"
+}

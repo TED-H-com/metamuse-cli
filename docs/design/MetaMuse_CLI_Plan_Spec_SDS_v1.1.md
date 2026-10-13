@@ -86,7 +86,6 @@ Muse 介面漂移先標不相容，不改密碼學或關閉驗證。未知送達
 
 離線測試可用假 Muse；整合 beta 必須另附真實往返與來源證據，不能混用。
 
-
 ---
 
 # MetaMuse CLI — Product & Interface Specification
@@ -214,7 +213,7 @@ metamuse doctor [--live]
 metamuse project create --name NAME --request-key KEY
 metamuse add --project ID --file PATH --kind FORMAT --request-key KEY [--run]
 metamuse add --project ID --url URL --resources LIST --access-grant ID --request-key KEY [--run]
-metamuse jobs list
+metamuse jobs list [--project ID] [--cursor CURSOR] [--limit N]
 metamuse jobs get ID
 metamuse jobs resume ID --request-key KEY
 metamuse jobs cancel ID --request-key KEY
@@ -273,7 +272,6 @@ Skill短主檔＋按需references，先查實際工具；只有Skill不代表bac
 參考性能目標（尚未量測）：4vCPU／8GiB／SSD Linux，固定10,000筆樣本，至少30次，submit p95≤1秒、搜尋首50筆p95≤2秒；20MiB匯入core peak RSS≤512MiB，browser/codec另量測。未達列deviation，不捏造數據。
 
 Linux／WSL2為首個執行目標；其他平台按實測列。無憑證離線路線零背景網路。升級須migration/backup restore，不刪庫過關。product tests初始not_run。
-
 
 ---
 
@@ -490,26 +488,18 @@ ADR：單package、單機SQLite、主Agent在外、最小Muse client、初版單
 
 先models/store/jobs與離線縱切片；Muse spike早做但不誤稱完成。任何外部能力附版本、時間、範圍和證據。不得以 --help、route名、schema通過或mock宣稱真實帳號驗收。
 
+### B02–B04 core implementation clarifications
 
----
+Core API and exact column inventory: [docs/dev/CORE_API.md](../dev/CORE_API.md).
+The initial schema adds `request_receipts` for synchronous mutation idempotency;
+`metamuse.toml` is the single workspace config and `runtime/maintenance.lock` protects
+schema transitions. Job `started_at` persists the first-claim wall-clock boundary;
+step `uncertain_state` persists the recovery classification independently of registry
+availability. These are additions to the tables above, not separate stores/queues.
 
-# 來源與恢復說明
-
-文件版1.1｜2026-10-13。本次重新生成文件下載包，使用本對話既定MetaMuse CLI決策、先前保存的單一工具v3及功能v2，沒有執行新的平台查核或真實帳號操作。
-
-原先的ZIP在目前session不可取得；這是重新提供的交接版，不主張與先前ZIP逐位元相同。文件規格已保存的設計不等於產品程式已完成。
-
-## 先前討論採用的一手來源（實作前重驗）
-
-- Muse client與protocol：[repository](https://github.com/nikships/muse-cli)、[protocol](https://github.com/nikships/muse-cli/blob/main/docs/PROTOCOL.md)。最小session/send/history的使用基線，不是官方穩定API保證。
-- Facebook貼文概念：[tlyu0419/facebook_crawler](https://github.com/tlyu0419/facebook_crawler)。先前對話已核對MIT；移植時鎖commit／license／原路徑。
-- 留言需求：[boo283/Facebook_comment_crawler](https://github.com/boo283/Facebook_comment_crawler)。先前未見明確LICENSE，不推定可任意移植；未解授權不复制／機械翻寫。
-- 中性內容功能：[Hao0321/claude-skill-social-post](https://github.com/Hao0321/claude-skill-social-post)。先前核對MIT；不帶作者策略或私人治理內容。
-- 自有影音wrapper：使用者先前提供的程式與工作經驗；不附私人部署或帳號設定。
-- 依賴：[yt-dlp](https://github.com/yt-dlp/yt-dlp)、[Playwright auth](https://playwright.dev/python/docs/auth)、[SQLite WAL](https://sqlite.org/wal.html)、[MCP工具規格](https://modelcontextprotocol.io/specification/latest/server/tools)、[Agent Skills](https://agentskills.io/specification)。B01選定實測版本，不把歷史查核當今天所有環境都相容。
-- 授權說明：[GitHub licensing](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/licensing-a-repository)。公開可讀、軟體授權與平台資料使用許可是不同問題。
-- 私密資料：[GitHub removing sensitive data](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository)。已曝光憑證先輪換，gitignore不是刪除歷史。
-
-本包是原創文件／契約，不包含移植的第三方runtime。實際採用每段程式記repo、commit、原path/blob、license、採用範圍、local path、修改與review；保留所需完整license文字。
-
-沒有完整核實當前帳號適用的Facebook／Muse條款，本包不保證TOS合規、帳號安全或名稱商標可用。不將改名、低調或資料來源偽裝視為許可。
+Job-list cursors fix creation-order membership using a row high-water mark; statuses
+are read live and physical job deletion/reordering is not exposed. MCP job_list requires
+project_id; CLI jobs list may show the workspace with optional --project/--cursor/--limit.
+Operation registration assigns one side-effect class to all steps of that operation;
+feature owners must keep external submission separate from independently retryable
+read/reconciliation work. Migration SQL remains the authoritative database definition.

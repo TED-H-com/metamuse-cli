@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "exchange_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Exchange Id",
+      "type": "string"
+    },
+    "cursor": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cursor"
+    },
+    "refresh": {
+      "default": false,
+      "title": "Refresh",
+      "type": "boolean"
+    },
+    "access_grant_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Access Grant Id"
+    }
+  },
+  "required": [
+    "exchange_id"
+  ],
+  "title": "MuseReadRequest",
+  "type": "object"
+}

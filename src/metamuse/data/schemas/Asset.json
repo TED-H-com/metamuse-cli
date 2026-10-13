@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Sha256",
+      "type": "string"
+    },
+    "mime": {
+      "title": "Mime",
+      "type": "string"
+    },
+    "actual_bytes": {
+      "minimum": 0,
+      "title": "Actual Bytes",
+      "type": "integer"
+    },
+    "duration_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Duration Ms"
+    },
+    "object_path": {
+      "title": "Object Path",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "ready",
+        "unavailable"
+      ],
+      "title": "State",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "sha256",
+    "mime",
+    "actual_bytes",
+    "object_path",
+    "state"
+  ],
+  "title": "Asset",
+  "type": "object"
+}

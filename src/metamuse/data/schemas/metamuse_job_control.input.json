@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "job_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Job Id",
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "resume",
+        "cancel"
+      ],
+      "title": "Operation",
+      "type": "string"
+    },
+    "request_key": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Request Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "job_id",
+    "operation",
+    "request_key"
+  ],
+  "title": "JobControlRequest",
+  "type": "object"
+}

@@ -210,3 +210,19 @@ unit測契約、ID、parent、scope、limits；integration測DB/檔案/鎖/crash
 ADR：單package、單機SQLite、主Agent在外、最小Muse client、初版單worker、誠實coverage、原文與分析分開、外部副作用不盲重試、public code/private runtime、中性工具不帶作者策略。
 
 先models/store/jobs與離線縱切片；Muse spike早做但不誤稱完成。任何外部能力附版本、時間、範圍和證據。不得以 --help、route名、schema通過或mock宣稱真實帳號驗收。
+
+### B02–B04 core implementation clarifications
+
+Core API and exact column inventory: [docs/dev/CORE_API.md](../dev/CORE_API.md).
+The initial schema adds `request_receipts` for synchronous mutation idempotency;
+`metamuse.toml` is the single workspace config and `runtime/maintenance.lock` protects
+schema transitions. Job `started_at` persists the first-claim wall-clock boundary;
+step `uncertain_state` persists the recovery classification independently of registry
+availability. These are additions to the tables above, not separate stores/queues.
+
+Job-list cursors fix creation-order membership using a row high-water mark; statuses
+are read live and physical job deletion/reordering is not exposed. MCP job_list requires
+project_id; CLI jobs list may show the workspace with optional --project/--cursor/--limit.
+Operation registration assigns one side-effect class to all steps of that operation;
+feature owners must keep external submission separate from independently retryable
+read/reconciliation work. Migration SQL remains the authoritative database definition.

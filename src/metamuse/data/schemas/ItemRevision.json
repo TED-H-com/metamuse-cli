@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "item_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Item Id",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "text": {
+      "maxLength": 1000000,
+      "title": "Text",
+      "type": "string"
+    },
+    "text_hash": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Text Hash",
+      "type": "string"
+    },
+    "raw_time": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Raw Time"
+    },
+    "parsed_time": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parsed Time"
+    },
+    "source_time": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Time"
+    },
+    "fetched_at": {
+      "title": "Fetched At",
+      "type": "string"
+    },
+    "complete": {
+      "default": false,
+      "title": "Complete",
+      "type": "boolean"
+    },
+    "missing_fields": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Missing Fields",
+      "type": "array"
+    },
+    "evidence": {
+      "additionalProperties": true,
+      "title": "Evidence",
+      "type": "object"
+    }
+  },
+  "required": [
+    "item_id",
+    "revision",
+    "text",
+    "text_hash",
+    "fetched_at"
+  ],
+  "title": "ItemRevision",
+  "type": "object"
+}
