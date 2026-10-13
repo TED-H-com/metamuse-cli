@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "current_revision": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Current Revision",
+      "type": "integer"
+    },
+    "stale": {
+      "default": false,
+      "title": "Stale",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "id",
+    "project_id"
+  ],
+  "title": "Draft",
+  "type": "object"
+}

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "source_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Source Id",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "post",
+        "comment",
+        "reply"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "native_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Native Id"
+    },
+    "parent_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Parent Id"
+    },
+    "unresolved_parent": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Unresolved Parent"
+    },
+    "identity_confidence": {
+      "default": "weak",
+      "enum": [
+        "reliable",
+        "weak"
+      ],
+      "title": "Identity Confidence",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "source_id",
+    "kind"
+  ],
+  "title": "Item",
+  "type": "object"
+}

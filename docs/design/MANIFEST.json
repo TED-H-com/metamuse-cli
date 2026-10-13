@@ -9,13 +9,13 @@
     },
     {
       "path": "02_SPEC.md",
-      "bytes": 14623,
-      "sha256": "8a2d46892fd59ff189d20827a3a148c902a7a2aca901863f3070dc41db1a6a22"
+      "bytes": 14668,
+      "sha256": "b5da5f99bf8af07939bf0c7a52ffe6d7e757c6829e9540604f65879b381ad2fd"
     },
     {
       "path": "03_SDS.md",
-      "bytes": 15453,
-      "sha256": "e1d14983e1d4d0bcab06f0cdaefe1a71c91ec39275570eb58565ac1b95e7475b"
+      "bytes": 16526,
+      "sha256": "cbd2f27d95f8012bf1b60f7c3a9618e9443eeab49435df4535a8dab264f167a6"
     },
     {
       "path": "04_BACKLOG.md",
@@ -44,13 +44,13 @@
     },
     {
       "path": "DESIGN_VALIDATION_REPORT.json",
-      "bytes": 632,
-      "sha256": "bfabb913f6fbbb5327025f524103476c1b1e14342ff7272eebd3b6c70009fff5"
+      "bytes": 674,
+      "sha256": "07a3e3c533c7a67121fc50d93dd4a2332a091623a7ad1ca88b69b1074fc5245b"
     },
     {
       "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
-      "bytes": 39135,
-      "sha256": "d238d1a0f90b17abe639c6432b722c976d3278c71c08af5e16d2ee350362ccd9"
+      "bytes": 37620,
+      "sha256": "1f488cffde364384b91a4a2d04763c7d4baac28a1ca767290737f2717d1e85df"
     },
     {
       "path": "README.md",
@@ -64,8 +64,8 @@
     },
     {
       "path": "contracts/README.md",
-      "bytes": 906,
-      "sha256": "40935dbe92de51c8540e9d8250cc54b86044ceec3439c481943ec07efe943733"
+      "bytes": 1607,
+      "sha256": "906d2858591947549719d8a1ce14b1d0331583a748221985a031e997012e4ec0"
     },
     {
       "path": "contracts/acceptance-cases.json",
@@ -79,13 +79,13 @@
     },
     {
       "path": "contracts/envelope.schema.json",
-      "bytes": 2680,
-      "sha256": "6c90c0f7f6a0310f66a87cc8e9cdce3b2440af7f6ba33175489a0a235db390db"
+      "bytes": 3617,
+      "sha256": "5d3dbc36b4fe8c977d73285059d942bd76375a7c84f3cc5e9f2a4586681e387a"
     },
     {
       "path": "contracts/mcp-tools.json",
-      "bytes": 71436,
-      "sha256": "079734b16c9ff8b336dfd6ac9ff9fe8e632c80ed4e979755ef7a7b97f55d09e2"
+      "bytes": 96474,
+      "sha256": "61031da741859d96886b1c06aed8ae060dbd7552b5b1840a3e9ed4578611d86b"
     },
     {
       "path": "contracts/requirements.json",
@@ -124,8 +124,8 @@
     },
     {
       "path": "validate_design_pack.py",
-      "bytes": 3196,
-      "sha256": "931e576b7d5a5e5af15589ae1db93f266427d1e20f4bc8305fb8bafda0b2a7f7"
+      "bytes": 3654,
+      "sha256": "eb5318f4c66a58d4654d30759be3fe3cebbc0da84c9519cf24027e774cfc9b7a"
     }
   ]
 }

@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "auth_ref": {
+      "title": "Auth Ref",
+      "type": "string"
+    },
+    "topic": {
+      "maxLength": 1000000,
+      "title": "Topic",
+      "type": "string"
+    },
+    "remote_session": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Remote Session"
+    },
+    "open_attempt_state": {
+      "default": "prepared",
+      "title": "Open Attempt State",
+      "type": "string"
+    },
+    "last_seq": {
+      "default": 0,
+      "title": "Last Seq",
+      "type": "integer"
+    },
+    "state": {
+      "default": "opening",
+      "title": "State",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "provider",
+    "auth_ref",
+    "topic"
+  ],
+  "title": "Discussion",
+  "type": "object"
+}

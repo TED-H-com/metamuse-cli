@@ -8,11 +8,11 @@
   "mcp_tool_designs": 15,
   "positive_contract_checks": 2,
   "negative_contract_checks": 2,
-  "local_links_checked": 10,
+  "local_links_checked": 13,
   "live_tests_run": 0,
   "network_operations": 0,
   "limitations": [
-    "No application runtime is included.",
+    "This validator only checks design artifacts; core runtime tests are separate.",
     "Detailed per-tool result schemas must be generated from implementation models.",
     "This is a rebuilt handoff, not a byte-identical restoration of the unavailable prior ZIP."
   ]

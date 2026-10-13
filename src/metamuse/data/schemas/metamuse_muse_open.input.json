@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "topic": {
+      "maxLength": 1000000,
+      "title": "Topic",
+      "type": "string"
+    },
+    "access_grant_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Access Grant Id",
+      "type": "string"
+    },
+    "request_key": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Request Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "topic",
+    "access_grant_id",
+    "request_key"
+  ],
+  "title": "MuseOpenRequest",
+  "type": "object"
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "exchange_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Exchange Id",
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "answered",
+        "needs_more_data",
+        "abandoned"
+      ],
+      "title": "Outcome",
+      "type": "string"
+    },
+    "request_key": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Request Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "exchange_id",
+    "outcome",
+    "request_key"
+  ],
+  "title": "MuseCloseExchangeRequest",
+  "type": "object"
+}

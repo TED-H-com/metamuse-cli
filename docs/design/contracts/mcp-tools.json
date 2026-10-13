@@ -6,97 +6,95 @@
       "name": "metamuse_inspect",
       "description": "本地能力檢查，不觸網。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {},
-        "required": [],
-        "additionalProperties": false
+        "title": "InspectRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -110,43 +108,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": true,
@@ -159,110 +209,111 @@
       "name": "metamuse_project_create",
       "description": "建立project。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {
           "name": {
-            "type": "string",
-            "maxLength": 1000000
+            "maxLength": 1000000,
+            "title": "Name",
+            "type": "string"
           },
           "request_key": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Request Key",
+            "type": "string"
           }
         },
         "required": [
           "name",
           "request_key"
         ],
-        "additionalProperties": false
+        "title": "ProjectCreateRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -276,43 +327,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -325,120 +428,33 @@
       "name": "metamuse_collect",
       "description": "先保存job；遠端需grant；accepted不是完成。",
       "inputSchema": {
-        "type": "object",
-        "properties": {
-          "project_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "inputs": {
-            "type": "array",
-            "items": {
-              "oneOf": [
-                {
-                  "type": "object",
-                  "properties": {
-                    "kind": {
-                      "const": "url"
-                    },
-                    "url": {
-                      "type": "string",
-                      "format": "uri",
-                      "pattern": "^https?://"
-                    }
-                  },
-                  "required": [
-                    "kind",
-                    "url"
-                  ],
-                  "additionalProperties": false
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "kind": {
-                      "const": "local_file"
-                    },
-                    "path": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "format": {
-                      "enum": [
-                        "text",
-                        "json",
-                        "jsonl",
-                        "csv",
-                        "vtt",
-                        "srt",
-                        "media"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "kind",
-                    "path",
-                    "format"
-                  ],
-                  "additionalProperties": false
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "kind": {
-                      "const": "text"
-                    },
-                    "text": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    }
-                  },
-                  "required": [
-                    "kind",
-                    "text"
-                  ],
-                  "additionalProperties": false
-                }
-              ]
-            },
-            "minItems": 1,
-            "maxItems": 100
-          },
-          "resources": {
-            "type": "array",
-            "items": {
-              "enum": [
-                "post",
-                "comments",
-                "media_metadata",
-                "subtitles",
-                "media_file"
-              ]
-            },
-            "minItems": 1
-          },
-          "limits": {
-            "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "CollectLimits": {
+            "additionalProperties": false,
             "properties": {
               "max_urls": {
-                "type": "integer",
+                "maximum": 100,
                 "minimum": 1,
-                "maximum": 100
+                "title": "Max Urls",
+                "type": "integer"
               },
               "max_items": {
-                "type": "integer",
+                "maximum": 10000,
                 "minimum": 1,
-                "maximum": 10000
+                "title": "Max Items",
+                "type": "integer"
               },
               "max_bytes": {
-                "type": "integer",
-                "minimum": 1
+                "minimum": 1,
+                "title": "Max Bytes",
+                "type": "integer"
               },
               "wall_clock_seconds": {
-                "type": "integer",
+                "maximum": 86400,
                 "minimum": 1,
-                "maximum": 86400
+                "title": "Wall Clock Seconds",
+                "type": "integer"
               }
             },
             "required": [
@@ -447,24 +463,159 @@
               "max_bytes",
               "wall_clock_seconds"
             ],
-            "additionalProperties": false
+            "title": "CollectLimits",
+            "type": "object"
+          },
+          "LocalFileInput": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "local_file",
+                "title": "Kind",
+                "type": "string"
+              },
+              "path": {
+                "maxLength": 1000000,
+                "title": "Path",
+                "type": "string"
+              },
+              "format": {
+                "enum": [
+                  "text",
+                  "json",
+                  "jsonl",
+                  "csv",
+                  "vtt",
+                  "srt",
+                  "media"
+                ],
+                "title": "Format",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "path",
+              "format"
+            ],
+            "title": "LocalFileInput",
+            "type": "object"
+          },
+          "TextInput": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "text",
+                "title": "Kind",
+                "type": "string"
+              },
+              "text": {
+                "maxLength": 1000000,
+                "title": "Text",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "text"
+            ],
+            "title": "TextInput",
+            "type": "object"
+          },
+          "URLInput": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "const": "url",
+                "title": "Kind",
+                "type": "string"
+              },
+              "url": {
+                "format": "uri",
+                "pattern": "^https?://",
+                "title": "Url",
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "url"
+            ],
+            "title": "URLInput",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Project Id",
+            "type": "string"
+          },
+          "inputs": {
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "local_file": "#/$defs/LocalFileInput",
+                  "text": "#/$defs/TextInput",
+                  "url": "#/$defs/URLInput"
+                },
+                "propertyName": "kind"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/$defs/URLInput"
+                },
+                {
+                  "$ref": "#/$defs/LocalFileInput"
+                },
+                {
+                  "$ref": "#/$defs/TextInput"
+                }
+              ]
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Inputs",
+            "type": "array"
+          },
+          "resources": {
+            "items": {
+              "enum": [
+                "post",
+                "comments",
+                "media_metadata",
+                "subtitles",
+                "media_file"
+              ],
+              "type": "string"
+            },
+            "minItems": 1,
+            "title": "Resources",
+            "type": "array"
+          },
+          "limits": {
+            "$ref": "#/$defs/CollectLimits"
           },
           "access_grant_id": {
             "anyOf": [
               {
-                "type": "string",
+                "maxLength": 128,
                 "minLength": 3,
-                "maxLength": 128
+                "type": "string"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Access Grant Id"
           },
           "request_key": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Request Key",
+            "type": "string"
           }
         },
         "required": [
@@ -475,94 +626,92 @@
           "access_grant_id",
           "request_key"
         ],
-        "additionalProperties": false
+        "title": "CollectRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -576,43 +725,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -625,105 +826,105 @@
       "name": "metamuse_job_get",
       "description": "讀取持久化job狀態。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {
           "job_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Job Id",
+            "type": "string"
           }
         },
         "required": [
           "job_id"
         ],
-        "additionalProperties": false
+        "title": "JobGetRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -737,43 +938,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": true,
@@ -786,116 +1039,124 @@
       "name": "metamuse_job_list",
       "description": "分頁列工作。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {
           "project_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Project Id",
+            "type": "string"
           },
           "cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
           },
           "limit": {
-            "type": "integer",
+            "default": 50,
+            "maximum": 200,
             "minimum": 1,
-            "maximum": 200
+            "title": "Limit",
+            "type": "integer"
           }
         },
         "required": [
           "project_id"
         ],
-        "additionalProperties": false
+        "title": "JobListRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -909,43 +1170,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": true,
@@ -958,23 +1271,28 @@
       "name": "metamuse_job_control",
       "description": "本地恢復／取消；不重送不明外部行為。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {
           "job_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Job Id",
+            "type": "string"
           },
           "operation": {
             "enum": [
               "resume",
               "cancel"
-            ]
+            ],
+            "title": "Operation",
+            "type": "string"
           },
           "request_key": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Request Key",
+            "type": "string"
           }
         },
         "required": [
@@ -982,94 +1300,92 @@
           "operation",
           "request_key"
         ],
-        "additionalProperties": false
+        "title": "JobControlRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -1083,43 +1399,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -1132,121 +1500,130 @@
       "name": "metamuse_search",
       "description": "project範圍的來源查詢。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {
           "project_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
-          },
-          "query": {
-            "type": "string",
-            "maxLength": 1000000
+            "title": "Project Id",
+            "type": "string"
           },
           "cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Cursor"
           },
           "limit": {
-            "type": "integer",
+            "default": 50,
+            "maximum": 200,
             "minimum": 1,
-            "maximum": 200
+            "title": "Limit",
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 1000000,
+            "title": "Query",
+            "type": "string"
           }
         },
         "required": [
           "project_id",
           "query"
         ],
-        "additionalProperties": false
+        "title": "SearchRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -1260,43 +1637,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": true,
@@ -1309,48 +1738,62 @@
       "name": "metamuse_packet_prepare",
       "description": "固定來源版本的分享前預覽。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "EvidenceRef": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "item_revision",
+                  "transcript_segment",
+                  "draft_revision"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Id",
+                "type": "string"
+              },
+              "revision": {
+                "minimum": 1,
+                "title": "Revision",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "revision"
+            ],
+            "title": "EvidenceRef",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
         "properties": {
           "project_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Project Id",
+            "type": "string"
           },
           "selection": {
-            "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "enum": [
-                    "item_revision",
-                    "transcript_segment",
-                    "draft_revision"
-                  ]
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 3,
-                  "maxLength": 128
-                },
-                "revision": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              },
-              "required": [
-                "kind",
-                "id",
-                "revision"
-              ],
-              "additionalProperties": false
+              "$ref": "#/$defs/EvidenceRef"
             },
-            "minItems": 1
+            "minItems": 1,
+            "title": "Selection",
+            "type": "array"
           },
           "request_key": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Request Key",
+            "type": "string"
           }
         },
         "required": [
@@ -1358,94 +1801,92 @@
           "selection",
           "request_key"
         ],
-        "additionalProperties": false
+        "title": "PacketPrepareRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -1459,43 +1900,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -1508,26 +2001,31 @@
       "name": "metamuse_muse_open",
       "description": "主題本身會外送，遠端create不明要對帳。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {
           "project_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Project Id",
+            "type": "string"
           },
           "topic": {
-            "type": "string",
-            "maxLength": 1000000
+            "maxLength": 1000000,
+            "title": "Topic",
+            "type": "string"
           },
           "access_grant_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Access Grant Id",
+            "type": "string"
           },
           "request_key": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Request Key",
+            "type": "string"
           }
         },
         "required": [
@@ -1536,94 +2034,92 @@
           "access_grant_id",
           "request_key"
         ],
-        "additionalProperties": false
+        "title": "MuseOpenRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -1637,43 +2133,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -1686,32 +2234,38 @@
       "name": "metamuse_muse_send",
       "description": "核准範圍內問題與packet；只提交，不宣告研究完成。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {
           "discussion_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Discussion Id",
+            "type": "string"
           },
           "packet_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Packet Id",
+            "type": "string"
           },
           "question": {
-            "type": "string",
+            "maxLength": 8192,
             "minLength": 1,
-            "maxLength": 8192
+            "title": "Question",
+            "type": "string"
           },
           "share_grant_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Share Grant Id",
+            "type": "string"
           },
           "request_key": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Request Key",
+            "type": "string"
           }
         },
         "required": [
@@ -1721,94 +2275,92 @@
           "share_grant_id",
           "request_key"
         ],
-        "additionalProperties": false
+        "title": "MuseSendRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -1822,43 +2374,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -1871,127 +2475,136 @@
       "name": "metamuse_muse_read",
       "description": "預設本地，refresh需有效存取範圍；可回refresh_job_id。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {
           "exchange_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Exchange Id",
+            "type": "string"
           },
           "cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
-          },
-          "refresh": {
-            "type": "boolean",
-            "default": false
-          },
-          "access_grant_id": {
             "anyOf": [
               {
-                "type": "string",
-                "minLength": 3,
-                "maxLength": 128
+                "type": "string"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null,
+            "title": "Cursor"
+          },
+          "refresh": {
+            "default": false,
+            "title": "Refresh",
+            "type": "boolean"
+          },
+          "access_grant_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Access Grant Id"
           }
         },
         "required": [
           "exchange_id"
         ],
-        "additionalProperties": false
+        "title": "MuseReadRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -2005,43 +2618,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -2054,24 +2719,29 @@
       "name": "metamuse_muse_close_exchange",
       "description": "結算host輪次；不等於遠端取消。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {
           "exchange_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Exchange Id",
+            "type": "string"
           },
           "outcome": {
             "enum": [
               "answered",
               "needs_more_data",
               "abandoned"
-            ]
+            ],
+            "title": "Outcome",
+            "type": "string"
           },
           "request_key": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Request Key",
+            "type": "string"
           }
         },
         "required": [
@@ -2079,94 +2749,92 @@
           "outcome",
           "request_key"
         ],
-        "additionalProperties": false
+        "title": "MuseCloseExchangeRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -2180,43 +2848,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -2229,35 +2949,80 @@
       "name": "metamuse_draft_save",
       "description": "只保存host提供文字；更新要expected_revision。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "EvidenceRef": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "item_revision",
+                  "transcript_segment",
+                  "draft_revision"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Id",
+                "type": "string"
+              },
+              "revision": {
+                "minimum": 1,
+                "title": "Revision",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "revision"
+            ],
+            "title": "EvidenceRef",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
         "properties": {
           "project_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Project Id",
+            "type": "string"
           },
           "draft_id": {
             "anyOf": [
               {
-                "type": "string",
+                "maxLength": 128,
                 "minLength": 3,
-                "maxLength": 128
+                "type": "string"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null,
+            "title": "Draft Id"
           },
           "expected_revision": {
-            "type": [
-              "integer",
-              "null"
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "minimum": 1
+            "default": null,
+            "title": "Expected Revision"
           },
           "text": {
-            "type": "string",
-            "maxLength": 1000000
+            "maxLength": 1000000,
+            "title": "Text",
+            "type": "string"
           },
           "platform": {
             "enum": [
@@ -2268,42 +3033,22 @@
               "tiktok",
               "x",
               "generic"
-            ]
+            ],
+            "title": "Platform",
+            "type": "string"
           },
           "facts_refs": {
-            "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "enum": [
-                    "item_revision",
-                    "transcript_segment",
-                    "draft_revision"
-                  ]
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 3,
-                  "maxLength": 128
-                },
-                "revision": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              },
-              "required": [
-                "kind",
-                "id",
-                "revision"
-              ],
-              "additionalProperties": false
-            }
+              "$ref": "#/$defs/EvidenceRef"
+            },
+            "title": "Facts Refs",
+            "type": "array"
           },
           "request_key": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 1,
-            "maxLength": 128
+            "title": "Request Key",
+            "type": "string"
           }
         },
         "required": [
@@ -2313,94 +3058,92 @@
           "facts_refs",
           "request_key"
         ],
-        "additionalProperties": false
+        "title": "DraftSaveRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -2414,43 +3157,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": false,
@@ -2463,110 +3258,111 @@
       "name": "metamuse_draft_preview",
       "description": "檢查草稿，不發布。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
         "properties": {
           "draft_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Draft Id",
+            "type": "string"
           },
           "revision": {
-            "type": "integer",
-            "minimum": 1
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
           }
         },
         "required": [
           "draft_id",
           "revision"
         ],
-        "additionalProperties": false
+        "title": "DraftPreviewRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -2580,43 +3376,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": true,
@@ -2629,43 +3477,62 @@
       "name": "metamuse_export",
       "description": "本地artifact job，不上傳或發布。",
       "inputSchema": {
-        "type": "object",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "EvidenceRef": {
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "item_revision",
+                  "transcript_segment",
+                  "draft_revision"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Id",
+                "type": "string"
+              },
+              "revision": {
+                "minimum": 1,
+                "title": "Revision",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "kind",
+              "id",
+              "revision"
+            ],
+            "title": "EvidenceRef",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
         "properties": {
           "project_id": {
-            "type": "string",
+            "maxLength": 128,
             "minLength": 3,
-            "maxLength": 128
+            "title": "Project Id",
+            "type": "string"
           },
           "selection": {
-            "type": "array",
             "items": {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "enum": [
-                    "item_revision",
-                    "transcript_segment",
-                    "draft_revision"
-                  ]
-                },
-                "id": {
-                  "type": "string",
-                  "minLength": 3,
-                  "maxLength": 128
-                },
-                "revision": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              },
-              "required": [
-                "kind",
-                "id",
-                "revision"
-              ],
-              "additionalProperties": false
+              "$ref": "#/$defs/EvidenceRef"
             },
-            "minItems": 1
+            "minItems": 1,
+            "title": "Selection",
+            "type": "array"
+          },
+          "request_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Key",
+            "type": "string"
           },
           "format": {
             "enum": [
@@ -2674,108 +3541,103 @@
               "jsonl",
               "csv",
               "bundle"
-            ]
-          },
-          "request_key": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 128
+            ],
+            "title": "Format",
+            "type": "string"
           }
         },
         "required": [
           "project_id",
           "selection",
-          "format",
-          "request_key"
+          "request_key",
+          "format"
         ],
-        "additionalProperties": false
+        "title": "ExportRequest",
+        "type": "object"
       },
       "outputSchema": {
-        "type": "object",
-        "properties": {
-          "contract_version": {
-            "const": "1.1"
-          },
-          "request_id": {
-            "type": "string",
-            "minLength": 3,
-            "maxLength": 128
-          },
-          "status": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ErrorCode": {
             "enum": [
-              "ok",
-              "accepted",
-              "partial",
-              "error"
-            ]
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
           },
-          "data": {
-            "type": [
-              "object",
-              "array",
-              "null"
-            ]
-          },
-          "error": {
-            "anyOf": [
-              {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^E_[A-Z_]+$"
-                  },
-                  "message": {
-                    "type": "string",
-                    "maxLength": 1000000
-                  },
-                  "retry_class": {
-                    "enum": [
-                      "never",
-                      "safe_read",
-                      "reconcile",
-                      "user_action"
-                    ]
-                  }
-                },
-                "required": [
-                  "code",
-                  "message",
-                  "retry_class"
-                ],
-                "additionalProperties": false
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
               },
-              {
-                "type": "null"
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
               }
-            ]
-          },
-          "warnings": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "maxLength": 1000000
-            }
-          },
-          "next_cursor": {
-            "type": [
-              "string",
-              "null"
-            ]
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
           }
         },
-        "required": [
-          "contract_version",
-          "request_id",
-          "status",
-          "data",
-          "error",
-          "warnings",
-          "next_cursor"
-        ],
         "additionalProperties": false,
         "allOf": [
           {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
             "if": {
               "properties": {
                 "status": {
@@ -2789,43 +3651,95 @@
                   "type": "null"
                 },
                 "error": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string",
-                      "pattern": "^E_[A-Z_]+$"
-                    },
-                    "message": {
-                      "type": "string",
-                      "maxLength": 1000000
-                    },
-                    "retry_class": {
-                      "enum": [
-                        "never",
-                        "safe_read",
-                        "reconcile",
-                        "user_action"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "code",
-                    "message",
-                    "retry_class"
-                  ],
-                  "additionalProperties": false
-                }
-              }
-            },
-            "else": {
-              "properties": {
-                "error": {
-                  "type": "null"
+                  "type": "object"
                 }
               }
             }
           }
-        ]
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
       },
       "annotations": {
         "readOnlyHint": false,

@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "platform": {
+      "title": "Platform",
+      "type": "string"
+    },
+    "native_scope": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Native Scope"
+    },
+    "native_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Native Id"
+    },
+    "original_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Original Url"
+    },
+    "canonical_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Canonical Url"
+    },
+    "collection_method": {
+      "title": "Collection Method",
+      "type": "string"
+    },
+    "upstream_collection_method": {
+      "default": "unknown",
+      "title": "Upstream Collection Method",
+      "type": "string"
+    },
+    "assurance": {
+      "default": "unknown",
+      "title": "Assurance",
+      "type": "string"
+    },
+    "fetched_at": {
+      "title": "Fetched At",
+      "type": "string"
+    },
+    "use_basis": {
+      "additionalProperties": true,
+      "title": "Use Basis",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "platform",
+    "collection_method",
+    "fetched_at"
+  ],
+  "title": "Source",
+  "type": "object"
+}

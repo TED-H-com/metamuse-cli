@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "discussion_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Discussion Id",
+      "type": "string"
+    },
+    "exchange_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exchange Id"
+    },
+    "remote_session": {
+      "title": "Remote Session",
+      "type": "string"
+    },
+    "remote_message_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Remote Message Id"
+    },
+    "seq": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Seq"
+    },
+    "role": {
+      "title": "Role",
+      "type": "string"
+    },
+    "raw_status": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Raw Status"
+    },
+    "text": {
+      "maxLength": 1000000,
+      "title": "Text",
+      "type": "string"
+    },
+    "association": {
+      "default": "unassociated",
+      "title": "Association",
+      "type": "string"
+    },
+    "observed_at": {
+      "title": "Observed At",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "discussion_id",
+    "remote_session",
+    "role",
+    "text",
+    "observed_at"
+  ],
+  "title": "Message",
+  "type": "object"
+}

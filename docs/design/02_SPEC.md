@@ -123,7 +123,7 @@ metamuse doctor [--live]
 metamuse project create --name NAME --request-key KEY
 metamuse add --project ID --file PATH --kind FORMAT --request-key KEY [--run]
 metamuse add --project ID --url URL --resources LIST --access-grant ID --request-key KEY [--run]
-metamuse jobs list
+metamuse jobs list [--project ID] [--cursor CURSOR] [--limit N]
 metamuse jobs get ID
 metamuse jobs resume ID --request-key KEY
 metamuse jobs cancel ID --request-key KEY

@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "CollectLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_urls": {
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Max Urls",
+          "type": "integer"
+        },
+        "max_items": {
+          "maximum": 10000,
+          "minimum": 1,
+          "title": "Max Items",
+          "type": "integer"
+        },
+        "max_bytes": {
+          "minimum": 1,
+          "title": "Max Bytes",
+          "type": "integer"
+        },
+        "wall_clock_seconds": {
+          "maximum": 86400,
+          "minimum": 1,
+          "title": "Wall Clock Seconds",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "max_urls",
+        "max_items",
+        "max_bytes",
+        "wall_clock_seconds"
+      ],
+      "title": "CollectLimits",
+      "type": "object"
+    },
+    "LocalFileInput": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "local_file",
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 1000000,
+          "title": "Path",
+          "type": "string"
+        },
+        "format": {
+          "enum": [
+            "text",
+            "json",
+            "jsonl",
+            "csv",
+            "vtt",
+            "srt",
+            "media"
+          ],
+          "title": "Format",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "path",
+        "format"
+      ],
+      "title": "LocalFileInput",
+      "type": "object"
+    },
+    "TextInput": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "text",
+          "title": "Kind",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 1000000,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "title": "TextInput",
+      "type": "object"
+    },
+    "URLInput": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "url",
+          "title": "Kind",
+          "type": "string"
+        },
+        "url": {
+          "format": "uri",
+          "pattern": "^https?://",
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "url"
+      ],
+      "title": "URLInput",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "inputs": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "local_file": "#/$defs/LocalFileInput",
+            "text": "#/$defs/TextInput",
+            "url": "#/$defs/URLInput"
+          },
+          "propertyName": "kind"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/URLInput"
+          },
+          {
+            "$ref": "#/$defs/LocalFileInput"
+          },
+          {
+            "$ref": "#/$defs/TextInput"
+          }
+        ]
+      },
+      "maxItems": 100,
+      "minItems": 1,
+      "title": "Inputs",
+      "type": "array"
+    },
+    "resources": {
+      "items": {
+        "enum": [
+          "post",
+          "comments",
+          "media_metadata",
+          "subtitles",
+          "media_file"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Resources",
+      "type": "array"
+    },
+    "limits": {
+      "$ref": "#/$defs/CollectLimits"
+    },
+    "access_grant_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Access Grant Id"
+    },
+    "request_key": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Request Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "inputs",
+    "resources",
+    "limits",
+    "access_grant_id",
+    "request_key"
+  ],
+  "title": "CollectRequest",
+  "type": "object"
+}
