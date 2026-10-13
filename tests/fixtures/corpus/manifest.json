@@ -1,0 +1,736 @@
+{
+  "manifest_version": "1.0.0",
+  "corpus_name": "metamuse-cli-synthetic-fixture-corpus",
+  "provenance": "Synthetic test fixture corpus created for MetaMuse CLI tests",
+  "license": "CC0-1.0 (data dedication); Apache-2.0 (scripts)",
+  "fictional_statement": "All data is synthetic and obviously fictional: no real people, pages, accounts, URLs other than example.org/example.com/example.net/reserved test ranges, and no real secrets.",
+  "media_regeneration": "python3 tests/fixtures/corpus/make_media.py",
+  "verification": "python3 tests/fixtures/corpus/check_corpus.py",
+  "files": {
+    "import/posts_zh.jsonl": {
+      "format": "jsonl",
+      "purpose": "Traditional Chinese posts with emoji (ZWJ sequences, flags), CJK punctuation, full-width characters, embedded newlines, and varied collection methods",
+      "at_ids": [
+        "AT-002",
+        "AT-017"
+      ],
+      "sha256": "68d988e296e9c78110c865e8e37d75df87e4b038ab380e86de70140304d0ab89",
+      "size_bytes": 6251,
+      "expected": {
+        "total_rows": 10,
+        "valid_rows": 10,
+        "invalid_rows": []
+      }
+    },
+    "import/posts.json": {
+      "format": "json",
+      "purpose": "JSON array format of rich posts verifying array import handling",
+      "at_ids": [
+        "AT-002"
+      ],
+      "sha256": "06f8d1723febc276e9821304b0fc7f198d85b57b1e676daad44faf3e6e993eb0",
+      "size_bytes": 3446,
+      "expected": {
+        "total_rows": 5,
+        "valid_rows": 5,
+        "invalid_rows": []
+      }
+    },
+    "import/posts.csv": {
+      "format": "csv",
+      "purpose": "CSV import with quoted multi-line fields, emoji, and formula injection safety test row",
+      "at_ids": [
+        "AT-002",
+        "AT-025"
+      ],
+      "sha256": "3c6f97b26710690e111b0e6721d8111f08893c0184e9d7f5ebd10cb093abdf8b",
+      "size_bytes": 2364,
+      "expected": {
+        "total_rows": 6,
+        "has_bom": false,
+        "includes_formula_injection_test": true
+      }
+    },
+    "import/posts_bom.csv": {
+      "format": "csv",
+      "purpose": "UTF-8 BOM variant of CSV import verifying BOM stripping and multi-line parsing",
+      "at_ids": [
+        "AT-002",
+        "AT-025"
+      ],
+      "sha256": "aa49ac620f378cee3556131830fd12d0b49c86f6bcebc6210aab79dad246d05a",
+      "size_bytes": 2367,
+      "expected": {
+        "total_rows": 6,
+        "has_bom": true,
+        "includes_formula_injection_test": true
+      }
+    },
+    "import/notes.txt": {
+      "format": "text",
+      "purpose": "Plain text notes import with headings, timestamps, and bullet points",
+      "at_ids": [
+        "AT-002"
+      ],
+      "sha256": "e99ddaec2d685bff108cb7081239c6e7be78a55c5edde6c36108a4d34a63f87c",
+      "size_bytes": 551,
+      "expected": {
+        "format": "plain_text",
+        "lines": 18
+      }
+    },
+    "import/comments_tree.jsonl": {
+      "format": "jsonl",
+      "purpose": "Reply tree relationship test cases (nested replies, unresolved orphan, self-loop, 2-node/3-node cycles, duplicate native IDs with identical and different text, weak identities, identical text comments)",
+      "at_ids": [
+        "AT-004",
+        "AT-013"
+      ],
+      "sha256": "12b8b16a232a806e51c96b37e68d76ec8525403a0b59287142bf9843f5f157dc",
+      "size_bytes": 8250,
+      "expected": {
+        "total_rows": 19,
+        "valid_rows": 19,
+        "parent_resolutions": {
+          "post-tree-root": {
+            "expected_parent": null,
+            "status": "resolved",
+            "notes": "Root post"
+          },
+          "c-tree-valid-1": {
+            "expected_parent": "post-tree-root",
+            "status": "resolved",
+            "notes": "1st level valid child"
+          },
+          "r-tree-valid-1-1": {
+            "expected_parent": "c-tree-valid-1",
+            "status": "resolved",
+            "notes": "2nd level valid reply"
+          },
+          "r-tree-valid-1-1-1": {
+            "expected_parent": "r-tree-valid-1-1",
+            "status": "resolved",
+            "notes": "3rd level nested reply"
+          },
+          "c-tree-orphan": {
+            "expected_parent": null,
+            "status": "unresolved",
+            "notes": "Parent c-nonexistent-parent-999 is absent"
+          },
+          "c-tree-self-loop": {
+            "expected_parent": null,
+            "status": "rejected_self_parent",
+            "error_code": "E_INPUT_INVALID",
+            "notes": "Parent is self"
+          },
+          "c-cycle2-node-a": {
+            "expected_parent": null,
+            "status": "rejected_cycle",
+            "error_code": "E_INPUT_INVALID",
+            "notes": "2-node cycle with c-cycle2-node-b"
+          },
+          "c-cycle2-node-b": {
+            "expected_parent": null,
+            "status": "rejected_cycle",
+            "error_code": "E_INPUT_INVALID",
+            "notes": "2-node cycle with c-cycle2-node-a"
+          },
+          "c-cycle3-node-a": {
+            "expected_parent": null,
+            "status": "rejected_cycle",
+            "error_code": "E_INPUT_INVALID",
+            "notes": "3-node cycle with B and C"
+          },
+          "c-cycle3-node-b": {
+            "expected_parent": null,
+            "status": "rejected_cycle",
+            "error_code": "E_INPUT_INVALID",
+            "notes": "3-node cycle with A and C"
+          },
+          "c-cycle3-node-c": {
+            "expected_parent": null,
+            "status": "rejected_cycle",
+            "error_code": "E_INPUT_INVALID",
+            "notes": "3-node cycle with A and B"
+          },
+          "c-dup-identical": {
+            "expected_parent": "post-tree-root",
+            "status": "resolved",
+            "notes": "Duplicate native ID with identical text (idempotent dedup)"
+          },
+          "c-dup-revision": {
+            "expected_parent": "post-tree-root",
+            "status": "resolved",
+            "notes": "Duplicate native ID with different text (revision append per AT-013)"
+          },
+          "weak_identity_anonymous": {
+            "status": "weak_identity_created",
+            "notes": "native_id is null; internal weak identity created per SPEC §3"
+          },
+          "c-same-text-01": {
+            "expected_parent": "post-tree-root",
+            "status": "resolved",
+            "notes": "Distinct identity despite identical text as c-same-text-02"
+          },
+          "c-same-text-02": {
+            "expected_parent": "post-tree-root",
+            "status": "resolved",
+            "notes": "Distinct identity despite identical text as c-same-text-01"
+          }
+        }
+      }
+    },
+    "import/comments_mixed_bad.jsonl": {
+      "format": "jsonl",
+      "purpose": "Interleaved valid and bad rows testing item-by-item rejection without dropping valid data (syntax error, wrong type, unknown kind, missing required field, >1MiB oversized text field, NaN/Inf literals)",
+      "at_ids": [
+        "AT-003",
+        "AT-041"
+      ],
+      "sha256": "2ae65cf99bd9147ed03ec274a8555cbd9736966b4ff6b9b3707aae70a8b8188d",
+      "size_bytes": 2595051,
+      "expected": {
+        "total_rows": 14,
+        "valid_rows": 7,
+        "invalid_rows": [
+          {
+            "line": 2,
+            "error_code": "E_INPUT_INVALID",
+            "reason": "Invalid JSON syntax (unquoted value error)"
+          },
+          {
+            "line": 4,
+            "error_code": "E_INPUT_INVALID",
+            "reason": "Wrong type: kind field is integer 12345"
+          },
+          {
+            "line": 6,
+            "error_code": "E_UNSUPPORTED",
+            "reason": "Unknown kind: unsupported_broadcast"
+          },
+          {
+            "line": 8,
+            "error_code": "E_INPUT_INVALID",
+            "reason": "Missing required field: platform"
+          },
+          {
+            "line": 10,
+            "error_code": "E_LIMIT_REACHED",
+            "reason": "Oversized text field exceeding 1 MiB limit"
+          },
+          {
+            "line": 12,
+            "error_code": "E_INPUT_INVALID",
+            "reason": "Invalid non-canonical literal: NaN"
+          },
+          {
+            "line": 13,
+            "error_code": "E_INPUT_INVALID",
+            "reason": "Invalid non-canonical literal: Infinity"
+          }
+        ]
+      }
+    },
+    "import/media_only.jsonl": {
+      "format": "jsonl",
+      "purpose": "Media-only posts with null text and media attachments (image, video, audio)",
+      "at_ids": [
+        "AT-002",
+        "AT-041"
+      ],
+      "sha256": "c4f4aa067ffcc577d93f8f504c291b82418930fdfc14db86e20bc73b9f1e5988",
+      "size_bytes": 1691,
+      "expected": {
+        "total_rows": 4,
+        "valid_rows": 4,
+        "text_null_count": 4,
+        "media_refs_count": 5
+      }
+    },
+    "import/project_b_comments.jsonl": {
+      "format": "jsonl",
+      "purpose": "Second project comments file whose parent IDs collide with project A, verifying cross-project boundary rejection",
+      "at_ids": [
+        "AT-004"
+      ],
+      "sha256": "04cca5c2fea12cfdbca66b7f014e54f3e4054a1d013cd9ec65b7682ac5fbb78e",
+      "size_bytes": 2401,
+      "expected": {
+        "total_rows": 5,
+        "valid_rows": 5,
+        "cross_project_expectations": {
+          "p-b-001": {
+            "status": "resolved",
+            "notes": "Project B root post"
+          },
+          "c-b-colliding-parent-01": {
+            "status": "rejected_cross_project",
+            "error_code": "E_REFERENCE_INVALID",
+            "notes": "Parent post-tree-root belongs to project A"
+          },
+          "c-b-colliding-parent-02": {
+            "status": "rejected_cross_project",
+            "error_code": "E_REFERENCE_INVALID",
+            "notes": "Parent c-tree-valid-1 belongs to project A"
+          },
+          "c-tree-valid-1": {
+            "status": "resolved_in_project_b",
+            "notes": "Same native_id as project A but isolated to project B namespace"
+          },
+          "c-b-valid-01": {
+            "status": "resolved",
+            "notes": "Normal child of p-b-001"
+          }
+        }
+      }
+    },
+    "make_media.py": {
+      "format": "python",
+      "purpose": "Generator script for tiny media fixtures using ffmpeg fixed argv lists (no shell) and regenerates oversized JSONL row",
+      "at_ids": [
+        "AT-003",
+        "AT-006",
+        "AT-007"
+      ],
+      "sha256": "045805ef0b1853550fa97bca613173c3a9a80f8eb455b784fd2b78a6c5f737ea",
+      "size_bytes": 12774,
+      "expected": {
+        "runnable": true,
+        "dependencies": [
+          "ffmpeg",
+          "python3"
+        ]
+      }
+    },
+    "check_corpus.py": {
+      "format": "python",
+      "purpose": "Standalone stdlib verification test suite for corpus integrity, manifest conformance, and acceptance criteria",
+      "at_ids": [
+        "AT-002",
+        "AT-003",
+        "AT-004",
+        "AT-005",
+        "AT-006",
+        "AT-007",
+        "AT-013",
+        "AT-014",
+        "AT-017",
+        "AT-025",
+        "AT-028",
+        "AT-030",
+        "AT-031",
+        "AT-032",
+        "AT-041"
+      ],
+      "sha256": "4f4638aea729cca56327591fa42ce6894814ae6b89ca5729bef583fa9c8b49e1",
+      "size_bytes": 16255,
+      "expected": {
+        "runnable": true,
+        "dependencies": [
+          "python3"
+        ]
+      }
+    },
+    "README.md": {
+      "format": "markdown",
+      "purpose": "Comprehensive documentation of corpus provenance, CC0 dedication, record format, media regeneration, and acceptance test mapping",
+      "at_ids": [
+        "AT-035"
+      ],
+      "sha256": "21f6895962be8f96bdf93302622aee6292b5b1a7ae4d39049ba50db7c26c851c",
+      "size_bytes": 10670,
+      "expected": {
+        "format": "markdown",
+        "license": "CC0-1.0 (data) / Apache-2.0 (scripts)"
+      }
+    },
+    "media/tiny.mp4": {
+      "format": "mp4",
+      "purpose": "1-second tiny MP4 video generated via ffmpeg (testsrc + sine 440Hz, 64x64, 10fps, libx264+aac)",
+      "at_ids": [
+        "AT-006",
+        "AT-007"
+      ],
+      "sha256": "a12d0d16e49735385a1dbf1bc920c4c4373aae084fecc3748dfb3d086d433176",
+      "size_bytes": 7867,
+      "expected": {
+        "valid": true,
+        "mime": "video/mp4",
+        "duration_seconds": 1.0,
+        "error_code": null
+      }
+    },
+    "media/tiny.wav": {
+      "format": "wav",
+      "purpose": "1-second tiny WAV audio generated via ffmpeg (sine 440Hz, 8000Hz mono PCM)",
+      "at_ids": [
+        "AT-006"
+      ],
+      "sha256": "a5a5deccfcdaa602d674e8ea2ba799c48257144e2e45a1160a427527972141f0",
+      "size_bytes": 16078,
+      "expected": {
+        "valid": true,
+        "mime": "audio/wav",
+        "duration_seconds": 1.0,
+        "error_code": null
+      }
+    },
+    "media/tiny.png": {
+      "format": "png",
+      "purpose": "16x16 tiny PNG image generated via ffmpeg",
+      "at_ids": [
+        "AT-006"
+      ],
+      "sha256": "16527ee6591acb91419c0b164345837abd1fcc802fd6d389d6566e733337f0fc",
+      "size_bytes": 103,
+      "expected": {
+        "valid": true,
+        "mime": "image/png",
+        "duration_seconds": null,
+        "error_code": null
+      }
+    },
+    "media/truncated.mp4": {
+      "format": "mp4",
+      "purpose": "Damaged MP4 cut in half, verifying that damaged media is rejected and not marked ready",
+      "at_ids": [
+        "AT-006"
+      ],
+      "sha256": "acdb8c96fcd8eefc430b29f189c78192fbe457b55f177081f7d90f6230aaac99",
+      "size_bytes": 3933,
+      "expected": {
+        "valid": false,
+        "mime": "application/octet-stream",
+        "error_code": "E_RESOURCE_UNAVAILABLE",
+        "reason": "Damaged/truncated MP4 container"
+      }
+    },
+    "media/zero_bytes.mp4": {
+      "format": "mp4",
+      "purpose": "0-byte empty MP4 file verifying zero-length media rejection",
+      "at_ids": [
+        "AT-006"
+      ],
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "expected": {
+        "valid": false,
+        "mime": "application/octet-stream",
+        "error_code": "E_RESOURCE_UNAVAILABLE",
+        "reason": "Zero-byte file"
+      }
+    },
+    "media/html_as.mp4": {
+      "format": "mp4",
+      "purpose": "HTML bytes disguised with .mp4 extension, verifying container format validation",
+      "at_ids": [
+        "AT-006"
+      ],
+      "sha256": "936a25781443369afa1c249a3ebb6ee8f4dfc0dbe4466ba055415fbccc819153",
+      "size_bytes": 144,
+      "expected": {
+        "valid": false,
+        "mime": "text/html",
+        "error_code": "E_UNSUPPORTED",
+        "reason": "HTML content disguised as MP4"
+      }
+    },
+    "media/same_bytes_a.mp4": {
+      "format": "mp4",
+      "purpose": "Byte-identical copy A of tiny.mp4 verifying asset deduplication by SHA-256",
+      "at_ids": [
+        "AT-007"
+      ],
+      "sha256": "a12d0d16e49735385a1dbf1bc920c4c4373aae084fecc3748dfb3d086d433176",
+      "size_bytes": 7867,
+      "expected": {
+        "valid": true,
+        "mime": "video/mp4",
+        "duration_seconds": 1.0,
+        "shares_bytes_with": "media/tiny.mp4"
+      }
+    },
+    "media/same_bytes_b.mp4": {
+      "format": "mp4",
+      "purpose": "Byte-identical copy B of tiny.mp4 verifying multi-source provenance preservation",
+      "at_ids": [
+        "AT-007"
+      ],
+      "sha256": "a12d0d16e49735385a1dbf1bc920c4c4373aae084fecc3748dfb3d086d433176",
+      "size_bytes": 7867,
+      "expected": {
+        "valid": true,
+        "mime": "video/mp4",
+        "duration_seconds": 1.0,
+        "shares_bytes_with": "media/tiny.mp4"
+      }
+    },
+    "search/search_corpus.jsonl": {
+      "format": "jsonl",
+      "purpose": "260 synthetic zh-Hant items across Project A (230) and Project B (30) with exact query hit counts and pagination support",
+      "at_ids": [
+        "AT-014"
+      ],
+      "sha256": "f7fdf418a1976ddfaa2a535648c44eb0808993acdd69003d1372825259e37af3",
+      "size_bytes": 132663,
+      "expected": {
+        "total_items": 260,
+        "projects": {
+          "project_a": 230,
+          "project_b": 30
+        },
+        "queries": {
+          "氣候變遷": {
+            "expected_hits_project_a": 120,
+            "expected_hits_project_b": 0,
+            "total_hits": 120,
+            "notes": "Pagination test: Page 1 (50), Page 2 (50), Page 3 (20) with no gaps or duplicates"
+          },
+          "數位轉型": {
+            "expected_hits_project_a": 65,
+            "expected_hits_project_b": 0,
+            "total_hits": 65,
+            "notes": "Pagination test: Page 1 (50), Page 2 (15)"
+          },
+          "地方創生": {
+            "expected_hits_project_a": 30,
+            "expected_hits_project_b": 10,
+            "total_hits": 40,
+            "notes": "Project boundary isolation test (A: 30, B: 10)"
+          },
+          "開放資料": {
+            "expected_hits_project_a": 15,
+            "expected_hits_project_b": 20,
+            "total_hits": 35,
+            "notes": "Project boundary isolation test (A: 15, B: 20)"
+          },
+          "數據分析": {
+            "expected_hits_project_a": 25,
+            "expected_hits_project_b": 0,
+            "total_hits": 25,
+            "notes": "Traditional Chinese query (verifies no auto Trad/Simp conversion)"
+          },
+          "数据分析": {
+            "expected_hits_project_a": 8,
+            "expected_hits_project_b": 0,
+            "total_hits": 8,
+            "notes": "Simplified Chinese query (verifies no auto Trad/Simp conversion)"
+          },
+          "智慧城市治理創新方案": {
+            "expected_hits_project_a": 3,
+            "expected_hits_project_b": 0,
+            "total_hits": 3,
+            "notes": "Near-duplicates test (3 distinct items with slight phrase variations)"
+          },
+          "火星探測登陸計畫": {
+            "expected_hits_project_a": 0,
+            "expected_hits_project_b": 0,
+            "total_hits": 0,
+            "notes": "Baseline zero-hit query"
+          }
+        }
+      }
+    },
+    "security/paths.jsonl": {
+      "format": "jsonl",
+      "purpose": "Path traversal, outside-root, NUL byte, overlong, Windows-style, option flag, and symlink security cases",
+      "at_ids": [
+        "AT-031"
+      ],
+      "sha256": "b675ca72c37c6874a80da7e3832c5b5a7bfe7a8ec9e66e4cbb2e3373eb547cea",
+      "size_bytes": 6889,
+      "expected": {
+        "total_rows": 18,
+        "allowed_count": 2,
+        "rejected_count": 14,
+        "runtime_symlink_test_count": 2
+      }
+    },
+    "security/prompt_injection.jsonl": {
+      "format": "jsonl",
+      "purpose": "Prompt injection attacks attempting override instructions, permit forgery, token exfiltration, and shell execution",
+      "at_ids": [
+        "AT-032"
+      ],
+      "sha256": "64bcd68ba128ee4b68752d8bb7ee31b501d3d784f834b605a3d3ce428a576b61",
+      "size_bytes": 3611,
+      "expected": {
+        "total_rows": 8,
+        "valid_rows": 8,
+        "expected_treatment": "data_only_no_execution"
+      }
+    },
+    "security/secrets.jsonl": {
+      "format": "jsonl",
+      "purpose": "Clearly fake credentials (access_token, S3 X-Amz-Signature, Bearer token, session Cookie, API key) for redaction testing",
+      "at_ids": [
+        "AT-028"
+      ],
+      "sha256": "d6c6544fbbd81ef784bdbda6ca0555ce1fde9bd719a99adcaeff07d2a8e6bb46",
+      "size_bytes": 3869,
+      "expected": {
+        "total_rows": 8,
+        "valid_rows": 8,
+        "expected_treatment": "redact_all_fake_secrets"
+      }
+    },
+    "security/urls.jsonl": {
+      "format": "jsonl",
+      "purpose": "Comprehensive SSRF and URL validation suite (loopback, private RFC1918, cloud metadata, CGNAT, encodings, ports, schemes, allowed URLs)",
+      "at_ids": [
+        "AT-030"
+      ],
+      "sha256": "c41155a762d0f74323f84393ba2e84b395364e59411db5140f14039cf3cde7f9",
+      "size_bytes": 7838,
+      "expected": {
+        "total_rows": 37,
+        "allowed_count": 4,
+        "rejected_count": 33
+      }
+    },
+    "subtitles/bom_crlf.srt": {
+      "format": "srt",
+      "purpose": "Valid SRT subtitle with UTF-8 BOM and CRLF line endings",
+      "at_ids": [
+        "AT-005"
+      ],
+      "sha256": "b2e5ab0ecf52739347c35d943208a7c335a79b32fb19bbdd814475b904f6b9fc",
+      "size_bytes": 185,
+      "expected": {
+        "valid": true,
+        "cue_count": 2,
+        "has_overlaps": false,
+        "error_code": null,
+        "notes": "UTF-8 BOM and CRLF line endings"
+      }
+    },
+    "subtitles/end_before_start.srt": {
+      "format": "srt",
+      "purpose": "Invalid SRT subtitle where end timestamp < start timestamp",
+      "at_ids": [
+        "AT-005"
+      ],
+      "sha256": "a9aa4d20654ffd9dd8f74e9270106d29646256a8e8926d0ffa9dee6fcf38257f",
+      "size_bytes": 79,
+      "expected": {
+        "valid": false,
+        "cue_count": 0,
+        "has_overlaps": false,
+        "error_code": "E_INPUT_INVALID",
+        "reason": "end timestamp < start timestamp"
+      }
+    },
+    "subtitles/header_only.vtt": {
+      "format": "vtt",
+      "purpose": "WebVTT header with zero cues testing empty data handling",
+      "at_ids": [
+        "AT-041"
+      ],
+      "sha256": "161af4815dd2fd2c63e6efff02bede5725eaa89b77f6981016de5d0c1e678344",
+      "size_bytes": 43,
+      "expected": {
+        "valid": true,
+        "cue_count": 0,
+        "has_overlaps": false,
+        "error_code": null,
+        "notes": "Header only, 0 cues"
+      }
+    },
+    "subtitles/html_disguised.vtt": {
+      "format": "vtt",
+      "purpose": "HTML error page disguised as .vtt file verifying non-subtitle format rejection",
+      "at_ids": [
+        "AT-041"
+      ],
+      "sha256": "3b7ffc6ae58ee1472b300811950d64a46c7da78678b0a2b3c1ee8842ee34798a",
+      "size_bytes": 252,
+      "expected": {
+        "valid": false,
+        "cue_count": 0,
+        "has_overlaps": false,
+        "error_code": "E_UNSUPPORTED",
+        "reason": "HTML content disguised as VTT"
+      }
+    },
+    "subtitles/malformed_timestamp.vtt": {
+      "format": "vtt",
+      "purpose": "Malformed timestamp syntax (>59s) in WebVTT cue",
+      "at_ids": [
+        "AT-005"
+      ],
+      "sha256": "2a0b9096c25e3225fef784968b5dac4466e13ad5713e8b94dafbb5fca0967535",
+      "size_bytes": 116,
+      "expected": {
+        "valid": false,
+        "cue_count": 0,
+        "has_overlaps": false,
+        "error_code": "E_INPUT_INVALID",
+        "reason": "Malformed timestamp value"
+      }
+    },
+    "subtitles/negative_time.vtt": {
+      "format": "vtt",
+      "purpose": "Negative start timestamp (-00:00:01.000) violating start >= 0",
+      "at_ids": [
+        "AT-005"
+      ],
+      "sha256": "bb8428dcbf5cda34d647043a7ac74c1cdda166dd0c0c15eed7432624a043efa4",
+      "size_bytes": 103,
+      "expected": {
+        "valid": false,
+        "cue_count": 0,
+        "has_overlaps": false,
+        "error_code": "E_INPUT_INVALID",
+        "reason": "Negative start time"
+      }
+    },
+    "subtitles/overlap.vtt": {
+      "format": "vtt",
+      "purpose": "Reasonable overlapping WebVTT cues to verify preservation and overlap flagging",
+      "at_ids": [
+        "AT-005"
+      ],
+      "sha256": "f8279327d2e664dd7aa28a0158e510289f6e3820150141340aaea25ed5609ec4",
+      "size_bytes": 175,
+      "expected": {
+        "valid": true,
+        "cue_count": 2,
+        "has_overlaps": true,
+        "error_code": null,
+        "notes": "Reasonable overlaps preserved and flagged"
+      }
+    },
+    "subtitles/valid.srt": {
+      "format": "srt",
+      "purpose": "Standard SubRip (.srt) subtitle with multi-line text and 3 cues",
+      "at_ids": [
+        "AT-005"
+      ],
+      "sha256": "56826df4a60a0964192e31f2539e0784c1ec4fb1083496f02bf41aca3dac09f2",
+      "size_bytes": 256,
+      "expected": {
+        "valid": true,
+        "cue_count": 3,
+        "has_overlaps": false,
+        "error_code": null,
+        "notes": "Standard SubRip format"
+      }
+    },
+    "subtitles/valid_zh.vtt": {
+      "format": "vtt",
+      "purpose": "Valid WebVTT subtitle with cue settings, styling tags, multi-line cues, and zh-Hant text",
+      "at_ids": [
+        "AT-005"
+      ],
+      "sha256": "eb74b922996baa3ab56ee5ccb04dbb77bfb70773449faf0c8f5935e7df010f42",
+      "size_bytes": 483,
+      "expected": {
+        "valid": true,
+        "cue_count": 3,
+        "has_overlaps": false,
+        "error_code": null,
+        "notes": "Cue settings, styling tags, multi-line cues"
+      }
+    }
+  }
+}

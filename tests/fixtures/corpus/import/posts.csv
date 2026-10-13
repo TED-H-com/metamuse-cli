@@ -1,0 +1,22 @@
+platform,kind,native_id,native_scope,parent_native_id,text,source_url,upstream_collection_method,created_at_raw,created_at,author_display,media
+generic,post,post-zh-001,forum-main,,"【開源專案更新】MetaMuse CLI v1.1 正式啟動測試！🎉
+本次改版聚焦於「本地優先」（Local-First）與資料所有權保護。
+歡迎社群夥伴一同參與測試與回饋！👨‍💻👩‍💻
+詳細規範請參閱 docs/design/ 目錄。",https://example.org/posts/meta-v1-launch,synthetic_fixture,3小時前,2026-10-13T16:00:00Z,島民工程師 🧑‍💻,
+facebook,post,post-zh-002,page-civic-tech,,"今天在台北舉辦了『數位人文與開放資料』分享會 🇹🇼。
+現場交流非常熱絡，特別感謝各位志工協助！
+重點摘要：
+１．資料來源保真度（Provenance）是核心原則。
+２．不可依賴單一雲端平台備份。
+３．保留原始時間戳記與上下文脈絡。",https://example.com/fb/posts/456789,manual_export,昨天 14:30,2026-10-12T06:30:00Z,林小芬（志工團長）,
+youtube,post,post-zh-003,channel-audio-lab,,"【講座錄影釋出】臺灣社群媒體演算法解析（第42場）🎙️。
+本集包含講者實測數據與問答環節，建議搭配字幕研讀。
+影片規格為 1080p 60fps，支援高音質 AAC 聲軌。",https://example.org/yt/watch?v=synth001,api,2026-10-10,2026-10-10T02:00:00Z,社群研究室 📻,"[{""ref"": ""media/tiny.mp4"", ""kind"": ""video""}]"
+generic,post,post-zh-004,group-climate,,"氣候變遷因應策略：由下而上的公民倡議 🌱
+從減塑生活到社區微電網，每一個小步驟都不可或缺。
+你今天自備環保杯了嗎？🥤✨
+一起為下一代保留乾淨的天空。",https://example.net/news/climate-action-2026,browser_automation,5天前,2026-10-08T09:15:00Z,綠島守護者 🐢,
+threads,post,post-zh-005,,,"早安！今天又是充滿挑戰的除錯日 ☕🐛。
+遇到一個奇怪的 race condition，花了三個小時才定位在 lock epoch 更新順序。
+深呼吸，先去河濱公園散步一下～ 🚶‍♂️",https://example.org/threads/@daming/post/991,unknown,1小時前,2026-10-13T18:00:00Z,陳大明 ☕,
+generic,post,post-csv-formula-01,,,"=SUM(1,2);-2+3;@A1;+CMD|' /C calc'!A0",https://example.org/csv/formula,synthetic_fixture,剛剛,2026-10-13T19:00:00Z,試算表公式測試員,
