@@ -144,6 +144,15 @@ metamuse mcp
 
 CLI add預設持久化；--run前景執行。沒有長駐worker時前景命令結束不代表工作會在背景繼續。MCP可附同套件worker，但同workspace只能一個executor。
 
+B08 local safety commands: `auth import --file PATH [--provider LABEL] [--account LABEL]`;
+`permit create --project ID --kind access|share --scope-file PATH --provider LABEL
+--account LABEL --issuer LABEL --expires-at TIMESTAMP --max-uses N --request-key KEY
+[--exact-digest SHA256]`; `permit revoke ID --request-key KEY`; `permit list --project ID`.
+Expiry is required, timezone-aware, and at most 30 days after issuance; uses are 1–1000.
+Exact access targets, exact packets or an immutable displayed evidence snapshot bind
+project/provider/account. [Safety API](../dev/SAFETY_API.md) defines scope formats and
+backend obligations. These are human-only commands, never MCP self-approval tools.
+
 JSON envelope：contract_version、request_id、status(ok/accepted/partial/error)、data、error、warnings、next_cursor。exit 0代表本命令成功，可能僅queued；2輸入錯、3需要人／權限、4backend不相容、5部分或等待逾時、6需對帳、7儲存／內部錯、130中止。
 
 ## 9. MCP與Skill

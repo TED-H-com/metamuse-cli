@@ -116,8 +116,6 @@ def test_cli_projects_jobs_worker(tmp_path, capsys):
             "one",
         ],
         ["mcp"],
-        ["auth", "import", "--file", "missing.json"],
-        ["permit", "create", "--project", "prj_fixture", "--kind", "share", "--request-key", "one"],
     ],
 )
 def test_registered_stubs_return_unsupported(tmp_path, capsys, command):
