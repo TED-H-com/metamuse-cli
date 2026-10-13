@@ -1,11 +1,22 @@
-"""One receive consumer, bounded frame and body sizes, no partial success.
+"""One receive consumer per link, with a deadline and a frame budget.
 
 The fake gateway is in-process. Nothing here opens a socket.
+
+Provenance: nikships/muse-cli (MIT, Copyright (c) 2026 Nik Ships), commit
+ebcb6310432ad2d39927bcb59e686330b0538310, ``src/muse_cli/gateway.py``.
+``_read_frame`` warns that two consumers corrupt Noise decrypt state and
+misroute responses. ``Gateway.request`` stops reading at a deadline. This
+file is new code: ownership lives on the link, ``collect`` refuses to run
+without that ownership, and the deadline is ``time.monotonic``. The MIT
+notice is in ``THIRD_PARTY_NOTICES.md``.
 """
 
 from __future__ import annotations
 
+import threading
+import time
 from collections import deque
+from collections.abc import Callable
 from typing import Self
 
 from framing import (
@@ -28,14 +39,44 @@ from framing import (
 )
 
 _CHUNK_ID = 1
+DEFAULT_COLLECT_TIMEOUT_S = 30.0
+MAX_COLLECT_FRAMES = 64
 
 
 class InProcessLink:
-    """Byte pipe. `push` is what the fake gateway would send next."""
+    """Byte pipe. Receive ownership is on the link, not on one loop object."""
 
     def __init__(self) -> None:
         self.sent: list[bytes] = []
         self.incoming: deque[bytes | None] = deque()
+        self._mu = threading.Lock()
+        self._owner: object | None = None
+        self._collecting = False
+
+    def acquire(self, owner: object) -> None:
+        with self._mu:
+            if self._owner is not None:
+                raise ProtocolMismatch("second receive consumer")
+            self._owner = owner
+
+    def release(self, owner: object) -> None:
+        with self._mu:
+            if self._owner is owner:
+                self._owner = None
+                self._collecting = False
+
+    def begin_collect(self, owner: object) -> None:
+        with self._mu:
+            if self._owner is not owner:
+                raise ProtocolMismatch("collect outside receive ownership")
+            if self._collecting:
+                raise ProtocolMismatch("concurrent collection")
+            self._collecting = True
+
+    def end_collect(self, owner: object) -> None:
+        with self._mu:
+            if self._owner is owner:
+                self._collecting = False
 
     def send(self, frame: bytes) -> None:
         self.sent.append(frame)
@@ -43,14 +84,21 @@ class InProcessLink:
     def push(self, frame: bytes | None) -> None:
         self.incoming.append(frame)
 
-    def recv(self) -> bytes | None:
+    def recv(self, timeout: float = 0.0) -> bytes | None:
+        """Return the next frame, or None if none arrives within ``timeout``.
+
+        This pipe does not block. An empty queue returns None immediately.
+        A live socket must use ``timeout`` as its read deadline so a quiet
+        peer cannot stall the single consumer past the collect deadline.
+        """
+        del timeout
         if not self.incoming:
             return None
         return self.incoming.popleft()
 
 
 class ReceiveLoop:
-    """Serial unary collector. A second enter() while held is a protocol error."""
+    """Serial unary collector. The link allows one owner at a time."""
 
     def __init__(
         self,
@@ -58,21 +106,27 @@ class ReceiveLoop:
         *,
         max_frame_bytes: int = MAX_FRAME_BYTES,
         max_body_bytes: int = MAX_BODY_BYTES,
+        clock: Callable[[], float] | None = None,
     ) -> None:
+        if max_frame_bytes > MAX_FRAME_BYTES:
+            raise FrameTooLarge(
+                f"plaintext frame cap {max_frame_bytes} exceeds {MAX_FRAME_BYTES}"
+            )
         self.link = link
         self.max_frame_bytes = max_frame_bytes
         self.max_body_bytes = max_body_bytes
+        self._clock = clock or time.monotonic
         self._held = False
         self.next_stream_id = 1
 
     def __enter__(self) -> Self:
-        if self._held:
-            raise ProtocolMismatch("second receive consumer")
+        self.link.acquire(self)
         self._held = True
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self._held = False
+        self.link.release(self)
 
     def open_request(
         self,
@@ -83,6 +137,8 @@ class ReceiveLoop:
         headers: list[Header] | None = None,
         service: int = SERVICE_DAEMON,
     ) -> int:
+        if not self._held:
+            raise ProtocolMismatch("send outside receive ownership")
         stream_id = self.next_stream_id
         self.next_stream_id += 1
         frame = ServiceFrame(
@@ -99,17 +155,48 @@ class ReceiveLoop:
         self.link.send(encode_client_frame(service, frame, _CHUNK_ID))
         return stream_id
 
-    def collect(self, stream_id: int) -> tuple[int, bytes]:
-        """Return (status, body) only when end_body has been seen for this stream."""
+    def collect(
+        self,
+        stream_id: int,
+        *,
+        timeout_s: float = DEFAULT_COLLECT_TIMEOUT_S,
+        max_frames: int = MAX_COLLECT_FRAMES,
+    ) -> tuple[int, bytes]:
+        """Return (status, body) only when end_body has been seen for this stream.
+
+        ``begin_collect`` runs outside the ``try`` so a refused second caller
+        does not clear the owner's collecting flag.
+        """
+        self.link.begin_collect(self)
+        try:
+            return self._collect(stream_id, timeout_s=timeout_s, max_frames=max_frames)
+        finally:
+            self.link.end_collect(self)
+
+    def _collect(
+        self,
+        stream_id: int,
+        *,
+        timeout_s: float,
+        max_frames: int,
+    ) -> tuple[int, bytes]:
         status: int | None = None
         parts: list[bytes] = []
         total = 0
         complete = False
         skipped = 0
+        seen = 0
+        deadline = self._clock() + timeout_s
         while not complete:
-            raw = self.link.recv()
+            if seen >= max_frames:
+                raise IncompleteBody("frame budget exhausted")
+            if self._clock() >= deadline:
+                raise IncompleteBody("receive deadline exhausted")
+            remaining = deadline - self._clock()
+            raw = self.link.recv(timeout=max(0.0, remaining))
             if raw is None:
                 break
+            seen += 1
             if len(raw) > self.max_frame_bytes:
                 raise FrameTooLarge(f"frame is {len(raw)} bytes")
             service_frame = decode_server_frame(raw, max_frame_bytes=self.max_frame_bytes)

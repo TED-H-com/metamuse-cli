@@ -2,7 +2,7 @@
 
 Inspection date: 2026-10-13. This is an adoption plan with pinned commits and versions. It does not mean any upstream program has been copied into `src/`. The offline Muse spike is recorded in [MUSE_SPIKE.md](MUSE_SPIKE.md). Notices are in `THIRD_PARTY_NOTICES.md`.
 
-Clones are shallow (`git clone --depth 1`) and live outside this repo at `/home/ted-h/MetaMuseCLI-work/upstream/`. SHAs below are `git log -1` on those clones. Each SHA is the default-branch HEAD that GitHub served on the inspection date, not a review of older history.
+Clones are shallow (`git clone --depth 1`) and live in a sibling directory outside the repo (for example `../../upstream/` relative to a worktree checkout). SHAs below are `git log -1` on those clones. Each SHA is the default-branch HEAD that GitHub served on the inspection date, not a review of older history.
 
 License text below is what is in the tree at that SHA. Platform permission to read Facebook or to call Muse is a separate question and is not granted by these licenses. See `docs/design/06_SOURCES.md`.
 
@@ -108,13 +108,13 @@ Files inspected only to name the neutral requirements they imply:
 |---|---|---|
 | `crawl.py` | `crawl` | One post URL in, comments out. |
 | `configuration/action.py` | `show_more_comments`, `show_all_replies` | Comments and replies are paged by expanding the page. |
-| `configuration/action.py` | `get_comments` | A comment row has text, a display name, an optional mention, and a parent post. |
+| `configuration/action.py` | `get_comments` | The appended dict has `id`, `username`, `text`, `tag_name`, and `is_spam` only. It has no parent-post or parent-comment field. |
 | `configuration/config.py` | `login_facebook`, `configure_driver` | Selenium login. Credentials do not belong in source. |
 | `requirements.txt` | `selenium==4.19.0` | Browser automation, not an HTTP API. |
 
 `filter_spam` in `action.py` matches a hard-coded keyword list. That list is not our classifier and must not be copied.
 
-May adopt: nothing of the source. The product requirements, written in our own words, are parent/reply structure, author display, text, mention, expansion until a limit, and an explicit partial result when expansion stops. B13 implements those against an operator-supplied Playwright storage state (see below), for one approved page type.
+May adopt: nothing of the source. Parent linkage is a MetaMuse requirement, not an upstream row field: a reply must record which comment or post it belongs to. `show_all_replies` only clicks through the page until a threshold or a short idle timeout; it does not emit that link. Author display, text, an optional mention (`tag_name`), expansion until a limit, and an explicit partial result when expansion stops are the rest of the requirement, written in our own words. B13 implements those against an operator-supplied Playwright storage state (see below), for one approved page type.
 
 ### Hao0321/claude-skill-social-post
 
@@ -164,14 +164,14 @@ Versions are `info.version` from `https://pypi.org/pypi/<project>/json` fetched 
 | `mcp==2.3.0` (uploaded 2026-10-02T22:06:52Z) | MIT | `>=3.10` | Official MCP Python SDK. Wire and protocol versions stay in the SDK (SDS §11). | Requires `httpx2>=2.10.0` and `pydantic>=2.12`. On Python 3.14 it requires `anyio>=4.10` and `starlette>=0.48`; on 3.12 the lower bounds in the wheel apply. |
 | `yt-dlp==2026.8.19` (imported version string `2026.08.19`) | Unlicense | `>=3.10` | Remote media metadata and download. Do not shell out to the CLI. | Extractor breakage is upstream drift, not a pin bug. Plugins and config: see below. |
 | `playwright==1.63.0` | Apache-2.0 | `>=3.10` | Authorized browser session for one Facebook page type. | The pip package does not include a browser. |
-| `noiseprotocol==0.3.1` (uploaded 2020-03-03) | MIT | metadata says `~=3.5` | Noise_XX for the Muse gateway. Same library muse-cli declares (`noiseprotocol>=0.3`). | Last release is 2020. It did complete a Noise_XX handshake on CPython 3.12.13 and under `uv run --python 3.14` on 2026-10-13. Re-check on the next bump. Do not replace it with hand-written Noise. |
+| `noiseprotocol==0.3.1` (uploaded 2020-03-03) | MIT. `Copyright (c) 2017 Piotr Lizończyk`, package `LICENSE`. | metadata says `~=3.5` | Noise_XX for the Muse gateway. Same library muse-cli declares (`noiseprotocol>=0.3`). | Last release is 2020. `noise.constants.MAX_MESSAGE_LEN` is 65535 and the check is on the ciphertext. Plaintext that still round-trips is 65519 bytes because the AES-GCM tag is 16 bytes. A Noise_XX handshake completed on CPython 3.12 during the spike tests. Re-check on the next bump. Do not replace it with hand-written Noise. |
 | `cryptography==50.0.2` | Apache-2.0 OR BSD-3-Clause | `>=3.9`, excluding 3.9.0 and 3.9.1 | Transitive dependency of `noiseprotocol`. X25519, AES-GCM, and SHA-256 live here. | Pin only if B02 wants a direct lock. Resolved version observed via `uv run --python 3.12 --with noiseprotocol==0.3.1`. |
 | `protobuf==7.36.2` (uploaded 2026-09-17) | BSD-3-Clause | `>=3.10` | Optional for B09 if it loads `desc0.bin` / `desc1.bin` instead of the spike codec. | The spike codec does not import it. Byte comparison on 2026-10-13 used this release. |
 | `curl_cffi==0.16.3` (uploaded 2026-09-02) | MIT | `>=3.10` | B09 live transport. `PROTOCOL.md` says plain TLS to the gateway is reset and a Chrome fingerprint is required, with certificate verification left on. | Not used by the offline spike. No live call in this pass. |
 
 `websockets` 17.2 (BSD-3-Clause) was looked up and **not** selected. The documented gateway path is `curl_cffi`’s WebSocket with `impersonate="chrome"` and `verify=True` (`gateway.py` in the pinned muse-cli commit). A standard-library or `websockets` client would not apply that fingerprint.
 
-ffmpeg is an external binary, not a Python dependency and not bundled. On this machine `ffmpeg -version` reported `ffmpeg version 8.0.1-3ubuntu2` at `/usr/bin/ffmpeg`, configured with `--enable-gpl` and `--enable-libx264` among other libraries. The project states that FFmpeg itself is LGPL-2.1-or-later, and that GPL-2.0-or-later applies to the whole build when GPL parts are used ([ffmpeg.org/legal.html](https://ffmpeg.org/legal.html), fetched 2026-10-13). That page names libx264 as a GPL library. This machine’s binary is a GPL build. MetaMuse invokes it as a separate process and does not vendor the binary or its libraries. Missing ffmpeg is `E_DEPENDENCY_MISSING` for media jobs and must not block offline import.
+ffmpeg is an external binary, not a Python dependency and not bundled. On the inspection host, `ffmpeg -version` reported `ffmpeg version 8.0.1-3ubuntu2`, configured with `--enable-gpl` and `--enable-libx264` among other libraries. The project states that FFmpeg itself is LGPL-2.1-or-later, and that GPL-2.0-or-later applies to the whole build when GPL parts are used ([ffmpeg.org/legal.html](https://ffmpeg.org/legal.html), fetched 2026-10-13). That page names libx264 as a GPL library. This machine’s binary is a GPL build. MetaMuse invokes it as a separate process and does not vendor the binary or its libraries. Missing ffmpeg is `E_DEPENDENCY_MISSING` for media jobs and must not block offline import.
 
 SQLite is the stdlib `sqlite3` module. WAL behavior is [sqlite.org/wal.html](https://sqlite.org/wal.html), already cited by `06_SOURCES.md`. No separate pin.
 
@@ -222,11 +222,11 @@ Commands were version queries only. No host config was read or written. No MCP s
 | Command | stdout |
 |---|---|
 | `claude --version` | `2.1.288 (Claude Code)` |
-| `~/.local/bin/codex --version` | `codex-cli 0.160.0` |
+| `codex --version` | `codex-cli 0.160.0` |
 | `grok --version` | `grok 1.0.46 (2765805b9442) [stable]` |
 | `agy --version` | `1.3.4` |
 
-`agy` is the ELF at `/home/ted-h/.local/bin/agy`. `agy --help` lists an `mcp` subcommand (“Manage MCP servers”) and was not run further. `claude --help`, `codex --help`, and `grok --help` also mention MCP configuration commands. Those commands were not run.
+`agy --help` lists an `mcp` subcommand (“Manage MCP servers”) and was not run further. `claude --help`, `codex --help`, and `grok --help` also mention MCP configuration commands. Those commands were not run.
 
 These versions are not evidence that any host speaks `2026-07-28`, validates `outputSchema`, or keeps stdout clean. SPEC §9: do not claim a host supports a feature until B14 runs it.
 

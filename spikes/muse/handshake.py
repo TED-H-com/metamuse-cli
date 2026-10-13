@@ -48,11 +48,7 @@ def _party(role: str):
     return party
 
 
-def handshake() -> dict:
-    """Initiator is the client. Responder is the fake gateway. Bytes stay in memory."""
-    client = _party("initiator")
-    gateway = _party("responder")
-
+def _exchange_empty(client, gateway) -> None:
     message1 = bytes(client.write_message(b""))
     if gateway.read_message(message1) != b"":
         raise RuntimeError("handshake message 1 payload was not empty")
@@ -64,6 +60,19 @@ def handshake() -> dict:
         raise RuntimeError("handshake message 3 payload was not empty")
     if not (client.handshake_finished and gateway.handshake_finished):
         raise RuntimeError("handshake did not finish")
+
+
+def open_transport():
+    """Finished in-memory Noise_XX session. No socket and no token."""
+    client = _party("initiator")
+    gateway = _party("responder")
+    _exchange_empty(client, gateway)
+    return client, gateway
+
+
+def handshake() -> dict:
+    """Initiator is the client. Responder is the fake gateway. Bytes stay in memory."""
+    client, gateway = open_transport()
 
     request = ServiceFrame(
         stream_id=1,
@@ -89,17 +98,7 @@ def handshake() -> dict:
     # A second finished handshake is a different session. Its transport keys
     # must not open the first session's ciphertext. NoiseInvalidMessage is the
     # library's AES-GCM authentication failure.
-    other_client = _party("initiator")
-    other_gateway = _party("responder")
-    other1 = bytes(other_client.write_message(b""))
-    if other_gateway.read_message(other1) != b"":
-        raise RuntimeError("second handshake payload was not empty")
-    other2 = bytes(other_gateway.write_message(b""))
-    if other_client.read_message(other2) != b"":
-        raise RuntimeError("second handshake payload was not empty")
-    other3 = bytes(other_client.write_message(b""))
-    if other_gateway.read_message(other3) != b"":
-        raise RuntimeError("second handshake payload was not empty")
+    _other_client, other_gateway = open_transport()
     try:
         other_gateway.decrypt(ciphertext)
     except NoiseInvalidMessage:

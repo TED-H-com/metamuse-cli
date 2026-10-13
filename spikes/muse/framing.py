@@ -14,6 +14,13 @@ This module is a new protobuf wire encoder and decoder for those field
 numbers. It is not a copy of muse_cli/gateway.py, and it does not embed the
 descriptor binaries. Field numbers are an inspection result, not something
 PROTOCOL.md spells out. See docs/dev/MUSE_SPIKE.md.
+
+Plaintext frames are capped at the noiseprotocol 0.3.1 transport budget.
+That library's ``noise.constants.MAX_MESSAGE_LEN`` is 65535 and applies to
+the ciphertext (``noise/connection.py`` encrypt and decrypt). The AES-GCM
+tag is 16 bytes, so the largest plaintext that still round-trips is 65519.
+``encrypt`` itself accepts a larger plaintext; the peer then rejects the
+ciphertext. This cap refuses that plaintext before it is handed to Noise.
 """
 
 from __future__ import annotations
@@ -21,7 +28,13 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
-MAX_FRAME_BYTES = 256 * 1024
+# noiseprotocol 0.3.1: noise/constants.py MAX_MESSAGE_LEN, plus the 16-byte
+# Noise AEAD tag. Ciphertext budget and plaintext budget are different.
+NOISE_MAX_CIPHERTEXT_BYTES = 65535
+NOISE_TAG_BYTES = 16
+NOISE_MAX_PLAINTEXT_BYTES = NOISE_MAX_CIPHERTEXT_BYTES - NOISE_TAG_BYTES
+
+MAX_FRAME_BYTES = NOISE_MAX_PLAINTEXT_BYTES
 MAX_BODY_BYTES = 1024 * 1024
 MAX_SKIPPED_FRAMES = 32
 
@@ -446,7 +459,7 @@ def decode_client_frame(raw: bytes, *, max_frame_bytes: int = MAX_FRAME_BYTES) -
 def encode_noise_transport_frame(frame: NoiseTransportFrame) -> bytes:
     if frame.total_chunks != 1 or frame.chunk_index != 0:
         raise ProtocolMismatch("multi-chunk reassembly is not supported")
-    return b"".join(
+    raw = b"".join(
         [
             _varint_field(1, frame.chunk_id),
             _varint_field(2, frame.chunk_index),
@@ -454,6 +467,9 @@ def encode_noise_transport_frame(frame: NoiseTransportFrame) -> bytes:
             _bytes_field(4, frame.payload),
         ]
     )
+    if len(raw) > MAX_FRAME_BYTES:
+        raise FrameTooLarge(f"frame is {len(raw)} bytes")
+    return raw
 
 
 def decode_noise_transport_frame(buf: bytes) -> NoiseTransportFrame:
