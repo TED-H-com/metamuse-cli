@@ -71,6 +71,9 @@ def parser() -> Parser:
     add.add_argument("--kind")
     add.add_argument("--resources")
     add.add_argument("--access-grant")
+    add.add_argument("--item", help="Attach a subtitle or media file to this item")
+    add.add_argument("--asset", help="Attach a subtitle file to this asset")
+    add.add_argument("--language", help="Subtitle language; defaults to the file or und")
     add.add_argument("--run", action="store_true")
     _request_key(add)
     search = commands.add_parser("search")
@@ -216,6 +219,9 @@ def _collect_request(ctx: app.AppContext, args: argparse.Namespace) -> m.Collect
         limits=limits,
         access_grant_id=args.access_grant,
         request_key=args.request_key,
+        attach_item_id=args.item,
+        attach_asset_id=args.asset,
+        language=args.language,
     )
 
 

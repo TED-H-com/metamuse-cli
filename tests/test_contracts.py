@@ -119,10 +119,19 @@ def test_envelope_consistency():
 def test_capability_and_stub(ctx):
     capabilities = app.inspect_capabilities(ctx).data["capabilities"]
     assert len(capabilities) == 15
-    assert sum(c["implementation"] == "implemented" for c in capabilities) == 5
+    assert sum(c["implementation"] == "implemented" for c in capabilities) == 6
     assert all(not c["effective"] for c in capabilities if c["implementation"] == "absent")
+    collect = next(row for row in capabilities if row["name"] == "metamuse_collect")
+    assert collect["verification"] == "fixture_passed" and collect["effective"]
     request = json.loads((ROOT / "docs/design/examples/tool-call.json").read_text())["arguments"]
-    assert app.submit_collect(ctx, request).error.code == m.ErrorCode.UNSUPPORTED
+    assert app.submit_collect(ctx, request).error.code == m.ErrorCode.REFERENCE_INVALID
+    remote = {
+        **request,
+        "inputs": [{"kind": "url", "url": "https://example.org/fixture"}],
+    }
+    remote_result = app.submit_collect(ctx, remote)
+    assert remote_result.error.code == m.ErrorCode.UNSUPPORTED
+    assert "B12" in remote_result.error.next_action and "B13" in remote_result.error.next_action
     assert (
         app.submit_collect(ctx, {**request, "approved": True}).error.code
         == m.ErrorCode.INPUT_INVALID

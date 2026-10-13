@@ -10,9 +10,12 @@ discovery, plugin framework or second orchestration loop exists.
 `src/metamuse/` is the one import package. `app.py` is the shared application layer;
 `cli.py` parses/renders, `jobs.py` executes, `store.py` persists, `models.py` defines
 contracts, `paths.py` owns private paths, and `schemas.py` regenerates contracts.
-`collect.py`, `media.py`, `muse.py`, `content.py`, `safety.py`, `mcp.py` contain the
-typed feature seams for later tasks; their application functions currently raise
-`E_UNSUPPORTED`. Registration hooks are empty and implemented-tool sets are empty.
+`collect.py` implements local `submit_collect` for files and pasted text. Remote URL
+collection stays `E_UNSUPPORTED` until B12/B13. `media.py` provides local media and
+subtitle helpers and registers no operation. `muse.py`, `content.py`, `safety.py` and
+`mcp.py` still raise `E_UNSUPPORTED` from their application functions. `collect.py`
+declares `metamuse_collect`. The other implemented-tool sets stay empty. `safety.py`
+owns the local input reader that collect uses. Record formats are in `docs/dev/COLLECT.md`.
 
 ```python
 from metamuse.app import AppContext, create_project
@@ -42,9 +45,11 @@ never grant scope.
 ## Application functions and errors
 
 All fifteen SDS functions exist. Implemented: `inspect_capabilities`, `create_project`,
-`get_job`, `list_jobs`, `control_job`. The other ten validate their typed requests and
-return `E_UNSUPPORTED` / `not implemented in this build`. `TOOL_FUNCTIONS` maps the
-fifteen contract names to their functions; MCP should use it rather than shelling out.
+`get_job`, `list_jobs`, `control_job`, and local `submit_collect` (files and text;
+remote URLs stay `E_UNSUPPORTED` until B12/B13, and `next_action` names those tasks
+and LIVE). The other nine validate their typed requests and return `E_UNSUPPORTED` /
+`not implemented in this build`. `TOOL_FUNCTIONS` maps the fifteen contract names to
+their functions; MCP should use it rather than shelling out.
 
 Every wrapper accepts its model or a Python dictionary. `@application(RequestModel)`
 validates extra fields and returns clean envelopes for expected input, store and I/O

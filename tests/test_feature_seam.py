@@ -103,8 +103,11 @@ def test_each_application_delegates_with_validated_request(
 
     monkeypatch.setattr(module, function, delegate)
     result = getattr(app, function)(ctx, payload)
-    assert result.error.code == m.ErrorCode.UNSUPPORTED
-    assert result.error.message == "not implemented in this build"
+    if module_name == "collect":
+        assert result.error.code == m.ErrorCode.REFERENCE_INVALID
+    else:
+        assert result.error.code == m.ErrorCode.UNSUPPORTED
+        assert result.error.message == "not implemented in this build"
     assert len(seen) == 1
     bad = getattr(app, function)(ctx, {**payload, "approved": True})
     assert bad.error.code == m.ErrorCode.INPUT_INVALID and len(seen) == 1
@@ -389,8 +392,8 @@ def test_unsupported_add_run_does_not_start_executor(ctx, monkeypatch, capsys):
     monkeypatch.setattr(
         cli, "Executor", lambda store: pytest.fail("Unsupported add started worker")
     )
-    assert cli.main(_add_args(PROJECT)) == 4
-    assert json.loads(capsys.readouterr().out)["error"]["code"] == "E_UNSUPPORTED"
+    assert cli.main(_add_args(PROJECT)) == 2
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "E_REFERENCE_INVALID"
 
 
 def test_mcp_lifecycle_registers_and_owns_stdout(ctx, monkeypatch, capsys):
@@ -424,6 +427,11 @@ def test_feature_capabilities_aggregate_without_granting_verification(ctx, monke
     rows = {row["name"]: row for row in app.inspect_capabilities(ctx).data["capabilities"]}
     for name in ("metamuse_collect", "metamuse_search", "metamuse_muse_send"):
         assert rows[name]["implementation"] == "implemented"
+    # Declaring a tool does not grant verification. Collect's own status hook does,
+    # because local import is implemented and covered by fixtures.
+    assert rows["metamuse_collect"]["verification"] == "fixture_passed"
+    assert rows["metamuse_collect"]["effective"]
+    for name in ("metamuse_search", "metamuse_muse_send"):
         assert rows[name]["verification"] == "unverified"
         assert rows[name]["permission"] == "not_configured" and not rows[name]["effective"]
     assert rows["metamuse_export"]["implementation"] == "absent"
