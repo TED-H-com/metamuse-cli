@@ -6,6 +6,9 @@ build-backend = "hatchling.build"
 name = "metamuse-cli"
 version = "0.1.0.dev0"
 description = "Local-first MetaMuse application core"
+readme = "README.md"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 requires-python = ">=3.12"
 dependencies = [
     "platformdirs>=4.13.0",
