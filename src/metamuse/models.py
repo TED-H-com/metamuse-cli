@@ -647,13 +647,25 @@ class MuseCloseExchangeRequest(Model):
     request_key: RequestKey
 
 
+class DraftPreferences(Model):
+    """Explicit preferences for this draft; saving never learns a permanent policy."""
+
+    language: Text = "und"
+    emoji: Text = "unspecified"
+    format: Literal["plain_text", "markdown"] = "plain_text"
+    scope: Literal["this_draft"] = "this_draft"
+
+
 class DraftSaveRequest(Model):
     project_id: ID
     draft_id: ID | None = None
     expected_revision: Revision | None = None
     text: Text
     platform: Literal["facebook", "instagram", "threads", "youtube", "tiktok", "x", "generic"]
-    facts_refs: list[EvidenceRef]
+    facts_refs: list[EvidenceRef] = Field(default_factory=list)
+    assets: list[ID] = Field(default_factory=list)
+    variant: dict[str, Any] = Field(default_factory=dict)
+    preferences: DraftPreferences = Field(default_factory=DraftPreferences)
     request_key: RequestKey
 
 

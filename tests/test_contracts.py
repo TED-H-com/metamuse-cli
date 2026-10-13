@@ -119,7 +119,11 @@ def test_envelope_consistency():
 def test_capability_and_stub(ctx):
     capabilities = app.inspect_capabilities(ctx).data["capabilities"]
     assert len(capabilities) == 15
-    assert sum(c["implementation"] == "implemented" for c in capabilities) == 5
+    from metamuse import content
+
+    assert sum(c["implementation"] == "implemented" for c in capabilities) == (
+        len(app.CORE_IMPLEMENTED_TOOLS) + len(content.IMPLEMENTED_TOOLS)
+    )
     assert all(not c["effective"] for c in capabilities if c["implementation"] == "absent")
     request = json.loads((ROOT / "docs/design/examples/tool-call.json").read_text())["arguments"]
     assert app.submit_collect(ctx, request).error.code == m.ErrorCode.UNSUPPORTED

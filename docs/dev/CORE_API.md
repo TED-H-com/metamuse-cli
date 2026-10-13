@@ -11,8 +11,9 @@ discovery, plugin framework or second orchestration loop exists.
 `cli.py` parses/renders, `jobs.py` executes, `store.py` persists, `models.py` defines
 contracts, `paths.py` owns private paths, and `schemas.py` regenerates contracts.
 `collect.py`, `media.py`, `muse.py`, `content.py`, `safety.py`, `mcp.py` contain the
-typed feature seams for later tasks; their application functions currently raise
-`E_UNSUPPORTED`. Registration hooks are empty and implemented-tool sets are empty.
+typed feature seams. B07/B11 implements the five content functions; see
+[CONTENT_API.md](CONTENT_API.md). Other feature functions currently raise
+`E_UNSUPPORTED` and have empty operation/tool declarations.
 
 ```python
 from metamuse.app import AppContext, create_project
@@ -39,9 +40,10 @@ workspace configuration, not separate CLI/MCP settings. Higher limits never gran
 
 ## Application functions and errors
 
-All fifteen SDS functions exist. Implemented: `inspect_capabilities`, `create_project`,
-`get_job`, `list_jobs`, `control_job`. The other ten validate their typed requests and
-return `E_UNSUPPORTED` / `not implemented in this build`. `TOOL_FUNCTIONS` maps the
+All fifteen SDS functions exist. Core implements `inspect_capabilities`, `create_project`,
+`get_job`, `list_jobs`, `control_job`; B07/B11 implements `search_evidence`, `prepare_packet`,
+`save_draft`, `preview_draft`, `export_objects`. The other five validate their typed
+requests and return `E_UNSUPPORTED` / `not implemented in this build`. `TOOL_FUNCTIONS` maps the
 fifteen contract names to their functions; MCP should use it rather than shelling out.
 
 Every wrapper accepts its model or a Python dictionary. `@application(RequestModel)`
@@ -81,7 +83,8 @@ actual bytes before delegation. It preserves CRLF and Unicode composition. Quest
 use `question_max_utf8_bytes`; text, selections, refs, facts and permit scope files use
 `text_max_bytes`. JSON files reject duplicate keys and nonfinite numbers and are then
 validated by the request model. Local import/media and auth files are passed as paths;
-their feature owners enforce path/content policy. No stub performs a network request.
+their feature owners enforce path/content policy. No stub or content function performs
+a network request.
 
 `create_project` returns the Project directly in `data`. `get_job` returns
 `data={"job": Job, "steps": [JobStep, ...]}`. `control_job` returns job_id/state/

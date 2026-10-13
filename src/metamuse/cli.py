@@ -76,6 +76,7 @@ def parser() -> Parser:
     _project(search)
     search.add_argument("--query", required=True)
     search.add_argument("--cursor")
+    search.add_argument("--limit", type=int, default=50)
     packet = commands.add_parser("packet").add_subparsers(dest="action", required=True)
     prepare = packet.add_parser("prepare")
     _project(prepare)
@@ -110,6 +111,9 @@ def parser() -> Parser:
     save.add_argument("--draft")
     save.add_argument("--expected-revision", type=int)
     save.add_argument("--facts-file")
+    save.add_argument("--assets-file")
+    save.add_argument("--variant-file")
+    save.add_argument("--preferences-file")
     _request_key(save)
     preview = draft.add_parser("preview")
     preview.add_argument("id")
@@ -325,7 +329,10 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
             return _run_foreground(ctx, result) if args.run else result
         case "search":
             return app.search_evidence(
-                ctx, m.SearchRequest(project_id=args.project, query=args.query, cursor=args.cursor)
+                ctx,
+                m.SearchRequest(
+                    project_id=args.project, query=args.query, cursor=args.cursor, limit=args.limit
+                ),
             )
         case "packet":
             return app.prepare_packet(
@@ -391,6 +398,15 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
                         facts_refs=_read_json(args.facts_file, ctx.limits.text_max_bytes)
                         if args.facts_file
                         else [],
+                        assets=_read_json(args.assets_file, ctx.limits.text_max_bytes)
+                        if args.assets_file
+                        else [],
+                        variant=_read_json(args.variant_file, ctx.limits.text_max_bytes)
+                        if args.variant_file
+                        else {},
+                        preferences=_read_json(args.preferences_file, ctx.limits.text_max_bytes)
+                        if args.preferences_file
+                        else m.DraftPreferences(),
                         request_key=args.request_key,
                     ),
                 )
