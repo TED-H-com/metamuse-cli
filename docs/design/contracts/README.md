@@ -1,0 +1,9 @@
+# 機器可讀設計基線
+
+十五個工具都是待實作application契約，不是已運行MCP。恢復版提供自包含inputSchema及共同output envelope；細項成功data依02_SPEC/03_SDS在實作模型補齊後產生專屬outputSchema。不要宣稱外層schema通過就驗證了資料內容、權限或平台能力。
+
+EvidenceRef為kind/id/revision的統一識別。Packet只允許item_revision和transcript_segment；draft_revision可匯出但不能冒充原始來源。此語義需在app層明確驗證。
+
+UUID等ID由實作建立，示例使用固定假ID。JSON Schema不能證明同project、grant有效性、來源真實性、parent無循環、UTF-8 bytes或副作用結果。這些是產品測試，不是文件驗證。
+
+文件版與契約版1.1表示重新提供的交接基線；不是已發行CLI版本。實作前把詳細模型與工具schema一起固定，勿維護平行真相。

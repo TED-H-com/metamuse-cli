@@ -1,0 +1,197 @@
+{
+  "document_version": "1.1",
+  "requirements": [
+    {
+      "id": "FR-001",
+      "priority": "P0",
+      "title": "單一產品與共用核心",
+      "requirement": "一個套件／版本／workspace store，CLI／MCP 呼叫相同 application functions。"
+    },
+    {
+      "id": "FR-002",
+      "priority": "P0",
+      "title": "初始化與診斷",
+      "requirement": "無憑證可離線 init／doctor，區分實作、驗證、環境與權限。"
+    },
+    {
+      "id": "FR-003",
+      "priority": "P0",
+      "title": "本地匯入",
+      "requirement": "文字、CSV／JSON／JSONL、VTT／SRT 及指定媒體；逐項錯誤與真實來源。"
+    },
+    {
+      "id": "FR-004",
+      "priority": "P0-LIVE",
+      "title": "有界來源收集",
+      "requirement": "已獲准且已驗收的來源，指定 URL 與上限；不是全帳號歷史巡查。"
+    },
+    {
+      "id": "FR-005",
+      "priority": "P0-LIVE",
+      "title": "留言及回覆",
+      "requirement": "保留來源 ID、父子關係、原文和缺漏；真實目標另驗收。"
+    },
+    {
+      "id": "FR-006",
+      "priority": "P0",
+      "title": "影音與字幕",
+      "requirement": "metadata、可用字幕、必要下載；沒有字幕保持 unavailable，遠端路線另驗收。"
+    },
+    {
+      "id": "FR-007",
+      "priority": "P0",
+      "title": "持久化任務",
+      "requirement": "先保存再排程；單 workspace 執行所有權；重啟不丟 queue。"
+    },
+    {
+      "id": "FR-008",
+      "priority": "P0",
+      "title": "續跑與防重複",
+      "requirement": "讀取與外部發送重試分離；request_key 去重，不明副作用先對帳。"
+    },
+    {
+      "id": "FR-009",
+      "priority": "P0",
+      "title": "來源與版本",
+      "requirement": "原文、原始時間、取得時間、來源方法、可靠 ID 及版本證據。"
+    },
+    {
+      "id": "FR-010",
+      "priority": "P0",
+      "title": "素材關聯與去重",
+      "requirement": "相同 bytes 可共用，不能把不同來源、發布或留言身分合併。"
+    },
+    {
+      "id": "FR-011",
+      "priority": "P0",
+      "title": "搜尋與讀取",
+      "requirement": "project 隔離、分頁、片段與版本引用；中文測試。"
+    },
+    {
+      "id": "FR-012",
+      "priority": "P0",
+      "title": "對外分享資料包",
+      "requirement": "固定資料版本、必要摘錄、預覽、來源方法與分享範圍。"
+    },
+    {
+      "id": "FR-013",
+      "priority": "P0-LIVE",
+      "title": "Muse 對話",
+      "requirement": "主題 session 映射、文字問答和追問；不接管 harness。"
+    },
+    {
+      "id": "FR-014",
+      "priority": "P0",
+      "title": "Muse 失敗恢復",
+      "requirement": "送達不明先讀原對話，保存多段回答；回答不等於研究完成。"
+    },
+    {
+      "id": "FR-015",
+      "priority": "P0",
+      "title": "主 Agent 主導",
+      "requirement": "主 Agent 提問題和文案，工具沒有第二個隱藏策略 Agent。"
+    },
+    {
+      "id": "FR-016",
+      "priority": "P0",
+      "title": "草稿與偏好",
+      "requirement": "草稿版本、平台變體及明示偏好；無作者公式或自動永久學習。"
+    },
+    {
+      "id": "FR-017",
+      "priority": "P0",
+      "title": "檢查與匯出",
+      "requirement": "客觀格式、引用缺口、文字／Markdown／素材包；不冒稱發布。"
+    },
+    {
+      "id": "FR-018",
+      "priority": "P0",
+      "title": "CLI／MCP／Skill",
+      "requirement": "同一份工具契約、乾淨 stdio、明確錯誤；Skill 不授予權限。"
+    },
+    {
+      "id": "FR-019",
+      "priority": "P0",
+      "title": "憑證與權限",
+      "requirement": "平台帳號隔離，秘密不進 prompt／log／public repo。"
+    },
+    {
+      "id": "FR-020",
+      "priority": "P0",
+      "title": "輸入與程序安全",
+      "requirement": "URL、出口、路徑、大小、固定 argv；來源文字不能變程式。"
+    },
+    {
+      "id": "FR-021",
+      "priority": "P0",
+      "title": "公開發行",
+      "requirement": "授權清冊、乾淨歷史、虛構樣本、非官方聲明、能力實測表。"
+    },
+    {
+      "id": "FR-022",
+      "priority": "P0",
+      "title": "刪除與備份",
+      "requirement": "索引與派生物、剩餘引用、backup restore；不保證遠端抹除。"
+    },
+    {
+      "id": "FR-023",
+      "priority": "P0",
+      "title": "觀測与容量",
+      "requirement": "真實 count／bytes／duration；未知用量／費用不捏造。"
+    },
+    {
+      "id": "FR-024",
+      "priority": "P1",
+      "title": "基礎素材處理",
+      "requirement": "可選 ASR、音訊、指定裁切、轉檔、圖片壓縮。"
+    },
+    {
+      "id": "FR-025",
+      "priority": "P1",
+      "title": "來源變更與影響",
+      "requirement": "追加新觀測、標記引用草稿過期；不可見不推定刪除。"
+    },
+    {
+      "id": "FR-026",
+      "priority": "P1",
+      "title": "留言工作清單",
+      "requirement": "待回覆／草稿／已處理，正確 parent；預設 draft_only。"
+    },
+    {
+      "id": "FR-027",
+      "priority": "P1-LIVE",
+      "title": "發布與回覆",
+      "requirement": "預覽及批准綁目標／內容／附件／期限；單目的地驗收。"
+    },
+    {
+      "id": "FR-028",
+      "priority": "P1",
+      "title": "發布對帳",
+      "requirement": "不明禁止重送；各平台結果分開，不保證原子發布。"
+    },
+    {
+      "id": "FR-029",
+      "priority": "P1",
+      "title": "中性成效快照",
+      "requirement": "原值、定義、時間、分母、缺值；不自動制定策略。"
+    },
+    {
+      "id": "FR-030",
+      "priority": "P2",
+      "title": "指定排程與監測",
+      "requirement": "只有使用者指定時區、日期及範圍；無最佳時段策略。"
+    },
+    {
+      "id": "FR-031",
+      "priority": "P2",
+      "title": "其他入口與協作者",
+      "requirement": "訊息入口／provider 共用核心，不先做外掛框架。"
+    },
+    {
+      "id": "FR-032",
+      "priority": "P2",
+      "title": "輕量工作台",
+      "requirement": "現有工具的視圖，不新增資料真相、SaaS 或隱藏 AI。"
+    }
+  ]
+}

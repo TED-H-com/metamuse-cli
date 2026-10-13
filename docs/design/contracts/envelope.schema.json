@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "contract_version": {
+      "const": "1.1"
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 128
+    },
+    "status": {
+      "enum": [
+        "ok",
+        "accepted",
+        "partial",
+        "error"
+      ]
+    },
+    "data": {
+      "type": [
+        "object",
+        "array",
+        "null"
+      ]
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "pattern": "^E_[A-Z_]+$"
+            },
+            "message": {
+              "type": "string",
+              "maxLength": 1000000
+            },
+            "retry_class": {
+              "enum": [
+                "never",
+                "safe_read",
+                "reconcile",
+                "user_action"
+              ]
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "retry_class"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 1000000
+      }
+    },
+    "next_cursor": {
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "contract_version",
+    "request_id",
+    "status",
+    "data",
+    "error",
+    "warnings",
+    "next_cursor"
+  ],
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "error"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "data": {
+            "type": "null"
+          },
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "pattern": "^E_[A-Z_]+$"
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 1000000
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ]
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "error": {
+            "type": "null"
+          }
+        }
+      }
+    }
+  ]
+}

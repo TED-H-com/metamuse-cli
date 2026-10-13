@@ -1,0 +1,17 @@
+# 設計範例，並非已實作parser。
+[app]
+network_mode = "offline"
+telemetry_enabled = false
+[worker]
+max_executors = 1
+[limits]
+max_urls = 10
+max_items = 500
+max_bytes = 1073741824
+wall_clock_seconds = 900
+packet_max_utf8_bytes = 49152
+question_max_utf8_bytes = 8192
+[muse]
+enabled = false
+[publishing]
+enabled = false

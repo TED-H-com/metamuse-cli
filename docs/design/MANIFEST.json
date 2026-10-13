@@ -1,0 +1,131 @@
+{
+  "document_version": "1.1",
+  "status": "rebuilt_design_handoff",
+  "files": [
+    {
+      "path": "01_PLAN.md",
+      "bytes": 6252,
+      "sha256": "27c4458c6b4bf136850450297ebbe3a62e1222d5b17f38767daee33cfb3c17ef"
+    },
+    {
+      "path": "02_SPEC.md",
+      "bytes": 14623,
+      "sha256": "8a2d46892fd59ff189d20827a3a148c902a7a2aca901863f3070dc41db1a6a22"
+    },
+    {
+      "path": "03_SDS.md",
+      "bytes": 15453,
+      "sha256": "e1d14983e1d4d0bcab06f0cdaefe1a71c91ec39275570eb58565ac1b95e7475b"
+    },
+    {
+      "path": "04_BACKLOG.md",
+      "bytes": 2416,
+      "sha256": "2312256c34167aee204f0ab0023db2e855a6166c63b986ef89012253a7bc1e39"
+    },
+    {
+      "path": "05_ACCEPTANCE.md",
+      "bytes": 7023,
+      "sha256": "0d1e8b0e75adcf806b9baa65e8ec2e5d92c18d3db02dba9d0742dd36f682615d"
+    },
+    {
+      "path": "06_SOURCES.md",
+      "bytes": 2624,
+      "sha256": "430b40c77161ce2324f47d8e15681e53716fac7cbe1f06e0f25183bfa69c72bd"
+    },
+    {
+      "path": "AGENTS.md",
+      "bytes": 1213,
+      "sha256": "616120c6fc12a8514470a1a27daf975c0f5f4cd8eb1302fb612a3611f8e8f4ce"
+    },
+    {
+      "path": "CODING_AGENT_KICKOFF.md",
+      "bytes": 748,
+      "sha256": "a6eb1c7273de6445f006ca9c17c1222c50d3490218ac4707c3627884c3cf597d"
+    },
+    {
+      "path": "DESIGN_VALIDATION_REPORT.json",
+      "bytes": 632,
+      "sha256": "bfabb913f6fbbb5327025f524103476c1b1e14342ff7272eebd3b6c70009fff5"
+    },
+    {
+      "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
+      "bytes": 39135,
+      "sha256": "d238d1a0f90b17abe639c6432b722c976d3278c71c08af5e16d2ee350362ccd9"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1538,
+      "sha256": "bab9f8f3924772257ef6c1e8b78edcd4479505f22be9fad82e4805e16ed9f022"
+    },
+    {
+      "path": "appendices/FEATURE_INVENTORY.md",
+      "bytes": 5254,
+      "sha256": "5a4120e7b6854af48eed8b9314fda1a01b91745f61c26d79bc518d8eb3d69d46"
+    },
+    {
+      "path": "contracts/README.md",
+      "bytes": 906,
+      "sha256": "40935dbe92de51c8540e9d8250cc54b86044ceec3439c481943ec07efe943733"
+    },
+    {
+      "path": "contracts/acceptance-cases.json",
+      "bytes": 13803,
+      "sha256": "7d0b38a699df675907ba5c4deb8882cdc1870620fa63891694fa93643cc8a57b"
+    },
+    {
+      "path": "contracts/backlog.json",
+      "bytes": 5024,
+      "sha256": "cc0d25deb6adf7105437334f6d93e1b122a19254151bd880164749b800394b2a"
+    },
+    {
+      "path": "contracts/envelope.schema.json",
+      "bytes": 2680,
+      "sha256": "6c90c0f7f6a0310f66a87cc8e9cdce3b2440af7f6ba33175489a0a235db390db"
+    },
+    {
+      "path": "contracts/mcp-tools.json",
+      "bytes": 71436,
+      "sha256": "079734b16c9ff8b336dfd6ac9ff9fe8e632c80ed4e979755ef7a7b97f55d09e2"
+    },
+    {
+      "path": "contracts/requirements.json",
+      "bytes": 6300,
+      "sha256": "1f4c46a81cfe90f270140f8b3f903f558096c02424cf981311d5ee347a9f2a31"
+    },
+    {
+      "path": "examples/captions.vtt",
+      "bytes": 99,
+      "sha256": "c190b6bc211973822cf800c1106ae2722e9d030e43b7008ed80bb2e9e50cc3c9"
+    },
+    {
+      "path": "examples/comments.jsonl",
+      "bytes": 276,
+      "sha256": "4587dc6d044e9381400b7ad2b23451e66176946e4642ecb2a69594dfcd2adc16"
+    },
+    {
+      "path": "examples/metamuse.example.toml",
+      "bytes": 326,
+      "sha256": "5a2c6d93469fb940bcdb68150220a4f17311c5a966df9e4262129cab6143308a"
+    },
+    {
+      "path": "examples/tool-call.json",
+      "bytes": 473,
+      "sha256": "4ebb8d82094eb8d2900dd9b2b1bb4e09fdec9c5a05e9d11f691a251766b0d47e"
+    },
+    {
+      "path": "examples/tool-result.json",
+      "bytes": 295,
+      "sha256": "ef61cd56c6812a52372f1b0684435a8b038d319c9b274c5975ac1bd3ed05699f"
+    },
+    {
+      "path": "skills/metamuse/SKILL.md",
+      "bytes": 1467,
+      "sha256": "c034235641c093ed665bb0a68d8f9521e43ad282a944041560625d946125b28f"
+    },
+    {
+      "path": "validate_design_pack.py",
+      "bytes": 3196,
+      "sha256": "931e576b7d5a5e5af15589ae1db93f266427d1e20f4bc8305fb8bafda0b2a7f7"
+    }
+  ]
+}

@@ -1,0 +1,437 @@
+{
+  "note": "Specified product tests; none executed in this handoff recovery.",
+  "cases": [
+    {
+      "id": "AT-001",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "無憑證初始化",
+      "expected": "離線init／doctor成功；不觸網。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-002",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "保真匯入",
+      "expected": "繁中、emoji、換行、來源及未知ID保留。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-003",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "部分壞資料",
+      "expected": "壞列逐項拒絕，正常資料不丟。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-004",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "回覆樹",
+      "expected": "parent正確，缺父層unresolved，循環／跨project拒絕。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-005",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "字幕時間軸",
+      "expected": "end<start拒絕，合理重疊保留並標記。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-006",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "媒體檔驗證",
+      "expected": "exit0但無檔／損壞不標ready。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-007",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "多來源同素材",
+      "expected": "bytes共用，來源不合併。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-008",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "無worker提交",
+      "expected": "accepted+queued+worker_available:false。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-009",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "多入口工作鎖",
+      "expected": "只有一個executor；其他入口排隊。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-010",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "一成一敗重啟",
+      "expected": "成功不重做，失敗保留。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-011",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "request_key",
+      "expected": "同key同payload回原物件；異payload拒絕。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-012",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "Hung舊process",
+      "expected": "heartbeat過期不搶仍持有OS鎖的工作。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-013",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "版本及看不到",
+      "expected": "追加revision；不可見不判刪除。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-014",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "中文搜尋／分頁",
+      "expected": "預期命中、固定範圍無漏重、不跨project。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-015",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "精確packet",
+      "expected": "引用固定revision；新資料需新packet。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-016",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "分享越界",
+      "expected": "snapshot A批准不涵蓋B／其他帳號。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-017",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "來源保真",
+      "expected": "自動取得不改成manual。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-018",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "Session建立不明",
+      "expected": "open_uncertain，不自動再建立。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-019",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "Muse send timeout",
+      "expected": "讀原session，無第二次send。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-020",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "多段回答",
+      "expected": "progress不當完成，late內容保留。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-021",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "無關消息",
+      "expected": "別session／舊序號／外部手動訊息不誤配。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-022",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "Gateway framing",
+      "expected": "單consumer、不完整body不成功、有界buffer。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-023",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "中性寫稿",
+      "expected": "save不另調模型、不強加CTA或永久偏好。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-024",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "草稿引用",
+      "expected": "不存在來源／asset列錯誤。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-025",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "離線匯出",
+      "expected": "manifest/hash正確，CSV防公式且JSONL保真。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-026",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "MCP stdio",
+      "expected": "只有協定上stdout；全部schema與host配對實測。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-027",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "只有Skill",
+      "expected": "回報backend不可用，不假造執行。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-028",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "秘密防漏",
+      "expected": "假secret／signedURL不出log、packet或公開bundle。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-029",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "偽批准／到期",
+      "expected": "approved:true無效，過期／撤銷／超次數拒絕。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-030",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "URL／SSRF",
+      "expected": "query假網域、redirect、DNS、subresources都檢查。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-031",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "路徑／命令注入",
+      "expected": "拒絕越root／symlink及來源option，無shell。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-032",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "Prompt injection",
+      "expected": "來源要求傳秘密／改權限僅當資料。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-033",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "Backup／migration",
+      "expected": "新workspace還原FK/hash一致；升級失敗不刪庫。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-034",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "刪除／共用asset",
+      "expected": "其他合法引用不誤刪；撤分享／索引，遠端限制明示。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-035",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "公開包掃描",
+      "expected": "无秘密、私有內容、未授權程式；notices完整。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-036",
+      "priority": "P0",
+      "evidence_class": "MEASURE",
+      "title": "性能",
+      "expected": "固定環境測30次p95/RSS，列實值與deviation。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-037",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "取消邊界",
+      "expected": "本地停止不說遠端confirmed；不重送。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-038",
+      "priority": "P0-LIVE",
+      "evidence_class": "LIVE",
+      "title": "Muse LIVE往返",
+      "expected": "核准帳號開題、送虛構/可分享資料、讀回並追問。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-039",
+      "priority": "P0-LIVE",
+      "evidence_class": "LIVE",
+      "title": "Facebook LIVE",
+      "expected": "核准小範圍對照正文、留言、父層與缺漏。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-040",
+      "priority": "P0-LIVE",
+      "evidence_class": "LIVE",
+      "title": "媒體 LIVE",
+      "expected": "可處理來源metadata／字幕／必要下載可核對。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-041",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "限制與假零結果",
+      "expected": "登入、challenge、403、429、parser失敗、空資料各異。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-042",
+      "priority": "P0",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "離線縱切片",
+      "expected": "假資料→packet→mock Muse→草稿→bundle，標示mock。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-043",
+      "priority": "P0-LIVE",
+      "evidence_class": "LIVE",
+      "title": "整合 LIVE旅程",
+      "expected": "獲准來源→真Muse→草稿匯出，不發布。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-044",
+      "priority": "P1",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "素材處理",
+      "expected": "只處理核准asset，雲端ASR另分享許可。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-045",
+      "priority": "P1",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "來源變更影響",
+      "expected": "標記相關草稿stale，不改已發布。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-046",
+      "priority": "P1",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "留言清單",
+      "expected": "已處理不重列待送，弱ID draft_only。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-047",
+      "priority": "P1",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "批准綁定",
+      "expected": "改文字／附件／帳號／parent使舊批准失效。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-048",
+      "priority": "P1",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "發文結果不明",
+      "expected": "needs_reconcile；重啟不重送。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-049",
+      "priority": "P1-LIVE",
+      "evidence_class": "LIVE",
+      "title": "單平台LIVE發布",
+      "expected": "核准操作有正確帳號／parent和remote receipt。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-050",
+      "priority": "P1",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "跨平台部分成功",
+      "expected": "分別回報，不重送成功項，不自動回滾。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-051",
+      "priority": "P1",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "中性metrics",
+      "expected": "保留原值／時間／qualifier，null不變0，不生成策略。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-052",
+      "priority": "P2",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "排程時區",
+      "expected": "DST歧義要明確；過期批准／stale不執行。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-053",
+      "priority": "P2",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "额外入口",
+      "expected": "重複事件去重，發送者／workspace驗證，共用store。",
+      "execution_status": "not_run"
+    },
+    {
+      "id": "AT-054",
+      "priority": "P2",
+      "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
+      "title": "UI不解鎖",
+      "expected": "沒有批准／實測backend就只有預覽。",
+      "execution_status": "not_run"
+    }
+  ]
+}

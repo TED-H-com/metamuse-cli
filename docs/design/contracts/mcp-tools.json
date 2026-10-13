@@ -1,0 +1,2838 @@
+{
+  "document_role": "design_not_runtime",
+  "contract_version": "1.1",
+  "tools": [
+    {
+      "name": "metamuse_inspect",
+      "description": "本地能力檢查，不觸網。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "metamuse_project_create",
+      "description": "建立project。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "request_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "name",
+          "request_key"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "metamuse_collect",
+      "description": "先保存job；遠端需grant；accepted不是完成。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "url"
+                    },
+                    "url": {
+                      "type": "string",
+                      "format": "uri",
+                      "pattern": "^https?://"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "url"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "local_file"
+                    },
+                    "path": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "format": {
+                      "enum": [
+                        "text",
+                        "json",
+                        "jsonl",
+                        "csv",
+                        "vtt",
+                        "srt",
+                        "media"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "path",
+                    "format"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "text"
+                    },
+                    "text": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "text"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "post",
+                "comments",
+                "media_metadata",
+                "subtitles",
+                "media_file"
+              ]
+            },
+            "minItems": 1
+          },
+          "limits": {
+            "type": "object",
+            "properties": {
+              "max_urls": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100
+              },
+              "max_items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 10000
+              },
+              "max_bytes": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "wall_clock_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 86400
+              }
+            },
+            "required": [
+              "max_urls",
+              "max_items",
+              "max_bytes",
+              "wall_clock_seconds"
+            ],
+            "additionalProperties": false
+          },
+          "access_grant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "request_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "project_id",
+          "inputs",
+          "resources",
+          "limits",
+          "access_grant_id",
+          "request_key"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "metamuse_job_get",
+      "description": "讀取持久化job狀態。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "job_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "metamuse_job_list",
+      "description": "分頁列工作。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "project_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "metamuse_job_control",
+      "description": "本地恢復／取消；不重送不明外部行為。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "operation": {
+            "enum": [
+              "resume",
+              "cancel"
+            ]
+          },
+          "request_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "job_id",
+          "operation",
+          "request_key"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "metamuse_search",
+      "description": "project範圍的來源查詢。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "query": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "project_id",
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "metamuse_packet_prepare",
+      "description": "固定來源版本的分享前預覽。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "selection": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "item_revision",
+                    "transcript_segment",
+                    "draft_revision"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 128
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "revision"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "request_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "project_id",
+          "selection",
+          "request_key"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "metamuse_muse_open",
+      "description": "主題本身會外送，遠端create不明要對帳。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "topic": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "access_grant_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "request_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "project_id",
+          "topic",
+          "access_grant_id",
+          "request_key"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "metamuse_muse_send",
+      "description": "核准範圍內問題與packet；只提交，不宣告研究完成。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "discussion_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "packet_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "share_grant_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "request_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "discussion_id",
+          "packet_id",
+          "question",
+          "share_grant_id",
+          "request_key"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "metamuse_muse_read",
+      "description": "預設本地，refresh需有效存取範圍；可回refresh_job_id。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "exchange_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "refresh": {
+            "type": "boolean",
+            "default": false
+          },
+          "access_grant_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "exchange_id"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "metamuse_muse_close_exchange",
+      "description": "結算host輪次；不等於遠端取消。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "exchange_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "outcome": {
+            "enum": [
+              "answered",
+              "needs_more_data",
+              "abandoned"
+            ]
+          },
+          "request_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "exchange_id",
+          "outcome",
+          "request_key"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "metamuse_draft_save",
+      "description": "只保存host提供文字；更新要expected_revision。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "draft_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 3,
+                "maxLength": 128
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_revision": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 1000000
+          },
+          "platform": {
+            "enum": [
+              "facebook",
+              "instagram",
+              "threads",
+              "youtube",
+              "tiktok",
+              "x",
+              "generic"
+            ]
+          },
+          "facts_refs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "item_revision",
+                    "transcript_segment",
+                    "draft_revision"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 128
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "revision"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "request_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "project_id",
+          "text",
+          "platform",
+          "facts_refs",
+          "request_key"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "metamuse_draft_preview",
+      "description": "檢查草稿，不發布。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "draft_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "draft_id",
+          "revision"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "metamuse_export",
+      "description": "本地artifact job，不上傳或發布。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "selection": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "enum": [
+                    "item_revision",
+                    "transcript_segment",
+                    "draft_revision"
+                  ]
+                },
+                "id": {
+                  "type": "string",
+                  "minLength": 3,
+                  "maxLength": 128
+                },
+                "revision": {
+                  "type": "integer",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "kind",
+                "id",
+                "revision"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          },
+          "format": {
+            "enum": [
+              "text",
+              "markdown",
+              "jsonl",
+              "csv",
+              "bundle"
+            ]
+          },
+          "request_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "project_id",
+          "selection",
+          "format",
+          "request_key"
+        ],
+        "additionalProperties": false
+      },
+      "outputSchema": {
+        "type": "object",
+        "properties": {
+          "contract_version": {
+            "const": "1.1"
+          },
+          "request_id": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 128
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ]
+          },
+          "data": {
+            "type": [
+              "object",
+              "array",
+              "null"
+            ]
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "pattern": "^E_[A-Z_]+$"
+                  },
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1000000
+                  },
+                  "retry_class": {
+                    "enum": [
+                      "never",
+                      "safe_read",
+                      "reconcile",
+                      "user_action"
+                    ]
+                  }
+                },
+                "required": [
+                  "code",
+                  "message",
+                  "retry_class"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 1000000
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "pattern": "^E_[A-Z_]+$"
+                    },
+                    "message": {
+                      "type": "string",
+                      "maxLength": 1000000
+                    },
+                    "retry_class": {
+                      "enum": [
+                        "never",
+                        "safe_read",
+                        "reconcile",
+                        "user_action"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message",
+                    "retry_class"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "openWorldHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,180 @@
+{
+  "tasks": [
+    {
+      "id": "B01",
+      "milestone": "M0",
+      "title": "來源／授權／相容性",
+      "dependencies": "—",
+      "deliverable": "來源清冊、Muse最小spike、SDK/host與版本選擇",
+      "status": "not_started"
+    },
+    {
+      "id": "B02",
+      "milestone": "M1",
+      "title": "單一package與contracts",
+      "dependencies": "B01",
+      "deliverable": "entrypoint、models、init／doctor、schema",
+      "status": "not_started"
+    },
+    {
+      "id": "B03",
+      "milestone": "M1",
+      "title": "Store與migrations",
+      "dependencies": "B02",
+      "deliverable": "SQLite、revision、objects、backup restore",
+      "status": "not_started"
+    },
+    {
+      "id": "B04",
+      "milestone": "M1",
+      "title": "Jobs與executor",
+      "dependencies": "B03",
+      "deliverable": "request_key、OS lock、queue、epoch、恢復／取消",
+      "status": "not_started"
+    },
+    {
+      "id": "B05",
+      "milestone": "M2",
+      "title": "匯入與身分",
+      "dependencies": "B03,B04",
+      "deliverable": "文字／CSV／JSONL、來源與留言父子",
+      "status": "not_started"
+    },
+    {
+      "id": "B06",
+      "milestone": "M2",
+      "title": "本地媒體／字幕",
+      "dependencies": "B05",
+      "deliverable": "asset hash、metadata、VTT/SRT及關聯",
+      "status": "not_started"
+    },
+    {
+      "id": "B07",
+      "milestone": "M2",
+      "title": "搜尋／evidence／packet",
+      "dependencies": "B05,B06",
+      "deliverable": "分頁、精確revision、分享前預覽",
+      "status": "not_started"
+    },
+    {
+      "id": "B08",
+      "milestone": "M2",
+      "title": "Safety與permits",
+      "dependencies": "B02,B03",
+      "deliverable": "scope、expiry、secret refs、URL/path/egress",
+      "status": "not_started"
+    },
+    {
+      "id": "B09",
+      "milestone": "M3",
+      "title": "最小Muse transport",
+      "dependencies": "B01,B04,B08",
+      "deliverable": "標準crypto、serial receive、限定路由",
+      "status": "not_started"
+    },
+    {
+      "id": "B10",
+      "milestone": "M3",
+      "title": "Discussion lifecycle",
+      "dependencies": "B07,B09",
+      "deliverable": "session、exchange、raw messages、對帳／cursor",
+      "status": "not_started"
+    },
+    {
+      "id": "B11",
+      "milestone": "M2",
+      "title": "草稿／匯出",
+      "dependencies": "B07",
+      "deliverable": "host提供文案、revision、preview與manifest",
+      "status": "not_started"
+    },
+    {
+      "id": "B12",
+      "milestone": "M4",
+      "title": "遠端影音",
+      "dependencies": "B06,B08",
+      "deliverable": "受控yt-dlp、字幕、必要下載及LIVE",
+      "status": "not_started"
+    },
+    {
+      "id": "B13",
+      "milestone": "M4",
+      "title": "有界Facebook讀取",
+      "dependencies": "B05,B08",
+      "deliverable": "一種獲准頁型的post/comments/replies及LIVE",
+      "status": "not_started"
+    },
+    {
+      "id": "B14",
+      "milestone": "M5",
+      "title": "CLI／MCP完整入口",
+      "dependencies": "B04,B07,B10,B11",
+      "deliverable": "同app、schema、stdio、resource及host實測",
+      "status": "not_started"
+    },
+    {
+      "id": "B15",
+      "milestone": "M5",
+      "title": "中性Skill",
+      "dependencies": "B14",
+      "deliverable": "使用路由、降階、限制、無作者策略",
+      "status": "not_started"
+    },
+    {
+      "id": "B16",
+      "milestone": "M5",
+      "title": "故障／性能",
+      "dependencies": "B10,B12,B13,B14",
+      "deliverable": "crash、不明副作用、privacy、backup、實測",
+      "status": "not_started"
+    },
+    {
+      "id": "B17",
+      "milestone": "M5",
+      "title": "整合beta／打包",
+      "dependencies": "B15,B16",
+      "deliverable": "LIVE旅程、能力表、wheel／source／notice掃描",
+      "status": "not_started"
+    },
+    {
+      "id": "B18",
+      "milestone": "M6",
+      "title": "素材與來源變更",
+      "dependencies": "B17",
+      "deliverable": "可選ASR、裁切、stale關聯",
+      "status": "not_started"
+    },
+    {
+      "id": "B19",
+      "milestone": "M6",
+      "title": "留言與發布契約",
+      "dependencies": "B17",
+      "deliverable": "draft_only、exact approval、fixture對帳",
+      "status": "not_started"
+    },
+    {
+      "id": "B20",
+      "milestone": "M6",
+      "title": "發布LIVE",
+      "dependencies": "B19",
+      "deliverable": "一個獲准平台／帳號／目的地receipt",
+      "status": "not_started"
+    },
+    {
+      "id": "B21",
+      "milestone": "M6",
+      "title": "中性成效",
+      "dependencies": "B17",
+      "deliverable": "定義／原值／時間／null／修正",
+      "status": "not_started"
+    },
+    {
+      "id": "B22",
+      "milestone": "P2",
+      "title": "排程／入口／UI",
+      "dependencies": "B17；發布排程另需B20",
+      "deliverable": "按明確需求擴充，沿用core",
+      "status": "not_started"
+    }
+  ]
+}

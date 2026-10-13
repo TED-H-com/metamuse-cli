@@ -1,0 +1,24 @@
+{
+  "tool": "metamuse_collect",
+  "arguments": {
+    "project_id": "prj_demo_001",
+    "inputs": [
+      {
+        "kind": "local_file",
+        "path": "./examples/comments.jsonl",
+        "format": "jsonl"
+      }
+    ],
+    "resources": [
+      "comments"
+    ],
+    "limits": {
+      "max_urls": 10,
+      "max_items": 500,
+      "max_bytes": 1073741824,
+      "wall_clock_seconds": 900
+    },
+    "access_grant_id": null,
+    "request_key": "example_import_001"
+  }
+}

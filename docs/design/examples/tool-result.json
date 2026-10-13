@@ -1,0 +1,15 @@
+{
+  "contract_version": "1.1",
+  "request_id": "req_demo_001",
+  "status": "accepted",
+  "data": {
+    "job_id": "job_demo_001",
+    "state": "queued",
+    "worker_available": false
+  },
+  "error": null,
+  "warnings": [
+    "Synthetic example, not an executed job."
+  ],
+  "next_cursor": null
+}
