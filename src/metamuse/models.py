@@ -608,6 +608,29 @@ class ExportRequest(PacketPrepareRequest):
     format: Literal["text", "markdown", "jsonl", "csv", "bundle"]
 
 
+class AuthImportRequest(Model):
+    """Human-only CLI input; never part of the MCP tool registry."""
+
+    path: Text
+    provider: Text | None = None
+    account: Text | None = None
+
+
+class PermitCreateRequest(Model):
+    """Human-only local intent; the safety feature validates/creates the grant."""
+
+    project_id: ID
+    kind: Text
+    scope: dict[str, Any] = Field(default_factory=dict)
+    provider: Text | None = None
+    account: Text | None = None
+    issuer: Text = "local_operator"
+    expires_at: Text | None = None
+    max_uses: Annotated[int, Field(ge=1)] = 1
+    exact_digest: Digest | None = None
+    request_key: RequestKey
+
+
 TOOL_REQUEST_MODELS = {
     "metamuse_inspect": InspectRequest,
     "metamuse_project_create": ProjectCreateRequest,

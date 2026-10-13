@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Human-only CLI input; never part of the MCP tool registry.",
+  "properties": {
+    "path": {
+      "maxLength": 1000000,
+      "title": "Path",
+      "type": "string"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "maxLength": 1000000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider"
+    },
+    "account": {
+      "anyOf": [
+        {
+          "maxLength": 1000000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account"
+    }
+  },
+  "required": [
+    "path"
+  ],
+  "title": "AuthImportRequest",
+  "type": "object"
+}

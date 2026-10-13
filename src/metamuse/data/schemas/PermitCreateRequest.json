@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Human-only local intent; the safety feature validates/creates the grant.",
+  "properties": {
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "kind": {
+      "maxLength": 1000000,
+      "title": "Kind",
+      "type": "string"
+    },
+    "scope": {
+      "additionalProperties": true,
+      "title": "Scope",
+      "type": "object"
+    },
+    "provider": {
+      "anyOf": [
+        {
+          "maxLength": 1000000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Provider"
+    },
+    "account": {
+      "anyOf": [
+        {
+          "maxLength": 1000000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account"
+    },
+    "issuer": {
+      "default": "local_operator",
+      "maxLength": 1000000,
+      "title": "Issuer",
+      "type": "string"
+    },
+    "expires_at": {
+      "anyOf": [
+        {
+          "maxLength": 1000000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Expires At"
+    },
+    "max_uses": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Max Uses",
+      "type": "integer"
+    },
+    "exact_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exact Digest"
+    },
+    "request_key": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Request Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project_id",
+    "kind",
+    "request_key"
+  ],
+  "title": "PermitCreateRequest",
+  "type": "object"
+}

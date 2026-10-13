@@ -11,12 +11,13 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
+from types import ModuleType
 from typing import Any, Literal
 
 from pydantic import Field, ValidationError
 
 from metamuse import models as m
-from metamuse.jobs import UNCERTAIN, worker_available
+from metamuse.jobs import UNCERTAIN, Operation, worker_available
 from metamuse.paths import WorkspacePaths
 from metamuse.store import Store, utc_now
 
@@ -118,28 +119,67 @@ def application(model: type[m.Model]) -> Callable:
     return decorate
 
 
-IMPLEMENTED = {
-    "metamuse_inspect",
-    "metamuse_project_create",
-    "metamuse_job_get",
-    "metamuse_job_list",
-    "metamuse_job_control",
-}
+CORE_IMPLEMENTED_TOOLS = frozenset(
+    {
+        "metamuse_inspect",
+        "metamuse_project_create",
+        "metamuse_job_get",
+        "metamuse_job_list",
+        "metamuse_job_control",
+    }
+)
+
+
+def _feature_modules() -> tuple[ModuleType, ...]:
+    # Fixed imports only: no entrypoints, discovery, configuration or runtime cloning.
+    from metamuse import collect, content, media, muse, safety
+
+    return (collect, media, content, safety, muse)
+
+
+def register_builtin_operations(registry: dict[str, Operation] | None = None) -> None:
+    """Call before submission/execution; feature hooks must be idempotent per registry."""
+    for module in _feature_modules():
+        register = getattr(module, "register_operations", None)
+        if register is not None:
+            register(registry)
 
 
 @application(m.InspectRequest)
 def inspect_capabilities(ctx: AppContext, request: m.InspectRequest) -> m.Envelope:
-    capabilities = [
-        m.Capability(
-            name=name,
-            implementation="implemented" if name in IMPLEMENTED else "absent",
-            verification="fixture_passed" if name in IMPLEMENTED else "unverified",
-            environment="ready" if name in IMPLEMENTED else "unavailable",
-            permission="granted_scope" if name in IMPLEMENTED else "not_configured",
-            effective=False,
-        ).model_dump(mode="json")
-        for name in m.TOOL_REQUEST_MODELS
-    ]
+    implemented = set(CORE_IMPLEMENTED_TOOLS)
+    metadata: dict[str, dict[str, str]] = {}
+    for module in _feature_modules():
+        declared = module.IMPLEMENTED_TOOLS
+        if not declared <= m.TOOL_REQUEST_MODELS.keys():
+            raise m.CoreError(m.ErrorCode.STORAGE, "Feature declares an unknown tool")
+        implemented.update(declared)
+        status = getattr(module, "capability_status", None)
+        if status is not None:
+            rows = status(ctx)  # offline checks only; never perform a health request here
+            if not rows.keys() <= declared:
+                raise m.CoreError(m.ErrorCode.STORAGE, "Capability status has no implementation")
+            metadata.update(rows)
+    capabilities = []
+    for name in m.TOOL_REQUEST_MODELS:
+        core = name in CORE_IMPLEMENTED_TOOLS
+        state = {
+            "verification": "fixture_passed" if core else "unverified",
+            "environment": "ready" if core else "unavailable",
+            "permission": "granted_scope" if core else "not_configured",
+        }
+        if name in metadata:
+            if not metadata[name].keys() <= state.keys():
+                raise m.CoreError(m.ErrorCode.STORAGE, "Invalid capability status fields")
+            state.update(metadata[name])
+        capabilities.append(
+            m.Capability(
+                name=name,
+                implementation="implemented" if name in implemented else "absent",
+                effective=False,
+                **state,
+            ).model_dump(mode="json")
+        )
     return m.Envelope(
         status="ok",
         data={
@@ -288,52 +328,72 @@ def unsupported() -> m.Envelope:
 
 @application(m.CollectRequest)
 def submit_collect(ctx: AppContext, request: m.CollectRequest) -> m.Envelope:
-    return unsupported()
+    from metamuse import collect
+
+    return collect.submit_collect(ctx, request)
 
 
 @application(m.SearchRequest)
 def search_evidence(ctx: AppContext, request: m.SearchRequest) -> m.Envelope:
-    return unsupported()
+    from metamuse import content
+
+    return content.search_evidence(ctx, request)
 
 
 @application(m.PacketPrepareRequest)
 def prepare_packet(ctx: AppContext, request: m.PacketPrepareRequest) -> m.Envelope:
-    return unsupported()
+    from metamuse import content
+
+    return content.prepare_packet(ctx, request)
 
 
 @application(m.MuseOpenRequest)
 def open_muse_discussion(ctx: AppContext, request: m.MuseOpenRequest) -> m.Envelope:
-    return unsupported()
+    from metamuse import muse
+
+    return muse.open_muse_discussion(ctx, request)
 
 
 @application(m.MuseSendRequest)
 def submit_muse_exchange(ctx: AppContext, request: m.MuseSendRequest) -> m.Envelope:
-    return unsupported()
+    from metamuse import muse
+
+    return muse.submit_muse_exchange(ctx, request)
 
 
 @application(m.MuseReadRequest)
 def read_muse_exchange(ctx: AppContext, request: m.MuseReadRequest) -> m.Envelope:
-    return unsupported()
+    from metamuse import muse
+
+    return muse.read_muse_exchange(ctx, request)
 
 
 @application(m.MuseCloseExchangeRequest)
 def close_muse_exchange(ctx: AppContext, request: m.MuseCloseExchangeRequest) -> m.Envelope:
-    return unsupported()
+    from metamuse import muse
+
+    return muse.close_muse_exchange(ctx, request)
 
 
 @application(m.DraftSaveRequest)
 def save_draft(ctx: AppContext, request: m.DraftSaveRequest) -> m.Envelope:
-    return unsupported()
+    from metamuse import content
+
+    return content.save_draft(ctx, request)
 
 
 @application(m.DraftPreviewRequest)
 def preview_draft(ctx: AppContext, request: m.DraftPreviewRequest) -> m.Envelope:
-    return unsupported()
+    from metamuse import content
+
+    return content.preview_draft(ctx, request)
 
 
 @application(m.ExportRequest)
 def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
-    return unsupported()
+    from metamuse import content
+
+    return content.export_objects(ctx, request)
 
 
 TOOL_FUNCTIONS = dict(
