@@ -161,9 +161,7 @@ def test_unknown_frame_type_is_protocol_mismatch():
 
 
 def test_multichunk_transport_frame_is_not_success():
-    frame = NoiseTransportFrame(
-        chunk_id=1, chunk_index=0, total_chunks=2, payload=b"half"
-    )
+    frame = NoiseTransportFrame(chunk_id=1, chunk_index=0, total_chunks=2, payload=b"half")
     with pytest.raises(ProtocolMismatch, match="multi-chunk"):
         encode_noise_transport_frame(frame)
     raw = b"".join(
@@ -285,9 +283,7 @@ def test_negative_chunk_id_roundtrip():
     frame = ServiceFrame(
         stream_id=4,
         kind="request",
-        request=ApplicationRequest(
-            verb="GET", path="/chat/history", body=b"", end_body=True
-        ),
+        request=ApplicationRequest(verb="GET", path="/chat/history", body=b"", end_body=True),
     )
     raw = encode_client_frame(0, frame, chunk_id=-99)
     outer = decode_noise_transport_frame(raw)
@@ -344,9 +340,7 @@ def test_manual_user_message_blocks_the_following_assistant():
     shortened = _paired(
         [
             _user(11),
-            _assistant(
-                "sess-a", 13, "answer to the manual question", message_id="a-13"
-            ),
+            _assistant("sess-a", 13, "answer to the manual question", message_id="a-13"),
         ],
         prior=association,
     )
@@ -397,9 +391,7 @@ def test_conflicting_marker_beats_identical_text():
     conflict = _user(11, **{"x-request-id": "req-2"})
     assert conflict["payload"]["display_text"] == exchange.sent_text
     assert user_echo(exchange, [conflict]) is None
-    association = _paired(
-        [conflict, _assistant("sess-a", 12, "not our answer", message_id="m-12")]
-    )
+    association = _paired([conflict, _assistant("sess-a", 12, "not our answer", message_id="m-12")])
     assert association.state == NONE
     assert association.reply is None
 
@@ -691,9 +683,7 @@ def test_non_json_2xx_does_not_confirm_delivery():
         body=b"not json",
     )
     assert state == SEND_UNCERTAIN
-    evidence = attempt_evidence(
-        stream_complete=True, stream_status=200, body=b"not json"
-    )
+    evidence = attempt_evidence(stream_complete=True, stream_status=200, body=b"not json")
     assert evidence.verdict == EVIDENCE_UNDECIDED
 
 
@@ -719,9 +709,7 @@ def test_late_reply_after_uncertainty_is_observed_once():
 
 
 def test_query_scope_does_not_overwrite_a_foreign_session_id():
-    event = normalize_event(
-        {"event_name": "message.assistant", "session_id": "sess-b"}, "sess-a"
-    )
+    event = normalize_event({"event_name": "message.assistant", "session_id": "sess-b"}, "sess-a")
     assert event["session_id"] == "sess-b"
     inherited = normalize_event({"event_name": "message.user", "seq": 1}, "sess-a")
     assert inherited["session_id"] == "sess-a"

@@ -109,9 +109,7 @@ class ReceiveLoop:
         clock: Callable[[], float] | None = None,
     ) -> None:
         if max_frame_bytes > MAX_FRAME_BYTES:
-            raise FrameTooLarge(
-                f"plaintext frame cap {max_frame_bytes} exceeds {MAX_FRAME_BYTES}"
-            )
+            raise FrameTooLarge(f"plaintext frame cap {max_frame_bytes} exceeds {MAX_FRAME_BYTES}")
         self.link = link
         self.max_frame_bytes = max_frame_bytes
         self.max_body_bytes = max_body_bytes
@@ -199,9 +197,7 @@ class ReceiveLoop:
             seen += 1
             if len(raw) > self.max_frame_bytes:
                 raise FrameTooLarge(f"frame is {len(raw)} bytes")
-            service_frame = decode_server_frame(
-                raw, max_frame_bytes=self.max_frame_bytes
-            )
+            service_frame = decode_server_frame(raw, max_frame_bytes=self.max_frame_bytes)
             if service_frame.stream_id != stream_id:
                 skipped += 1
                 if skipped > MAX_SKIPPED_FRAMES:
@@ -210,15 +206,11 @@ class ReceiveLoop:
             if service_frame.kind == "response":
                 assert service_frame.response is not None
                 status = service_frame.response.status
-                total = _take(
-                    parts, total, service_frame.response.body, self.max_body_bytes
-                )
+                total = _take(parts, total, service_frame.response.body, self.max_body_bytes)
                 complete = service_frame.response.end_body
             elif service_frame.kind == "body_chunk":
                 assert service_frame.body_chunk is not None
-                total = _take(
-                    parts, total, service_frame.body_chunk.data, self.max_body_bytes
-                )
+                total = _take(parts, total, service_frame.body_chunk.data, self.max_body_bytes)
                 complete = service_frame.body_chunk.end_body
             elif service_frame.kind == "reset":
                 reason = service_frame.reset.reason if service_frame.reset else ""
@@ -239,9 +231,7 @@ def _take(parts: list[bytes], total: int, data: bytes, limit: int) -> int:
     return total
 
 
-def response_frame(
-    stream_id: int, status: int, body: bytes, *, end_body: bool
-) -> bytes:
+def response_frame(stream_id: int, status: int, body: bytes, *, end_body: bool) -> bytes:
     return encode_server_frame(
         ServiceFrame(
             stream_id=stream_id,

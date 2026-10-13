@@ -77,9 +77,7 @@ def handshake() -> dict:
     request = ServiceFrame(
         stream_id=1,
         kind="request",
-        request=ApplicationRequest(
-            verb="POST", path="/chat/stream", body=b"{}", end_body=True
-        ),
+        request=ApplicationRequest(verb="POST", path="/chat/stream", body=b"{}", end_body=True),
     )
     plaintext = encode_client_frame(0, request, chunk_id=7)
     ciphertext = bytes(client.encrypt(plaintext))
@@ -92,11 +90,7 @@ def handshake() -> dict:
     reply_cipher = bytes(gateway.encrypt(reply))
     reply_plain = bytes(client.decrypt(reply_cipher))
     response = decode_server_frame(reply_plain)
-    if (
-        response.stream_id != 1
-        or response.response is None
-        or not response.response.end_body
-    ):
+    if response.stream_id != 1 or response.response is None or not response.response.end_body:
         raise RuntimeError("decrypted response was not a finished stream 1 body")
     if response.response.body != b'{"ok":true}':
         raise RuntimeError("response body mismatch")

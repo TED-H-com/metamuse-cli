@@ -195,9 +195,7 @@ def _text(event: dict) -> str:
 
 def _reply_to(event: dict) -> str:
     payload = _payload(event)
-    return str(
-        event.get("reply_to_message_id") or payload.get("reply_to_message_id") or ""
-    )
+    return str(event.get("reply_to_message_id") or payload.get("reply_to_message_id") or "")
 
 
 def _seq(event: dict) -> int:
@@ -332,9 +330,7 @@ def _other_user(exchange: Exchange, event: dict, echo: dict) -> bool:
     return not _is_our_echo(exchange, event)
 
 
-def _user_between(
-    exchange: Exchange, events: list[dict], echo: dict, candidate: dict
-) -> bool:
+def _user_between(exchange: Exchange, events: list[dict], echo: dict, candidate: dict) -> bool:
     low = _seq(echo)
     high = _seq(candidate)
     for event in events:
@@ -400,9 +396,7 @@ def _result(
     unresolved: list[dict],
     memory: ObservationMemory,
 ) -> Association:
-    return Association(
-        state, reply, ignored, tuple(progress), tuple(unresolved), memory
-    )
+    return Association(state, reply, ignored, tuple(progress), tuple(unresolved), memory)
 
 
 def associate_reply(
@@ -423,9 +417,7 @@ def associate_reply(
     memory.note(events)
     world = list(memory.events.values())
     index = {id(event): key for key, event in memory.events.items()}
-    statuses = (
-        CALIBRATED_COMPLETE_STATUSES if complete_statuses is None else complete_statuses
-    )
+    statuses = CALIBRATED_COMPLETE_STATUSES if complete_statuses is None else complete_statuses
     ignored = sum(
         1
         for event in world

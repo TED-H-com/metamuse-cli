@@ -493,9 +493,7 @@ def decode_noise_transport_frame(buf: bytes) -> NoiseTransportFrame:
     if None in (chunk_id, chunk_index, total_chunks, payload):
         raise ProtocolMismatch("noise transport frame is incomplete")
     if total_chunks != 1 or chunk_index != 0:
-        raise ProtocolMismatch(
-            "unsupported multi-chunk frame; partial reassembly is not success"
-        )
+        raise ProtocolMismatch("unsupported multi-chunk frame; partial reassembly is not success")
     return NoiseTransportFrame(chunk_id, chunk_index, total_chunks, payload)
 
 
@@ -527,9 +525,7 @@ def encode_server_frame(frame: ServiceFrame, chunk_id: int = 1) -> bytes:
     return outer
 
 
-def decode_server_frame(
-    raw: bytes, *, max_frame_bytes: int = MAX_FRAME_BYTES
-) -> ServiceFrame:
+def decode_server_frame(raw: bytes, *, max_frame_bytes: int = MAX_FRAME_BYTES) -> ServiceFrame:
     if len(raw) > max_frame_bytes:
         raise FrameTooLarge(f"frame is {len(raw)} bytes")
     outer = decode_noise_transport_frame(raw)
