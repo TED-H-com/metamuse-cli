@@ -226,3 +226,12 @@ project_id; CLI jobs list may show the workspace with optional --project/--curso
 Operation registration assigns one side-effect class to all steps of that operation;
 feature owners must keep external submission separate from independently retryable
 read/reconciliation work. Migration SQL remains the authoritative database definition.
+
+Core review amendment: an entered external-submit step never requeues, even if its
+submitting boundary was not persisted; crashes/cancellation retain delivery uncertainty.
+Definite reconciliation uses the fenced Executor.settle_uncertain API described in
+CORE_API, with separate safe-read history jobs. Offline policy applies before external
+handlers/actions, retry limits come from workspace configuration, and UTF-8 byte limits
+are checked at model/app/store boundaries. Unknown operation handlers leave work queued.
+Schema 001 guard fixes remain version 1 before release; transcript scope and immutability
+are deferred to B05/B06 migration 002, without treating shared bytes as derived-data permission.

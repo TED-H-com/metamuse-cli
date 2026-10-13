@@ -6,68 +6,25 @@ import base64
 import binascii
 import json
 import logging
-import tomllib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path
 from types import ModuleType
-from typing import Any, Literal
+from typing import Any
 
-from pydantic import Field, ValidationError
+from pydantic import ValidationError
 
 from metamuse import models as m
+from metamuse.config import DEFAULT_CONFIG as DEFAULT_CONFIG
+from metamuse.config import AppPolicy as AppPolicy
+from metamuse.config import Config as Config
+from metamuse.config import EnabledConfig as EnabledConfig
+from metamuse.config import WorkerConfig as WorkerConfig
+from metamuse.config import load_config
 from metamuse.jobs import UNCERTAIN, Operation, worker_available
 from metamuse.paths import WorkspacePaths
 from metamuse.store import Store, utc_now
-
-
-class AppPolicy(m.Model):
-    network_mode: Literal["offline", "live"] = "offline"
-    telemetry_enabled: bool = False
-
-
-class WorkerConfig(m.Model):
-    max_executors: Literal[1] = 1
-
-
-class EnabledConfig(m.Model):
-    enabled: bool = False
-
-
-class Config(m.Model):
-    app: AppPolicy = Field(default_factory=AppPolicy)
-    worker: WorkerConfig = Field(default_factory=WorkerConfig)
-    limits: m.Limits = Field(default_factory=m.Limits)
-    muse: EnabledConfig = Field(default_factory=EnabledConfig)
-    publishing: EnabledConfig = Field(default_factory=EnabledConfig)
-
-
-DEFAULT_CONFIG = """[app]
-network_mode = "offline"
-telemetry_enabled = false
-[worker]
-max_executors = 1
-[limits]
-max_urls = 10
-max_items = 500
-max_bytes = 1073741824
-wall_clock_seconds = 900
-media_max_bytes = 536870912
-text_max_bytes = 20971520
-packet_max_utf8_bytes = 49152
-question_max_utf8_bytes = 8192
-read_timeout_seconds = 30
-safe_read_retries = 2
-muse_poll_initial_seconds = 5
-muse_poll_max_seconds = 30
-muse_wait_seconds = 120
-max_exchanges = 3
-[muse]
-enabled = false
-[publishing]
-enabled = false
-"""
 
 
 @dataclass
@@ -78,6 +35,11 @@ class AppContext:
     logger: logging.Logger = field(default_factory=lambda: logging.getLogger("metamuse"))
     limits: m.Limits = field(default_factory=m.Limits)
     policy: Config = field(default_factory=Config)
+    non_interactive: bool = False
+
+    def require_interactive(self) -> None:
+        if self.non_interactive:
+            raise m.CoreError(m.ErrorCode.SCOPE_REQUIRED, "Human interaction is disabled")
 
     @classmethod
     def open(
@@ -95,7 +57,7 @@ class AppContext:
             except FileExistsError:
                 pass
         config_path.chmod(0o600)
-        config = Config.model_validate(tomllib.loads(config_path.read_text()))
+        config = load_config(paths.root)
         return cls(paths, store, clock=clock, limits=config.limits, policy=config)
 
 
@@ -104,12 +66,17 @@ def application(model: type[m.Model]) -> Callable:
         @wraps(fn)
         def call(ctx: AppContext, request: Any = None) -> m.Envelope:
             try:
-                if not isinstance(request, model):
-                    request = model.model_validate({} if request is None else request)
+                if isinstance(request, model):
+                    request = request.model_dump(mode="python")
+                request = model.model_validate(
+                    {} if request is None else request, context={"limits": ctx.limits}
+                )
                 return fn(ctx, request)
             except m.CoreError as exc:
                 return m.failure(exc)
-            except (ValidationError, ValueError, TypeError):
+            except ValidationError as exc:
+                return m.failure(m.validation_error(exc))
+            except (ValueError, TypeError):
                 return m.failure(m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid request"))
             except OSError:
                 return m.failure(m.CoreError(m.ErrorCode.STORAGE, "Workspace I/O failed"))
@@ -197,7 +164,7 @@ def create_project(ctx: AppContext, request: m.ProjectCreateRequest) -> m.Envelo
         def create() -> dict[str, Any]:
             project = m.Project(id=m.new_id("prj"), name=request.name, created_at=ctx.clock())
             ctx.store.insert(project, conn=conn)
-            ctx.store.event(conn, "project.created", object_id=project.id)
+            ctx.store.event(conn, "project.created", object_id=project.id, project_id=project.id)
             return project.model_dump(mode="json")
 
         data = ctx.store.mutate_once(conn, "project.create", request.request_key, request, create)
@@ -273,7 +240,9 @@ def control_job(ctx: AppContext, request: m.JobControlRequest) -> m.Envelope:
 
         def control() -> dict[str, Any]:
             job = ctx.store.get(m.Job, request.job_id, conn=conn)
-            steps = conn.execute("SELECT state FROM job_steps WHERE job_id=?", (job.id,)).fetchall()
+            steps = conn.execute(
+                "SELECT state,side_effect_class,attempts FROM job_steps WHERE job_id=?", (job.id,)
+            ).fetchall()
             uncertain = any(row[0] in UNCERTAIN or row[0] == "submitting" for row in steps)
             if request.operation == "cancel":
                 conn.execute(
@@ -291,7 +260,12 @@ def control_job(ctx: AppContext, request: m.JobControlRequest) -> m.Envelope:
                         (job.id,),
                     )
             else:
-                if uncertain:
+                if uncertain or any(
+                    row["side_effect_class"] == "external_submit"
+                    and row["attempts"] > 0
+                    and row["state"] not in ("succeeded", "partial")
+                    for row in steps
+                ):
                     raise m.CoreError(
                         m.ErrorCode.EXTERNAL_STATE_UNKNOWN,
                         "Reconciliation is required before resume",

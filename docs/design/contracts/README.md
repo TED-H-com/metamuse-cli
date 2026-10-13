@@ -17,3 +17,9 @@ required on the wire; error status requires an error object and null data, other
 statuses require null error. Detailed feature-specific success data schemas remain
 future feature work; the core result shapes and domain schemas are documented in
 [CORE_API.md](../../dev/CORE_API.md).
+
+UTF-8 limits use model validation plus `x-max-utf8-bytes` schema metadata; standard
+JSON Schema maxLength counts characters and cannot enforce those byte limits. The schema
+regeneration command also regenerates the narrative rollup from 01/02/03/06 (including
+the sources appendix) and refreshes MANIFEST. Edit the numbered narrative sources,
+not a second hand-synchronized copy of their clarifications.

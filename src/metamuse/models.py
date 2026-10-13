@@ -4,11 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 ID = Annotated[str, Field(min_length=3, max_length=128)]
 RequestKey = Annotated[str, Field(min_length=1, max_length=128)]
@@ -19,6 +28,32 @@ Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
+
+    @field_validator("*", mode="after")
+    @classmethod
+    def utf8_fields(cls, value: Any, info: ValidationInfo) -> Any:
+        if (info.context or {}).get("stored"):
+            return value  # input policy must not make an older, immutable record unreadable
+        limits = (info.context or {}).get("limits")
+        defaults = {"text": 20971520, "rendered_text": 49152, "question": 8192}
+        fields = {
+            "text": "text_max_bytes",
+            "rendered_text": "packet_max_utf8_bytes",
+            "question": "question_max_utf8_bytes",
+        }
+        if info.field_name in defaults and isinstance(value, str):
+            limit = getattr(limits, fields[info.field_name], defaults[info.field_name])
+            if info.field_name == "question":
+                limit = min(limit, 8192)
+            return utf8_text(value, limit)
+        return value
+
+
+def utf8_text(value: str, max_bytes: int) -> str:
+    """Measure bytes without normalizing strings. Errors never interpolate input values."""
+    if len(value.encode("utf-8", errors="strict")) > max_bytes:
+        raise ValueError("UTF-8 byte limit exceeded")
+    return value
 
 
 def new_id(prefix: str) -> str:
@@ -166,6 +201,27 @@ class Envelope(Model):
 
 def failure(error: CoreError) -> Envelope:
     return Envelope(status="error", error=error.detail)
+
+
+def validation_error(error: ValidationError) -> CoreError:
+    """Return bounded field paths only; discard Pydantic messages, inputs and context."""
+    paths = []
+    for entry in error.errors(include_input=False, include_context=False, include_url=False)[:8]:
+        path = ""
+        location = entry["loc"]
+        if entry["type"] == "extra_forbidden":
+            location = (
+                *location[:-1],
+                "extra",
+            )  # arbitrary unknown keys may themselves contain secrets
+        for part in location:
+            if isinstance(part, int):
+                path += f"[{part}]"
+            else:
+                name = part if re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]{0,63}", str(part)) else "field"
+                path += ("." if path else "") + name
+        paths.append(path or "request")
+    return CoreError(ErrorCode.INPUT_INVALID, "Invalid request fields: " + ", ".join(paths))
 
 
 def exit_code(envelope: Envelope) -> int:
@@ -380,7 +436,7 @@ class Packet(Model):
     id: ID
     project_id: ID
     selection: list[EvidenceRef]
-    rendered_text: Text
+    rendered_text: Text = Field(json_schema_extra={"x-max-utf8-bytes": 49152})
     redactions: list[dict[str, Any]] = Field(default_factory=list)
     coverage_status: CoverageStatus = "unknown"
     digest: Digest
@@ -571,7 +627,9 @@ class MuseOpenRequest(Model):
 class MuseSendRequest(Model):
     discussion_id: ID
     packet_id: ID
-    question: Annotated[str, Field(min_length=1, max_length=8192)]
+    question: Annotated[
+        str, Field(min_length=1, max_length=8192, json_schema_extra={"x-max-utf8-bytes": 8192})
+    ]
     share_grant_id: ID
     request_key: RequestKey
 

@@ -10,11 +10,14 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Literal
 
+from pydantic import ValidationError
+
 from metamuse import models as m
-from metamuse.paths import private_file
-from metamuse.store import Store
+from metamuse.config import load_config
+from metamuse.store import Store, TransactionWriter
 
 UncertainState = Literal["open_uncertain", "send_uncertain", "needs_reconcile"]
 UNCERTAIN = ("open_uncertain", "send_uncertain", "needs_reconcile")
@@ -58,22 +61,30 @@ class StepSpec:
 
 
 def worker_available(store: Store) -> bool:
-    """OS ownership plus executor metadata; heartbeat expiry never grants ownership."""
-    private_file(store.paths.worker_lock)
-    with store.paths.worker_lock.open("r+b") as handle:
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            with store.connection() as conn:
-                return (
-                    conn.execute(
-                        "SELECT owner_nonce FROM worker_state WHERE singleton=1"
-                    ).fetchone()[0]
-                    is not None
-                )
-        else:
-            fcntl.flock(handle, fcntl.LOCK_UN)
-            return False
+    """Observe Linux FLOCK records without acquiring a lock (fcntl queries don't see flock)."""
+    with store.connection() as conn:
+        owner = conn.execute("SELECT owner_nonce FROM worker_state WHERE singleton=1").fetchone()[0]
+    if owner is None:
+        return False
+    try:
+        stat = store.paths.worker_lock.stat()
+        pid = int(owner.split(":", 1)[0])
+        with Path("/proc/locks").open(encoding="ascii") as records:
+            for line in records:
+                fields = line.split()
+                if len(fields) < 6 or fields[1] != "FLOCK" or fields[3] != "WRITE":
+                    continue
+                major, minor, inode = fields[5].split(":")
+                if (int(fields[4]), int(major, 16), int(minor, 16), int(inode)) == (
+                    pid,
+                    os.major(stat.st_dev),
+                    os.minor(stat.st_dev),
+                    stat.st_ino,
+                ):
+                    return True
+    except (OSError, ValueError):
+        pass  # Visibility unavailable: never claim a worker exists without evidence.
+    return False
 
 
 def submit_job(
@@ -148,6 +159,23 @@ def submit_job(
                         conn=conn,
                     )
                 store.event(conn, "job.accepted", job=job)
+        if job.state == "awaiting_user" or (
+            job.error and job.error.get("retry_class") == "reconcile"
+        ):
+            error = (
+                m.ErrorDetail.model_validate(job.error)
+                if job.error
+                else m.CoreError(m.ErrorCode.JOB_BUSY, "Job is awaiting user action").detail
+            )
+            return m.Envelope(
+                status="error",
+                error=error.model_copy(
+                    update={
+                        "next_action": f"Inspect job {job.id} with job_get; "
+                        + (error.next_action or "resolve its pending action")
+                    }
+                ),
+            )
         return m.Envelope(
             status="accepted"
             if job.state not in TERMINAL
@@ -167,7 +195,7 @@ def submit_job(
         return m.failure(m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid job payload"))
 
 
-class BoundaryStop(Exception):
+class BoundaryStop(BaseException):
     """A persisted cancellation stops at a handler boundary."""
 
 
@@ -194,7 +222,9 @@ class StepContext:
             raise m.CoreError(m.ErrorCode.JOB_BUSY, "Stale job callback")
         if step.target != (self.target if target is None else target):
             raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Step target changed")
-        wall_limit = self.job.limits.get("wall_clock_seconds", 900)
+        wall_limit = min(
+            self.executor.limits.wall_clock_seconds, self.job.limits.get("wall_clock_seconds", 900)
+        )
         elapsed = time.monotonic() - self.started
         if job.started_at is not None:
             elapsed = max(
@@ -221,6 +251,7 @@ class StepContext:
         """
         with self.store.transaction() as conn:
             self._guard(conn, target)
+            self.executor.require_network()
             verify(conn, target)
             row = self.store.get(m.JobStep, self.step.id, conn=conn)
             if row.side_effect_class == "external_submit":
@@ -233,17 +264,25 @@ class StepContext:
                 self.store.event(conn, "step.submitting", job=self.job, object_id=row.id)
 
     def commit_checkpoint(
-        self, checkpoint: dict[str, Any], *, write_batch: Callable[[Any], None] | None = None
+        self,
+        checkpoint: dict[str, Any],
+        *,
+        write_batch: Callable[[TransactionWriter], None] | None = None,
     ) -> None:
         """Batch records and checkpoint commit together; callbacks are database-only."""
         encoded = m.canonical_json(checkpoint).decode()
         with self.store.transaction() as conn:
             self._guard(conn)
             if write_batch:
-                write_batch(conn)
+                write_batch(TransactionWriter(self.store, conn))
+            self._guard(conn)
             conn.execute("UPDATE job_steps SET checkpoint=? WHERE id=?", (encoded, self.step.id))
             self.executor._heartbeat(conn)
         self.checkpoint = checkpoint
+
+    def require_interactive(self) -> None:
+        if self.executor.non_interactive:
+            raise m.CoreError(m.ErrorCode.SCOPE_REQUIRED, "Human interaction is disabled")
 
 
 class Executor:
@@ -253,10 +292,13 @@ class Executor:
         *,
         registry: dict[str, Operation] | None = None,
         sleep: Callable[[float], None] = time.sleep,
+        non_interactive: bool = False,
     ):
         self.store = store
         self.registry = OPERATIONS if registry is None else registry
         self.sleep = sleep
+        self.non_interactive = non_interactive
+        self.limits = load_config(store.paths.root).limits
         self.epoch: int | None = None
         self.nonce: str | None = None
         self.handle: Any = None
@@ -321,7 +363,7 @@ class Executor:
         ).fetchall():
             step = self.store.decode(m.JobStep, row)
             job = self.store.get(m.Job, step.job_id, conn=conn)
-            if step.state == "submitting":
+            if step.state == "submitting" or step.side_effect_class == "external_submit":
                 self._uncertain(conn, job, step)
             elif job.cancel_requested:
                 self._cancel(conn, job)
@@ -362,8 +404,20 @@ class Executor:
         self.store.event(
             conn, "step.uncertain", job=job, object_id=step.id, detail={"state": state}
         )
+        if job.cancel_requested:
+            conn.execute(
+                "UPDATE job_steps SET state='cancelled' WHERE job_id=? AND state='queued'",
+                (job.id,),
+            )
+            conn.execute("UPDATE jobs SET stop_reason='cancel_requested' WHERE id=?", (job.id,))
 
     def _cancel(self, conn: Any, job: m.Job) -> None:
+        for row in conn.execute(
+            "SELECT * FROM job_steps WHERE job_id=? AND "
+            "side_effect_class='external_submit' AND state IN ('running','submitting')",
+            (job.id,),
+        ).fetchall():
+            self._uncertain(conn, job, self.store.decode(m.JobStep, row))
         conn.execute(
             "UPDATE jobs SET state='cancelled',stop_reason='cancel_requested',"
             "updated_at=? WHERE id=?",
@@ -383,22 +437,20 @@ class Executor:
                 "SELECT * FROM jobs WHERE cancel_requested=1 AND state IN ('queued','running')"
             ).fetchall():
                 self._cancel(conn, self.store.decode(m.Job, row))
+            placeholders = ",".join("?" for _ in self.registry) or "NULL"
             row = conn.execute(
                 "SELECT s.* FROM job_steps s JOIN jobs j ON j.id=s.job_id "
                 "WHERE s.state='queued' AND j.state IN ('queued','running') "
                 "AND j.cancel_requested=0 AND NOT EXISTS(SELECT 1 FROM job_steps p "
                 "WHERE p.job_id=s.job_id AND p.sequence<s.sequence "
                 "AND p.state NOT IN ('succeeded','partial')) "
-                "ORDER BY j.rowid,s.sequence LIMIT 1"
+                f"AND j.operation IN ({placeholders}) ORDER BY j.rowid,s.sequence LIMIT 1",
+                tuple(self.registry),
             ).fetchone()
             if not row:
                 return None
             step = self.store.decode(m.JobStep, row)
             job = self.store.get(m.Job, step.job_id, conn=conn)
-            if job.operation not in self.registry:
-                error = m.CoreError(m.ErrorCode.UNSUPPORTED, "not implemented in this build")
-                self._fail(conn, job, step, error)
-                return job, self.store.get(m.JobStep, step.id, conn=conn)
             if self.registry[job.operation].side_effect_class != step.side_effect_class:
                 self._fail(
                     conn,
@@ -409,6 +461,19 @@ class Executor:
                     ),
                 )
                 return job, self.store.get(m.JobStep, step.id, conn=conn)
+            if step.side_effect_class != "none":
+                try:
+                    self.require_network()
+                except m.CoreError as exc:
+                    self._fail(conn, job, step, exc)
+                    return job, self.store.get(m.JobStep, step.id, conn=conn)
+            request_model = self.registry[job.operation].request_model
+            if request_model is not None:
+                try:
+                    request_model.model_validate(job.payload, context={"limits": self.limits})
+                except ValidationError as exc:
+                    self._fail(conn, job, step, m.validation_error(exc))
+                    return job, self.store.get(m.JobStep, step.id, conn=conn)
             conn.execute(
                 "UPDATE jobs SET state='running',worker_epoch=?,updated_at=?,"
                 "started_at=COALESCE(started_at,?) WHERE id=?",
@@ -440,6 +505,151 @@ class Executor:
             detail={"code": error.detail.code.value},
         )
 
+    def _finish_step(self, conn: Any, job: m.Job, step: m.JobStep, result: m.JobResult) -> None:
+        encoded = m.canonical_json(result).decode()
+        state = "partial" if result.coverage_status == "partial" else "succeeded"
+        conn.execute(
+            "UPDATE job_steps SET state=?,result=?,error=NULL WHERE id=?",
+            (state, encoded, step.id),
+        )
+        pending = conn.execute(
+            "SELECT 1 FROM job_steps WHERE job_id=? AND state='queued'", (job.id,)
+        ).fetchone()
+        if not pending:
+            results = [
+                json.loads(row[0])
+                for row in conn.execute(
+                    "SELECT result FROM job_steps WHERE job_id=? "
+                    "AND result IS NOT NULL ORDER BY sequence",
+                    (job.id,),
+                )
+            ]
+            coverage = [r["coverage_status"] for r in results]
+            # Multi-step coverage cannot become more confident than its least certain batch.
+            overall = next(
+                (c for c in ("partial", "unknown", "bounded", "scope_satisfied") if c in coverage),
+                "unknown",
+            )
+            if job.cancel_requested:
+                overall = "partial"
+            final = m.JobResult(
+                coverage_status=overall,
+                requested_scope=job.requested_scope,
+                observed_scope={"steps": [r["observed_scope"] for r in results]},
+                stop_reason="cancel_requested" if job.cancel_requested else result.stop_reason,
+                missing_fields=sorted({f for r in results for f in r["missing_fields"]}),
+                data={"steps": results},
+            )
+            final_state = "partial" if overall == "partial" else "succeeded"
+            conn.execute(
+                "UPDATE jobs SET state=?,coverage_status=?,observed_scope=?,stop_reason=?,"
+                "missing_fields=?,result=?,error=NULL,updated_at=? WHERE id=?",
+                (
+                    final_state,
+                    overall,
+                    m.canonical_json(final.observed_scope).decode(),
+                    final.stop_reason,
+                    m.canonical_json(final.missing_fields).decode(),
+                    m.canonical_json(final).decode(),
+                    self.store.clock(),
+                    job.id,
+                ),
+            )
+        self.store.event(conn, "step.completed", job=job, object_id=step.id)
+
+    def require_network(self) -> None:
+        if load_config(self.store.paths.root).app.network_mode == "offline":
+            raise m.CoreError(
+                m.ErrorCode.SCOPE_DENIED,
+                "External operations are disabled in offline mode",
+                next_action="Enable live mode explicitly and configure the required permission",
+            )
+
+    def unavailable_operations(self) -> bool:
+        with self.store.connection() as conn:
+            return any(
+                row[0] not in self.registry
+                for row in conn.execute(
+                    "SELECT operation FROM jobs WHERE state IN ('queued','running') "
+                    "AND cancel_requested=0"
+                )
+            )
+
+    def _retry_wait(self, job_id: str, seconds: float) -> None:
+        while seconds > 0 and not self._stop.is_set():
+            with self.store.transaction() as conn:
+                self._heartbeat(conn)
+                job = self.store.get(m.Job, job_id, conn=conn)
+                if job.cancel_requested:
+                    self._cancel(conn, job)
+                    return
+            interval = min(seconds, 0.25)
+            self.sleep(interval)  # no database transaction; cap cancellation latency
+            seconds -= interval
+
+    def settle_uncertain(
+        self,
+        step_id: str,
+        *,
+        expected_target: dict[str, Any],
+        verify: Callable[[Any, dict[str, Any]], None],
+        result: m.JobResult | None = None,
+        error: m.CoreError | None = None,
+        write_batch: Callable[[TransactionWriter], None] | None = None,
+    ) -> m.Job:
+        """Settle proven delivery/refusal under this executor's epoch; never requeue/send.
+
+        Read remote evidence before this call, outside transactions. verify is database-only
+        and must establish the original target and proof. Exactly one of result/error is required.
+        """
+        if (result is None) == (error is None) or (
+            error and error.detail.retry_class in ("reconcile", "safe_read")
+        ):
+            raise m.CoreError(
+                m.ErrorCode.INPUT_INVALID, "Settlement requires a definite result or refusal"
+            )
+        with self.store.transaction() as conn:
+            self._guard(conn)
+            step = self.store.get(m.JobStep, step_id, conn=conn)
+            job = self.store.get(m.Job, step.job_id, conn=conn)
+            if step.state not in UNCERTAIN or job.state not in ("awaiting_user", "cancelled"):
+                raise m.CoreError(
+                    m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Step is not awaiting reconciliation"
+                )
+            if step.target != expected_target:
+                raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Settlement target changed")
+            verify(conn, expected_target)
+            if write_batch:
+                write_batch(TransactionWriter(self.store, conn))
+            self._guard(conn)
+            current = self.store.get(m.JobStep, step_id, conn=conn)
+            current_job = self.store.get(m.Job, job.id, conn=conn)
+            if (
+                current.state != step.state
+                or current.target != step.target
+                or current_job.state != job.state
+                or current_job.cancel_requested != job.cancel_requested
+            ):
+                raise m.CoreError(m.ErrorCode.JOB_BUSY, "Settlement state changed")
+            conn.execute("UPDATE job_steps SET worker_epoch=? WHERE id=?", (self.epoch, step.id))
+            if result is not None:
+                self._finish_step(conn, job, step, result)
+                if conn.execute(
+                    "SELECT 1 FROM job_steps WHERE job_id=? AND state='queued'", (job.id,)
+                ).fetchone():
+                    conn.execute("UPDATE jobs SET state='queued',error=NULL WHERE id=?", (job.id,))
+            else:
+                self._fail(conn, job, step, error)
+                conn.execute("UPDATE jobs SET state='failed' WHERE id=?", (job.id,))
+            conn.execute(
+                "UPDATE jobs SET remote_state=?,worker_epoch=? WHERE id=?",
+                ("confirmed" if result is not None else "refused", self.epoch, job.id),
+            )
+            if job.cancel_requested:
+                self._cancel(conn, self.store.get(m.Job, job.id, conn=conn))
+            self.store.event(conn, "step.settled", job=job, object_id=step.id)
+            return self.store.get(m.Job, job.id, conn=conn)
+
     def run_once(self) -> bool:
         claimed = self._claim()
         if claimed is None:
@@ -453,59 +663,18 @@ class Executor:
             result = self.registry[job.operation].handler(ctx)
             if not isinstance(result, m.JobResult):
                 raise m.CoreError(m.ErrorCode.STORAGE, "Handler returned an invalid result")
-            encoded = m.canonical_json(result).decode()
             with self.store.transaction() as conn:
                 ctx._guard(conn)
-                state = "partial" if result.coverage_status == "partial" else "succeeded"
-                conn.execute(
-                    "UPDATE job_steps SET state=?,result=?,error=NULL WHERE id=?",
-                    (state, encoded, step.id),
-                )
-                pending = conn.execute(
-                    "SELECT 1 FROM job_steps WHERE job_id=? AND state='queued'", (job.id,)
-                ).fetchone()
-                if not pending:
-                    results = [
-                        json.loads(row[0])
-                        for row in conn.execute(
-                            "SELECT result FROM job_steps WHERE job_id=? ORDER BY sequence",
-                            (job.id,),
-                        )
-                    ]
-                    coverage = [r["coverage_status"] for r in results]
-                    # Multi-step coverage cannot become more confident than its least certain batch.
-                    overall = next(
-                        (
-                            c
-                            for c in ("partial", "unknown", "bounded", "scope_satisfied")
-                            if c in coverage
-                        ),
-                        "unknown",
+                persisted = self.store.get(m.JobStep, step.id, conn=conn)
+                if (
+                    persisted.side_effect_class == "external_submit"
+                    and persisted.state != "submitting"
+                ):
+                    raise m.CoreError(
+                        m.ErrorCode.PROTOCOL_MISMATCH,
+                        "External handler skipped the submitting boundary",
                     )
-                    final = m.JobResult(
-                        coverage_status=overall,
-                        requested_scope=job.requested_scope,
-                        observed_scope={"steps": [r["observed_scope"] for r in results]},
-                        stop_reason=result.stop_reason,
-                        missing_fields=sorted({f for r in results for f in r["missing_fields"]}),
-                        data={"steps": results},
-                    )
-                    final_state = "partial" if overall == "partial" else "succeeded"
-                    conn.execute(
-                        "UPDATE jobs SET state=?,coverage_status=?,observed_scope=?,stop_reason=?,"
-                        "missing_fields=?,result=?,error=NULL,updated_at=? WHERE id=?",
-                        (
-                            final_state,
-                            overall,
-                            m.canonical_json(final.observed_scope).decode(),
-                            final.stop_reason,
-                            m.canonical_json(final.missing_fields).decode(),
-                            m.canonical_json(final).decode(),
-                            self.store.clock(),
-                            job.id,
-                        ),
-                    )
-                self.store.event(conn, "step.completed", job=job, object_id=step.id)
+                self._finish_step(conn, job, step, result)
         except BoundaryStop:
             with self.store.transaction() as conn:
                 self._guard(conn)
@@ -533,18 +702,22 @@ class Executor:
                 elif (
                     step.side_effect_class == "safe_read"
                     and error.detail.retry_class == "safe_read"
-                    and current.retries < 2
+                    and current.retries
+                    < min(
+                        self.limits.safe_read_retries,
+                        current_job.limits.get("safe_read_retries", 2),
+                    )
                 ):
                     conn.execute(
                         "UPDATE job_steps SET state='queued',retries=retries+1,error=? WHERE id=?",
                         (m.canonical_json(error.detail).decode(), step.id),
                     )
-                    retry_delay = error.retry_after
+                    retry_delay = min(error.retry_after, 30, self.limits.read_timeout_seconds)
                 else:
                     self._fail(conn, job, step, error)
             if retry_delay is not None:
                 # No transaction is held during Retry-After; still own the OS lock.
-                self.sleep(retry_delay)
+                self._retry_wait(job.id, retry_delay)
         return True
 
     def request_stop(self) -> None:
@@ -558,5 +731,13 @@ class Executor:
             if once:
                 break
             if not did_work:
+                if self.unavailable_operations():
+                    import logging
+
+                    logging.getLogger("metamuse").warning(
+                        "Jobs with unavailable operations remain queued"
+                    )
+                    # This process cannot gain a missing implementation while idle.
+                    break
                 self._stop.wait(0.5)
         return count

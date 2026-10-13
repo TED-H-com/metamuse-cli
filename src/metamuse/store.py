@@ -9,6 +9,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
+import threading
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
 from datetime import UTC, datetime
@@ -18,6 +19,7 @@ from typing import Any, BinaryIO, TypeVar
 from pydantic import ValidationError
 
 from metamuse import models as m
+from metamuse.config import load_config
 from metamuse.paths import WorkspacePaths, private_dir, private_file
 
 SCHEMA_VERSION = 1
@@ -69,6 +71,39 @@ JSON_FIELDS = {
 }
 BOOL_FIELDS = {"cancel_requested", "complete", "stale", "revoked"}
 T = TypeVar("T", bound=m.Model)
+_ACTIVE_WRITES = threading.local()
+
+
+class TransactionWriter:
+    """Bound to the caller's transaction; no commit, rollback or nested transaction API."""
+
+    def __init__(self, store: Store, conn: sqlite3.Connection):
+        self._store, self._conn = store, conn
+
+    def insert(self, record: T) -> T:
+        return self._store.insert(record, conn=self._conn)
+
+    def get(self, model: type[T], record_id: str, *, revision: int | None = None) -> T:
+        return self._store.get(model, record_id, revision=revision, conn=self._conn)
+
+    def append_draft_revision(
+        self, record: m.DraftRevision, *, expected_revision: int | None
+    ) -> m.DraftRevision:
+        return self._store.append_draft_revision(
+            record, expected_revision=expected_revision, conn=self._conn
+        )
+
+    def execute(self, sql: str, parameters: Any = ()) -> sqlite3.Cursor:
+        # Feature-owned static SQL only. Transaction control belongs to Store.
+        if sql.lstrip().split(None, 1)[0].upper() not in (
+            "SELECT",
+            "INSERT",
+            "UPDATE",
+            "DELETE",
+            "WITH",
+        ):
+            raise m.CoreError(m.ErrorCode.STORAGE, "Batch SQL must not control transactions")
+        return self._conn.execute(sql, parameters)
 
 
 def utc_now() -> str:
@@ -135,6 +170,7 @@ class Store:
         conn = sqlite3.connect(self.paths.database, timeout=5, isolation_level=None)
         try:
             _configure(conn)
+            conn.create_function("metamuse_now", 0, lambda: self.clock())
         except BaseException:
             conn.close()
             raise
@@ -161,19 +197,26 @@ class Store:
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
-        with self.connection() as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            try:
-                yield conn
-                conn.commit()
-            except sqlite3.IntegrityError as exc:
-                conn.rollback()
-                raise m.CoreError(
-                    m.ErrorCode.REFERENCE_INVALID, "Database reference or constraint rejected"
-                ) from exc
-            except BaseException:
-                conn.rollback()
-                raise
+        active = getattr(_ACTIVE_WRITES, "roots", set())
+        if self.paths.root in active:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Nested write transaction; use the batch writer")
+        _ACTIVE_WRITES.roots = active | {self.paths.root}
+        try:
+            with self.connection() as conn:
+                conn.execute("BEGIN IMMEDIATE")
+                try:
+                    yield conn
+                    conn.commit()
+                except sqlite3.IntegrityError as exc:
+                    conn.rollback()
+                    raise m.CoreError(
+                        m.ErrorCode.REFERENCE_INVALID, "Database reference or constraint rejected"
+                    ) from exc
+                except BaseException:
+                    conn.rollback()
+                    raise
+        finally:
+            _ACTIVE_WRITES.roots = active
 
     def migrate(self, migrations: dict[int, Path]) -> None:
         with file_lock(self.paths.runtime / "maintenance.lock"):
@@ -215,6 +258,16 @@ class Store:
         data = record.model_dump(mode="json")
         project = data.get("project_id")
         if isinstance(record, (m.Packet, m.Export)):
+            if isinstance(record, m.Packet):
+                try:
+                    m.utf8_text(
+                        record.rendered_text,
+                        load_config(self.paths.root).limits.packet_max_utf8_bytes,
+                    )
+                except ValueError as exc:
+                    raise m.CoreError(
+                        m.ErrorCode.LIMIT_REACHED, "Packet UTF-8 byte limit exceeded"
+                    ) from exc
             self.validate_evidence(
                 project, record.selection, conn=conn, source_only=isinstance(record, m.Packet)
             )
@@ -254,6 +307,31 @@ class Store:
             )
         return record
 
+    def append_draft_revision(
+        self,
+        record: m.DraftRevision,
+        *,
+        expected_revision: int | None,
+        conn: sqlite3.Connection | None = None,
+    ) -> m.DraftRevision:
+        """Compare-and-swap and append on the caller's transaction; the trigger advances head."""
+        if conn is None:
+            with self.transaction() as tx:
+                return self.append_draft_revision(
+                    record, expected_revision=expected_revision, conn=tx
+                )
+        if not conn.in_transaction:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Draft append requires a write transaction")
+        draft = self.get(m.Draft, record.draft_id, conn=conn)
+        exists = conn.execute(
+            "SELECT 1 FROM draft_revisions WHERE draft_id=?", (draft.id,)
+        ).fetchone()
+        if (exists and expected_revision != draft.current_revision) or (
+            not exists and expected_revision is not None
+        ):
+            raise m.CoreError(m.ErrorCode.DATA_STALE, "Draft expected_revision does not match")
+        return self.insert(record, conn=conn)
+
     @staticmethod
     def decode(model: type[T], row: sqlite3.Row) -> T:
         try:
@@ -263,7 +341,7 @@ class Store:
                     data[key] = json.loads(value)
                 elif key in BOOL_FIELDS:
                     data[key] = bool(value)
-            return model.model_validate(data)
+            return model.model_validate(data, context={"stored": True})
         except (ValidationError, ValueError, TypeError) as exc:
             raise m.CoreError(m.ErrorCode.STORAGE, "Stored record violates its contract") from exc
 
@@ -372,14 +450,17 @@ class Store:
         *,
         job: m.Job | None = None,
         object_id: str | None = None,
+        project_id: str | None = None,
         detail: dict[str, Any] | None = None,
     ) -> None:
+        if job is not None and project_id is not None and job.project_id != project_id:
+            raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Event project does not match its job")
         self.insert(
             m.Event(
                 id=m.new_id("evt"),
                 object_id=object_id,
                 job_id=job.id if job else None,
-                project_id=job.project_id if job else None,
+                project_id=job.project_id if job else project_id,
                 kind=kind,
                 detail=detail or {},
                 created_at=self.clock(),
@@ -393,6 +474,8 @@ class Store:
             raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Ready object is missing")
         if path.stat().st_size != asset.actual_bytes:
             raise m.CoreError(m.ErrorCode.STORAGE, "Object size mismatch")
+        if _hash_file(path) != asset.sha256:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Object hash mismatch")
         return path
 
     def put_object(
@@ -420,11 +503,8 @@ class Store:
             sha = digest.hexdigest()
             target = self.paths.object_path(sha)
             private_dir(target.parent)
-            # Same-hash writers have identical bytes. Existing content is checked before reuse.
-            if target.exists():
-                if _hash_file(target) != sha:
-                    raise m.CoreError(m.ErrorCode.STORAGE, "Existing object hash mismatch")
-            else:
+            # Only measured/hash-verified staged bytes may repair a corrupt occupant.
+            if not target.exists() or _hash_file(target) != sha:
                 os.replace(staging, target)
                 target.chmod(0o600)
                 _fsync_dir(target.parent)
@@ -441,6 +521,11 @@ class Store:
                 row = conn.execute("SELECT * FROM assets WHERE sha256=?", (sha,)).fetchone()
                 if row:
                     result = self.decode(m.Asset, row)
+                    if result.mime != mime:
+                        raise m.CoreError(
+                            m.ErrorCode.INPUT_INVALID,
+                            "Object MIME disagrees with its existing classification",
+                        )
                     self.verify_asset(result)
                     return result
                 return self.insert(asset, conn=conn)
@@ -451,7 +536,19 @@ class Store:
         destination = WorkspacePaths.resolve(destination).root
         if destination.exists():
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Backup destination must be fresh")
-        private_dir(destination)
+        try:
+            destination.mkdir(mode=0o700, parents=True)
+        except FileExistsError as exc:
+            raise m.CoreError(
+                m.ErrorCode.INPUT_INVALID, "Backup destination must be fresh"
+            ) from exc
+        try:
+            return self._write_backup(source, destination)
+        except BaseException:
+            shutil.rmtree(destination)
+            raise
+
+    def _write_backup(self, source: sqlite3.Connection, destination: Path) -> Path:
         db = destination / "state.sqlite3"
         private_file(db)
         with closing(sqlite3.connect(db)) as target:
@@ -466,8 +563,6 @@ class Store:
                 for row in snapshot.execute("SELECT * FROM assets WHERE state='ready'"):
                     asset = self.decode(m.Asset, row)
                     path = self.verify_asset(asset)
-                    if _hash_file(path) != asset.sha256:
-                        raise m.CoreError(m.ErrorCode.STORAGE, "Backup object hash mismatch")
                     relative = path.relative_to(self.paths.root)
                     copied = destination / relative
                     private_dir(copied.parent)

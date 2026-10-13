@@ -479,8 +479,9 @@ def test_worker_registers_before_executor(ctx, monkeypatch):
     monkeypatch.setattr(app, "register_builtin_operations", lambda: seen.append("register"))
 
     class Worker:
-        def __init__(self, store):
+        def __init__(self, store, *, non_interactive):
             assert seen == ["register"] and store is ctx.store
+            assert not non_interactive
 
         def __enter__(self):
             return self
@@ -492,6 +493,9 @@ def test_worker_registers_before_executor(ctx, monkeypatch):
             assert once
             seen.append("run")
             return 0
+
+        def unavailable_operations(self):
+            return False
 
     monkeypatch.setattr(cli, "Executor", Worker)
     result = cli.dispatch(cli.parser().parse_args(["worker", "run", "--once"]))
