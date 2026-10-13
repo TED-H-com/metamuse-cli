@@ -28,15 +28,19 @@ def compute_sha256_and_size(path: Path) -> tuple[str, int]:
     return hashlib.sha256(data).hexdigest(), len(data)
 
 
+def _reject_constant(x: str) -> None:
+    if x == "null":
+        return None
+    raise ValueError(f"Invalid constant {x}")
+
+
 def parse_vtt_cues(content: str) -> tuple[bool, int, bool, str | None]:
     """Parse WebVTT content for header, cue count, and overlaps."""
     lines = content.splitlines()
     if not lines or not lines[0].startswith("WEBVTT"):
         return False, 0, False, "Not WebVTT header"
 
-    cue_pattern = re.compile(
-        r"^(\d{2}:\d{2}:\d{2}\.\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}\.\d{3})"
-    )
+    cue_pattern = re.compile(r"^(\d{2}:\d{2}:\d{2}\.\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2}\.\d{3})")
     cues = []
     has_overlap = False
 
@@ -83,9 +87,7 @@ def parse_srt_cues(raw_bytes: bytes) -> tuple[bool, int, bool, str | None]:
         return False, 0, False, f"Decode error: {e}"
 
     lines = [line.strip() for line in text.splitlines()]
-    srt_pattern = re.compile(
-        r"^(\d{2}:\d{2}:\d{2},\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2},\d{3})"
-    )
+    srt_pattern = re.compile(r"^(\d{2}:\d{2}:\d{2},\d{3})\s+-->\s+(\d{2}:\d{2}:\d{2},\d{3})")
     cues = []
 
     def to_ms(ts: str) -> int:
@@ -164,11 +166,18 @@ def check_corpus(corpus_dir: Path) -> int:
             continue
         file_path = corpus_dir / rel_path
         expected = meta.get("expected", {})
-        lines = [line.rstrip("\r\n") for line in file_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+        lines = [
+            line.rstrip("\r\n")
+            for line in file_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
 
         total_lines = len(lines)
         if "total_rows" in expected and total_lines != expected["total_rows"]:
-            print(f"FAIL: {rel_path} total rows mismatch: expected {expected['total_rows']}, got {total_lines}")
+            print(
+                f"FAIL: {rel_path} total rows mismatch: "
+                f"expected {expected['total_rows']}, got {total_lines}"
+            )
             return 1
 
         # Check valid rows count
@@ -178,7 +187,7 @@ def check_corpus(corpus_dir: Path) -> int:
                 # Reject NaN and Infinity
                 parsed = json.loads(
                     line,
-                    parse_constant=lambda x: None if x == "null" else (_ for _ in ()).throw(ValueError(f"Invalid constant {x}")),
+                    parse_constant=_reject_constant,
                 )
                 # Basic schema checks
                 if (
@@ -197,7 +206,10 @@ def check_corpus(corpus_dir: Path) -> int:
                 continue
 
         if "valid_rows" in expected and valid_count != expected["valid_rows"]:
-            print(f"FAIL: {rel_path} valid rows mismatch: expected {expected['valid_rows']}, got {valid_count}")
+            print(
+                f"FAIL: {rel_path} valid rows mismatch: "
+                f"expected {expected['valid_rows']}, got {valid_count}"
+            )
             return 1
 
         # For comments_mixed_bad.jsonl, verify invalid rows line numbers and codes
@@ -211,7 +223,7 @@ def check_corpus(corpus_dir: Path) -> int:
                 try:
                     p = json.loads(
                         raw_line,
-                        parse_constant=lambda x: None if x == "null" else (_ for _ in ()).throw(ValueError(f"Invalid constant {x}")),
+                        parse_constant=_reject_constant,
                     )
                     if (
                         isinstance(p, dict)
@@ -227,7 +239,10 @@ def check_corpus(corpus_dir: Path) -> int:
                 except (json.JSONDecodeError, ValueError, TypeError):
                     is_valid = False
                 if is_valid:
-                    print(f"FAIL: Line {line_num} in comments_mixed_bad.jsonl was expected to be invalid, but passed validation")
+                    print(
+                        f"FAIL: Line {line_num} in comments_mixed_bad.jsonl was expected to be "
+                        "invalid, but passed validation"
+                    )
                     return 1
 
     print("  OK: JSONL row counts and invalid-row error codes match expectations.")
@@ -247,14 +262,23 @@ def check_corpus(corpus_dir: Path) -> int:
             valid, cue_count, has_overlap, err = parse_srt_cues(raw_bytes)
 
         if valid != exp.get("valid"):
-            print(f"FAIL: {rel_path} validity mismatch: expected {exp.get('valid')}, got {valid} (err: {err})")
+            print(
+                f"FAIL: {rel_path} validity mismatch: "
+                f"expected {exp.get('valid')}, got {valid} (err: {err})"
+            )
             return 1
         if exp.get("valid"):
             if cue_count != exp.get("cue_count"):
-                print(f"FAIL: {rel_path} cue count mismatch: expected {exp.get('cue_count')}, got {cue_count}")
+                print(
+                    f"FAIL: {rel_path} cue count mismatch: "
+                    f"expected {exp.get('cue_count')}, got {cue_count}"
+                )
                 return 1
             if has_overlap != exp.get("has_overlaps"):
-                print(f"FAIL: {rel_path} has_overlaps mismatch: expected {exp.get('has_overlaps')}, got {has_overlap}")
+                print(
+                    f"FAIL: {rel_path} has_overlaps mismatch: "
+                    f"expected {exp.get('has_overlaps')}, got {has_overlap}"
+                )
                 return 1
 
     print("  OK: All subtitle files meet cue count, overlap, and error expectations.")
@@ -273,7 +297,10 @@ def check_corpus(corpus_dir: Path) -> int:
             print(f"FAIL: Media file {rel_path} size {sz} >= 64 KiB limit")
             return 1
 
-        if rel_path in ("media/same_bytes_a.mp4", "media/same_bytes_b.mp4") and file_path.read_bytes() != tiny_mp4_bytes:
+        if (
+            rel_path in ("media/same_bytes_a.mp4", "media/same_bytes_b.mp4")
+            and file_path.read_bytes() != tiny_mp4_bytes
+        ):
             print(f"FAIL: {rel_path} does not match tiny.mp4 bytes")
             return 1
 
@@ -296,7 +323,11 @@ def check_corpus(corpus_dir: Path) -> int:
     print("\n[Check 6] Verifying search corpus items and query hit counts...")
     search_file = corpus_dir / "search" / "search_corpus.jsonl"
     search_meta = manifest_files.get("search/search_corpus.jsonl", {}).get("expected", {})
-    search_items = [json.loads(line) for line in search_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    search_items = [
+        json.loads(line)
+        for line in search_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
     items_a = [it for it in search_items if it.get("project") == "project_a"]
     items_b = [it for it in search_items if it.get("project") == "project_b"]
@@ -316,10 +347,16 @@ def check_corpus(corpus_dir: Path) -> int:
         hits_a = sum(1 for it in items_a if query_text in it.get("text", ""))
         hits_b = sum(1 for it in items_b if query_text in it.get("text", ""))
         if hits_a != qinfo["expected_hits_project_a"]:
-            print(f"FAIL: Search query '{query_text}' Project A expected {qinfo['expected_hits_project_a']}, got {hits_a}")
+            print(
+                f"FAIL: Search query '{query_text}' Project A "
+                f"expected {qinfo['expected_hits_project_a']}, got {hits_a}"
+            )
             return 1
         if hits_b != qinfo["expected_hits_project_b"]:
-            print(f"FAIL: Search query '{query_text}' Project B expected {qinfo['expected_hits_project_b']}, got {hits_b}")
+            print(
+                f"FAIL: Search query '{query_text}' Project B "
+                f"expected {qinfo['expected_hits_project_b']}, got {hits_b}"
+            )
             return 1
         print(f"  Query '{query_text}': Project A = {hits_a}, Project B = {hits_b} -> OK")
 
@@ -327,24 +364,42 @@ def check_corpus(corpus_dir: Path) -> int:
     print("\n[Check 7] Verifying security URLs and Paths...")
     urls_meta = manifest_files.get("security/urls.jsonl", {}).get("expected", {})
     urls_file = corpus_dir / "security" / "urls.jsonl"
-    urls_rows = [json.loads(line) for line in urls_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    urls_rows = [
+        json.loads(line)
+        for line in urls_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     allow_urls = sum(1 for r in urls_rows if r.get("expected_verdict") == "allow")
     reject_urls = sum(1 for r in urls_rows if r.get("expected_verdict") == "reject")
     if len(urls_rows) != urls_meta.get("total_rows"):
-        print(f"FAIL: urls.jsonl total rows mismatch: expected {urls_meta.get('total_rows')}, got {len(urls_rows)}")
+        print(
+            f"FAIL: urls.jsonl total rows mismatch: "
+            f"expected {urls_meta.get('total_rows')}, got {len(urls_rows)}"
+        )
         return 1
-    if allow_urls != urls_meta.get("allowed_count") or reject_urls != urls_meta.get("rejected_count"):
+    if allow_urls != urls_meta.get("allowed_count") or reject_urls != urls_meta.get(
+        "rejected_count"
+    ):
         print(f"FAIL: urls.jsonl verdicts mismatch: allow={allow_urls}, reject={reject_urls}")
         return 1
 
     paths_meta = manifest_files.get("security/paths.jsonl", {}).get("expected", {})
     paths_file = corpus_dir / "security" / "paths.jsonl"
-    paths_rows = [json.loads(line) for line in paths_file.read_text(encoding="utf-8").splitlines() if line.strip()]
+    paths_rows = [
+        json.loads(line)
+        for line in paths_file.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     allow_paths = sum(1 for r in paths_rows if r.get("expected_verdict") == "allow")
     reject_paths = sum(1 for r in paths_rows if r.get("expected_verdict") == "reject")
-    runtime_paths = sum(1 for r in paths_rows if r.get("expected_verdict") == "runtime_symlink_test")
+    runtime_paths = sum(
+        1 for r in paths_rows if r.get("expected_verdict") == "runtime_symlink_test"
+    )
     if len(paths_rows) != paths_meta.get("total_rows"):
-        print(f"FAIL: paths.jsonl total rows mismatch: expected {paths_meta.get('total_rows')}, got {len(paths_rows)}")
+        print(
+            f"FAIL: paths.jsonl total rows mismatch: "
+            f"expected {paths_meta.get('total_rows')}, got {len(paths_rows)}"
+        )
         return 1
     if (
         allow_paths != paths_meta.get("allowed_count")

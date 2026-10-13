@@ -174,7 +174,10 @@ def regenerate_oversized_row(corpus_dir: Path) -> None:
             ensure_ascii=False,
         ),
         # Line 2: Invalid JSON syntax (E_INPUT_INVALID)
-        '{"platform": "generic", "kind": "comment", "native_id": "syntax-err-01", text: unquoted_value_error}',
+        (
+            '{"platform": "generic", "kind": "comment", "native_id": "syntax-err-01", '
+            "text: unquoted_value_error}"
+        ),
         # Line 3: Valid
         json.dumps(
             {
@@ -194,7 +197,13 @@ def regenerate_oversized_row(corpus_dir: Path) -> None:
             ensure_ascii=False,
         ),
         # Line 4: Wrong type - kind is integer 12345 (E_INPUT_INVALID)
-        '{"platform": "generic", "kind": 12345, "native_id": "wrong-type-01", "native_scope": null, "parent_native_id": null, "text": "kind型別錯誤為整數", "source_url": "https://example.org/c/3", "upstream_collection_method": "synthetic_fixture", "created_at_raw": "8分鐘前", "created_at": "2026-10-13T10:02:00Z", "author_display": "型別錯誤者", "media": null}',
+        (
+            '{"platform": "generic", "kind": 12345, "native_id": "wrong-type-01", '
+            '"native_scope": null, "parent_native_id": null, "text": "kind型別錯誤為整數", '
+            '"source_url": "https://example.org/c/3", '
+            '"upstream_collection_method": "synthetic_fixture", "created_at_raw": "8分鐘前", '
+            '"created_at": "2026-10-13T10:02:00Z", "author_display": "型別錯誤者", "media": null}'
+        ),
         # Line 5: Valid
         json.dumps(
             {
@@ -214,7 +223,13 @@ def regenerate_oversized_row(corpus_dir: Path) -> None:
             ensure_ascii=False,
         ),
         # Line 6: Unknown kind (E_UNSUPPORTED)
-        '{"platform": "generic", "kind": "unsupported_broadcast", "native_id": "unknown-kind-01", "native_scope": null, "parent_native_id": null, "text": "未支援的 kind 欄位值", "source_url": "https://example.org/c/5", "upstream_collection_method": "synthetic_fixture", "created_at_raw": "6分鐘前", "created_at": "2026-10-13T10:04:00Z", "author_display": "未知類別者", "media": null}',
+        (
+            '{"platform": "generic", "kind": "unsupported_broadcast", '
+            '"native_id": "unknown-kind-01", "native_scope": null, "parent_native_id": null, '
+            '"text": "未支援的 kind 欄位值", "source_url": "https://example.org/c/5", '
+            '"upstream_collection_method": "synthetic_fixture", "created_at_raw": "6分鐘前", '
+            '"created_at": "2026-10-13T10:04:00Z", "author_display": "未知類別者", "media": null}'
+        ),
         # Line 7: Valid
         json.dumps(
             {
@@ -234,7 +249,12 @@ def regenerate_oversized_row(corpus_dir: Path) -> None:
             ensure_ascii=False,
         ),
         # Line 8: Missing required field (platform) (E_INPUT_INVALID)
-        '{"kind": "comment", "native_id": "missing-field-01", "native_scope": null, "parent_native_id": null, "text": "缺少 platform 必填欄位", "created_at_raw": "4分鐘前", "created_at": "2026-10-13T10:06:00Z", "author_display": "缺欄位者", "media": null}',
+        (
+            '{"kind": "comment", "native_id": "missing-field-01", "native_scope": null, '
+            '"parent_native_id": null, "text": "缺少 platform 必填欄位", '
+            '"created_at_raw": "4分鐘前", "created_at": "2026-10-13T10:06:00Z", '
+            '"author_display": "缺欄位者", "media": null}'
+        ),
         # Line 9: Valid
         json.dumps(
             {
@@ -290,9 +310,23 @@ def regenerate_oversized_row(corpus_dir: Path) -> None:
             ensure_ascii=False,
         ),
         # Line 12: NaN literal (E_INPUT_INVALID)
-        '{"platform": "generic", "kind": "comment", "native_id": "bad-nan-01", "native_scope": null, "parent_native_id": null, "text": "含有NaN數值", "source_url": "https://example.org/c/10", "upstream_collection_method": "synthetic_fixture", "score": NaN, "created_at_raw": "1分鐘前", "created_at": "2026-10-13T10:10:00Z", "author_display": "NaN測試者", "media": null}',
+        (
+            '{"platform": "generic", "kind": "comment", "native_id": "bad-nan-01", '
+            '"native_scope": null, "parent_native_id": null, "text": "含有NaN數值", '
+            '"source_url": "https://example.org/c/10", '
+            '"upstream_collection_method": "synthetic_fixture", "score": NaN, '
+            '"created_at_raw": "1分鐘前", "created_at": "2026-10-13T10:10:00Z", '
+            '"author_display": "NaN測試者", "media": null}'
+        ),
         # Line 13: Infinity literal (E_INPUT_INVALID)
-        '{"platform": "generic", "kind": "comment", "native_id": "bad-inf-01", "native_scope": null, "parent_native_id": null, "text": "含有Infinity數值", "source_url": "https://example.org/c/11", "upstream_collection_method": "synthetic_fixture", "score": Infinity, "created_at_raw": "剛剛", "created_at": "2026-10-13T10:11:00Z", "author_display": "Infinity測試者", "media": null}',
+        (
+            '{"platform": "generic", "kind": "comment", "native_id": "bad-inf-01", '
+            '"native_scope": null, "parent_native_id": null, "text": "含有Infinity數值", '
+            '"source_url": "https://example.org/c/11", '
+            '"upstream_collection_method": "synthetic_fixture", "score": Infinity, '
+            '"created_at_raw": "剛剛", "created_at": "2026-10-13T10:11:00Z", '
+            '"author_display": "Infinity測試者", "media": null}'
+        ),
         # Line 14: Valid
         json.dumps(
             {
