@@ -1,6 +1,41 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
+    "DraftPreferences": {
+      "additionalProperties": false,
+      "description": "Explicit preferences for this draft; saving never learns a permanent policy.",
+      "properties": {
+        "language": {
+          "default": "und",
+          "maxLength": 1000000,
+          "title": "Language",
+          "type": "string"
+        },
+        "emoji": {
+          "default": "unspecified",
+          "maxLength": 1000000,
+          "title": "Emoji",
+          "type": "string"
+        },
+        "format": {
+          "default": "plain_text",
+          "enum": [
+            "plain_text",
+            "markdown"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "scope": {
+          "const": "this_draft",
+          "default": "this_draft",
+          "title": "Scope",
+          "type": "string"
+        }
+      },
+      "title": "DraftPreferences",
+      "type": "object"
+    },
     "EvidenceRef": {
       "additionalProperties": false,
       "properties": {
@@ -94,6 +129,23 @@
       "title": "Facts Refs",
       "type": "array"
     },
+    "assets": {
+      "items": {
+        "maxLength": 128,
+        "minLength": 3,
+        "type": "string"
+      },
+      "title": "Assets",
+      "type": "array"
+    },
+    "variant": {
+      "additionalProperties": true,
+      "title": "Variant",
+      "type": "object"
+    },
+    "preferences": {
+      "$ref": "#/$defs/DraftPreferences"
+    },
     "request_key": {
       "maxLength": 128,
       "minLength": 1,
@@ -105,7 +157,6 @@
     "project_id",
     "text",
     "platform",
-    "facts_refs",
     "request_key"
   ],
   "title": "DraftSaveRequest",

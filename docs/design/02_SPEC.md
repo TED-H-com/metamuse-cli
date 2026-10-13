@@ -128,7 +128,7 @@ metamuse jobs get ID
 metamuse jobs resume ID --request-key KEY
 metamuse jobs cancel ID --request-key KEY
 metamuse worker run [--once]
-metamuse search --project ID --query TEXT [--cursor CURSOR]
+metamuse search --project ID --query TEXT [--cursor CURSOR] [--limit N]
 metamuse packet prepare --project ID --selection-file PATH --request-key KEY
 metamuse muse open --project ID --topic TEXT --access-grant ID --request-key KEY
 metamuse muse send --discussion ID --packet ID --question-file PATH --share-grant ID --request-key KEY
@@ -140,7 +140,7 @@ metamuse export --project ID --refs-file PATH --format FORMAT --request-key KEY
 metamuse mcp
 ```
 
-更新草稿加 --draft ID --expected-revision N。人類本地auth import／permit create另提供；不是能讓MCP自己approved:true的工具。憑證匯入需操作者指定檔案，不讀任意主瀏覽器profile。
+更新草稿加 --draft ID --expected-revision N。明示引用／附件／變體／偏好可用 --facts-file、--assets-file、--variant-file、--preferences-file（JSON）。人類本地auth import／permit create另提供；不是能讓MCP自己approved:true的工具。憑證匯入需操作者指定檔案，不讀任意主瀏覽器profile。
 
 CLI add預設持久化；--run前景執行。沒有長駐worker時前景命令結束不代表工作會在背景繼續。MCP可附同套件worker，但同workspace只能一個executor。
 

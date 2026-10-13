@@ -93,13 +93,13 @@ def test_each_application_delegates_with_validated_request(
     ctx, monkeypatch, module_name, function, model, payload
 ):
     module = import_module(f"metamuse.{module_name}")
-    original = getattr(module, function)
     seen = []
 
     def delegate(context, request):
         assert context is ctx and isinstance(request, model)
         seen.append(request)
-        return original(context, request)
+        # Test delegation independently of whether this feature has been implemented.
+        raise m.CoreError(m.ErrorCode.UNSUPPORTED, "not implemented in this build")
 
     monkeypatch.setattr(module, function, delegate)
     result = getattr(app, function)(ctx, payload)
@@ -421,6 +421,8 @@ def test_feature_capabilities_aggregate_without_granting_verification(ctx, monke
     monkeypatch.setattr(collect, "IMPLEMENTED_TOOLS", frozenset({"metamuse_collect"}))
     monkeypatch.setattr(content, "IMPLEMENTED_TOOLS", frozenset({"metamuse_search"}))
     monkeypatch.setattr(muse, "IMPLEMENTED_TOOLS", frozenset({"metamuse_muse_send"}))
+    for module in (collect, content, muse):
+        monkeypatch.setattr(module, "capability_status", lambda ctx: {}, raising=False)
     rows = {row["name"]: row for row in app.inspect_capabilities(ctx).data["capabilities"]}
     for name in ("metamuse_collect", "metamuse_search", "metamuse_muse_send"):
         assert rows[name]["implementation"] == "implemented"
