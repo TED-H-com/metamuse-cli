@@ -16,7 +16,14 @@ def generated_schemas() -> dict[str, dict]:
         f"{name}.input.json": schema_for(model) for name, model in m.TOOL_REQUEST_MODELS.items()
     }
     schemas["envelope.json"] = schema_for(m.Envelope)
-    for model in (*TABLE_MODELS.values(), m.Capability, m.EvidenceRef, m.JobResult):
+    for model in (
+        *TABLE_MODELS.values(),
+        m.Capability,
+        m.EvidenceRef,
+        m.JobResult,
+        m.AuthImportRequest,
+        m.PermitCreateRequest,
+    ):
         schemas[f"{model.__name__}.json"] = schema_for(model)
     return schemas
 

@@ -121,6 +121,17 @@ def test_cli_projects_jobs_worker(tmp_path, capsys):
     ],
 )
 def test_registered_stubs_return_unsupported(tmp_path, capsys, command):
+    command = list(command)
+    for index, value in enumerate(command):
+        if value in ("missing.json", "missing.txt"):
+            path = tmp_path / value
+            path.write_text(
+                json.dumps([{"kind": "item_revision", "id": "itm_fixture", "revision": 1}])
+                if value.endswith(".json")
+                else "Synthetic text",
+                encoding="utf-8",
+            )
+            command[index] = str(path)
     code, result, _ = run(tmp_path, capsys, command)
     assert code == 4 and result["error"]["code"] == "E_UNSUPPORTED"
 

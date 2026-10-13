@@ -1,18 +1,18 @@
 # MetaMuse core API (0.1.0.dev0, contract 1.1, schema 1)
 
-B02–B04 owns `models.py`, `store.py`, `jobs.py`, migration SQL and generated schemas.
-Other tasks must build against these APIs. Request a core change from the owner with
-what/why/proposed diff; do not edit those files. Feature modules, application wrappers,
-CLI wiring and their tests can be implemented by their assigned owners. No automatic
-module discovery, plugin framework or second orchestration loop exists.
+B02–B04 owns `app.py`, `cli.py`, `models.py`, `store.py`, `jobs.py`, migration SQL and
+generated schemas. Other tasks must build against these APIs without editing them.
+Request a core change from the owner with what/why/proposed diff. No automatic module
+discovery, plugin framework or second orchestration loop exists.
 
 ## Layout and initialization
 
 `src/metamuse/` is the one import package. `app.py` is the shared application layer;
 `cli.py` parses/renders, `jobs.py` executes, `store.py` persists, `models.py` defines
 contracts, `paths.py` owns private paths, and `schemas.py` regenerates contracts.
-`collect.py`, `media.py`, `muse.py`, `content.py`, `safety.py`, `mcp.py` are reserved
-modules for later tasks and currently contain no implementation.
+`collect.py`, `media.py`, `muse.py`, `content.py`, `safety.py`, `mcp.py` contain the
+typed feature seams for later tasks; their application functions currently raise
+`E_UNSUPPORTED`. Registration hooks are empty and implemented-tool sets are empty.
 
 ```python
 from metamuse.app import AppContext, create_project
@@ -46,18 +46,18 @@ fifteen contract names to their functions; MCP should use it rather than shellin
 
 Every wrapper accepts its model or a Python dictionary. `@application(RequestModel)`
 validates extra fields and returns clean envelopes for expected input, store and I/O
-errors. Domain functions do not print. Feature owners can replace their stub wrapper
-with a call into their assigned feature module and update `TOOL_FUNCTIONS` if binding
-changes. Update capability reporting only with actual implementation and test evidence;
-`IMPLEMENTED` currently records the five tested offline application functions.
+errors. Validation, wrappers and `TOOL_FUNCTIONS` stay in `app.py`; the ten feature
+wrappers delegate to functions of the same names in their assigned modules. Implement
+the feature function without adding a second decorator. Domain functions do not print.
+Request new application functions and typed result models from core. Core's five
+implemented tools are separate from each feature's implemented-tool declaration.
 
 ```python
-from metamuse.app import application
+from metamuse.app import AppContext
 from metamuse.models import CollectRequest, CoreError, Envelope, ErrorCode
 
 
-@application(CollectRequest)
-def feature_submit_collect(ctx, request: CollectRequest) -> Envelope:
+def submit_collect(ctx: AppContext, request: CollectRequest) -> Envelope:
     # Feature owner must validate scope/path/limits before calling submit_job.
     raise CoreError(ErrorCode.UNSUPPORTED, "not implemented in this build")
 ```
@@ -76,7 +76,12 @@ Exit mapping is centralized in `ERROR_POLICY`/`exit_code`: 0 success/accepted, 2
 or references/key conflict, 3 permission/auth/human action, 4 unsupported/dependency/
 protocol/selector drift, 5 partial/timeout/busy/limits, 6 unknown external state, 7
 storage/internal, and CLI interrupt 130. JSON output is one stdout envelope; warnings
-and logs use stderr. Registered CLI feature stubs do not read input files or use the network.
+and logs use stderr. CLI reads text/question/selection/refs files as strict UTF-8, counting
+actual bytes before delegation. It preserves CRLF and Unicode composition. Question files
+use `question_max_utf8_bytes`; text, selections, refs, facts and permit scope files use
+`text_max_bytes`. JSON files reject duplicate keys and nonfinite numbers and are then
+validated by the request model. Local import/media and auth files are passed as paths;
+their feature owners enforce path/content policy. No stub performs a network request.
 
 `create_project` returns the Project directly in `data`. `get_job` returns
 `data={"job": Job, "steps": [JobStep, ...]}`. `control_job` returns job_id/state/
@@ -95,13 +100,16 @@ coordinate any change that would affect this ordering. CLI `jobs list` supports 
 
 ## Register and submit jobs
 
-Registration is an explicit import/startup responsibility. Call a feature module's
-registration function before submitting work and before entering `Executor`. Operations
-are process-local registrations; jobs/steps/checkpoints are persisted. No fake operation
-is registered in the shipped package. Tests use isolated registry dictionaries.
+Registration is an explicit import/startup responsibility. Call
+`app.register_builtin_operations(registry=None)` before submitting work and before
+entering `Executor`. It imports the fixed tuple `collect`, `media`, `content`, `safety`,
+`muse` and calls each optional `register_operations(registry)` hook. Hooks must be
+idempotent per registry because submission and execution may register in the same process.
+Operations are process-local registrations; jobs/steps/checkpoints are persisted. No fake
+operation is registered in the shipped package. Tests use isolated registry dictionaries.
 
 ```python
-from metamuse.jobs import register_operation, StepContext, StepSpec, submit_job
+from metamuse.jobs import OPERATIONS, register_operation, StepContext, StepSpec, submit_job
 from metamuse.models import JobResult, CollectRequest
 
 
@@ -123,8 +131,14 @@ def handle_import(step: StepContext) -> JobResult:
     )
 
 
+def register_operations(registry=None):
+    target = OPERATIONS if registry is None else registry
+    if "import.local" not in target:
+        register_operation("import.local", handle_import, "none",
+                           request_model=CollectRequest, registry=target)
+
+
 # Illustrative only: the core does not register or implement this operation.
-register_operation("import.local", handle_import, "none", request_model=CollectRequest)
 # validated_request is the feature owner's validated request model.
 # submit_job(ctx.store, "import.local", validated_request.request_key,
 #            validated_request.model_dump(mode="json"), project_id=project_id,
@@ -155,15 +169,25 @@ metadata, and is a point-in-time observation. Accepted never means running.
 ## Handler boundaries, fencing and recovery
 
 ```python
+from metamuse.app import register_builtin_operations
 from metamuse.jobs import Executor
 
+register_builtin_operations()
 # Context manager owns the shared workspace OS lock and increments worker_epoch.
 with Executor(ctx.store) as executor:
     executor.run(once=True)  # one step; run_once() returns whether a step was processed
 ```
 
-CLI `worker run`, future foreground `--run` and MCP-attached execution must all use this
-Executor. Heartbeats never authorize takeover. The OS lock remains owned even during a
+CLI `worker run` and `add --run` call registration before using this Executor. The future
+MCP-attached worker must call `register_builtin_operations()` before entering it too;
+`cli mcp` registers before delegating to `mcp.run(ctx)`. That function owns protocol stdout
+and returns `None` when serving ends, so CLI does not append an envelope. `add --run`
+submits first and runs the shared FIFO executor until the requested job is terminal or
+awaiting user action; earlier queued work can run first. It stops without draining later
+jobs. If the lock is held, it returns the accepted envelope with a stderr warning; it
+does not start another executor. Failed/user-action jobs return their persisted error;
+partial jobs retain coverage and exit 5. Heartbeats never authorize takeover. The OS lock
+remains owned even during a
 hung handler. A second executor gets E_JOB_BUSY. Do not unlink/recreate worker.lock,
 kill unknown processes or invent a separate worker loop.
 
@@ -341,3 +365,50 @@ All output schemas currently validate the shared envelope; successful data struc
 are documented above and domain records are typed. Future feature owners must request
 specific typed output additions from core rather than hand-editing generated JSON.
 Dependencies are uv-locked; no MCP SDK, yt-dlp, Playwright or crypto package is present.
+
+## Feature seam and core change requests
+
+| Feature owner | Files / application functions |
+|---|---|
+| B05/B06 | `collect.py`: `submit_collect`; `media.py`: media helpers and operations |
+| B07/B11 | `content.py`: `search_evidence`, `prepare_packet`, `save_draft`, `preview_draft`, `export_objects` |
+| B08 | `safety.py`: safety helpers, `import_auth`, `create_permit`, external-action verifier |
+| B09/B10 | `muse.py`: `open_muse_discussion`, `submit_muse_exchange`, `read_muse_exchange`, `close_muse_exchange` |
+| B14 | `mcp.py`: `run(ctx)`, tools through `app.TOOL_FUNCTIONS`, attached worker through the shared Executor |
+
+Owners edit their modules, supporting feature files and tests. They do not edit `app.py`,
+`cli.py`, `models.py`, `store.py`, `jobs.py`, migrations or generated schemas. All SPEC §8
+commands already map flags to typed requests and delegate. `auth import` and `permit create`
+are human-only local commands with `AuthImportRequest`/`PermitCreateRequest`; neither is in
+the fifteen MCP tool registry. `--provider`/`--account` label an auth import; permit creation
+supports `--scope-file` (JSON object), those labels, `--issuer`, `--expires-at`, `--max-uses`
+and `--exact-digest`. These fields express local intent; only safety validates and issues
+permission. Model output and arbitrary `approved` fields cannot create grants.
+
+Each feature declares its own capabilities and registers its own operation names:
+
+```python
+IMPLEMENTED_TOOLS: frozenset[str] = frozenset({"metamuse_search"})
+
+
+def capability_status(ctx):
+    # Optional offline metadata. Report only actual evidence/configuration/permission.
+    return {"metamuse_search": {
+        "verification": "fixture_passed",
+        "environment": "ready",
+        "permission": "granted_scope",  # local workspace read; no remote grant implied
+    }}
+```
+
+`inspect_capabilities` aggregates declarations without a shared editable set. Undeclared
+tools remain absent; declarations alone default to unverified/unavailable/not_configured.
+The optional status hook can set only verification/environment/permission for tools
+declared by that module. `Capability` computes effective status from all four axes.
+Hooks never make network calls. Use the idempotent `register_operations` example above;
+operation names must be unique and preserve side-effect/recovery semantics on restart.
+
+For a needed result model, input field or database column, add a **Core change requests**
+section to the feature report: required behavior, model/table/field, proposed diff, default
+and compatibility rules, and a small failing use case. Core owns schema regeneration,
+new versioned migrations, backups and upgrade tests. Do not change migration 001 or place
+duplicate columns/contracts in a separate feature database while waiting for that change.

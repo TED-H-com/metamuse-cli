@@ -5,16 +5,19 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import math
 import sys
 import tomllib
 from collections.abc import Sequence
+from contextlib import ExitStack
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError
 
 from metamuse import app
 from metamuse import models as m
-from metamuse.jobs import Executor
+from metamuse.jobs import TERMINAL, Executor, worker_available
 
 
 class Parser(argparse.ArgumentParser):
@@ -106,6 +109,7 @@ def parser() -> Parser:
     save.add_argument("--platform", required=True)
     save.add_argument("--draft")
     save.add_argument("--expected-revision", type=int)
+    save.add_argument("--facts-file")
     _request_key(save)
     preview = draft.add_parser("preview")
     preview.add_argument("id")
@@ -121,15 +125,157 @@ def parser() -> Parser:
         stub = sub.add_parser(action)
         if command == "auth":
             stub.add_argument("--file", required=True)
+            stub.add_argument("--provider")
+            stub.add_argument("--account")
         else:
             _project(stub)
             stub.add_argument("--kind", required=True)
+            stub.add_argument("--scope-file")
+            stub.add_argument("--provider")
+            stub.add_argument("--account")
+            stub.add_argument("--issuer", default="local_operator")
+            stub.add_argument("--expires-at")
+            stub.add_argument("--max-uses", type=int, default=1)
+            stub.add_argument("--exact-digest")
             _request_key(stub)
     return root
 
 
-def dispatch(args: argparse.Namespace) -> m.Envelope:
+def _read_utf8(path: str, max_bytes: int) -> str:
+    """Count actual bytes and preserve all string contents, including CRLF."""
+    try:
+        with Path(path).expanduser().open("rb") as stream:
+            content = stream.read(max_bytes + 1)
+    except OSError as exc:
+        raise m.CoreError(
+            m.ErrorCode.INPUT_INVALID, "Cannot read the specified input file"
+        ) from exc
+    if len(content) > max_bytes:
+        raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Input file exceeds configured byte limit")
+    try:
+        return content.decode("utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Input file is not valid UTF-8") from exc
+
+
+def _read_json(path: str, max_bytes: int) -> Any:
+    def reject_constant(value: str) -> None:
+        raise ValueError("Nonfinite JSON number")
+
+    def finite_float(value: str) -> float:
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("Nonfinite JSON number")
+        return number
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result = dict(pairs)
+        if len(result) != len(pairs):
+            raise ValueError("Duplicate JSON key")
+        return result
+
+    try:
+        return json.loads(
+            _read_utf8(path, max_bytes),
+            parse_constant=reject_constant,
+            parse_float=finite_float,
+            object_pairs_hook=unique_object,
+        )
+    except ValueError as exc:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Input file is not valid strict JSON") from exc
+
+
+def _collect_request(ctx: app.AppContext, args: argparse.Namespace) -> m.CollectRequest:
+    if args.file:
+        if args.kind is None:
+            raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Local add requires --kind")
+        source = m.LocalFileInput(kind="local_file", path=args.file, format=args.kind)
+        defaults = {
+            "vtt": ["subtitles"],
+            "srt": ["subtitles"],
+            "media": ["media_metadata", "media_file"],
+        }
+        resources = defaults.get(args.kind, ["post", "comments"])
+    else:
+        if args.kind is not None or args.resources is None:
+            raise m.CoreError(
+                m.ErrorCode.INPUT_INVALID, "URL add requires --resources and no --kind"
+            )
+        source = m.URLInput(kind="url", url=args.url)
+        resources = []
+    if args.resources is not None:
+        resources = [part.strip() for part in args.resources.split(",")]
+    limits = m.CollectLimits(
+        **{key: getattr(ctx.limits, key) for key in m.CollectLimits.model_fields}
+    )
+    return m.CollectRequest(
+        project_id=args.project,
+        inputs=[source],
+        resources=resources,
+        limits=limits,
+        access_grant_id=args.access_grant,
+        request_key=args.request_key,
+    )
+
+
+def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
+    if accepted.status != "accepted":
+        return accepted
+    if not isinstance(accepted.data, dict) or not isinstance(accepted.data.get("job_id"), str):
+        raise m.CoreError(m.ErrorCode.STORAGE, "Accepted response has no job ID")
+    job_id = accepted.data["job_id"]
+    with ExitStack() as stack:
+        try:
+            executor = stack.enter_context(Executor(ctx.store))
+        except m.CoreError as exc:
+            if exc.detail.code != m.ErrorCode.JOB_BUSY:
+                raise
+            return accepted.model_copy(
+                update={
+                    "warnings": [
+                        *accepted.warnings,
+                        "Another executor owns this workspace; "
+                        "the accepted job remains queued there.",
+                    ]
+                }
+            )
+        job = ctx.store.get(m.Job, job_id)
+        while job.state not in (*TERMINAL, "awaiting_user"):
+            worked = executor.run_once()
+            job = ctx.store.get(m.Job, job_id)
+            if not worked and job.state not in (*TERMINAL, "awaiting_user"):
+                raise m.CoreError(
+                    m.ErrorCode.STORAGE,
+                    "Accepted job has no runnable step",
+                    next_action=f"Inspect job {job_id}",
+                )
+    warnings = list(accepted.warnings)
+    if job.state in ("failed", "awaiting_user") and job.error is not None:
+        return m.Envelope(
+            request_id=accepted.request_id,
+            status="error",
+            error=m.ErrorDetail.model_validate(job.error),
+            warnings=[*warnings, f"Job {job_id} is {job.state}"],
+        )
+    if job.state == "awaiting_user":
+        warnings.append("Job is awaiting user action; foreground execution stopped")
+    return m.Envelope(
+        request_id=accepted.request_id,
+        status="partial" if job.state in ("partial", "awaiting_user") else "ok",
+        data={
+            "job_id": job.id,
+            "state": job.state,
+            "worker_available": worker_available(ctx.store),
+            "job": job.model_dump(mode="json"),
+        },
+        warnings=warnings,
+    )
+
+
+def dispatch(args: argparse.Namespace) -> m.Envelope | None:
     ctx = app.AppContext.open(args.workspace)
+    if args.command in ("worker", "add", "packet", "muse", "draft", "export", "mcp"):
+        app.register_builtin_operations()
     match args.command:
         case "init":
             return m.Envelope(status="ok", data={"initialized": True, "schema_version": 1})
@@ -163,8 +309,125 @@ def dispatch(args: argparse.Namespace) -> m.Envelope:
             with Executor(ctx.store) as executor:
                 count = executor.run(once=args.once)
             return m.Envelope(status="ok", data={"steps_processed": count})
-        case _:
-            return app.unsupported()
+        case "add":
+            result = app.submit_collect(ctx, _collect_request(ctx, args))
+            return _run_foreground(ctx, result) if args.run else result
+        case "search":
+            return app.search_evidence(
+                ctx, m.SearchRequest(project_id=args.project, query=args.query, cursor=args.cursor)
+            )
+        case "packet":
+            return app.prepare_packet(
+                ctx,
+                m.PacketPrepareRequest(
+                    project_id=args.project,
+                    selection=_read_json(args.selection_file, ctx.limits.text_max_bytes),
+                    request_key=args.request_key,
+                ),
+            )
+        case "muse":
+            match args.action:
+                case "open":
+                    return app.open_muse_discussion(
+                        ctx,
+                        m.MuseOpenRequest(
+                            project_id=args.project,
+                            topic=args.topic,
+                            access_grant_id=args.access_grant,
+                            request_key=args.request_key,
+                        ),
+                    )
+                case "send":
+                    return app.submit_muse_exchange(
+                        ctx,
+                        m.MuseSendRequest(
+                            discussion_id=args.discussion,
+                            packet_id=args.packet,
+                            question=_read_utf8(
+                                args.question_file, ctx.limits.question_max_utf8_bytes
+                            ),
+                            share_grant_id=args.share_grant,
+                            request_key=args.request_key,
+                        ),
+                    )
+                case "read":
+                    return app.read_muse_exchange(
+                        ctx,
+                        m.MuseReadRequest(
+                            exchange_id=args.exchange,
+                            refresh=args.refresh,
+                            cursor=args.cursor,
+                            access_grant_id=args.access_grant,
+                        ),
+                    )
+                case "close-exchange":
+                    return app.close_muse_exchange(
+                        ctx,
+                        m.MuseCloseExchangeRequest(
+                            exchange_id=args.id, outcome=args.outcome, request_key=args.request_key
+                        ),
+                    )
+        case "draft":
+            if args.action == "save":
+                return app.save_draft(
+                    ctx,
+                    m.DraftSaveRequest(
+                        project_id=args.project,
+                        text=_read_utf8(args.text_file, ctx.limits.text_max_bytes),
+                        platform=args.platform,
+                        draft_id=args.draft,
+                        expected_revision=args.expected_revision,
+                        facts_refs=_read_json(args.facts_file, ctx.limits.text_max_bytes)
+                        if args.facts_file
+                        else [],
+                        request_key=args.request_key,
+                    ),
+                )
+            return app.preview_draft(
+                ctx, m.DraftPreviewRequest(draft_id=args.id, revision=args.revision)
+            )
+        case "export":
+            return app.export_objects(
+                ctx,
+                m.ExportRequest(
+                    project_id=args.project,
+                    selection=_read_json(args.refs_file, ctx.limits.text_max_bytes),
+                    format=args.format,
+                    request_key=args.request_key,
+                ),
+            )
+        case "auth":
+            from metamuse import safety
+
+            return safety.import_auth(
+                ctx,
+                m.AuthImportRequest(path=args.file, provider=args.provider, account=args.account),
+            )
+        case "permit":
+            from metamuse import safety
+
+            return safety.create_permit(
+                ctx,
+                m.PermitCreateRequest(
+                    project_id=args.project,
+                    kind=args.kind,
+                    scope=_read_json(args.scope_file, ctx.limits.text_max_bytes)
+                    if args.scope_file
+                    else {},
+                    provider=args.provider,
+                    account=args.account,
+                    issuer=args.issuer,
+                    expires_at=args.expires_at,
+                    max_uses=args.max_uses,
+                    exact_digest=args.exact_digest,
+                    request_key=args.request_key,
+                ),
+            )
+        case "mcp":
+            from metamuse import mcp
+
+            return mcp.run(ctx)
+    raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Unknown command")
 
 
 def render(result: m.Envelope, *, as_json: bool) -> None:
@@ -206,6 +469,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         render(result, as_json=as_json)
         return 130
+    if result is None:  # MCP lifecycle owns stdout and has already served its protocol.
+        return 0
     render(result, as_json=as_json)
     return m.exit_code(result)
 
