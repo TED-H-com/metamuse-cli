@@ -559,7 +559,7 @@ def test_real_crash_retains_reserved_use_and_restart_never_resends(ctx, project)
     assert ctx.store.get(m.Permit, grant["id"]).used == 1
 
 
-def test_cli_permit_create_is_human_only(ctx, project, tmp_path, monkeypatch, capsys):
+def test_cli_permit_create_revoke_list_are_human_only(ctx, project, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli.app.AppContext, "open", lambda *a, **kw: ctx)
     scope = tmp_path / "scope.json"
     scope.write_text(json.dumps({"packet_digests": [A]}))
@@ -585,4 +585,7 @@ def test_cli_permit_create_is_human_only(ctx, project, tmp_path, monkeypatch, ca
     ]
     assert cli.main(command) == 0
     permit_id = json.loads(capsys.readouterr().out)["data"]["id"]
-    assert permit_id.startswith("pmt_")
+    assert cli.main(["--json", "permit", "revoke", permit_id, "--request-key", "revoke"]) == 0
+    assert json.loads(capsys.readouterr().out)["data"]["revoked"] is True
+    assert cli.main(["--json", "permit", "list", "--project", project]) == 0
+    assert json.loads(capsys.readouterr().out)["data"]["permits"][0]["revoked"] is True

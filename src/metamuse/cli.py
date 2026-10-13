@@ -142,6 +142,11 @@ def parser() -> Parser:
             stub.add_argument("--max-uses", type=int, default=1)
             stub.add_argument("--exact-digest")
             _request_key(stub)
+            revoke = sub.add_parser("revoke")
+            revoke.add_argument("id")
+            _request_key(revoke)
+            listing = sub.add_parser("list")
+            _project(listing)
     return root
 
 
@@ -435,6 +440,10 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
             from metamuse import safety
 
             ctx.require_interactive()
+            if args.action == "revoke":
+                return safety.revoke_permit(ctx, args.id, request_key=args.request_key)
+            if args.action == "list":
+                return safety.list_permits(ctx, project_id=args.project)
             return safety.create_permit(
                 ctx,
                 m.PermitCreateRequest(
