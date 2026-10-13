@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from metamuse import app
 from metamuse import models as m
 from metamuse.jobs import TERMINAL, Executor, worker_available
+from metamuse.store import SCHEMA_VERSION
 
 
 class Parser(argparse.ArgumentParser):
@@ -288,7 +289,9 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
         app.register_builtin_operations()
     match args.command:
         case "init":
-            return m.Envelope(status="ok", data={"initialized": True, "schema_version": 1})
+            return m.Envelope(
+                status="ok", data={"initialized": True, "schema_version": SCHEMA_VERSION}
+            )
         case "doctor":
             if args.live:
                 return m.failure(

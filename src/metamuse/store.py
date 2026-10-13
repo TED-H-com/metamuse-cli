@@ -22,9 +22,12 @@ from metamuse import models as m
 from metamuse.config import load_config
 from metamuse.paths import WorkspacePaths, private_dir, private_file
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DATA = Path(__file__).parent / "data"
-MIGRATIONS = {1: DATA / "migrations" / "001_initial.sql"}
+MIGRATIONS = {
+    1: DATA / "migrations" / "001_initial.sql",
+    2: DATA / "migrations" / "002_collect_media.sql",
+}
 TABLE_MODELS = {
     "projects": m.Project,
     "jobs": m.Job,
@@ -34,6 +37,7 @@ TABLE_MODELS = {
     "item_revisions": m.ItemRevision,
     "assets": m.Asset,
     "item_assets": m.ItemAsset,
+    "source_assets": m.SourceAsset,
     "transcript_segments": m.TranscriptSegment,
     "packets": m.Packet,
     "permits": m.Permit,
@@ -69,7 +73,7 @@ JSON_FIELDS = {
     "manifest",
     "detail",
 }
-BOOL_FIELDS = {"cancel_requested", "complete", "stale", "revoked"}
+BOOL_FIELDS = {"cancel_requested", "complete", "stale", "revoked", "overlap"}
 T = TypeVar("T", bound=m.Model)
 _ACTIVE_WRITES = threading.local()
 
@@ -278,6 +282,10 @@ class Store:
                 self.require_project_asset(draft.project_id, asset_id, conn=conn)
         if isinstance(record, m.Asset) and record.state == "ready":
             self.verify_asset(record)
+        if isinstance(record, m.TranscriptSegment) and record.asset_id is not None:
+            # Derived text is owned by project_id. The asset must already be
+            # visible there; shared bytes are not themselves the owner.
+            self.require_project_asset(record.project_id, record.asset_id, conn=conn)
         columns = list(data)
         values = [
             m.canonical_json(data[c]).decode()
@@ -292,20 +300,26 @@ class Store:
             values,
         )
         if isinstance(record, m.ItemRevision) and record.revision > 1:
-            # Retain fixed packet selection; new observations mark dependent views stale.
-            conn.execute(
-                "UPDATE packets SET stale=1 WHERE EXISTS (SELECT 1 FROM json_each(selection) "
-                "WHERE json_extract(value,'$.kind')='item_revision' "
-                "AND json_extract(value,'$.id')=?)",
-                (record.item_id,),
-            )
-            conn.execute(
-                "UPDATE drafts SET stale=1 WHERE id IN (SELECT draft_id FROM draft_revisions, "
-                "json_each(facts_refs) WHERE json_extract(value,'$.kind')='item_revision' "
-                "AND json_extract(value,'$.id')=?)",
-                (record.item_id,),
-            )
+            self._mark_derived_stale(conn, "item_revision", record.item_id)
+        if isinstance(record, m.TranscriptSegment) and record.revision > 1:
+            self._mark_derived_stale(conn, "transcript_segment", record.id)
         return record
+
+    @staticmethod
+    def _mark_derived_stale(conn: sqlite3.Connection, kind: str, ref_id: str) -> None:
+        """Keep packet selection and rendered text. Only the stale flag moves."""
+
+        conn.execute(
+            "UPDATE packets SET stale=1 WHERE EXISTS (SELECT 1 FROM json_each(selection) "
+            "WHERE json_extract(value,'$.kind')=? AND json_extract(value,'$.id')=?)",
+            (kind, ref_id),
+        )
+        conn.execute(
+            "UPDATE drafts SET stale=1 WHERE id IN (SELECT draft_id FROM draft_revisions, "
+            "json_each(facts_refs) WHERE json_extract(value,'$.kind')=? "
+            "AND json_extract(value,'$.id')=?)",
+            (kind, ref_id),
+        )
 
     def append_draft_revision(
         self,
@@ -384,8 +398,9 @@ class Store:
     ) -> None:
         row = conn.execute(
             "SELECT 1 FROM item_assets ia JOIN items i ON i.id=ia.item_id "
-            "WHERE i.project_id=? AND ia.asset_id=?",
-            (project_id, asset_id),
+            "WHERE i.project_id=? AND ia.asset_id=? "
+            "UNION ALL SELECT 1 FROM source_assets WHERE project_id=? AND asset_id=? LIMIT 1",
+            (project_id, asset_id, project_id, asset_id),
         ).fetchone()
         if not row:
             raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Asset is outside project selection")
@@ -408,8 +423,9 @@ class Store:
                 owner = self.get(m.Draft, ref.id, conn=conn).project_id
             elif ref.kind == "transcript_segment":
                 segment = self.get(m.TranscriptSegment, ref.id, revision=ref.revision, conn=conn)
-                self.require_project_asset(project_id, segment.asset_id, conn=conn)
-                owner = project_id
+                owner = segment.project_id
+                if segment.asset_id is not None:
+                    self.require_project_asset(owner, segment.asset_id, conn=conn)
             else:
                 raise m.CoreError(
                     m.ErrorCode.REFERENCE_INVALID, "Packet requires original evidence"

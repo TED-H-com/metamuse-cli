@@ -1,4 +1,4 @@
-# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 1)
+# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 2)
 
 B02–B04 owns `app.py`, `cli.py`, `models.py`, `store.py`, `jobs.py`, migration SQL and
 generated schemas. Other tasks must build against these APIs without editing them.
@@ -34,9 +34,11 @@ No Windows executor support is claimed: this build uses `fcntl` on Linux/WSL2.
 `ctx.store` is the only database owner. `ctx.clock` and `ctx.store.clock` are callables
 returning UTC ISO timestamps; `AppContext.open(clock=...)` sets both. `ctx.logger` is
 a Python logger. `ctx.limits` is `models.Limits`; `ctx.policy` is the complete typed
-`Config` (`app`, `worker`, `limits`, `muse`, `publishing`). Offline mode, disabled
-telemetry, disabled Muse/publishing and one executor are defaults. The TOML is one
-workspace configuration, not separate CLI/MCP settings. Higher limits never grant scope.
+`Config` (`app`, `worker`, `limits`, `muse`, `publishing`). `app.import_roots` lists
+directories a local import may read; an empty list refuses every local file. Offline
+mode, disabled telemetry, disabled Muse/publishing and one executor are defaults. The
+TOML is one workspace configuration, not separate CLI/MCP settings. Higher limits
+never grant scope.
 
 ## Application functions and errors
 
@@ -298,11 +300,14 @@ and asset visibility; Packet rejects draft_revision as original evidence. Raw SQ
 bypasses these JSON reference checks, so use insert/validate_evidence for selections.
 `validate_evidence(project, refs, conn=..., source_only=False)` and
 `require_project_asset(project, asset, conn=...)` are available to feature owners.
-Item/draft revisions are append-only on UPDATE; deletion remains possible for future
-explicitly approved privacy operations. Transcript scope/immutability is pending B05/B06's
-migration 002; shared bytes currently require that fix before project-isolated transcripts
-are exposed. The transcript model/query branches are unchanged in this core review fix.
-Appending an item revision marks referring packets/drafts stale in the same transaction.
+Item, draft and transcript revisions are append-only on UPDATE; deletion remains possible
+for future explicitly approved privacy operations. A transcript's `project_id` owns the
+derived text, including when `asset_id` is null. Evidence reads load that stored project
+and the requested revision. They do not treat the caller as the owner. An optional asset
+must already be visible in the owning project through `item_assets` or `source_assets`.
+Shared asset bytes do not share transcript text. Appending an item or transcript revision
+marks referring packets and drafts stale in the same transaction and does not rewrite
+packet selection or rendered text.
 Use `append_draft_revision(record, expected_revision=..., conn=...)` for atomic draft CAS;
 revision insertion advances current_revision. Features enforce semantic/source hash correctness.
 The core does not infer native identities, resolve missing parents, parse content or
@@ -328,12 +333,19 @@ orphan deletion is implemented. Ready files are not deleted by job failure.
 
 `backup(fresh_destination)` uses SQLite online backup and copies exactly the ready object
 snapshot with hashes/byte counts in manifest.json. `Store.restore(backup, fresh_paths)`
-checks schema version, SQLite integrity/FKs, manifest membership, object size/hash/path
-before copying into a fresh workspace. It clears stale worker owner metadata. Migration
-uses an exclusive maintenance lock and the worker lock, pre-upgrade online backup, and
+is same-version only: the backup manifest `schema_version` must equal the running
+`SCHEMA_VERSION`. It checks SQLite integrity/FKs, manifest membership, object size/hash/path
+before copying into a fresh workspace. It clears stale worker owner metadata. Opening a v1
+database migrates it to the current schema after writing a pre-upgrade backup. A
+forward-migrating restore is not implemented. Migration uses an exclusive maintenance
+lock and the worker lock, pre-upgrade online backup, and
 transactional DDL; a failure rolls back without deleting original data. `PRAGMA
-user_version` is schema version 1; older builds refuse newer schemas on every connection.
-Add future migrations only through the core owner. No LIVE, privacy erasure/compaction,
+user_version` is schema version 2. Schema 2 adds project-scoped transcript anchors
+(`project_id`, nullable `asset_id`, `item_id`, `source_id`, `cue_index`, `overlap`) and
+`source_assets`. Migration `002_collect_media.sql` copies a v1 transcript only when its
+asset links to exactly one project; otherwise the upgrade rolls back and the pre-upgrade
+backup remains. Older builds refuse newer schemas on every connection. Add future
+migrations only through the core owner. No LIVE, privacy erasure/compaction,
 Windows ACL verification or performance SLA evidence is implied by these APIs.
 
 ## Tables and columns
@@ -351,7 +363,8 @@ All JSON column values are text; timestamp values are UTC ISO strings.
 | item_revisions | `item_id`, `revision`, `text`, `text_hash`, `raw_time`, `parsed_time`, `source_time`, `fetched_at`, `complete`, `missing_fields`, `evidence` |
 | assets | `id`, `sha256`, `mime`, `actual_bytes`, `duration_ms`, `object_path`, `state` |
 | item_assets | `item_id`, `revision`, `asset_id`, `relation` |
-| transcript_segments | `id`, `asset_id`, `revision`, `start_ms`, `end_ms`, `text`, `language`, `method`, `review` |
+| source_assets | `source_id`, `project_id`, `asset_id`, `relation` |
+| transcript_segments | `id`, `project_id`, `asset_id`, `item_id`, `source_id`, `revision`, `cue_index`, `start_ms`, `end_ms`, `text`, `language`, `method`, `review`, `overlap` |
 | packets | `id`, `project_id`, `selection`, `rendered_text`, `redactions`, `coverage_status`, `digest`, `created_at`, `stale` |
 | permits | `id`, `project_id`, `kind`, `scope`, `provider`, `account`, `issuer`, `issued_at`, `expires_at`, `max_uses`, `used`, `revoked`, `exact_digest` |
 | discussions | `id`, `project_id`, `provider`, `auth_ref`, `topic`, `remote_session`, `open_attempt_state`, `last_seq`, `state` |
@@ -364,6 +377,11 @@ All JSON column values are text; timestamp values are UTC ISO strings.
 | worker_state | `singleton`, `owner_nonce`, `worker_epoch`, `heartbeat` |
 | request_receipts | `operation`, `request_key`, `payload_digest`, `response` |
 
+
+`item_revisions.text` is `NOT NULL`. `missing_fields` containing `"text"` is the single
+source of truth for absent text. Readers must render that revision as missing text, never
+as an empty string. An empty string without that marker is present empty text. The two
+cases use different `text_hash` values.
 
 `jobs(operation,request_key)`, `job_steps(job_id,sequence)`, `assets(sha256)` are unique.
 Revision primary keys are `(item_id,revision)` / `(draft_id,revision)`; transcript versions

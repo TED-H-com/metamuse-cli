@@ -14,8 +14,8 @@
     },
     {
       "path": "03_SDS.md",
-      "bytes": 21738,
-      "sha256": "3e62d79f04aae34bed9fac79a400672b88969cfea1c49384df68b7e6838db144"
+      "bytes": 22179,
+      "sha256": "32bf2db8322974472ced7aecc9fd155d7de0cd96496e5a5fb7d8c9c0a5035912"
     },
     {
       "path": "04_BACKLOG.md",
@@ -49,8 +49,8 @@
     },
     {
       "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
-      "bytes": 46358,
-      "sha256": "18e56f645d07a34012f278563e03d5c26370ce8decf3b58e08f10b20510eaa63"
+      "bytes": 46799,
+      "sha256": "8188fc1741f89548d613517f5adcfda29745a1287439fe58c0f58b91b93bdb13"
     },
     {
       "path": "README.md",
@@ -84,8 +84,8 @@
     },
     {
       "path": "contracts/mcp-tools.json",
-      "bytes": 98144,
-      "sha256": "ba7d0322274a0b5b0a589df87ee19bdf6bf1f9d2828d606f2114a0e58cfcd9e5"
+      "bytes": 100578,
+      "sha256": "657e82e7606b47d4f929d5303393bc8566828974c6b39263011fc8b359f1c721"
     },
     {
       "path": "contracts/requirements.json",

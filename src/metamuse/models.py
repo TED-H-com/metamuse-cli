@@ -501,19 +501,35 @@ class ItemAsset(Model):
     relation: str
 
 
+class SourceAsset(Model):
+    """Project-scoped relation between a source observation and shared bytes."""
+
+    source_id: ID
+    project_id: ID
+    asset_id: ID
+    relation: str
+
+
 class TranscriptSegment(Model):
     id: ID
-    asset_id: ID
+    project_id: ID
+    asset_id: ID | None = None
+    item_id: ID | None = None
+    source_id: ID | None = None
     revision: Revision
+    cue_index: Annotated[int, Field(ge=0)] = 0
     start_ms: Annotated[int, Field(ge=0)]
     end_ms: Annotated[int, Field(ge=0)]
     text: Text
     language: str = "und"
     method: Literal["provided", "auto", "asr", "manual"]
     review: str = "unreviewed"
+    overlap: bool = False
 
     @model_validator(mode="after")
-    def valid_times(self) -> TranscriptSegment:
+    def anchored_and_ordered(self) -> TranscriptSegment:
+        if self.asset_id is None and self.item_id is None and self.source_id is None:
+            raise ValueError("transcript segment needs an asset, item, or source")
         if self.end_ms < self.start_ms:
             raise ValueError("end_ms must be >= start_ms")
         return self
@@ -654,11 +670,16 @@ class LocalFileInput(Model):
     kind: Literal["local_file"]
     path: Text
     format: Literal["text", "json", "jsonl", "csv", "vtt", "srt", "media"]
+    # Server-measured at accept time. Clients may omit them; a supplied value is replaced.
+    sha256: Digest | None = None
+    byte_size: Annotated[int, Field(ge=0)] | None = None
 
 
 class TextInput(Model):
     kind: Literal["text"]
     text: Text
+    sha256: Digest | None = None
+    byte_size: Annotated[int, Field(ge=0)] | None = None
 
 
 class CollectRequest(Model):
@@ -674,6 +695,10 @@ class CollectRequest(Model):
     limits: CollectLimits
     access_grant_id: ID | None
     request_key: RequestKey
+    # Optional attachment for a subtitle or media input. Absent for comment imports.
+    attach_item_id: ID | None = None
+    attach_asset_id: ID | None = None
+    language: Annotated[str, Field(min_length=1, max_length=35)] | None = None
 
 
 class JobGetRequest(Model):
