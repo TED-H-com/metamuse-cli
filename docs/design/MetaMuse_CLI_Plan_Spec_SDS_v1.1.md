@@ -219,7 +219,7 @@ metamuse jobs get ID
 metamuse jobs resume ID --request-key KEY
 metamuse jobs cancel ID --request-key KEY
 metamuse worker run [--once]
-metamuse search --project ID --query TEXT [--cursor CURSOR]
+metamuse search --project ID --query TEXT [--cursor CURSOR] [--limit N]
 metamuse packet prepare --project ID --selection-file PATH --request-key KEY
 metamuse muse open --project ID --topic TEXT --access-grant ID --request-key KEY
 metamuse muse send --discussion ID --packet ID --question-file PATH --share-grant ID --request-key KEY
@@ -231,7 +231,7 @@ metamuse export --project ID --refs-file PATH --format FORMAT --request-key KEY
 metamuse mcp
 ```
 
-更新草稿加 --draft ID --expected-revision N。人類本地auth import／permit create另提供；不是能讓MCP自己approved:true的工具。憑證匯入需操作者指定檔案，不讀任意主瀏覽器profile。
+更新草稿加 --draft ID --expected-revision N。明示引用／附件／變體／偏好可用 --facts-file、--assets-file、--variant-file、--preferences-file（JSON）。人類本地auth import／permit create另提供；不是能讓MCP自己approved:true的工具。憑證匯入需操作者指定檔案，不讀任意主瀏覽器profile。
 
 CLI add預設持久化；--run前景執行。沒有長駐worker時前景命令結束不代表工作會在背景繼續。MCP可附同套件worker，但同workspace只能一個executor。
 
@@ -513,6 +513,32 @@ handlers/actions, retry limits come from workspace configuration, and UTF-8 byte
 are checked at model/app/store boundaries. Unknown operation handlers leave work queued.
 Schema 001 guard fixes remain version 1 before release; transcript scope and immutability
 are deferred to B05/B06 migration 002, without treating shared bytes as derived-data permission.
+
+### B07/B11 content implementation clarifications
+
+Content requests, outputs and recovery rules: [docs/dev/CONTENT_API.md](../dev/CONTENT_API.md).
+Search uses exact case-sensitive substring matching, without Traditional/Simplified or
+Unicode conversion, and saves exact latest-revision membership in private runtime markers.
+Opaque cursors bind project and query; later revisions/inserts cannot change page membership.
+Deletion or loss of visibility fails rather than skipping a reference. No migration is added.
+
+Packet digests are SHA-256 of exact redacted rendered UTF-8 bytes, including source labels
+and limitations; the 48-KiB limit applies after rendering/redaction. Draft digests cover
+canonical full text/platform/variant/refs/assets/preferences. Explicit preference scope is
+this_draft only. Preview reports code points, UTF-16 units and UTF-8 bytes, not graphemes;
+platform limits remain unknown with warnings until a source and date are recorded.
+
+Private text/Markdown/JSONL exports retain original text; CSV neutralizes initial formula
+characters. Bundle exports contain redacted records and asset metadata only, not opaque
+media bytes. Automatic redaction is a guard, not a guarantee. A full media archive is
+pending. Manifest payload members have hashes/sizes; the manifest excludes its own hash
+and is verified against its exact stored bytes. Ready state follows fsync and rename.
+No export publishes/uploads; handled failures clean owned artifacts and crashes may leave
+orphans. Retention/cleanup of runtime search markers and orphan directories remains pending.
+
+Schema-1 transcript visibility uses item/asset relations. Project-only nullable-asset
+transcripts await migration 002 and coordinated content-helper/core-validator adaptation.
+The B07/B11 fixture evidence does not claim that pending integration or any LIVE result.
 
 ---
 

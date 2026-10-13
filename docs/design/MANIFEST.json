@@ -9,13 +9,13 @@
     },
     {
       "path": "02_SPEC.md",
-      "bytes": 14668,
-      "sha256": "b5da5f99bf8af07939bf0c7a52ffe6d7e757c6829e9540604f65879b381ad2fd"
+      "bytes": 14805,
+      "sha256": "df900505ca1fa7fcd10780e41e98c0ca7ea7a72d30357335343e30c7c68ec919"
     },
     {
       "path": "03_SDS.md",
-      "bytes": 17233,
-      "sha256": "a0172ecc288f25605c43c10f5f91b66b4ce507cc54cb02384334976a55f415c1"
+      "bytes": 19081,
+      "sha256": "835f586ca09144a7f092c00078b18d01de3eb033190f2cb102f4e086c1fc721b"
     },
     {
       "path": "04_BACKLOG.md",
@@ -45,12 +45,12 @@
     {
       "path": "DESIGN_VALIDATION_REPORT.json",
       "bytes": 674,
-      "sha256": "07a3e3c533c7a67121fc50d93dd4a2332a091623a7ad1ca88b69b1074fc5245b"
+      "sha256": "d919d5bbf6edda671f7453e413c1191b9b97fa66d8001db20a06d2b163a8fc36"
     },
     {
       "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
-      "bytes": 41018,
-      "sha256": "fa0743ea3c87257bce5122e7d01585f06b81b2b9233589559079f1bc4dc14599"
+      "bytes": 43003,
+      "sha256": "de6de02f527145db9853c128a4b5be112b5256f28850d5271f23c6a28d574a36"
     },
     {
       "path": "README.md",
@@ -84,8 +84,8 @@
     },
     {
       "path": "contracts/mcp-tools.json",
-      "bytes": 96512,
-      "sha256": "d4968f5c703c30548a52b3cd126fe522a9deeaeadf95665e6e746123339fe64b"
+      "bytes": 98069,
+      "sha256": "715e94c141f3789f4f86ab0e058d43a409a5dddb2312a5868a76e1ddfc8caa43"
     },
     {
       "path": "contracts/requirements.json",
