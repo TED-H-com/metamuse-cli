@@ -9,7 +9,7 @@ import math
 import sys
 import tomllib
 from collections.abc import Sequence
-from contextlib import ExitStack
+from contextlib import ExitStack, nullcontext, redirect_stdout
 from pathlib import Path
 from typing import Any
 
@@ -226,7 +226,7 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
     job_id = accepted.data["job_id"]
     with ExitStack() as stack:
         try:
-            executor = stack.enter_context(Executor(ctx.store))
+            executor = stack.enter_context(Executor(ctx.store, non_interactive=ctx.non_interactive))
         except m.CoreError as exc:
             if exc.detail.code != m.ErrorCode.JOB_BUSY:
                 raise
@@ -235,7 +235,7 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
                     "warnings": [
                         *accepted.warnings,
                         "Another executor owns this workspace; "
-                        "the accepted job remains queued there.",
+                        "queued work remains with that executor.",
                     ]
                 }
             )
@@ -245,8 +245,8 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
             job = ctx.store.get(m.Job, job_id)
             if not worked and job.state not in (*TERMINAL, "awaiting_user"):
                 raise m.CoreError(
-                    m.ErrorCode.STORAGE,
-                    "Accepted job has no runnable step",
+                    m.ErrorCode.UNSUPPORTED,
+                    "Accepted job has no implemented runnable step in this build",
                     next_action=f"Inspect job {job_id}",
                 )
     warnings = list(accepted.warnings)
@@ -274,6 +274,7 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
 
 def dispatch(args: argparse.Namespace) -> m.Envelope | None:
     ctx = app.AppContext.open(args.workspace)
+    ctx.non_interactive = args.non_interactive
     if args.command in ("worker", "add", "packet", "muse", "draft", "export", "mcp"):
         app.register_builtin_operations()
     match args.command:
@@ -306,9 +307,19 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
                 ),
             )
         case "worker":
-            with Executor(ctx.store) as executor:
+            with Executor(ctx.store, non_interactive=ctx.non_interactive) as executor:
                 count = executor.run(once=args.once)
-            return m.Envelope(status="ok", data={"steps_processed": count})
+                unavailable = executor.unavailable_operations()
+            return m.Envelope(
+                status="partial" if unavailable else "ok",
+                data={"steps_processed": count},
+                warnings=[
+                    "Jobs with unavailable operations remain queued; "
+                    "use a build that implements them"
+                ]
+                if unavailable
+                else [],
+            )
         case "add":
             result = app.submit_collect(ctx, _collect_request(ctx, args))
             return _run_foreground(ctx, result) if args.run else result
@@ -399,6 +410,7 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
         case "auth":
             from metamuse import safety
 
+            ctx.require_interactive()
             return safety.import_auth(
                 ctx,
                 m.AuthImportRequest(path=args.file, provider=args.provider, account=args.account),
@@ -406,6 +418,7 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
         case "permit":
             from metamuse import safety
 
+            ctx.require_interactive()
             return safety.create_permit(
                 ctx,
                 m.PermitCreateRequest(
@@ -450,12 +463,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     as_json = "--json" in argv
     try:
-        args = parser().parse_args(argv)
+        with redirect_stdout(sys.stderr) if as_json else nullcontext():
+            args = parser().parse_args(argv)
         as_json = args.json
         result = dispatch(args)
     except m.CoreError as exc:
         result = m.failure(exc)
-    except (ValidationError, tomllib.TOMLDecodeError):
+    except SystemExit as exc:
+        if exc.code == 0:
+            if not as_json:
+                return 0
+            result = m.Envelope(status="ok", data={"help": True})
+        else:
+            result = m.failure(m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid command arguments"))
+    except ValidationError as exc:
+        result = m.failure(m.validation_error(exc))
+    except tomllib.TOMLDecodeError:
         result = m.failure(
             m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid input or workspace configuration")
         )

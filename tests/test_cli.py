@@ -133,7 +133,10 @@ def test_registered_stubs_return_unsupported(tmp_path, capsys, command):
             )
             command[index] = str(path)
     code, result, _ = run(tmp_path, capsys, command)
-    assert code == 4 and result["error"]["code"] == "E_UNSUPPORTED"
+    if command[0] in ("auth", "permit"):
+        assert code == 3 and result["error"]["code"] == "E_SCOPE_REQUIRED"
+    else:
+        assert code == 4 and result["error"]["code"] == "E_UNSUPPORTED"
 
 
 def test_invalid_args_clean_envelope(tmp_path, capsys):

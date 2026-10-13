@@ -2253,7 +2253,8 @@
             "maxLength": 8192,
             "minLength": 1,
             "title": "Question",
-            "type": "string"
+            "type": "string",
+            "x-max-utf8-bytes": 8192
           },
           "share_grant_id": {
             "maxLength": 128,

@@ -120,7 +120,7 @@ def handle_import(step: StepContext) -> JobResult:
 
     def save_batch(conn):
         for record in batch:
-            step.store.insert(record, conn=conn)
+            conn.insert(record)
 
     step.commit_checkpoint({"offset": offset + len(batch)}, write_batch=save_batch)
     return JobResult(
@@ -134,8 +134,9 @@ def handle_import(step: StepContext) -> JobResult:
 def register_operations(registry=None):
     target = OPERATIONS if registry is None else registry
     if "import.local" not in target:
-        register_operation("import.local", handle_import, "none",
-                           request_model=CollectRequest, registry=target)
+        register_operation(
+            "import.local", handle_import, "none", request_model=CollectRequest, registry=target
+        )
 
 
 # Illustrative only: the core does not register or implement this operation.
@@ -161,7 +162,9 @@ of payload/project/step targets/requested scope/limits, then atomically checks t
 creates job+steps+event and commits. Unique `(operation, request_key)` serializes competing
 submissions. Same identity returns the same job_id and persisted state/result; changed
 identity returns E_IDEMPOTENCY_CONFLICT. Scope and exact targets belong in that identity.
-The envelope is `accepted` for nonterminal jobs, `ok` for terminal jobs except `partial`.
+The envelope is `accepted` for queued/running jobs, `ok` for terminal jobs except `partial`.
+Awaiting-user replay returns the stored error with the job ID in next_action; reconcile
+errors exit 6 and callers retrieve the body with job_get.
 A failed persisted job remains a successful lookup/replay with `state=failed`; inspect
 its `job.error`. `worker_available` is true only with a held OS lock and executor owner
 metadata, and is a point-in-time observation. Accepted never means running.
@@ -195,7 +198,7 @@ Handlers receive `StepContext` with `job`, `step`, `payload`, `target`, `checkpo
 `store`, `executor`. Call `guard()` at safe boundaries. It checks owner nonce/epoch,
 job/step running state, cancellation, target identity and job wall-clock budget.
 `commit_checkpoint(checkpoint, write_batch=None)` performs these checks and commits a
-local batch and its checkpoint together. The callback receives the already-open
+local batch and its checkpoint together. The callback receives a TransactionWriter bound to the
 connection; do not open a nested transaction or do external waits inside it. These
 checks fence stale callbacks from committing through this API. Direct raw writes do
 not gain fencing automatically.
@@ -226,16 +229,18 @@ not remote exactly-once. A tiny gap between local verification and external acti
 cannot be removed by a local SQLite transaction.
 
 On restart, queued steps are claimed normally. Running local/read steps become queued
-with checkpoints retained; successful/failed steps are retained. A submitted external
+with checkpoints retained; successful/failed steps are retained. Any entered external
 step becomes its persisted uncertain state and the job awaits the user. Pending local
 cancellation becomes cancelled; submitted cancellation preserves the uncertain step
-and remote_state=unknown. `control_job(resume)` refuses any submitting/uncertain step.
+and remote_state=unknown. `control_job(resume)` refuses submitting/uncertain steps and
+entered external steps that did not succeed. An entered external step is never requeued.
 Reconciliation is a feature-specific read/check followed by a guarded transaction:
 prove the result and mark that original step settled. Do not simply relabel uncertainty
 as queued, create a new key or refund a used permit to bypass unknown delivery.
 
 Safe reads retry only errors classified `safe_read` (network timeout/rate limit), at
-most two times, respecting `CoreError.retry_after` outside the transaction. Access
+most `limits.safe_read_retries` times (0–2), respecting a capped `CoreError.retry_after`
+outside the transaction and checking cancellation every 250 ms. Access
 refusal/auth/checkpoint never retry automatically. Awaiting-user jobs stay paused until
 explicit control. Cancellation sets `cancel_requested` first and is honoured at the
 next guard/checkpoint/result boundary. It cannot interrupt arbitrary blocking handler
@@ -276,7 +281,7 @@ browser, model, user or subprocess waits.
 canonical encoded; boolean fields use SQLite 0/1. `get(Model, id, revision=None)` decodes
 a typed record; ItemRevision/DraftRevision/TranscriptSegment support exact revisions
 and otherwise return the highest revision. Ready Assets are checked for file presence
-and measured size on read. `decode(Model, row)` is available for bounded custom queries.
+and measured size/hash on read. `decode(Model, row)` is available for bounded custom queries.
 `ItemAsset` has a compound key: query through `connection()` and decode rather than `get`.
 
 Composite FKs enforce source/parent/discussion/packet/permit/job project consistency.
@@ -285,10 +290,13 @@ and asset visibility; Packet rejects draft_revision as original evidence. Raw SQ
 bypasses these JSON reference checks, so use insert/validate_evidence for selections.
 `validate_evidence(project, refs, conn=..., source_only=False)` and
 `require_project_asset(project, asset, conn=...)` are available to feature owners.
-Shared asset bytes alone do not grant cross-project visibility. Revisions are append-only
-on UPDATE; deletion remains possible for future explicitly approved privacy operations.
+Item/draft revisions are append-only on UPDATE; deletion remains possible for future
+explicitly approved privacy operations. Transcript scope/immutability is pending B05/B06's
+migration 002; shared bytes currently require that fix before project-isolated transcripts
+are exposed. The transcript model/query branches are unchanged in this core review fix.
 Appending an item revision marks referring packets/drafts stale in the same transaction.
-Features must enforce expected_revision and semantic/source hash correctness themselves.
+Use `append_draft_revision(record, expected_revision=..., conn=...)` for atomic draft CAS;
+revision insertion advances current_revision. Features enforce semantic/source hash correctness.
 The core does not infer native identities, resolve missing parents, parse content or
 validate packet semantic claims.
 
@@ -393,11 +401,13 @@ IMPLEMENTED_TOOLS: frozenset[str] = frozenset({"metamuse_search"})
 
 def capability_status(ctx):
     # Optional offline metadata. Report only actual evidence/configuration/permission.
-    return {"metamuse_search": {
-        "verification": "fixture_passed",
-        "environment": "ready",
-        "permission": "granted_scope",  # local workspace read; no remote grant implied
-    }}
+    return {
+        "metamuse_search": {
+            "verification": "fixture_passed",
+            "environment": "ready",
+            "permission": "granted_scope",  # local workspace read; no remote grant implied
+        }
+    }
 ```
 
 `inspect_capabilities` aggregates declarations without a shared editable set. Undeclared
@@ -412,3 +422,71 @@ section to the feature report: required behavior, model/table/field, proposed di
 and compatibility rules, and a small failing use case. Core owns schema regeneration,
 new versioned migrations, backups and upgrade tests. Do not change migration 001 or place
 duplicate columns/contracts in a separate feature database while waiting for that change.
+
+## Review guardrails and reconciliation
+
+`config.py` owns the same typed workspace policy (re-exported Config/defaults in app).
+Executor reads configured limits at startup; offline mode is checked before entering
+safe_read/external_submit handlers and again at every external-action helper. Local
+`none` handlers must not perform network actions. Live mode does not grant permission.
+App request validation applies ctx.limits to UTF-8 text/question fields; questions have
+an absolute 8192-byte ceiling. Packet insertion applies the configured packet byte cap.
+`utf8_text(text, max_bytes)` measures without normalization; JSON schemas expose byte
+limits as metadata because standard JSON Schema length counts characters. Validation
+errors contain bounded field paths, never inputs, exception context or submitted values.
+Registered job payloads are revalidated at claim. Stored records use structural validation
+without current input byte caps, so lowering limits does not hide immutable history.
+
+CLI passes `--non-interactive` to AppContext and Executor; human-only auth/permit commands
+are refused. Features that need a prompt must call `ctx.require_interactive()` or
+`step.require_interactive()` before prompting. MCP must create its attached Executor with
+`non_interactive=True` and must not offer human-only commands. JSON help writes usage to
+stderr and one help envelope to stdout. Missing operation handlers leave jobs queued;
+worker exits partial when only unavailable work remains. Availability uses Linux's
+read-only `/proc/locks` FLOCK records plus owner metadata; inability to observe returns
+false. F_GETLK/F_OFD_GETLK do not observe Linux flock and cannot replace this check.
+
+`commit_checkpoint` passes TransactionWriter to write_batch. Use `writer.insert`,
+`writer.get`, `writer.append_draft_revision` or parameterized `writer.execute` for static
+SELECT/INSERT/UPDATE/DELETE/WITH statements. There is no commit/rollback/transaction API;
+nested same-workspace Store transactions fail immediately. The guard is rechecked after
+the callback, so attempted epoch/state changes roll back the entire batch.
+
+B10 can settle uncertainty through the executor already held by its history-read job:
+
+```python
+# Fetch remote history outside a transaction first. The feature supplies evidence checks.
+def verify_proof(conn, target):
+    verify_original_session_and_definite_receipt(conn, target)  # feature-owned, database-only
+
+
+settled = step.executor.settle_uncertain(
+    original_step_id,
+    expected_target=original_target,
+    verify=verify_proof,
+    result=JobResult(coverage_status="bounded", data={"receipt_id": receipt_id}),
+    write_batch=lambda writer: writer.insert(observed_message),
+)
+```
+
+Exactly one of result/error is required; error must prove a definite refusal, not a
+retryable timeout or remaining uncertainty. Epoch/owner, uncertain state and original
+target are checked in the same transaction as proof/domain writes and completion.
+Settlement retains local cancellation and records remote confirmation/refusal separately.
+It never sends or requeues the original entered step, including after a proven refusal.
+Keep one side-effect class per operation: Muse create/send are external_submit jobs;
+history reads/reconciliation are separate safe_read jobs. Any explicitly approved new
+submission after a proven refusal requires feature-level target/intent/permission checks;
+a new key cannot bypass unresolved delivery.
+
+Storage triggers freeze packet payloads (stale remains mutable), acquisition methods,
+permit scope and settled exchange outcomes. Permit used is monotonic, revocation sticky,
+and an increment rejects revoked, expired or unparseable-expiry rows; max_uses is bounded.
+Expiry uses the Store clock via metamuse_now(), so consumption must use a Store connection.
+B08 owns verification and atomic consumption on the verifier's supplied connection; core
+adds no competing permit API. New scope/expiry/use budgets require a new human grant.
+Ready object reads/inserts verify SHA-256; put_object can repair a corrupt occupant only
+with newly measured/hash-verified bytes and rejects a conflicting MIME classification.
+Failed backups remove only their newly created partial destination. Schema remains 1;
+001 is amended for fresh development workspaces, not an automatic upgrade of existing
+schema-1 development databases. Core still owns all migrations and generated schemas.

@@ -30,6 +30,9 @@ CREATE TABLE sources (
  assurance TEXT NOT NULL, fetched_at TEXT NOT NULL, use_basis TEXT NOT NULL,
  UNIQUE(id,project_id)
 );
+CREATE TRIGGER source_method_immutable BEFORE UPDATE OF collection_method,upstream_collection_method ON sources
+WHEN NEW.collection_method IS NOT OLD.collection_method OR NEW.upstream_collection_method IS NOT OLD.upstream_collection_method
+BEGIN SELECT RAISE(ABORT,'immutable acquisition method'); END;
 CREATE UNIQUE INDEX source_identity ON sources(project_id,platform,native_scope,native_id)
  WHERE native_scope IS NOT NULL AND native_id IS NOT NULL;
 CREATE TABLE items (
@@ -81,9 +84,23 @@ CREATE TABLE packets (
 CREATE TABLE permits (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), kind TEXT NOT NULL, scope TEXT NOT NULL,
  provider TEXT, account TEXT, issuer TEXT NOT NULL, issued_at TEXT NOT NULL, expires_at TEXT NOT NULL,
- max_uses INTEGER NOT NULL CHECK(max_uses>=1), used INTEGER NOT NULL CHECK(used>=0 AND used<=max_uses),
+ max_uses INTEGER NOT NULL CHECK(typeof(max_uses)='integer' AND max_uses>=1),
+ used INTEGER NOT NULL CHECK(typeof(used)='integer' AND used>=0 AND used<=max_uses),
  revoked INTEGER NOT NULL CHECK(revoked IN (0,1)), exact_digest TEXT, UNIQUE(id,project_id)
 );
+CREATE TRIGGER packet_payload_immutable BEFORE UPDATE OF id,project_id,selection,rendered_text,redactions,coverage_status,digest,created_at ON packets
+BEGIN SELECT RAISE(ABORT,'immutable packet payload'); END;
+CREATE TRIGGER permit_use_monotonic BEFORE UPDATE OF used ON permits WHEN NEW.used<OLD.used
+BEGIN SELECT RAISE(ABORT,'permit use cannot decrease'); END;
+CREATE TRIGGER permit_revocation_sticky BEFORE UPDATE OF revoked ON permits WHEN OLD.revoked=1 AND NEW.revoked<>1
+BEGIN SELECT RAISE(ABORT,'permit revocation is sticky'); END;
+CREATE TRIGGER permit_use_guard BEFORE UPDATE OF used ON permits WHEN NEW.used>OLD.used
+BEGIN
+ SELECT RAISE(ABORT,'permit cannot be consumed') WHERE OLD.revoked=1 OR NEW.revoked=1
+ OR COALESCE(julianday(OLD.expires_at)>julianday(metamuse_now()),0)=0;
+END;
+CREATE TRIGGER permit_scope_immutable BEFORE UPDATE OF id,project_id,kind,scope,provider,account,issuer,issued_at,expires_at,max_uses,exact_digest ON permits
+BEGIN SELECT RAISE(ABORT,'immutable permit scope'); END;
 CREATE TABLE discussions (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), provider TEXT NOT NULL,
  auth_ref TEXT NOT NULL, topic TEXT NOT NULL, remote_session TEXT, open_attempt_state TEXT NOT NULL,
@@ -101,6 +118,9 @@ CREATE TABLE exchanges (
  UNIQUE(id,discussion_id)
 );
 CREATE UNIQUE INDEX one_open_exchange ON exchanges(discussion_id) WHERE outcome IS NULL;
+CREATE TRIGGER exchange_outcome_sticky BEFORE UPDATE OF outcome ON exchanges
+WHEN OLD.outcome IS NOT NULL AND NEW.outcome IS NOT OLD.outcome
+BEGIN SELECT RAISE(ABORT,'exchange outcome is sticky'); END;
 CREATE TABLE messages (
  id TEXT PRIMARY KEY, discussion_id TEXT NOT NULL REFERENCES discussions(id), exchange_id TEXT,
  remote_session TEXT NOT NULL, remote_message_id TEXT, seq INTEGER, role TEXT NOT NULL,
@@ -118,6 +138,18 @@ CREATE TABLE draft_revisions (
  preferences TEXT NOT NULL, digest TEXT NOT NULL, PRIMARY KEY(draft_id,revision)
 );
 CREATE TRIGGER draft_revision_immutable BEFORE UPDATE ON draft_revisions BEGIN SELECT RAISE(ABORT,'append-only revision'); END;
+CREATE TRIGGER draft_revision_sequence BEFORE INSERT ON draft_revisions
+BEGIN
+ SELECT RAISE(ABORT,'draft revision must append to current head') WHERE
+ NEW.revision<>COALESCE((SELECT MAX(revision)+1 FROM draft_revisions WHERE draft_id=NEW.draft_id),1)
+ OR (SELECT current_revision FROM drafts WHERE id=NEW.draft_id)<>MAX(1,NEW.revision-1);
+END;
+CREATE TRIGGER draft_revision_head AFTER INSERT ON draft_revisions
+BEGIN UPDATE drafts SET current_revision=NEW.revision WHERE id=NEW.draft_id; END;
+CREATE TRIGGER draft_head_guard BEFORE UPDATE OF current_revision ON drafts
+WHEN NEW.current_revision<OLD.current_revision OR NOT EXISTS (
+ SELECT 1 FROM draft_revisions WHERE draft_id=OLD.id AND revision=NEW.current_revision)
+BEGIN SELECT RAISE(ABORT,'draft head requires an appended revision'); END;
 CREATE TABLE exports (
  id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), selection TEXT NOT NULL,
  format TEXT NOT NULL, manifest TEXT NOT NULL, artifact TEXT, state TEXT NOT NULL
@@ -136,3 +168,10 @@ CREATE TABLE request_receipts (
  operation TEXT NOT NULL, request_key TEXT NOT NULL, payload_digest TEXT NOT NULL, response TEXT NOT NULL,
  PRIMARY KEY(operation,request_key)
 );
+CREATE TRIGGER external_step_no_requeue BEFORE UPDATE OF state ON job_steps
+WHEN OLD.side_effect_class='external_submit' AND OLD.attempts>0 AND NEW.state='queued'
+BEGIN SELECT RAISE(ABORT,'entered external step cannot be replayed'); END;
+CREATE TRIGGER external_step_attempts_monotonic BEFORE UPDATE OF attempts,side_effect_class ON job_steps
+WHEN OLD.side_effect_class='external_submit' AND OLD.attempts>0
+ AND (NEW.attempts<OLD.attempts OR NEW.side_effect_class<>OLD.side_effect_class)
+BEGIN SELECT RAISE(ABORT,'external attempt identity cannot be reset'); END;

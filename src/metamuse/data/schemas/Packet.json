@@ -58,7 +58,8 @@
     "rendered_text": {
       "maxLength": 1000000,
       "title": "Rendered Text",
-      "type": "string"
+      "type": "string",
+      "x-max-utf8-bytes": 49152
     },
     "redactions": {
       "items": {

@@ -20,6 +20,13 @@ def registry(handler=None, side_effect="none", uncertain="needs_reconcile"):
 
 
 def submit(ctx, project, operations, key="one", payload=None, **kwargs):
+    # Explicitly enable the external-operation policy for synthetic handlers only.
+    # Socket calls remain forbidden in this process and PROCESS below.
+    if operations["fixture"].side_effect_class != "none":
+        config = ctx.paths.root / "metamuse.toml"
+        config.write_text(
+            config.read_text().replace('network_mode = "offline"', 'network_mode = "live"')
+        )
     return jobs.submit_job(
         ctx.store,
         "fixture",
