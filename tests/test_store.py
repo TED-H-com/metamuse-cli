@@ -8,7 +8,7 @@ import pytest
 from metamuse import app
 from metamuse import models as m
 from metamuse.paths import WorkspacePaths
-from metamuse.store import Store
+from metamuse.store import MIGRATIONS, SCHEMA_VERSION, Store
 
 
 def source(ctx, project, sid="src_one"):
@@ -59,6 +59,7 @@ def test_connection_pragmas_and_permissions(ctx):
         "exports",
         "events",
         "worker_state",
+        "source_assets",
     } <= tables
     for path in (ctx.paths.root, *ctx.paths.root.rglob("*")):
         assert path.stat().st_mode & 0o777 == (0o700 if path.is_dir() else 0o600), path
@@ -135,11 +136,12 @@ def test_objects_dedup_actual_bytes_and_missing(ctx, project):
     assert error.value.detail.code == m.ErrorCode.RESOURCE_UNAVAILABLE
 
 
-def test_transcript_sql_constraint(ctx):
+def test_transcript_sql_constraint(ctx, project):
     asset = ctx.store.put_object(io.BytesIO(b"fixture"), mime="text/plain")
     with pytest.raises(ValueError):
         m.TranscriptSegment(
             id="seg_one",
+            project_id=project,
             asset_id=asset.id,
             revision=1,
             start_ms=2,
@@ -147,13 +149,171 @@ def test_transcript_sql_constraint(ctx):
             text="fixture",
             method="provided",
         )
+    with pytest.raises(ValueError):
+        m.TranscriptSegment(
+            id="seg_loose",
+            project_id=project,
+            revision=1,
+            start_ms=0,
+            end_ms=1,
+            text="fixture",
+            method="provided",
+        )
     with pytest.raises(m.CoreError):
         with ctx.store.transaction() as conn:
             conn.execute(
-                "INSERT INTO transcript_segments VALUES(?,?,1,2,1,'fixture','und',"
-                "'provided','unreviewed')",
-                ("seg_bad", asset.id),
+                "INSERT INTO transcript_segments (id,project_id,asset_id,revision,"
+                "cue_index,start_ms,end_ms,text,language,method,review,overlap) "
+                "VALUES (?,?,?,1,0,2,1,'fixture','und','provided','unreviewed',0)",
+                ("seg_bad", project, asset.id),
             )
+
+
+def test_transcript_project_scope_and_source_asset(ctx, project):
+    other = app.create_project(ctx, {"name": "Other", "request_key": "other"}).data["id"]
+    src = source(ctx, project, "src_media")
+    other_src = source(ctx, other, "src_other_media")
+    asset = ctx.store.put_object(io.BytesIO(b"shared-bytes"), mime="application/octet-stream")
+    ctx.store.insert(
+        m.SourceAsset(source_id=src.id, project_id=project, asset_id=asset.id, relation="video")
+    )
+    ctx.store.insert(
+        m.SourceAsset(source_id=other_src.id, project_id=other, asset_id=asset.id, relation="video")
+    )
+    segment = ctx.store.insert(
+        m.TranscriptSegment(
+            id="seg_scoped",
+            project_id=project,
+            source_id=src.id,
+            asset_id=asset.id,
+            revision=1,
+            cue_index=0,
+            start_ms=0,
+            end_ms=1000,
+            text="僅此專案",
+            language="zh-Hant",
+            method="provided",
+            overlap=True,
+        )
+    )
+    assert ctx.store.get(m.TranscriptSegment, segment.id).overlap is True
+    ctx.store.insert(
+        m.Packet(
+            id="pkt_seg",
+            project_id=project,
+            selection=[m.EvidenceRef(kind="transcript_segment", id=segment.id, revision=1)],
+            rendered_text="僅此專案",
+            digest=m.payload_digest("seg"),
+            created_at=ctx.clock(),
+        )
+    )
+    with pytest.raises(m.CoreError) as error:
+        ctx.store.insert(
+            m.Packet(
+                id="pkt_leak",
+                project_id=other,
+                selection=[m.EvidenceRef(kind="transcript_segment", id=segment.id, revision=1)],
+                rendered_text="僅此專案",
+                digest=m.payload_digest("leak"),
+                created_at=ctx.clock(),
+            )
+        )
+    assert error.value.detail.code == m.ErrorCode.REFERENCE_INVALID
+    loose = ctx.store.insert(
+        m.TranscriptSegment(
+            id="seg_source_only",
+            project_id=project,
+            source_id=src.id,
+            revision=1,
+            cue_index=1,
+            start_ms=1000,
+            end_ms=1500,
+            text="沒有 asset",
+            method="provided",
+        )
+    )
+    assert ctx.store.get(m.TranscriptSegment, loose.id).asset_id is None
+
+
+def _v1_transcript_workspace(tmp_path, *, link_item: bool):
+    paths = WorkspacePaths.resolve(tmp_path / "v1")
+    legacy = Store(paths, schema_version=1, migrations={1: MIGRATIONS[1]})
+    now = legacy.clock()
+    legacy.insert(m.Project(id="prj_v1", name="Version one", created_at=now))
+    legacy.insert(
+        m.Source(
+            id="src_v1",
+            project_id="prj_v1",
+            platform="generic",
+            collection_method="file_import",
+            fetched_at=now,
+        )
+    )
+    legacy.insert(
+        m.Item(
+            id="itm_v1",
+            project_id="prj_v1",
+            source_id="src_v1",
+            kind="post",
+            identity_confidence="weak",
+        )
+    )
+    legacy.insert(
+        m.ItemRevision(
+            item_id="itm_v1",
+            revision=1,
+            text="舊稿",
+            text_hash=m.payload_digest("舊稿"),
+            fetched_at=now,
+        )
+    )
+    asset = legacy.put_object(io.BytesIO(b"v1-bytes"), mime="text/plain")
+    if link_item:
+        legacy.insert(
+            m.ItemAsset(item_id="itm_v1", revision=1, asset_id=asset.id, relation="attached")
+        )
+    with legacy.transaction() as conn:
+        conn.execute(
+            "INSERT INTO transcript_segments (id,asset_id,revision,start_ms,end_ms,text,"
+            "language,method,review) VALUES (?,?,1,0,500,?,?,?,?)",
+            ("seg_v1", asset.id, "舊字幕", "zh-Hant", "provided", "unreviewed"),
+        )
+    return paths, asset
+
+
+def test_v1_workspace_upgrades_with_backup(tmp_path):
+    paths, asset = _v1_transcript_workspace(tmp_path, link_item=True)
+    upgraded = Store(paths)
+    with upgraded.connection() as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
+        assert conn.execute("SELECT 1 FROM sqlite_master WHERE name='source_assets'").fetchone()
+        assert not conn.execute("PRAGMA foreign_key_check").fetchall()
+    segment = upgraded.get(m.TranscriptSegment, "seg_v1")
+    assert segment.project_id == "prj_v1"
+    assert segment.asset_id == asset.id
+    assert segment.text == "舊字幕" and segment.language == "zh-Hant"
+    assert segment.cue_index == 0 and segment.overlap is False
+    assert upgraded.get(m.ItemRevision, "itm_v1").text == "舊稿"
+    backup = next((paths.root / "backups").glob("pre_upgrade_*"))
+    assert json.loads((backup / "manifest.json").read_text())["schema_version"] == 1
+    with sqlite3.connect(backup / "state.sqlite3") as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("SELECT text FROM transcript_segments").fetchone()[0] == "舊字幕"
+
+
+def test_v1_unscoped_transcript_aborts_upgrade(tmp_path):
+    paths, _asset = _v1_transcript_workspace(tmp_path, link_item=False)
+    with pytest.raises(m.CoreError) as error:
+        Store(paths)
+    assert error.value.detail.code == m.ErrorCode.STORAGE
+    with sqlite3.connect(paths.database) as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("SELECT text FROM transcript_segments").fetchone()[0] == "舊字幕"
+        assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='source_assets'").fetchone()
+    assert (
+        Store(paths, schema_version=1, migrations={1: MIGRATIONS[1]}).get(m.Project, "prj_v1").name
+        == "Version one"
+    )
 
 
 def test_backup_restore_and_hash_integrity(ctx, project, tmp_path):
@@ -171,23 +331,24 @@ def test_backup_restore_and_hash_integrity(ctx, project, tmp_path):
 
 
 def test_migration_rollback_backup_and_newer_refusal(ctx, project, tmp_path):
-    migration = tmp_path / "002_failure.sql"
+    current = ctx.store.schema_version
+    migration = tmp_path / "next_failure.sql"
     migration.write_text("CREATE TABLE intermediate(id TEXT);\nINSERT INTO missing VALUES(1);\n")
     with pytest.raises(m.CoreError) as error:
-        Store(ctx.paths, schema_version=2, migrations={2: migration})
+        Store(ctx.paths, schema_version=current + 1, migrations={current + 1: migration})
     assert error.value.detail.code == m.ErrorCode.STORAGE
     with ctx.store.connection() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == current
         assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='intermediate'").fetchone()
     assert ctx.store.get(m.Project, project).id == project
     backup = next((ctx.paths.root / "backups").glob("pre_upgrade_*"))
-    assert json.loads((backup / "manifest.json").read_text())["schema_version"] == 1
+    assert json.loads((backup / "manifest.json").read_text())["schema_version"] == current
     restored = Store.restore(backup, WorkspacePaths.resolve(tmp_path / "pre_restored"))
     assert restored.get(m.Project, project).id == project
     migration.write_text("CREATE TABLE added(id TEXT);\n")
-    newer = Store(ctx.paths, schema_version=2, migrations={2: migration})
+    newer = Store(ctx.paths, schema_version=current + 1, migrations={current + 1: migration})
     with newer.connection() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == current + 1
     with pytest.raises(m.CoreError) as error:
         Store(ctx.paths)
     assert error.value.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
@@ -305,14 +466,15 @@ def test_draft_revision_append_only_and_source_only_packet(ctx, project):
 def test_upgrade_refuses_live_executor(ctx, tmp_path):
     from metamuse.jobs import Executor
 
-    migration = tmp_path / "002.sql"
+    current = ctx.store.schema_version
+    migration = tmp_path / "next.sql"
     migration.write_text("CREATE TABLE added(id TEXT);\n")
     with Executor(ctx.store):
         with pytest.raises(m.CoreError) as error:
-            Store(ctx.paths, schema_version=2, migrations={2: migration})
+            Store(ctx.paths, schema_version=current + 1, migrations={current + 1: migration})
         assert error.value.detail.code == m.ErrorCode.JOB_BUSY
     with ctx.store.connection() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == current
 
 
 def test_backup_private_files_and_tampered_manifest(ctx, tmp_path):
@@ -321,7 +483,7 @@ def test_backup_private_files_and_tampered_manifest(ctx, tmp_path):
     for path in (backup, *backup.rglob("*")):
         assert path.stat().st_mode & 0o777 == (0o700 if path.is_dir() else 0o600)
     manifest = backup / "manifest.json"
-    manifest.write_text('{"schema_version":1,"objects":[]}')
+    manifest.write_text(json.dumps({"schema_version": SCHEMA_VERSION, "objects": []}))
     with pytest.raises(m.CoreError) as error:
         Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restore"))
     assert error.value.detail.code == m.ErrorCode.STORAGE

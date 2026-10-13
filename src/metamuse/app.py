@@ -25,6 +25,8 @@ from metamuse.store import Store, utc_now
 class AppPolicy(m.Model):
     network_mode: Literal["offline", "live"] = "offline"
     telemetry_enabled: bool = False
+    # Directories local import may read. Empty refuses every local file.
+    import_roots: list[str] = Field(default_factory=list)
 
 
 class WorkerConfig(m.Model):

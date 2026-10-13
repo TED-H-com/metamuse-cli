@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Project-scoped relation between a source observation and shared bytes.",
+  "properties": {
+    "source_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Source Id",
+      "type": "string"
+    },
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "asset_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "relation": {
+      "title": "Relation",
+      "type": "string"
+    }
+  },
+  "required": [
+    "source_id",
+    "project_id",
+    "asset_id",
+    "relation"
+  ],
+  "title": "SourceAsset",
+  "type": "object"
+}

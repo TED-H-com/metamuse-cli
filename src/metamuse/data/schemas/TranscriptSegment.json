@@ -8,15 +8,63 @@
       "title": "Id",
       "type": "string"
     },
-    "asset_id": {
+    "project_id": {
       "maxLength": 128,
       "minLength": 3,
-      "title": "Asset Id",
+      "title": "Project Id",
       "type": "string"
+    },
+    "asset_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Asset Id"
+    },
+    "item_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Item Id"
+    },
+    "source_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Id"
     },
     "revision": {
       "minimum": 1,
       "title": "Revision",
+      "type": "integer"
+    },
+    "cue_index": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Cue Index",
       "type": "integer"
     },
     "start_ms": {
@@ -53,11 +101,16 @@
       "default": "unreviewed",
       "title": "Review",
       "type": "string"
+    },
+    "overlap": {
+      "default": false,
+      "title": "Overlap",
+      "type": "boolean"
     }
   },
   "required": [
     "id",
-    "asset_id",
+    "project_id",
     "revision",
     "start_ms",
     "end_ms",

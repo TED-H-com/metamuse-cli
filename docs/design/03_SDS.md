@@ -81,7 +81,8 @@ handlers只做parse/render，domain結果不print。所有mutations有request_ke
 | item_revisions | (item,revision) PK、原文/hash、raw/parsed/source time、fetched_at、complete、missing、evidence。 |
 | assets | sha256 UNIQUE、mime、actual bytes、duration、object path、state。 |
 | item_assets | item revision→asset、relation；保留各來源。 |
-| transcript_segments | asset/revision、start_ms/end_ms、text、language、method、review；end≥start≥0。 |
+| source_assets | source、project、asset、relation。直接匯入的媒體沒有貼文時仍有專案範圍的來源關係。 |
+| transcript_segments | project、可空 asset、可空 item/source、cue_index、overlap、start_ms/end_ms、text、language、method、review；end≥start≥0。至少要有 asset、item 或 source 之一。相同 bytes 的字幕不跨 project 可見。 |
 | packets | project、exact selection、rendered_text、redactions、coverage、digest、created。 |
 | permits | kind/scope、issuer、issued/expiry、max_uses/used、revoked、exact digest（需要時）。 |
 | discussions | project/provider/auth_ref、remote_session nullable、open attempt state、last_seq、state。 |
@@ -95,7 +96,7 @@ handlers只做parse/render，domain結果不print。所有mutations有request_ke
 
 P1才加actions/action_attempts、metric_snapshots，不預建campaign/voice/formula策略庫。
 
-必須有FK及project一致性：跨project item/source/parent/packet引用拒絕。asset bytes可共用，但可見範圍依item_assets，不因hash相同洩露別project。
+必須有FK及project一致性：跨project item/source/parent/packet引用拒絕。asset bytes可共用，但可見範圍依item_assets與source_assets，不因hash相同洩露別project。
 
 native IDs為opaque字串，不自行解碼。可靠ID用(platform,scope,id)識別；無ID保持弱識別，不以文字hash假裝同留言。parent不得自我／循環。revision追加，不原地抹掉舊來源；修正同transaction標記派生stale。
 

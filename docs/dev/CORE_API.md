@@ -1,4 +1,4 @@
-# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 1)
+# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 2)
 
 B02–B04 owns `app.py`, `cli.py`, `models.py`, `store.py`, `jobs.py`, migration SQL and
 generated schemas. Other tasks must build against these APIs without editing them.
@@ -33,9 +33,11 @@ No Windows executor support is claimed: this build uses `fcntl` on Linux/WSL2.
 `ctx.store` is the only database owner. `ctx.clock` and `ctx.store.clock` are callables
 returning UTC ISO timestamps; `AppContext.open(clock=...)` sets both. `ctx.logger` is
 a Python logger. `ctx.limits` is `models.Limits`; `ctx.policy` is the complete typed
-`Config` (`app`, `worker`, `limits`, `muse`, `publishing`). Offline mode, disabled
-telemetry, disabled Muse/publishing and one executor are defaults. The TOML is one
-workspace configuration, not separate CLI/MCP settings. Higher limits never grant scope.
+`Config` (`app`, `worker`, `limits`, `muse`, `publishing`). `app.import_roots` lists
+directories a local import may read; an empty list refuses every local file. Offline
+mode, disabled telemetry, disabled Muse/publishing and one executor are defaults. The
+TOML is one workspace configuration, not separate CLI/MCP settings. Higher limits
+never grant scope.
 
 ## Application functions and errors
 
@@ -134,8 +136,9 @@ def handle_import(step: StepContext) -> JobResult:
 def register_operations(registry=None):
     target = OPERATIONS if registry is None else registry
     if "import.local" not in target:
-        register_operation("import.local", handle_import, "none",
-                           request_model=CollectRequest, registry=target)
+        register_operation(
+            "import.local", handle_import, "none", request_model=CollectRequest, registry=target
+        )
 
 
 # Illustrative only: the core does not register or implement this operation.
@@ -306,8 +309,12 @@ checks schema version, SQLite integrity/FKs, manifest membership, object size/ha
 before copying into a fresh workspace. It clears stale worker owner metadata. Migration
 uses an exclusive maintenance lock and the worker lock, pre-upgrade online backup, and
 transactional DDL; a failure rolls back without deleting original data. `PRAGMA
-user_version` is schema version 1; older builds refuse newer schemas on every connection.
-Add future migrations only through the core owner. No LIVE, privacy erasure/compaction,
+user_version` is schema version 2. Schema 2 adds project-scoped transcript anchors
+(`project_id`, nullable `asset_id`, `item_id`, `source_id`, `cue_index`, `overlap`) and
+`source_assets`. Migration `002_collect_media.sql` copies a v1 transcript only when its
+asset links to exactly one project; otherwise the upgrade rolls back and the pre-upgrade
+backup remains. Older builds refuse newer schemas on every connection. Add future
+migrations only through the core owner. No LIVE, privacy erasure/compaction,
 Windows ACL verification or performance SLA evidence is implied by these APIs.
 
 ## Tables and columns
@@ -325,7 +332,8 @@ All JSON column values are text; timestamp values are UTC ISO strings.
 | item_revisions | `item_id`, `revision`, `text`, `text_hash`, `raw_time`, `parsed_time`, `source_time`, `fetched_at`, `complete`, `missing_fields`, `evidence` |
 | assets | `id`, `sha256`, `mime`, `actual_bytes`, `duration_ms`, `object_path`, `state` |
 | item_assets | `item_id`, `revision`, `asset_id`, `relation` |
-| transcript_segments | `id`, `asset_id`, `revision`, `start_ms`, `end_ms`, `text`, `language`, `method`, `review` |
+| source_assets | `source_id`, `project_id`, `asset_id`, `relation` |
+| transcript_segments | `id`, `project_id`, `asset_id`, `item_id`, `source_id`, `revision`, `cue_index`, `start_ms`, `end_ms`, `text`, `language`, `method`, `review`, `overlap` |
 | packets | `id`, `project_id`, `selection`, `rendered_text`, `redactions`, `coverage_status`, `digest`, `created_at`, `stale` |
 | permits | `id`, `project_id`, `kind`, `scope`, `provider`, `account`, `issuer`, `issued_at`, `expires_at`, `max_uses`, `used`, `revoked`, `exact_digest` |
 | discussions | `id`, `project_id`, `provider`, `auth_ref`, `topic`, `remote_session`, `open_attempt_state`, `last_seq`, `state` |
@@ -393,11 +401,13 @@ IMPLEMENTED_TOOLS: frozenset[str] = frozenset({"metamuse_search"})
 
 def capability_status(ctx):
     # Optional offline metadata. Report only actual evidence/configuration/permission.
-    return {"metamuse_search": {
-        "verification": "fixture_passed",
-        "environment": "ready",
-        "permission": "granted_scope",  # local workspace read; no remote grant implied
-    }}
+    return {
+        "metamuse_search": {
+            "verification": "fixture_passed",
+            "environment": "ready",
+            "permission": "granted_scope",  # local workspace read; no remote grant implied
+        }
+    }
 ```
 
 `inspect_capabilities` aggregates declarations without a shared editable set. Undeclared
