@@ -1386,6 +1386,14 @@ def redaction_sensitive_value(key: str, value: Any) -> bool:
     if len(value) <= 4096 and "%" in value:
         for _ in range(3):
             value = unquote(value)
+    if "\\" in value:
+        escaped = value.strip()
+        if len(escaped) >= 2 and escaped[0] in {'"', "'"} and escaped[-1] == escaped[0]:
+            escaped = escaped[1:-1]
+        try:
+            value = json.loads('"' + escaped + '"')
+        except ValueError:
+            pass
     value = value.strip().strip("\"'")
     if not value or value == "[REDACTED]" or value.endswith("()"):
         return False

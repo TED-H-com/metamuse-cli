@@ -213,7 +213,9 @@ hyphen/underscore normalization, match suffixes `sess`, `sessid`, `session`, `to
 `secret`, `cookie`, `password`; `cookie_header` is also sensitive. Query/fragment
 separators `?`, `&`, `#`, `=` are located through up to three percent-encoding layers;
 the value is replaced in its original encoded span. Sensitive JSON string fields are
-redacted even within an incomplete document. Counts expose only class and count.
+redacted even within an incomplete document. JSON escapes in string values are decoded
+for credential classification; replacement still covers their original encoded span.
+Counts expose only class and count.
 Packet rendering is redacted before its UTF-8 digest; bundle members use the same rules.
 Topics and questions are refused with fixed `E_INPUT_INVALID` only for credential-class
 values (`sensitive_field`, `cookie`, `session_cookie`, `authorization`, `url_token`,

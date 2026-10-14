@@ -9,6 +9,7 @@ import time
 import tracemalloc
 import uuid
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 from test_muse_lifecycle import fixture_ctx as fixture_ctx
@@ -565,3 +566,30 @@ def test_numeric_credentials_are_not_session_counters(name):
     value = f"{12}{34}"
     assert value not in safety.redact_text(f"{name}={value}")[0]
     assert value not in safety.redact_text(f"Cookie: active_session={value}")[0]
+
+
+@pytest.mark.parametrize("form", ["document", "prose", "incomplete"])
+@pytest.mark.parametrize("layers", range(4))
+def test_f3_json_escaped_credential_values_are_classified(form, layers):
+    from metamuse._muse_lifecycle import _check_question
+    from metamuse.content import _safe_value
+
+    marker = f"{form}_{layers}_MARKER_SYNTHETIC_ONLY"
+    value = "".join(f"\\u{ord(char):04x}" for char in marker)
+    text = '{"password": "' + value + '"}'
+    if form == "prose":
+        text = "note " + text + " end"
+    elif form == "incomplete":
+        text = text[:-1]
+    for _ in range(layers):
+        text = quote(text, safe="")
+    output, counts = safety.redact_text(text)
+    assert "[REDACTED]" in output
+    assert counts == [{"kind": "sensitive_field", "count": 1}]
+    assert safety.redact_text(output) == (output, [])
+    structured_counts = []
+    assert _safe_value({"text": text}, structured_counts) == {"text": output}
+    assert structured_counts == counts
+    with pytest.raises(m.CoreError) as error:
+        _check_question(text)
+    assert error.value.detail.code == m.ErrorCode.INPUT_INVALID
