@@ -4,6 +4,22 @@ Scope is strictly one approved page type (`post_permalink`): a single post
 permalink with the post body, top-level comments, and their replies. Profile,
 group, feed, watch, reel, story, and search URLs stay `E_UNSUPPORTED`.
 
+Browser egress boundary (AT-030, FR-019):
+- Playwright's `context.route` only intercepts the initial hop of a redirect chain
+  and allows Chromium to resolve DNS and follow 3xx hops internally.
+- All Chromium traffic is therefore routed through `BrowserEgressProxy`
+  (`src/metamuse/_browser_egress.py`) bound to `127.0.0.1:0` with Chromium's own
+  DNS resolver disabled (`--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1`),
+  QUIC disabled (`--disable-quic`), and non-proxied WebRTC UDP disabled.
+- The local egress proxy is the true network egress boundary: it checks every
+  `CONNECT` tunnel and plain-HTTP request (including redirect hops) against B08
+  `OutboundURLPolicy`, dials only the checked IP address without re-resolving,
+  verifies the connected socket peer, and enforces the job `max_bytes` budget.
+- `context.route` is retained only for browser resource-type blocking
+  (`websocket`, `eventsource`, `manifest`, `service_worker`) and the initial
+  navigation page-type check, and `Response.server_addr()` is retained as a
+  secondary check.
+
 Third-party provenance:
 - Post field checklist (`actor`, `creation_time`, message text, post id,
   permalink, reaction/comment/share counts, attachment URLs) references
@@ -24,6 +40,7 @@ import json
 import os
 import re
 import socket
+import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
@@ -35,6 +52,10 @@ from urllib.parse import parse_qs, urlsplit
 
 from metamuse import collect, jobs, safety
 from metamuse import models as m
+from metamuse._browser_egress import (
+    BrowserEgressProxy,
+    build_chromium_launch_args,
+)
 from metamuse.jobs import StepContext, StepSpec, submit_job
 from metamuse.store import TransactionWriter
 
@@ -265,6 +286,7 @@ class BrowserDriver(Protocol):
         egress: EgressGuard,
         *,
         timeout_ms: int,
+        max_bytes: int | None = None,
     ) -> BrowserSession: ...
 
 
@@ -915,9 +937,13 @@ def _normalize_allowed_hosts(configured_hosts: Iterable[str]) -> tuple[str, ...]
 
 
 class EgressGuard:
-    """Per-request and per-response egress validator for browser sessions (AT-030).
+    """Egress validator backing BrowserEgressProxy and secondary browser checks (AT-030, FR-019).
 
-    Production always uses B08 OutboundURLPolicy (check_url) and the real resolver.
+    The local BrowserEgressProxy is the true network egress boundary: it checks every CONNECT
+    tunnel and plain-HTTP request (including every 3xx redirect hop) via check_proxy_target,
+    dials only the first checked IP address without re-resolving, and verifies the connected
+    peer via verify_proxy_peer. Production always uses B08 OutboundURLPolicy (check_url) and
+    the real resolver.
     """
 
     def __init__(
@@ -936,9 +962,17 @@ class EgressGuard:
         )
         self._fixture_url_checker = _fixture_url_checker
         self._fixture_nav_validator = _fixture_nav_validator
+        self._lock = threading.Lock()
         self.decisions: list[EgressDecision] = []
         self.checked_by_url: dict[str, safety.CheckedURL] = {}
+        self.checked_by_authority: dict[tuple[str, int], safety.CheckedURL] = {}
+        self.verified_peers: dict[tuple[str, int], str] = {}
+        self.aborted_urls: dict[str, m.CoreError] = {}
+        self.last_proxy_error: m.CoreError | None = None
         self.navigation_error: m.CoreError | None = None
+        self.proxy_port: int | None = None
+        self.bytes_relayed: int = 0
+        self.byte_limit_exceeded: bool = False
 
     @classmethod
     def for_fixture_test(
@@ -1008,6 +1042,280 @@ class EgressGuard:
             )
         return None
 
+    def check_browser_route(
+        self,
+        url: str,
+        *,
+        resource_type: str = "document",
+        is_navigation: bool = False,
+        redirected_from: str | None = None,
+    ) -> None:
+        """Secondary browser-level check for context.route (resource-type & initial nav shape).
+
+        Does not perform DNS resolution; BrowserEgressProxy performs the authoritative
+        OutboundURLPolicy check and pinned dial for every hop.
+        """
+        rtype = (resource_type or "other").lower()
+        if is_navigation:
+            purpose: safety.URLPurpose = "redirect" if redirected_from else "request"
+        elif rtype in ("image", "media", "font"):
+            purpose = "media"
+        else:
+            purpose = "subresource"
+
+        host_guess = "invalid"
+        try:
+            host_guess = _normalize_host(urlsplit(url).hostname) or "invalid"
+        except ValueError:
+            pass
+
+        if rtype in ("websocket", "eventsource", "manifest", "service_worker"):
+            with self._lock:
+                self.decisions.append(
+                    EgressDecision(
+                        hostname=host_guess,
+                        purpose=purpose,
+                        resource_type=rtype,
+                        allowed=False,
+                        reason=f"blocked_resource_type:{rtype}",
+                    )
+                )
+            raise m.CoreError(
+                m.ErrorCode.SCOPE_DENIED,
+                f"Browser resource type {rtype} is blocked by egress policy",
+            )
+
+        if is_navigation:
+            barrier = self._classify_navigation_barrier(url)
+            if barrier is not None:
+                with self._lock:
+                    self.navigation_error = barrier
+                    self.decisions.append(
+                        EgressDecision(
+                            hostname=host_guess,
+                            purpose=purpose,
+                            resource_type=rtype,
+                            allowed=False,
+                            reason=f"navigation_barrier:{barrier.detail.code.value}",
+                        )
+                    )
+                raise barrier
+            try:
+                if self._fixture_nav_validator is not None:
+                    self._fixture_nav_validator(url)
+                else:
+                    parse_post_permalink(url)
+            except m.CoreError as exc:
+                with self._lock:
+                    self.navigation_error = exc
+                    self.decisions.append(
+                        EgressDecision(
+                            hostname=host_guess,
+                            purpose=purpose,
+                            resource_type=rtype,
+                            allowed=False,
+                            reason=f"navigation_unapproved:{exc.detail.code.value}",
+                        )
+                    )
+                raise
+
+    def record_proxy_protocol_refusal(self, *, hostname: str, reason: str) -> None:
+        exc = m.CoreError(
+            m.ErrorCode.SCOPE_DENIED,
+            f"Proxy refused request ({reason})",
+        )
+        with self._lock:
+            self.last_proxy_error = exc
+            self.decisions.append(
+                EgressDecision(
+                    hostname=hostname,
+                    purpose="request",
+                    resource_type="proxy",
+                    allowed=False,
+                    reason=f"proxy_refused:{reason}",
+                )
+            )
+
+    def mark_byte_limit_exceeded(self) -> None:
+        with self._lock:
+            self.byte_limit_exceeded = True
+            self.decisions.append(
+                EgressDecision(
+                    hostname="proxy",
+                    purpose="request",
+                    resource_type="proxy",
+                    allowed=False,
+                    reason="max_bytes_exceeded",
+                )
+            )
+
+    def check_proxy_target(
+        self,
+        url: str,
+        *,
+        method: str,
+        is_connect: bool,
+        purpose: safety.URLPurpose = "request",
+        is_navigation: bool = False,
+    ) -> safety.CheckedURL:
+        """Authoritative proxy egress check run before opening any upstream socket."""
+        del method
+        rtype = "connect" if is_connect else ("document" if is_navigation else "subresource")
+        host_guess = "invalid"
+        try:
+            host_guess = _normalize_host(urlsplit(url).hostname) or "invalid"
+        except ValueError:
+            pass
+
+        try:
+            if self._fixture_url_checker is not None:
+                checked = self._fixture_url_checker(url, purpose)
+            else:
+                if not is_connect:
+                    raise m.CoreError(
+                        m.ErrorCode.SCOPE_DENIED,
+                        "Plain HTTP is refused by the Facebook browser egress proxy",
+                        next_action="Use HTTPS for all Facebook requests",
+                    )
+                checked = self.policy.before_request(url, purpose=purpose)
+        except m.CoreError as exc:
+            with self._lock:
+                self.last_proxy_error = exc
+                self.aborted_urls[url] = exc
+                if is_navigation and self.navigation_error is None:
+                    self.navigation_error = exc
+                self.decisions.append(
+                    EgressDecision(
+                        hostname=host_guess,
+                        purpose=purpose,
+                        resource_type=rtype,
+                        allowed=False,
+                        reason=exc.detail.code.value,
+                    )
+                )
+            raise
+
+        if not is_connect:
+            barrier = self._classify_navigation_barrier(url)
+            if barrier is not None:
+                with self._lock:
+                    self.last_proxy_error = barrier
+                    self.aborted_urls[url] = barrier
+                    if self.navigation_error is None:
+                        self.navigation_error = barrier
+                    self.decisions.append(
+                        EgressDecision(
+                            hostname=checked.hostname,
+                            purpose=purpose,
+                            resource_type=rtype,
+                            allowed=False,
+                            reason=f"navigation_barrier:{barrier.detail.code.value}",
+                        )
+                    )
+                raise barrier
+            if is_navigation:
+                try:
+                    if self._fixture_nav_validator is not None:
+                        self._fixture_nav_validator(url)
+                    else:
+                        parse_post_permalink(url)
+                except m.CoreError as exc:
+                    with self._lock:
+                        self.last_proxy_error = exc
+                        self.aborted_urls[url] = exc
+                        if self.navigation_error is None:
+                            self.navigation_error = exc
+                        self.decisions.append(
+                            EgressDecision(
+                                hostname=checked.hostname,
+                                purpose=purpose,
+                                resource_type=rtype,
+                                allowed=False,
+                                reason=f"navigation_unapproved:{exc.detail.code.value}",
+                            )
+                        )
+                    raise
+
+        with self._lock:
+            self.checked_by_url[url] = checked
+            self.checked_by_url[checked.url] = checked
+            self.checked_by_authority[(checked.hostname, checked.port)] = checked
+            self.decisions.append(
+                EgressDecision(
+                    hostname=checked.hostname,
+                    purpose=purpose,
+                    resource_type=rtype,
+                    allowed=True,
+                    reason="allowed",
+                )
+            )
+        return checked
+
+    def verify_proxy_peer(
+        self,
+        checked: safety.CheckedURL,
+        *,
+        peer_ip: str,
+        peer_port: int,
+    ) -> str:
+        """Verify the connected upstream socket peer against the pinned checked.addresses."""
+        try:
+            normalized_ip = str(ipaddress.ip_address(peer_ip))
+        except ValueError:
+            raise m.CoreError(
+                m.ErrorCode.SCOPE_DENIED,
+                "Connected upstream socket peer IP is not a valid IP literal",
+            ) from None
+
+        if self._fixture_url_checker is None:
+            pinned_policy = safety.OutboundURLPolicy(
+                resolver=lambda _host: checked.addresses,
+                allowed_hosts=self.allowed_hosts,
+            )
+            pinned_policy.before_request(
+                checked.url,
+                purpose=checked.purpose,
+                peer_address=normalized_ip,
+            )
+        elif normalized_ip not in checked.addresses:
+            raise m.CoreError(
+                m.ErrorCode.SCOPE_DENIED,
+                "Connected upstream peer IP does not match the checked resolver addresses",
+            )
+
+        if peer_port != checked.port or normalized_ip not in checked.addresses:
+            with self._lock:
+                self.decisions.append(
+                    EgressDecision(
+                        hostname=checked.hostname,
+                        purpose=checked.purpose,
+                        resource_type="proxy",
+                        allowed=False,
+                        reason="peer_mismatch",
+                        peer_ip=normalized_ip,
+                        peer_verified=False,
+                    )
+                )
+            raise m.CoreError(
+                m.ErrorCode.SCOPE_DENIED,
+                "Connected upstream peer address or port did not match the checked destination",
+            )
+
+        with self._lock:
+            self.verified_peers[(checked.hostname, checked.port)] = normalized_ip
+            self.decisions.append(
+                EgressDecision(
+                    hostname=checked.hostname,
+                    purpose=checked.purpose,
+                    resource_type="proxy",
+                    allowed=True,
+                    reason="peer_verified",
+                    peer_ip=normalized_ip,
+                    peer_verified=True,
+                )
+            )
+        return normalized_ip
+
     def check_request(
         self,
         url: str,
@@ -1024,58 +1332,18 @@ class EgressGuard:
         else:
             purpose = "subresource"
 
+        self.check_browser_route(
+            url,
+            resource_type=rtype,
+            is_navigation=is_navigation,
+            redirected_from=redirected_from,
+        )
+
         host_guess = "invalid"
         try:
             host_guess = _normalize_host(urlsplit(url).hostname) or "invalid"
         except ValueError:
             pass
-
-        if rtype in ("websocket", "eventsource", "manifest", "service_worker"):
-            self.decisions.append(
-                EgressDecision(
-                    hostname=host_guess,
-                    purpose=purpose,
-                    resource_type=rtype,
-                    allowed=False,
-                    reason=f"blocked_resource_type:{rtype}",
-                )
-            )
-            raise m.CoreError(
-                m.ErrorCode.SCOPE_DENIED,
-                f"Browser resource type {rtype} is blocked by egress policy",
-            )
-
-        if is_navigation:
-            barrier = self._classify_navigation_barrier(url)
-            if barrier is not None:
-                self.navigation_error = barrier
-                self.decisions.append(
-                    EgressDecision(
-                        hostname=host_guess,
-                        purpose=purpose,
-                        resource_type=rtype,
-                        allowed=False,
-                        reason=f"navigation_barrier:{barrier.detail.code.value}",
-                    )
-                )
-                raise barrier
-            try:
-                if self._fixture_nav_validator is not None:
-                    self._fixture_nav_validator(url)
-                else:
-                    parse_post_permalink(url)
-            except m.CoreError as exc:
-                self.navigation_error = exc
-                self.decisions.append(
-                    EgressDecision(
-                        hostname=host_guess,
-                        purpose=purpose,
-                        resource_type=rtype,
-                        allowed=False,
-                        reason=f"navigation_unapproved:{exc.detail.code.value}",
-                    )
-                )
-                raise
 
         try:
             if self._fixture_url_checker is not None:
@@ -1083,28 +1351,31 @@ class EgressGuard:
             else:
                 checked = self.policy.before_request(url, purpose=purpose)
         except m.CoreError as exc:
-            self.decisions.append(
-                EgressDecision(
-                    hostname=host_guess,
-                    purpose=purpose,
-                    resource_type=rtype,
-                    allowed=False,
-                    reason=exc.detail.code.value,
+            with self._lock:
+                self.decisions.append(
+                    EgressDecision(
+                        hostname=host_guess,
+                        purpose=purpose,
+                        resource_type=rtype,
+                        allowed=False,
+                        reason=exc.detail.code.value,
+                    )
                 )
-            )
             raise
 
-        self.checked_by_url[url] = checked
-        self.checked_by_url[checked.url] = checked
-        self.decisions.append(
-            EgressDecision(
-                hostname=checked.hostname,
-                purpose=purpose,
-                resource_type=rtype,
-                allowed=True,
-                reason="allowed",
+        with self._lock:
+            self.checked_by_url[url] = checked
+            self.checked_by_url[checked.url] = checked
+            self.checked_by_authority[(checked.hostname, checked.port)] = checked
+            self.decisions.append(
+                EgressDecision(
+                    hostname=checked.hostname,
+                    purpose=purpose,
+                    resource_type=rtype,
+                    allowed=True,
+                    reason="allowed",
+                )
             )
-        )
         return checked
 
     def check_response_peer(
@@ -1115,23 +1386,34 @@ class EgressGuard:
         resource_type: str = "document",
         server_addr: Mapping[str, Any] | None,
     ) -> str:
-        checked = self.checked_by_url.get(url)
+        with self._lock:
+            checked = self.checked_by_url.get(url)
+            if checked is None:
+                try:
+                    parsed_u = urlsplit(url)
+                    h_norm = _normalize_host(parsed_u.hostname)
+                    p_norm = parsed_u.port or (443 if parsed_u.scheme.lower() == "https" else 80)
+                    if h_norm is not None:
+                        checked = self.checked_by_authority.get((h_norm, p_norm))
+                except ValueError:
+                    checked = None
         if checked is None:
             if self._fixture_url_checker is not None:
                 checked = self._fixture_url_checker(url, purpose)
             else:
                 checked = self.policy.before_request(url, purpose=purpose)
         if not isinstance(server_addr, Mapping):
-            self.decisions.append(
-                EgressDecision(
-                    hostname=checked.hostname,
-                    purpose=purpose,
-                    resource_type=resource_type,
-                    allowed=False,
-                    reason="missing_server_addr",
-                    peer_verified=False,
+            with self._lock:
+                self.decisions.append(
+                    EgressDecision(
+                        hostname=checked.hostname,
+                        purpose=purpose,
+                        resource_type=resource_type,
+                        allowed=False,
+                        reason="missing_server_addr",
+                        peer_verified=False,
+                    )
                 )
-            )
             raise m.CoreError(
                 m.ErrorCode.SCOPE_DENIED,
                 "Browser response did not expose a verifiable peer address",
@@ -1155,8 +1437,44 @@ class EgressGuard:
                 "Browser response peer IP is not a valid IP literal",
             ) from None
 
+        # When routed through the session-local BrowserEgressProxy, Playwright's server_addr()
+        # reports 127.0.0.1:<proxy_port>; confirm the proxy verified the upstream socket peer.
+        if (
+            self.proxy_port is not None
+            and normalized_ip == "127.0.0.1"
+            and raw_port == self.proxy_port
+        ):
+            with self._lock:
+                upstream_peer = self.verified_peers.get((checked.hostname, checked.port))
+            if upstream_peer is None or upstream_peer not in checked.addresses:
+                raise m.CoreError(
+                    m.ErrorCode.SCOPE_DENIED,
+                    "Proxy-routed response had no verified upstream peer address",
+                )
+            with self._lock:
+                self.decisions.append(
+                    EgressDecision(
+                        hostname=checked.hostname,
+                        purpose=purpose,
+                        resource_type=resource_type,
+                        allowed=True,
+                        reason="peer_verified",
+                        peer_ip=upstream_peer,
+                        peer_verified=True,
+                    )
+                )
+            return upstream_peer
+
         if self._fixture_url_checker is None:
-            self.policy.before_request(url, purpose=purpose, peer_address=normalized_ip)
+            pinned_policy = safety.OutboundURLPolicy(
+                resolver=lambda _host: checked.addresses,
+                allowed_hosts=self.allowed_hosts,
+            )
+            pinned_policy.before_request(
+                checked.url,
+                purpose=purpose,
+                peer_address=normalized_ip,
+            )
         elif normalized_ip not in checked.addresses:
             raise m.CoreError(
                 m.ErrorCode.SCOPE_DENIED,
@@ -1164,44 +1482,48 @@ class EgressGuard:
             )
 
         if raw_port != checked.port or normalized_ip not in checked.addresses:
-            self.decisions.append(
-                EgressDecision(
-                    hostname=checked.hostname,
-                    purpose=purpose,
-                    resource_type=resource_type,
-                    allowed=False,
-                    reason="peer_mismatch",
-                    peer_ip=normalized_ip,
-                    peer_verified=False,
+            with self._lock:
+                self.decisions.append(
+                    EgressDecision(
+                        hostname=checked.hostname,
+                        purpose=purpose,
+                        resource_type=resource_type,
+                        allowed=False,
+                        reason="peer_mismatch",
+                        peer_ip=normalized_ip,
+                        peer_verified=False,
+                    )
                 )
-            )
             raise m.CoreError(
                 m.ErrorCode.SCOPE_DENIED,
                 "Connected peer address or port did not match the checked destination",
             )
 
-        self.decisions.append(
-            EgressDecision(
-                hostname=checked.hostname,
-                purpose=purpose,
-                resource_type=resource_type,
-                allowed=True,
-                reason="peer_verified",
-                peer_ip=normalized_ip,
-                peer_verified=True,
+        with self._lock:
+            self.decisions.append(
+                EgressDecision(
+                    hostname=checked.hostname,
+                    purpose=purpose,
+                    resource_type=resource_type,
+                    allowed=True,
+                    reason="peer_verified",
+                    peer_ip=normalized_ip,
+                    peer_verified=True,
+                )
             )
-        )
         return normalized_ip
 
     def summary(self) -> dict[str, Any]:
+        with self._lock:
+            decisions_snapshot = list(self.decisions)
         return {
-            "total_checks": len(self.decisions),
-            "allowed": sum(1 for d in self.decisions if d.allowed and d.reason == "allowed"),
-            "aborted": sum(1 for d in self.decisions if not d.allowed),
-            "peer_verified": sum(1 for d in self.decisions if d.peer_verified),
+            "total_checks": len(decisions_snapshot),
+            "allowed": sum(1 for d in decisions_snapshot if d.allowed and d.reason == "allowed"),
+            "aborted": sum(1 for d in decisions_snapshot if not d.allowed),
+            "peer_verified": sum(1 for d in decisions_snapshot if d.peer_verified),
             "aborted_reasons": [
                 {"hostname": d.hostname, "purpose": d.purpose, "reason": d.reason}
-                for d in self.decisions
+                for d in decisions_snapshot
                 if not d.allowed
             ],
         }
@@ -1231,6 +1553,7 @@ class _PlaywrightSession:
         page: Any,
         egress: EgressGuard,
         *,
+        proxy: BrowserEgressProxy | None = None,
         timeout_ms: int,
         _test_origin: str | None = None,
     ) -> None:
@@ -1239,6 +1562,7 @@ class _PlaywrightSession:
         self._context = context
         self._page = page
         self._egress = egress
+        self._proxy = proxy
         self._timeout_ms = timeout_ms
         self._test_origin = _test_origin.rstrip("/") if _test_origin else None
         self.popups_blocked = 0
@@ -1263,7 +1587,7 @@ class _PlaywrightSession:
             req = route.request
             redirected_from = req.redirected_from.url if req.redirected_from else None
             try:
-                self._egress.check_request(
+                self._egress.check_browser_route(
                     req.url,
                     resource_type=req.resource_type,
                     is_navigation=req.is_navigation_request(),
@@ -1276,6 +1600,23 @@ class _PlaywrightSession:
 
         def _on_response(response: Any) -> None:
             req = response.request
+            with self._egress._lock:
+                aborted_err = self._egress.aborted_urls.get(response.url)
+                last_proxy_err = self._egress.last_proxy_error
+            aborted_by_proxy = (
+                response.headers.get("x-metamuse-proxy-aborted") == "1" or aborted_err is not None
+            )
+            if aborted_by_proxy:
+                if req.is_navigation_request() and self._egress.navigation_error is None:
+                    self._egress.navigation_error = (
+                        aborted_err
+                        or last_proxy_err
+                        or m.CoreError(
+                            m.ErrorCode.SCOPE_DENIED,
+                            "Outbound navigation blocked by egress proxy",
+                        )
+                    )
+                return
             purpose: safety.URLPurpose = (
                 "request"
                 if req.is_navigation_request()
@@ -1298,27 +1639,41 @@ class _PlaywrightSession:
         self._context.route("**/*", _on_route)
         self._page.on("response", _on_response)
 
+    def _raise_if_byte_limit(self) -> None:
+        if self._egress.byte_limit_exceeded or (
+            self._proxy is not None and self._proxy.byte_limit_exceeded
+        ):
+            raise m.CoreError(
+                m.ErrorCode.LIMIT_REACHED,
+                "Facebook page response exceeded max_bytes budget",
+                next_action="Increase limits.max_bytes or narrow the requested resources",
+            )
+
     def goto_post(self, url: str) -> PageObservation:
         target_url = url
         if self._test_origin is not None:
             parsed = urlsplit(url)
-            target_url = f"{self._test_origin}{parsed.path}"
+            suffix = f"?{parsed.query}" if parsed.query else ""
+            target_url = f"{self._test_origin}{parsed.path}{suffix}"
         self._egress.navigation_error = None
+        self._egress.last_proxy_error = None
         self._peer_error = None
         try:
-            response = self._page.goto(
-                target_url, wait_until="domcontentloaded", timeout=self._timeout_ms
-            )
+            response = self._page.goto(target_url, wait_until="load", timeout=self._timeout_ms)
         except Exception as exc:
+            self._raise_if_byte_limit()
             if self._egress.navigation_error is not None:
                 raise self._egress.navigation_error from None
             if self._peer_error is not None:
                 raise self._peer_error from None
+            if self._egress.last_proxy_error is not None:
+                raise self._egress.last_proxy_error from None
             raise m.CoreError(
                 m.ErrorCode.NETWORK_TIMEOUT,
                 "Browser navigation to Facebook post permalink failed",
                 next_action="Verify connectivity and the post permalink before retrying",
             ) from exc
+        self._raise_if_byte_limit()
         if self._egress.navigation_error is not None:
             raise self._egress.navigation_error
         if self._peer_error is not None:
@@ -1339,12 +1694,14 @@ class _PlaywrightSession:
         if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", control_id):
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid expand control identifier")
         self._egress.navigation_error = None
+        self._egress.last_proxy_error = None
         self._peer_error = None
         locator = self._page.locator(f'[data-expand-id="{control_id}"]').first
         try:
             locator.click(timeout=self._timeout_ms)
-            self._page.wait_for_load_state("domcontentloaded", timeout=self._timeout_ms)
+            self._page.wait_for_load_state("load", timeout=self._timeout_ms)
         except Exception as exc:
+            self._raise_if_byte_limit()
             if self._egress.navigation_error is not None:
                 raise self._egress.navigation_error from None
             if self._peer_error is not None:
@@ -1354,6 +1711,7 @@ class _PlaywrightSession:
                 "Comment or reply expansion control failed to respond",
                 next_action="Inspect the page markup before retrying",
             ) from exc
+        self._raise_if_byte_limit()
         if self._egress.navigation_error is not None:
             raise self._egress.navigation_error
         if self._peer_error is not None:
@@ -1375,6 +1733,11 @@ class _PlaywrightSession:
             self._pw.stop()
         except Exception:
             pass
+        if self._proxy is not None:
+            try:
+                self._proxy.close()
+            except Exception:
+                pass
 
 
 class PlaywrightBrowserDriver:
@@ -1392,6 +1755,7 @@ class PlaywrightBrowserDriver:
         egress: EgressGuard,
         *,
         timeout_ms: int,
+        max_bytes: int | None = None,
     ) -> BrowserSession:
         refuse_proxies()
         executable = find_playwright_browser()
@@ -1399,23 +1763,22 @@ class PlaywrightBrowserDriver:
             ensure_browser_available()
         from playwright.sync_api import sync_playwright
 
+        idle_timeout_s = max(1.0, float(timeout_ms) / 1000.0)
+        proxy = BrowserEgressProxy(
+            egress,
+            max_bytes=max_bytes,
+            idle_timeout_s=idle_timeout_s,
+        )
         clean_env = {k: v for k, v in os.environ.items() if k not in PROXY_ENV_VARS}
-        pw = sync_playwright().start()
+        pw: Any = None
         try:
+            pw = sync_playwright().start()
             browser = pw.chromium.launch(
                 executable_path=str(executable) if executable else None,
                 headless=True,
                 chromium_sandbox=False,
                 env=clean_env,
-                args=[
-                    "--disable-background-networking",
-                    "--disable-default-apps",
-                    "--disable-extensions",
-                    "--disable-sync",
-                    "--disable-translate",
-                    "--mute-audio",
-                    "--no-first-run",
-                ],
+                args=build_chromium_launch_args(proxy.port),
             )
             context = browser.new_context(
                 storage_state=storage_state.as_playwright_dict(),  # type: ignore[arg-type]
@@ -1430,14 +1793,17 @@ class PlaywrightBrowserDriver:
                 context,
                 page,
                 egress,
+                proxy=proxy,
                 timeout_ms=timeout_ms,
                 _test_origin=self._test_origin,
             )
         except Exception:
-            try:
-                pw.stop()
-            except Exception:
-                pass
+            proxy.close()
+            if pw is not None:
+                try:
+                    pw.stop()
+                except Exception:
+                    pass
             raise
 
 
@@ -1473,8 +1839,9 @@ class FixtureBrowserDriver:
         egress: EgressGuard,
         *,
         timeout_ms: int,
+        max_bytes: int | None = None,
     ) -> BrowserSession:
-        del timeout_ms
+        del timeout_ms, max_bytes
         refuse_proxies()
         if not self.available:
             ensure_browser_available()
@@ -2119,8 +2486,9 @@ def submit_facebook_collect(ctx: Any, request: m.CollectRequest) -> m.Envelope:
     ensure_browser_available()
 
     # 7. Seed URL egress check before creating a job (OutboundURLPolicy + real resolver)
-    egress = _active_egress(fb_cfg.allowed_hosts)
-    egress.check_request(permalink.fetch_url, resource_type="document", is_navigation=True)
+    if _EGRESS_FACTORY is None:
+        egress = _active_egress(fb_cfg.allowed_hosts)
+        egress.check_request(permalink.fetch_url, resource_type="document", is_navigation=True)
 
     job_payload = request.model_dump(mode="json")
     limits_dict = request.limits.model_dump(mode="json")
@@ -2326,35 +2694,60 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     max_bytes = int(request.limits.max_bytes)
     max_items = int(request.limits.max_items)
 
-    # If resuming after a crash that already captured the page snapshot, reuse the checkpointed
-    # records so we do not re-fetch or duplicate rows; otherwise drive the browser session.
-    if "captured_html" in saved:
-        final_html = str(saved["captured_html"])
-        final_url = str(saved.get("captured_url", permalink.canonical_url))
-        status_code = int(saved.get("status_code", 200))
-        expansions_used = int(saved.get("expansions_used", 0))
-        bytes_used = int(saved.get("bytes_used", len(final_html.encode("utf-8"))))
-        halt = saved.get("halt")
-        egress_summary = dict(saved.get("egress", egress.summary()))
-        obs = PageObservation(url=final_url, status_code=status_code, html=final_html)
+    driver = _DRIVER_FACTORY() if _DRIVER_FACTORY is not None else PlaywrightBrowserDriver()
+    started = time.monotonic()
+    expansions_used = 0
+    bytes_used = 0
+    halt: str | None = None
+    obs: PageObservation | None = None
+    parsed: ParsedPostPage | None = None
+    byte_limit_error: m.ErrorDetail | None = None
+
+    session = driver.open_session(
+        storage_state,
+        egress,
+        timeout_ms=timeout_ms,
+        max_bytes=max_bytes,
+    )
+    try:
+        step.guard()
+        obs = session.goto_post(permalink.fetch_url)
+        bytes_used = max(egress.bytes_relayed, len(obs.html.encode("utf-8")))
+        if egress.byte_limit_exceeded or bytes_used > max_bytes:
+            raise m.CoreError(
+                m.ErrorCode.LIMIT_REACHED,
+                "Facebook page response exceeded max_bytes budget",
+                next_action="Increase limits.max_bytes or narrow the requested resources",
+            )
         parsed = classify_and_parse_observation(
             obs,
             permalink=permalink,
             require_comments_section=require_comments,
         )
-    else:
-        driver = _DRIVER_FACTORY() if _DRIVER_FACTORY is not None else PlaywrightBrowserDriver()
-        started = time.monotonic()
-        expansions_used = 0
-        bytes_used = 0
-        halt: str | None = None
 
-        session = driver.open_session(storage_state, egress, timeout_ms=timeout_ms)
-        try:
+        while require_comments and parsed.expand_controls:
             step.guard()
-            obs = session.goto_post(permalink.fetch_url)
-            bytes_used += len(obs.html.encode("utf-8"))
-            if bytes_used > max_bytes:
+            elapsed = time.monotonic() - started
+            if elapsed >= wall_clock_s:
+                halt = "limit_reached"
+                break
+            if expansions_used >= max_expansions:
+                halt = "expand_budget_exhausted"
+                break
+            projected_items = (1 if "post" in resources else 0) + len(parsed.comments)
+            if projected_items >= max_items:
+                halt = "limit_reached"
+                break
+            if pacing_ms > 0:
+                step.executor.sleep(pacing_ms / 1000.0)
+            ctrl = parsed.expand_controls[0]
+            obs = session.expand_next(ctrl.control_id)
+            expansions_used += 1
+            bytes_used = max(
+                egress.bytes_relayed,
+                bytes_used + len(obs.html.encode("utf-8")),
+            )
+            if egress.byte_limit_exceeded or bytes_used > max_bytes:
                 raise m.CoreError(
                     m.ErrorCode.LIMIT_REACHED,
                     "Facebook page response exceeded max_bytes budget",
@@ -2365,54 +2758,34 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 permalink=permalink,
                 require_comments_section=require_comments,
             )
-
-            while require_comments and parsed.expand_controls:
-                step.guard()
-                elapsed = time.monotonic() - started
-                if elapsed >= wall_clock_s:
-                    halt = "limit_reached"
-                    break
-                if expansions_used >= max_expansions:
-                    halt = "expand_budget_exhausted"
-                    break
-                projected_items = (1 if "post" in resources else 0) + len(parsed.comments)
-                if projected_items >= max_items:
-                    halt = "limit_reached"
-                    break
-                if pacing_ms > 0:
-                    step.executor.sleep(pacing_ms / 1000.0)
-                ctrl = parsed.expand_controls[0]
-                obs = session.expand_next(ctrl.control_id)
-                expansions_used += 1
-                bytes_used += len(obs.html.encode("utf-8"))
-                if bytes_used > max_bytes:
-                    halt = "limit_reached"
-                    break
-                parsed = classify_and_parse_observation(
-                    obs,
-                    permalink=permalink,
-                    require_comments_section=require_comments,
-                )
-        except m.CoreError as exc:
-            # Scrub any secret token from error messages before surfacing
-            cleaned_msg = storage_state.redact(exc.detail.message)
+    except m.CoreError as exc:
+        # Scrub any secret token from error messages before surfacing
+        cleaned_msg = storage_state.redact(exc.detail.message)
+        if exc.detail.code == m.ErrorCode.LIMIT_REACHED or egress.byte_limit_exceeded:
+            halt = "limit_reached"
+            bytes_used = max(bytes_used, egress.bytes_relayed)
+            byte_limit_error = m.ErrorDetail(
+                code=m.ErrorCode.LIMIT_REACHED,
+                message=cleaned_msg,
+                retry_class=exc.detail.retry_class,
+                next_action=exc.detail.next_action,
+            )
+        else:
             raise m.CoreError(
                 exc.detail.code,
                 cleaned_msg,
                 next_action=exc.detail.next_action,
                 retry_after=exc.retry_after,
             ) from None
-        finally:
-            session.close()
+    finally:
+        session.close()
 
-        final_html = obs.html
-        final_url = obs.url
-        status_code = obs.status_code
-        egress_summary = egress.summary()
-
+    final_html = obs.html if obs is not None else ""
+    egress_summary = egress.summary()
     page_sha = hashlib.sha256(final_html.encode("utf-8")).hexdigest()
+
     unexpanded_gaps: list[str] = []
-    if require_comments and parsed.expand_controls:
+    if parsed is not None and require_comments and parsed.expand_controls:
         for ctrl in parsed.expand_controls:
             gap_name = (
                 "unexpanded_replies" if ctrl.kind == "more_replies" else "unexpanded_comments"
@@ -2420,47 +2793,48 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             if gap_name not in unexpanded_gaps:
                 unexpanded_gaps.append(gap_name)
 
-    records, post_media = _records_from_page(
-        parsed,
-        permalink=permalink,
-        resources=resources,
-    )
+    if parsed is not None:
+        records, post_media = _records_from_page(
+            parsed,
+            permalink=permalink,
+            resources=resources,
+        )
+        post_extra_evidence: dict[str, Any] = {
+            "canonical_url": permalink.canonical_url,
+            "original_url": permalink.original_url,
+            "page_type": PAGE_TYPE_POST_PERMALINK,
+            "reaction_count": parsed.reaction_count,
+            "comment_count": parsed.comment_count,
+            "share_count": parsed.share_count,
+            "expansions_used": expansions_used,
+            "unexpanded_controls": len(parsed.expand_controls),
+        }
+    else:
+        records = []
+        post_media = None
+        post_extra_evidence = {}
 
     with step.store.connection() as conn:
         book = collect._Book(request.project_id)
         book.load(conn)
 
-    rows: list[dict[str, Any]] = list(saved.get("rows", []))
+    # Identity-based resume (AT-013, FR-010): pass every record from the fresh observation
+    # through book.apply; items committed in an earlier batch before a crash are already in
+    # book.by_key and become "unchanged" without index slicing or storing HTML in checkpoints.
+    rows: list[dict[str, Any]] = []
     missing: set[str] = set(saved.get("missing_fields", [])) | set(unexpanded_gaps)
-    accepted = int(saved.get("accepted", 0))
-    start_record = int(saved.get("next_record", 0))
-
-    post_extra_evidence: dict[str, Any] = {
-        "canonical_url": permalink.canonical_url,
-        "original_url": permalink.original_url,
-        "page_type": PAGE_TYPE_POST_PERMALINK,
-        "reaction_count": parsed.reaction_count,
-        "comment_count": parsed.comment_count,
-        "share_count": parsed.share_count,
-        "expansions_used": expansions_used,
-        "unexpanded_controls": len(parsed.expand_controls),
-    }
-
+    if byte_limit_error is not None:
+        missing.add("byte_budget_exceeded")
+    accepted = 0
     batch_count = 0
 
-    def _flush_checkpoint(next_idx: int) -> None:
+    def _flush_checkpoint(processed_count: int) -> None:
         nonlocal batch_count
         batch_count = 0
         cp_payload = {
-            "captured_html": final_html,
-            "captured_url": final_url,
-            "status_code": status_code,
             "expansions_used": expansions_used,
             "bytes_used": bytes_used,
             "halt": halt,
-            "egress": egress_summary,
-            "next_record": next_idx,
-            "rows": rows,
             "missing_fields": sorted(missing),
             "accepted": accepted,
         }
@@ -2486,7 +2860,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                     job_id=step.job.id,
                     project_id=step.job.project_id,
                     kind="collect.facebook_batch",
-                    detail={"next_record": next_idx, "accepted": accepted},
+                    detail={"processed": processed_count, "accepted": accepted},
                     created_at=now,
                 )
             )
@@ -2495,9 +2869,8 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         if _NOTE_BATCH is not None:
             _NOTE_BATCH(step)
 
-    for idx in range(start_record, len(records)):
+    for idx, rec in enumerate(records):
         step.guard()
-        rec = records[idx]
         if accepted >= max_items:
             halt = "limit_reached"
             if len(records) > idx:
@@ -2563,18 +2936,41 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         if batch_count >= BATCH_SIZE or idx + 1 == len(records):
             _flush_checkpoint(idx + 1)
 
-    if not records and start_record == 0:
+    if byte_limit_error is not None:
+        rows.append(
+            {
+                "input": 0,
+                "row": None,
+                "line": None,
+                "status": "rejected",
+                "item_id": None,
+                "revision": None,
+                "source_id": None,
+                "asset_id": None,
+                "segment_id": None,
+                "code": m.ErrorCode.LIMIT_REACHED.value,
+                "field": "max_bytes",
+                "message": byte_limit_error.message,
+            }
+        )
+        _flush_checkpoint(len(records))
+    elif not records:
         _flush_checkpoint(0)
 
     rejected = any(r.get("status") == "rejected" for r in rows)
     has_gaps = (
         bool(unexpanded_gaps)
+        or byte_limit_error is not None
+        or "byte_budget_exceeded" in missing
         or "uncollected_items_budget" in missing
         or "parent_comment" in missing
     )
     comments_observed = sum(1 for r in records[:accepted] if r.kind in ("comment", "reply"))
     comments_empty = (
-        require_comments and len(parsed.comments) == 0 and len(parsed.expand_controls) == 0
+        parsed is not None
+        and require_comments
+        and len(parsed.comments) == 0
+        and len(parsed.expand_controls) == 0
     )
 
     if has_gaps or rejected:
@@ -2606,17 +3002,28 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         "comments_observed": comments_observed,
         "comments_empty": comments_empty,
         "expansions_used": expansions_used,
-        "unexpanded_controls": len(parsed.expand_controls),
+        "unexpanded_controls": len(parsed.expand_controls) if parsed is not None else 0,
         "bytes_used": bytes_used,
     }
+    result_data: dict[str, Any] = {
+        "rows": rows,
+        "egress": egress_summary,
+    }
+    if byte_limit_error is not None:
+        result_data["error"] = byte_limit_error.model_dump(mode="json")
+        result_data["inputs"] = [
+            {
+                "input": 0,
+                "code": m.ErrorCode.LIMIT_REACHED.value,
+                "message": byte_limit_error.message,
+                "field": "max_bytes",
+            }
+        ]
     return m.JobResult(
         coverage_status=coverage,
         requested_scope=step.job.requested_scope,
         observed_scope=observed_scope,
         stop_reason=stop_reason,
         missing_fields=sorted(missing),
-        data={
-            "rows": rows,
-            "egress": egress_summary,
-        },
+        data=result_data,
     )
