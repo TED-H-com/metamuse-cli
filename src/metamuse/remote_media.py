@@ -2,8 +2,23 @@
 
 Every yt-dlp request uses one MetaMuse request handler. The handler checks the
 URL with the B08 policy, dials only the addresses from that check, and follows
-redirects itself. Plugins, config files, proxies, impersonation, and cookies
-stay off unless a future explicit auth reference is wired by core.
+redirects itself. Plugins, config files, proxies, impersonation, cookies,
+netrc, the yt-dlp cache, passwords, and client certificates stay off.
+
+One process-wide audit hook refuses ``subprocess`` and ``os`` process events
+while extraction or the request handler is active. Local ffprobe runs with
+that flag clear. Each input is checked only against its own extractor's
+approved hosts. Redirects refuse an HTTPS to HTTP downgrade and a 307 or 308
+that would carry a body to another origin, and they drop ``Authorization``
+when the scheme, host, or port changes. Every received body counts toward
+``max_bytes``. The wall clock and a pending cancel are checked before each dial.
+
+A playlist with more than one entry is refused. Changed subtitle bytes append
+a transcript revision. A resume whose native id, extractor, platform, or scope
+no longer matches the checkpoint records ``E_DATA_STALE`` and does not attach
+new resources to the old item. A fabricated title is stored as SQL NULL. An
+unchanged title keeps its item revision; a changed upstream timestamp is an
+observation on the source ``use_basis``.
 
 The optional extra is ``yt-dlp==2026.8.19``. Importing this module does not
 import yt-dlp. Offline local import does not call into this operation.
@@ -17,10 +32,15 @@ import io
 import ipaddress
 import json
 import logging
+import math
 import os
 import shutil
+import sys
+import time
 from collections.abc import Callable, Iterable
+from contextlib import contextmanager
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlsplit
@@ -49,9 +69,66 @@ log = logging.getLogger(__name__)
 _purpose: contextvars.ContextVar[str] = contextvars.ContextVar(
     "remote_media_purpose", default="request"
 )
+_extraction_active: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "remote_media_extraction", default=False
+)
 _TEST_EXTRACTORS: list[type] = []
 _observer: Callable[[dict[str, Any]], None] | None = None
 LAST_DIRECTOR_KEYS: list[str] = []
+
+
+class _ExternalProcessRefused(Exception):
+    """An extractor tried to spawn a process while collection was active."""
+
+
+def _process_event(event: str) -> bool:
+    return event in {
+        "subprocess.Popen",
+        "os.system",
+        "os.posix_spawn",
+        "os.posix_spawnp",
+    } or event.startswith(("os.exec", "os.fork"))
+
+
+def _audit_process(event: str, args: tuple[Any, ...]) -> None:
+    """Refuse child processes only while remote-media extraction is active.
+
+    ffprobe for a local file runs with the flag clear, so this hook leaves it alone.
+    """
+
+    del args
+    if not _extraction_active.get() or not _process_event(event):
+        return
+    raise _ExternalProcessRefused("extractor requires an external process")
+
+
+def _install_process_guard() -> None:
+    """One process-wide hook. A second import in this process does not add another."""
+
+    if getattr(_install_process_guard, "installed", False):
+        return
+    sys.addaudithook(_audit_process)
+    _install_process_guard.installed = True  # type: ignore[attr-defined]
+
+
+_install_process_guard()
+
+
+@contextmanager
+def _extracting():
+    token = _extraction_active.set(True)
+    try:
+        yield
+    finally:
+        _extraction_active.reset(token)
+
+
+def _process_error() -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.UNSUPPORTED,
+        "extractor requires an external process",
+        next_action="Stop. Do not run an extractor that needs an external process.",
+    )
 
 
 def _note(step: StepContext) -> None:
@@ -111,6 +188,18 @@ def ytdlp_params(
         "max_downloads": max_items,
         "ignoreconfig": True,
         "proxy": "",
+        "cachedir": False,
+        "usenetrc": False,
+        "netrc_location": None,
+        "netrc_cmd": None,
+        "username": None,
+        "password": None,
+        "videopassword": None,
+        "ap_username": None,
+        "ap_password": None,
+        "client_certificate": None,
+        "client_certificate_key": None,
+        "client_certificate_password": None,
         "cookiefile": None,
         "cookiesfrombrowser": None,
         "source_address": None,
@@ -119,7 +208,9 @@ def ytdlp_params(
         "legacyserverconnect": False,
         "postprocessors": [],
         "fixup": "never",
-        "ffmpeg_location": None,
+        # None makes yt-dlp search PATH and run `ffmpeg -bsfs` inside extract_info.
+        # A path we never create disables that probe. Local ffprobe is separate.
+        "ffmpeg_location": str(staging / ".no-ffmpeg"),
         "external_downloader": None,
         "retries": 0,
         "fragment_retries": 0,
@@ -219,6 +310,36 @@ def _host_denied() -> m.CoreError:
 
 def _limit_error() -> m.CoreError:
     return m.CoreError(m.ErrorCode.LIMIT_REACHED, "Input exceeds the byte limit")
+
+
+def _wall_error() -> m.CoreError:
+    return m.CoreError(m.ErrorCode.LIMIT_REACHED, "Job wall clock limit reached")
+
+
+def _dial_timeout(step: StepContext, read_timeout: float) -> Callable[[], float]:
+    """Before every dial: pending cancel, wall clock, then the shorter timeout."""
+
+    def remaining() -> float:
+        step.guard()
+        wall_limit = min(
+            step.executor.limits.wall_clock_seconds,
+            int(step.job.limits.get("wall_clock_seconds", 900)),
+        )
+        elapsed = time.monotonic() - step.started
+        started_at = step.job.started_at
+        if started_at is not None:
+            elapsed = max(
+                elapsed,
+                (
+                    datetime.fromisoformat(step.store.clock()) - datetime.fromisoformat(started_at)
+                ).total_seconds(),
+            )
+        left = wall_limit - elapsed
+        if left <= 0:
+            raise _wall_error()
+        return min(read_timeout, left)
+
+    return remaining
 
 
 def _scope_url() -> m.CoreError:
@@ -347,11 +468,6 @@ def submit_remote_media(ctx: Any, request: m.CollectRequest) -> m.Envelope:
     if row is None or not row["provider"] or not row["account"]:
         raise _grant_required()
     keys = [cls.ie_key() for cls, _approval in matched]
-    hosts: list[str] = []
-    for _cls, approval in matched:
-        for host in approval.hosts:
-            if host not in hosts:
-                hosts.append(host)
     target, payload = action_parts(request, row["provider"], row["account"], keys)
     use = safety.PermitUse(
         kind="access",
@@ -429,6 +545,7 @@ class _Net:
     timeout: float
     state: _State | None = None
     allow_cookies: bool = False
+    before_dial: Callable[[], float] | None = None
 
 
 def _peer(value: Any) -> str:
@@ -578,12 +695,56 @@ def _observe(host: str, path: str, peer: str, purpose: str, status: int, size: i
     )
 
 
+def _drop_header(headers: dict[str, str], name: str) -> None:
+    for key in list(headers):
+        if key.lower() == name.lower():
+            headers.pop(key)
+
+
+def _endpoint(url: str) -> tuple[str, str, int]:
+    """Scheme, host, and explicit or default port. These three are the origin."""
+
+    parts = urlsplit(url)
+    scheme = (parts.scheme or "").lower()
+    host = (parts.hostname or "").lower().rstrip(".")
+    if parts.port is not None:
+        port = parts.port
+    elif scheme == "https":
+        port = 443
+    elif scheme == "http":
+        port = 80
+    else:
+        port = -1
+    return scheme, host, port
+
+
+def _downgrade_error() -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.SCOPE_DENIED,
+        "HTTPS redirect to HTTP is refused",
+        next_action="Stop. Do not follow a redirect that leaves TLS.",
+    )
+
+
+def _body_forward_error() -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.SCOPE_DENIED,
+        "A redirect would forward the request body to another origin",
+        next_action="Stop. Do not send this request body to a different origin.",
+    )
+
+
 def metamuse_request_handler_send(handler: Any, request: Any) -> Any:
     """Dial one checked request and follow redirects inside this handler."""
 
     from yt_dlp.networking.common import Response
     from yt_dlp.networking.exceptions import HTTPError
 
+    with _extracting():
+        return _send_checked(handler, request, Response, HTTPError)
+
+
+def _send_checked(handler: Any, request: Any, response_type: type, http_error: type) -> Any:
     net: _Net = handler._net
     method = request.method or ("POST" if request.data is not None else "GET")
     if request.data is None:
@@ -610,11 +771,16 @@ def metamuse_request_handler_send(handler: Any, request: Any) -> Any:
         limit = net.budget.remaining
         if body_cap is not None:
             limit = min(limit, body_cap)
+        timeout = net.timeout if net.before_dial is None else net.before_dial()
         status, response_headers, payload, peer = _dial(
-            method, checked.url, headers, body, checked, net.timeout, limit
+            method, checked.url, headers, body, checked, timeout, limit
         )
         parsed = urlsplit(checked.url)
         _observe(checked.hostname, parsed.path, peer, purpose, status, len(payload))
+        # Every received body spends the job budget, including redirects and errors.
+        net.budget.take(len(payload))
+        if net.state is not None:
+            net.state.bytes_used = net.budget.used
         if status in _REDIRECTS:
             redirects += 1
             if redirects > MAX_REDIRECTS:
@@ -624,22 +790,26 @@ def metamuse_request_handler_send(handler: Any, request: Any) -> Any:
                 raise m.CoreError(
                     m.ErrorCode.INPUT_INVALID, "Upstream response could not be parsed"
                 )
-            url = urljoin(checked.url, target)
+            nxt = urljoin(checked.url, target)
+            previous = _endpoint(checked.url)
+            following = _endpoint(nxt)
+            if previous[0] == "https" and following[0] == "http":
+                raise _downgrade_error()
+            moved = previous != following
+            if moved:
+                _drop_header(headers, "Authorization")
+            if status in (307, 308) and body is not None and moved:
+                raise _body_forward_error()
+            url = nxt
             purpose = "redirect"
             if status in (301, 302, 303):
                 method = "GET"
                 body = None
-            if urlsplit(url).hostname != checked.hostname:
-                headers.pop("Authorization", None)
             continue
-        if 200 <= status < 300:
-            net.budget.take(len(payload))
-            if net.state is not None:
-                net.state.bytes_used = net.budget.used
         stream = io.BytesIO(payload)
-        response = Response(stream, checked.url, response_headers, status=status)
+        response = response_type(stream, checked.url, response_headers, status=status)
         if status >= 400:
-            raise HTTPError(response)
+            raise http_error(response)
         return response
 
 
@@ -758,7 +928,10 @@ def _classify(exc: BaseException) -> tuple[str, Any]:
     http: tuple[int, dict[str, str]] | None = None
     geo = False
     texts: list[str] = []
+    refused = False
     for node in _chain(exc):
+        if isinstance(node, _ExternalProcessRefused):
+            refused = True
         if isinstance(node, m.CoreError) and core is None:
             core = node
         found = _http_status(node)
@@ -767,6 +940,8 @@ def _classify(exc: BaseException) -> tuple[str, Any]:
         if node.__class__.__name__ == "GeoRestrictedError":
             geo = True
         texts.append(str(node))
+    if refused:
+        return "raise", _process_error()
     if core is not None:
         return "core", core
     blob = "\n".join(texts)
@@ -847,13 +1022,27 @@ def _classify(exc: BaseException) -> tuple[str, Any]:
 
 
 def _raw_time(value: Any) -> str | None:
+    """Keep the upstream timestamp as text, including a fractional second."""
+
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, int):
         return str(value)
-    if isinstance(value, str):
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            return None
+        return format(value, ".15g")
+    if isinstance(value, str) and value:
         return value
     return None
+
+
+def _playlist_error() -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.UNSUPPORTED,
+        "The upstream result is a playlist",
+        next_action="submit the individual media URL",
+    )
 
 
 def _single_format(info: dict[str, Any]) -> tuple[str, str] | None:
@@ -919,17 +1108,26 @@ def _tracks(info: dict[str, Any], cap: int) -> tuple[list[dict[str, str | None]]
 
 def _normalize(info: dict[str, Any], url: str, extractor: str, cap: int) -> dict[str, Any] | None:
     if info.get("_type") in ("playlist", "multi_video"):
-        entries = info.get("entries") or []
-        if not entries:
+        entries = [item for item in (info.get("entries") or []) if isinstance(item, dict)]
+        declared = info.get("playlist_count")
+        several = len(entries) > 1 or (isinstance(declared, int) and declared > 1)
+        if several:
+            raise _playlist_error()
+        if len(entries) == 1:
+            info = entries[0]
+        else:
             return None
-        first = next((item for item in entries if isinstance(item, dict)), None)
-        if first is None:
-            return None
-        info = first
     native = info.get("id")
     if not isinstance(native, str) or not native:
         raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Upstream response could not be parsed")
     title = info.get("title") if isinstance(info.get("title"), str) else None
+    # yt-dlp stores a missing title as fulltitle None and then invents "<extractor> video #<id>".
+    if "fulltitle" in info and not info.get("fulltitle"):
+        title = None
+    elif isinstance(title, str) and isinstance(info.get("extractor"), str):
+        invented = f"{str(info['extractor']).replace(':', '-')} video #{native}"
+        if title == invented:
+            title = None
     scope = info.get("channel_id") if isinstance(info.get("channel_id"), str) else ""
     if not scope and isinstance(info.get("uploader_id"), str):
         scope = info["uploader_id"]
@@ -1032,6 +1230,35 @@ def _remember_urls(state: _State, record: dict[str, Any]) -> None:
     state.current = current
 
 
+def _same_identity(current: dict[str, Any], record: dict[str, Any]) -> bool:
+    """Native id, extractor, platform, and scope are the checkpoint identity."""
+
+    return all(
+        current.get(key) == record[key] for key in ("native_id", "extractor", "platform", "scope")
+    )
+
+
+def _finish_stale_input(step: StepContext, state: _State, resources: set[str], used: int) -> None:
+    """Keep the committed metadata and do not attach this page's resources to it."""
+
+    message = "Upstream identity no longer matches the checkpoint"
+    current = state.current or {}
+    for row in state.rows:
+        if row.get("input") == state.next_input and row.get("item_id") == current.get("item_id"):
+            row["code"] = m.ErrorCode.DATA_STALE.value
+            row["message"] = message
+    state.code = m.ErrorCode.DATA_STALE.value
+    state.message = message
+    for name in ("subtitles", "media_file"):
+        if name in resources and name not in state.missing:
+            state.missing.append(name)
+    state.next_input += 1
+    state.phase = "start"
+    state.current = None
+    state.bytes_used = used
+    _commit(step, state, None)
+
+
 def _marker_payload(path: Path) -> dict[str, Any] | None:
     try:
         payload = json.loads((path / _OWNER_NAME).read_text(encoding="utf-8"))
@@ -1118,11 +1345,14 @@ def _store_metadata(
     text_max: int,
 ) -> None:
     title = record["title"]
+    title_missing = title is None
     if isinstance(title, str):
         try:
             m.utf8_text(title, text_max)
         except ValueError as exc:
             raise _limit_error() from exc
+    if title_missing and "title" not in state.missing:
+        state.missing.append("title")
     digest = m.payload_digest({"text": title})
     project = step.job.project_id
     platform = record["platform"]
@@ -1259,13 +1489,37 @@ def _store_metadata(
                         raw_time=record["raw_time"],
                         parsed_time=None,
                         fetched_at=now,
-                        complete=title is not None,
-                        missing_fields=[] if title is not None else ["text"],
+                        complete=not title_missing,
+                        missing_fields=["title"] if title_missing else [],
                         evidence=evidence,
                     )
                 )
+        if not source_new:
+            # B05 keeps one item revision when the title hash is unchanged.
+            # A new upstream timestamp is an observation on the mutable source.
+            _observe_timestamp(writer, source_id, record["raw_time"], now)
 
     _commit(step, state, write)
+
+
+def _observe_timestamp(
+    writer: TransactionWriter, source_id: str, raw_time: str | None, now: str
+) -> None:
+    """Record a timestamp change without appending an item revision."""
+
+    held = writer.execute("SELECT use_basis FROM sources WHERE id=?", (source_id,)).fetchone()
+    if held is None or not held["use_basis"]:
+        return
+    previous = json.loads(held["use_basis"])
+    if not isinstance(previous, dict) or previous.get("upstream_timestamp") == raw_time:
+        return
+    observed = dict(previous)
+    observed["upstream_timestamp"] = raw_time
+    observed["fetched_at"] = now
+    writer.execute(
+        "UPDATE sources SET use_basis=? WHERE id=?",
+        (m.canonical_json(observed).decode(), source_id),
+    )
 
 
 def _subtitle_sha(text: str) -> str:
@@ -1313,6 +1567,7 @@ def _store_subtitles(
                     raise value from exc
                 if kind == "raise" and value.detail.code in (
                     m.ErrorCode.AUTH_REQUIRED,
+                    m.ErrorCode.ACCESS_DENIED,
                     m.ErrorCode.CHECKPOINT_REQUIRED,
                     m.ErrorCode.RESOURCE_UNAVAILABLE,
                 ):
@@ -1329,10 +1584,10 @@ def _store_subtitles(
                     state.missing.append("subtitles")
                 continue
             parsed = media_mod.parse_subtitles(payload, str(track["ext"]))
-            if parsed.errors and not parsed.cues:
-                if "subtitles" not in state.missing:
-                    state.missing.append("subtitles")
-                continue
+            # Any malformed cue keeps the track incomplete. Valid cues are still stored.
+            incomplete = bool(parsed.errors)
+            if incomplete and "subtitles" not in state.missing:
+                state.missing.append("subtitles")
             if not parsed.cues:
                 if "subtitles" not in state.missing:
                     state.missing.append("subtitles")
@@ -1341,81 +1596,29 @@ def _store_subtitles(
             method = str(track["method"])
             digest = _subtitle_sha(payload)
             native = f"{current['native_id']}:subtitle:{language}:{method}"
-            basis = {
-                "file_sha256": digest,
-                "language": language,
-                "role": "subtitles",
-                "item_id": item_id,
-                "asset_id": None,
-                "complete": 1,
-                "cue_count": len(parsed.cues),
-                "method": method,
-            }
 
             def write(
                 writer: TransactionWriter,
                 native: str = native,
-                basis: dict[str, Any] = basis,
                 digest: str = digest,
                 cues: list[Any] = parsed.cues,
                 language: str = language,
                 method: str = method,
+                incomplete: bool = incomplete,
             ) -> None:
-                found = writer.execute(
-                    "SELECT id, json_extract(use_basis, '$.complete') AS complete, "
-                    "json_extract(use_basis, '$.file_sha256') AS sha FROM sources "
-                    "WHERE project_id=? AND platform=? AND native_scope=? AND native_id=?",
-                    (project, current["platform"], current["scope"], native),
-                ).fetchone()
-                if found is not None and found["complete"] and found["sha"] == digest:
-                    return
-                if found is None:
-                    source_id = m.new_id("src")
-                    writer.insert(
-                        m.Source(
-                            id=source_id,
-                            project_id=project,
-                            platform=current["platform"],
-                            native_scope=current["scope"],
-                            native_id=native,
-                            collection_method=COLLECTION_METHOD,
-                            upstream_collection_method=current["extractor"],
-                            fetched_at=now,
-                            use_basis=basis,
-                        )
-                    )
-                else:
-                    source_id = str(found["id"])
-                    writer.execute(
-                        "UPDATE sources SET use_basis=? WHERE id=?",
-                        (m.canonical_json(basis).decode(), source_id),
-                    )
-                for cue in cues:
-                    exists = writer.execute(
-                        "SELECT 1 FROM transcript_segments WHERE source_id=? AND project_id=? "
-                        "AND revision=1 AND cue_index=?",
-                        (source_id, project, cue.cue_index),
-                    ).fetchone()
-                    if exists is not None:
-                        continue
-                    writer.insert(
-                        m.TranscriptSegment(
-                            id=m.new_id("cue"),
-                            project_id=project,
-                            asset_id=None,
-                            item_id=item_id,
-                            source_id=source_id,
-                            revision=1,
-                            cue_index=cue.cue_index,
-                            start_ms=cue.start_ms,
-                            end_ms=cue.end_ms,
-                            text=cue.text,
-                            language=language,
-                            method=method,  # type: ignore[arg-type]
-                            review="unreviewed",
-                            overlap=cue.overlap,
-                        )
-                    )
+                _write_subtitle_track(
+                    writer,
+                    project=project,
+                    current=current,
+                    item_id=item_id,
+                    native=native,
+                    digest=digest,
+                    cues=cues,
+                    language=language,
+                    method=method,
+                    incomplete=incomplete,
+                    now=now,
+                )
 
             _commit_cues(step, state, write)
             stored += 1
@@ -1427,6 +1630,109 @@ def _store_subtitles(
         state.missing.append("subtitles")
     state.phase = "subtitles"
     _commit(step, state, None)
+
+
+def _write_subtitle_track(
+    writer: TransactionWriter,
+    *,
+    project: str,
+    current: dict[str, Any],
+    item_id: str,
+    native: str,
+    digest: str,
+    cues: list[Any],
+    language: str,
+    method: str,
+    incomplete: bool,
+    now: str,
+) -> None:
+    """Store one track. A new file hash appends a revision; an incomplete file never shortcuts."""
+
+    found = writer.execute(
+        "SELECT id, use_basis, json_extract(use_basis, '$.complete') AS complete, "
+        "json_extract(use_basis, '$.file_sha256') AS sha FROM sources "
+        "WHERE project_id=? AND platform=? AND native_scope=? AND native_id=?",
+        (project, current["platform"], current["scope"], native),
+    ).fetchone()
+    if found is not None and found["complete"] and found["sha"] == digest:
+        return
+    changed = found is not None and found["sha"] != digest
+    if found is None:
+        source_id = m.new_id("src")
+        revision = 1
+    else:
+        source_id = str(found["id"])
+        peak = writer.execute(
+            "SELECT MAX(revision) AS revision FROM transcript_segments "
+            "WHERE source_id=? AND project_id=?",
+            (source_id, project),
+        ).fetchone()
+        held = 0 if peak is None or peak["revision"] is None else int(peak["revision"])
+        revision = held + 1 if changed else max(held, 1)
+    prior: list[dict[str, Any]] = []
+    if found is not None and found["use_basis"]:
+        loaded = json.loads(found["use_basis"])
+        if isinstance(loaded, dict) and isinstance(loaded.get("revisions"), list):
+            prior = [item for item in loaded["revisions"] if isinstance(item, dict)]
+    revisions = prior
+    if found is None or changed:
+        revisions = [*prior, {"revision": revision, "file_sha256": digest}]
+    basis = {
+        "file_sha256": digest,
+        "language": language,
+        "role": "subtitles",
+        "item_id": item_id,
+        "asset_id": None,
+        "complete": 0 if incomplete else 1,
+        "cue_count": len(cues),
+        "method": method,
+        "revisions": revisions,
+    }
+    if found is None:
+        writer.insert(
+            m.Source(
+                id=source_id,
+                project_id=project,
+                platform=current["platform"],
+                native_scope=current["scope"],
+                native_id=native,
+                collection_method=COLLECTION_METHOD,
+                upstream_collection_method=current["extractor"],
+                fetched_at=now,
+                use_basis=basis,
+            )
+        )
+    else:
+        writer.execute(
+            "UPDATE sources SET use_basis=? WHERE id=?",
+            (m.canonical_json(basis).decode(), source_id),
+        )
+    for cue in cues:
+        existing = writer.execute(
+            "SELECT id FROM transcript_segments WHERE source_id=? AND project_id=? "
+            "AND cue_index=? ORDER BY revision DESC LIMIT 1",
+            (source_id, project, cue.cue_index),
+        ).fetchone()
+        if existing is not None and not changed:
+            continue
+        writer.insert(
+            m.TranscriptSegment(
+                id=str(existing["id"]) if existing is not None else m.new_id("cue"),
+                project_id=project,
+                asset_id=None,
+                item_id=item_id,
+                source_id=source_id,
+                revision=revision,
+                cue_index=cue.cue_index,
+                start_ms=cue.start_ms,
+                end_ms=cue.end_ms,
+                text=cue.text,
+                language=language,
+                method=method,  # type: ignore[arg-type]
+                review="unreviewed",
+                overlap=cue.overlap,
+            )
+        )
 
 
 def _commit_cues(
@@ -1540,6 +1846,9 @@ def _result(step: StepContext, state: _State, resources: set[str]) -> m.JobResul
     elif state.halt == "limit_reached":
         coverage = "partial"
         stop = "limit_reached"
+    elif state.halt == "data_stale":
+        coverage = "partial"
+        stop = "data_stale"
     elif state.halt == "empty" and not state.rows:
         coverage = "bounded"
         stop = "empty"
@@ -1592,8 +1901,8 @@ def run_remote_media(step: StepContext) -> m.JobResult:
         raise m.CoreError(
             m.ErrorCode.REFERENCE_INVALID, "Stored extractor list does not match the inputs"
         )
-    hosts: list[str] = []
     classes: list[type] = []
+    input_hosts: list[tuple[str, ...]] = []
     for url, key in zip(urls, keys, strict=True):
         if not _still_approved(url, key, approvals):
             raise _host_denied() if _extractor_class(key) is not None else _extractor_denied()
@@ -1601,11 +1910,15 @@ def run_remote_media(step: StepContext) -> m.JobResult:
         if cls is None:
             raise _extractor_denied()
         classes.append(cls)
+        # This input may use only the hosts approved for its own extractor.
+        chosen: tuple[str, ...] | None = None
         for approval in approvals:
             if approval.extractor == key and _host_of(url) in _hosts(approval.hosts):
-                for host in approval.hosts:
-                    if host not in hosts:
-                        hosts.append(host)
+                chosen = tuple(approval.hosts)
+                break
+        if chosen is None:
+            raise _host_denied()
+        input_hosts.append(chosen)
     provider = str(step.target["provider"])
     account = str(step.target["account"])
     _target, payload = action_parts(request, provider, account, keys)
@@ -1648,11 +1961,12 @@ def run_remote_media(step: StepContext) -> m.JobResult:
     )
     budget = _Budget(used=state.bytes_used, limit=request.limits.max_bytes)
     net = _Net(
-        checker=_checker_factory(tuple(hosts), _system_resolver),
+        checker=_checker_factory(input_hosts[0] if input_hosts else (), _system_resolver),
         budget=budget,
         media_max=media_max,
         timeout=float(timeout),
         state=state,
+        before_dial=_dial_timeout(step, float(timeout)),
     )
     staging = _claim_staging(step.store, step.job.id)
     _sweep(step.store, step.job.id, remove_current=False)
@@ -1660,6 +1974,7 @@ def run_remote_media(step: StepContext) -> m.JobResult:
         while state.next_input < len(urls) and state.halt is None:
             step.guard()
             index = state.next_input
+            net.checker = _checker_factory(input_hosts[index], _system_resolver)
             if state.phase in ("", "start") or state.current is None and state.phase == "start":
                 state.phase = "start"
             if state.phase == "start":
@@ -1701,6 +2016,9 @@ def run_remote_media(step: StepContext) -> m.JobResult:
                     )
                     if state.halt:
                         break
+                if (state.current or {}).get("stale"):
+                    _finish_stale_input(step, state, resources, budget.used)
+                    continue
                 if budget.remaining <= 0 and "subtitles" in resources:
                     state.halt = "limit_reached"
                     state.code = m.ErrorCode.LIMIT_REACHED.value
@@ -1747,6 +2065,9 @@ def run_remote_media(step: StepContext) -> m.JobResult:
                     )
                     if state.halt:
                         break
+                    if (state.current or {}).get("stale"):
+                        _finish_stale_input(step, state, resources, budget.used)
+                        continue
                     if budget.remaining <= 0:
                         state.halt = "limit_reached"
                         state.code = m.ErrorCode.LIMIT_REACHED.value
@@ -1783,6 +2104,11 @@ def run_remote_media(step: StepContext) -> m.JobResult:
     finally:
         if state.halt is None:
             _sweep(step.store, step.job.id, remove_current=True)
+    if any(row.get("code") == m.ErrorCode.DATA_STALE.value for row in state.rows):
+        state.halt = "data_stale"
+        state.code = m.ErrorCode.DATA_STALE.value
+        if not state.message:
+            state.message = "Upstream identity no longer matches the checkpoint"
     state.bytes_used = budget.used
     return _result(step, state, resources)
 
@@ -1822,7 +2148,8 @@ def _read_info(
     ydl = _open_ydl(params, ie_cls, net)
     try:
         try:
-            info = ydl.extract_info(url, download=False)
+            with _extracting():
+                info = ydl.extract_info(url, download=False)
         except m.CoreError:
             raise
         except Exception as exc:
@@ -1866,10 +2193,15 @@ def _ensure_urls(
 ) -> None:
     """Re-read the page after a resume. Signed URLs are not stored on the step."""
 
-    if state.current is None or state.current.get("urls_ready"):
+    if state.current is None or state.current.get("urls_ready") or state.current.get("stale"):
         return
     record = _read_info(state, url, ie_cls, key, net, staging, max_items, timeout, media_max)
     if record is None:
+        return
+    if not _same_identity(state.current, record):
+        current = dict(state.current)
+        current["stale"] = True
+        state.current = current
         return
     _remember_urls(state, record)
 
