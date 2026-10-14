@@ -188,3 +188,7 @@ counts add rendered_count_conflict; positive counts without sufficient comments 
 controls add missing_comments_controls; absent exhaustion evidence adds
 comments_scope_unverified. Every gap yields partial coverage and incomplete post
 evidence, never scope_satisfied. Counts whose semantics are unknown are not proof.
+
+Shared workers lack the page opener relation, so a separate browser-level CDP
+auto-attach pause covers them before script execution. Dedicated workers use the
+page-related target pause. Both paths close the target before resuming any script.
