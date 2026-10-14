@@ -380,3 +380,21 @@ def test_review_checkpoint_path_parameters_stop_redirect_before_second_dial(
     assert job["job"]["error"]["code"] == "E_CHECKPOINT_REQUIRED"
     dials = [json.loads(line) for line in entry.egress.read_text().splitlines()]
     assert [row["url"] for row in dials if row.get("event") == "dial"] == [body["inputs"][0]["url"]]
+
+
+@pytest.mark.parametrize("field", ["channel_id", "uploader_id"])
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+def test_review_outer_identity_reuses_inner_source(entry, monkeypatch, channel, field):
+    monkeypatch.setenv("REMOTE_TEST_OUTER_IDENTITY", field)
+    entry.env["REMOTE_TEST_OUTER_IDENTITY"] = field
+    sources = []
+    for name in ("one", "outer"):
+        body = request(entry, url="https://media.fixture.test/" + name, key=name)
+        preview = collect(entry, body, channel)["approval"]
+        grant = entry.approve(preview, body, approval_key(preview))["data"]["id"]
+        accepted = submit(entry, {**body, "access_grant_id": grant}, channel)
+        entry.cli("worker", "run", "--once")
+        job = entry.cli("jobs", "get", accepted["data"]["job_id"])["data"]
+        assert job["job"]["state"] == "succeeded", job
+        sources.append(job["steps"][0]["result"]["data"]["rows"][0]["source_id"])
+    assert sources[0] == sources[1]

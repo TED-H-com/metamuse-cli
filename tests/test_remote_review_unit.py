@@ -105,3 +105,12 @@ def test_review_every_path_parameter_probe(path, code):
         assert held.value.detail.code.value == code
     else:
         remote_media._stop_for_target("https://www.facebook.com" + path)
+
+
+@pytest.mark.parametrize("field", ["channel_id", "uploader_id", "channel_url", "uploader_url"])
+def test_review_outer_identity_fields_never_override_inner(field):
+    inner = {"id": "77", field: "inner-real-scope", "title": "Inner"}
+    outer = {field: "outer-chosen-scope", "title": "Outer"}
+    merged = remote_media._merge_transparent(inner, outer)
+    assert merged[field] == "inner-real-scope"
+    assert merged["title"] == "Outer"

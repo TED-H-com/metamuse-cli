@@ -684,3 +684,8 @@ Stop-path comparison percent-decodes once, then strips each path segment at its
 first semicolon before dot-segment normalization and case folding. Thus literal
 `;`, `%3B` and `%3b` parameters cannot hide checkpoint, login or challenge segments.
 The structural approval display still shows the complete original path.
+
+Transparent outer pages may change descriptive titles, but never `channel_id`,
+`uploader_id`, `channel_url` or `uploader_url`. Native identity scope comes only
+from the final inner result, so collecting the inner URL and an outer delegation
+reuses the same source.
