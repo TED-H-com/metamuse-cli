@@ -2962,6 +2962,19 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
 
     for idx, rec in enumerate(records):
         step.guard()
+        if saved and rec.native_id is None:
+            missing.add("weak_identity_resume")
+            rows.append(
+                {
+                    "input": 0,
+                    "row": rec.row,
+                    "status": "skipped",
+                    "code": None,
+                    "field": "identity",
+                    "message": None,
+                }
+            )
+            continue
         identity = (
             m.payload_digest([rec.platform, rec.scope, rec.native_id]) if rec.native_id else None
         )
@@ -3034,6 +3047,9 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         if batch_count >= BATCH_SIZE or idx + 1 == len(records):
             _flush_checkpoint(idx + 1)
 
+    if batch_count:
+        _flush_checkpoint(len(records))
+
     if byte_limit_error is not None:
         rows.append(
             {
@@ -3062,6 +3078,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         or "byte_budget_exceeded" in missing
         or "uncollected_items_budget" in missing
         or "parent_comment" in missing
+        or "weak_identity_resume" in missing
     )
     comments_observed = sum(1 for r in records[:accepted] if r.kind in ("comment", "reply"))
     comments_empty = (
