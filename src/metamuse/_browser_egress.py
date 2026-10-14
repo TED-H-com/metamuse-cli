@@ -94,6 +94,7 @@ def build_chromium_launch_args(proxy_port: int) -> list[str]:
         "--mute-audio",
         "--no-first-run",
         "--enable-automation",
+        "--block-new-web-contents",
     ]
 
 
@@ -341,6 +342,7 @@ class BrowserEgressProxy:
         max_bytes: int | None = None,
         max_concurrent_tunnels: int = MAX_CONCURRENT_TUNNELS,
         idle_timeout_s: float = 30.0,
+        start_closed: bool = False,
     ) -> None:
         self.egress = egress
         self.max_bytes = max_bytes
@@ -358,7 +360,6 @@ class BrowserEgressProxy:
         self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._server_sock.bind(("127.0.0.1", 0))
-        self._server_sock.listen(64)
         self.port: int = int(self._server_sock.getsockname()[1])
         self.egress.proxy_port = self.port
 
@@ -367,6 +368,16 @@ class BrowserEgressProxy:
             name=f"metamuse-egress-proxy-{self.port}",
             daemon=True,
         )
+        self._started = False
+        if not start_closed:
+            self.start()
+
+    def start(self) -> None:
+        """Open the proxy only after the blank-page browser controls pass."""
+        if self._started or self._closed.is_set():
+            return
+        self._server_sock.listen(64)
+        self._started = True
         self._accept_thread.start()
 
     def _register_socket(self, sock: socket.socket) -> bool:
@@ -688,6 +699,7 @@ class BrowserEgressProxy:
             workers = list(self._worker_threads)
         for sock in active:
             self._close_socket(sock)
-        self._accept_thread.join(timeout=2.0)
+        if self._started:
+            self._accept_thread.join(timeout=2.0)
         for worker in workers:
             worker.join(timeout=1.0)
