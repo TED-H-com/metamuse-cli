@@ -939,10 +939,10 @@ def sanitize_storage_state(
 
     kept_origins: list[dict[str, Any]] = []
     for origin_entry in raw_origins:
-        if not isinstance(origin_entry, Mapping):
-            continue
-        raw_origin = origin_entry.get("origin")
         try:
+            if not isinstance(origin_entry, Mapping):
+                raise ValueError
+            raw_origin = origin_entry.get("origin")
             if not isinstance(raw_origin, str):
                 raise ValueError
             split_origin = urlsplit(raw_origin)

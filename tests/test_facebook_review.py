@@ -739,6 +739,23 @@ def test_finding_14_invalid_origin_is_fixed_auth_error_and_inspection_row(tmp_pa
     assert suffix not in envelope.model_dump_json()
 
 
+@pytest.mark.parametrize("entry", [None, 123, "not-an-origin-entry", {}, {"origin": None}])
+def test_finding_14_invalid_origin_entry_shape_is_fixed_auth_error(entry):
+    prefix = "SYNTH"
+    raw = json.dumps(
+        {
+            "cookies": [
+                {"name": "fixture", "value": f"{prefix}_COOKIE", "domain": "www.facebook.com"}
+            ],
+            "origins": [entry],
+        }
+    ).encode()
+    with pytest.raises(m.CoreError) as error:
+        facebook.sanitize_storage_state(raw)
+    assert error.value.detail.code == m.ErrorCode.AUTH_REQUIRED
+    assert error.value.detail.message == "Invalid Facebook storage-state origin"
+
+
 def test_finding_15_oversized_connect_port_gets_fixed_4xx_without_worker_traceback(
     monkeypatch, capsys
 ):

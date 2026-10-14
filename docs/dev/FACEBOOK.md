@@ -163,8 +163,8 @@ Egress diagnostics contain only fixed reason/purpose classifications and counts,
 a denied hostname, URL, path or query. This applies to results, checkpoints, events,
 errors and `get_job`, including encoded or case-folded secret hostnames. Transport
 correlation state stays in memory. Cookie/localStorage values never enter diagnostics.
-Cookies and storage origins are filtered by parsed primary hostname. Malformed origins,
-including invalid/out-of-range/non-443 ports or credentials/path/query/fragment,
+Cookies and storage origins are filtered by parsed primary hostname. Malformed entries
+or origins, including invalid/out-of-range/non-443 ports or credentials/path/query/fragment,
 produce fixed `E_AUTH_REQUIRED: Invalid Facebook storage-state origin`; inspection
 still returns its normal `needs_auth` row. Valid unrelated origins are dropped.
 
