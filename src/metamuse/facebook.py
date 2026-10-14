@@ -1018,7 +1018,8 @@ class EgressGuard:
         guard.allowed_hosts = host_tuple
         return guard
 
-    def _classify_navigation_barrier(self, url: str) -> m.CoreError | None:
+    @staticmethod
+    def _classify_navigation_barrier(url: str) -> m.CoreError | None:
         try:
             parsed = urlsplit(url)
         except ValueError:
@@ -2168,6 +2169,9 @@ def classify_and_parse_observation(
     require_comments_section: bool,
 ) -> ParsedPostPage:
     """Classify failure states (AT-041) or parse the post permalink DOM/JSON."""
+    barrier = EgressGuard._classify_navigation_barrier(obs.url)
+    if barrier is not None:
+        raise barrier
     extractor = _DOMExtractor()
     try:
         extractor.feed(obs.html)

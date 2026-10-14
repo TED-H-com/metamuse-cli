@@ -128,3 +128,8 @@ from that document is stored or reported. Script/meta navigation is route-blocke
 All WebSockets, including worker WebSockets and WSS to approved hosts, are closed
 by context.route_web_socket before the first navigation. No upstream WebSocket
 connection is established; CONNECT host/IP checks remain a separate boundary.
+
+B13 classifies login URLs as E_AUTH_REQUIRED and checkpoint/challenge URLs as
+E_CHECKPOINT_REQUIRED from observed main-frame navigations and the final URL,
+before parsing any underlying post container. All browser barriers stop without
+retry; no synthetic DOM marker is needed for an encrypted redirect barrier.
