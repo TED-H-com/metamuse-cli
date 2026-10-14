@@ -49,6 +49,9 @@ _NOTARY = re.compile(r"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_-]+\.){5}[A-Za-z0-9_-]+(
 
 
 def sensitive_key(key: str) -> bool:
+    # Association metadata is public; remembered values remain independently scrubbed.
+    if key in {"session_id", "request_marker", "x-request-id", "client_request_id"}:
+        return False
     compact = re.sub(r"[^a-z0-9]", "", key.casefold())
     return (
         any(name in compact for name in _EXTRA_KEYS | {"hatchsess"})
