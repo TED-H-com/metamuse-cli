@@ -188,6 +188,7 @@ class ParsedPostPage:
     comments: list[ParsedComment]
     expand_controls: list[ExpandControl]
     comments_section_present: bool
+    comments_exhausted: bool = False
 
 
 @dataclass(frozen=True)
@@ -2036,6 +2037,7 @@ class _DOMExtractor(HTMLParser):
         self._in_post_body = 0
         self.attachments: list[dict[str, str]] = []
         self.comments_section_present = False
+        self.comments_exhausted = False
         self.comments: list[dict[str, Any]] = []
         self._current_comment: dict[str, Any] | None = None
         self._in_comment_body = 0
@@ -2046,6 +2048,8 @@ class _DOMExtractor(HTMLParser):
         attr_map = {k.lower(): (v or "") for k, v in attrs}
         self._stack.append((tag.lower(), attr_map))
 
+        if attr_map.get("data-comments-exhausted") == "true":
+            self.comments_exhausted = True
         fb_state = attr_map.get("data-fb-state") or attr_map.get("data-page-state")
         if fb_state:
             self.meta_state = fb_state.strip().lower()
@@ -2339,6 +2343,7 @@ def classify_and_parse_observation(
         comments=parsed_comments,
         expand_controls=list(extractor.expand_controls),
         comments_section_present=extractor.comments_section_present,
+        comments_exhausted=extractor.comments_exhausted,
     )
 
 
@@ -2445,6 +2450,7 @@ def _parse_json_payload(
         comments=comments_list,
         expand_controls=controls,
         comments_section_present=has_comments_key,
+        comments_exhausted=payload.get("comments_exhausted") is True,
     )
 
 
@@ -2978,6 +2984,20 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         post_media = None
         post_extra_evidence = {}
 
+    comment_identities = {
+        r.native_id for r in records if r.kind in ("comment", "reply") and r.native_id
+    }
+    comments_observed = len(comment_identities) + sum(
+        r.kind in ("comment", "reply") and r.native_id is None for r in records
+    )
+    if require_comments and parsed is not None:
+        if parsed.comment_count is not None and parsed.comment_count != comments_observed:
+            observation_gaps.add("rendered_count_conflict")
+            if parsed.comment_count > comments_observed and not parsed.expand_controls:
+                observation_gaps.add("missing_comments_controls")
+        if not parsed.comments_exhausted:
+            observation_gaps.add("comments_scope_unverified")
+
     with step.store.connection() as conn:
         book = collect._Book(request.project_id)
         book.load(conn)
@@ -3090,7 +3110,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         else:
             if item.kind == "post" and item.revision_new:
                 merged_missing = list(item.missing_fields)
-                for gap in unexpanded_gaps:
+                for gap in sorted(missing):
                     if gap not in merged_missing:
                         merged_missing.append(gap)
                 item.missing_fields = merged_missing
@@ -3149,25 +3169,16 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         _flush_checkpoint(0)
 
     rejected = any(r.get("status") == "rejected" for r in rows)
-    has_gaps = (
-        bool(unexpanded_gaps)
-        or byte_limit_error is not None
-        or "byte_budget_exceeded" in missing
-        or "uncollected_items_budget" in missing
-        or "parent_comment" in missing
-        or "weak_identity_expansion" in missing
-        or "weak_identity_resume" in missing
-        or "expansion_progress_timeout" in missing
-    )
-    comments_observed = len(
-        {r.native_id for r in records if r.kind in ("comment", "reply") and r.native_id}
-    ) + sum(r.kind in ("comment", "reply") and r.native_id is None for r in records)
+    has_gaps = bool(missing)
     comments_empty = (
         parsed is not None
         and require_comments
-        and len(parsed.comments) == 0
+        and comments_observed == 0
+        and parsed.comment_count == 0
+        and parsed.comments_exhausted
         and len(parsed.expand_controls) == 0
-        and halt != "expansion_timeout"
+        and halt is None
+        and not observation_gaps
     )
 
     if has_gaps or rejected:
@@ -3179,7 +3190,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         elif rejected:
             stop_reason = "row_errors"
         else:
-            stop_reason = "incomplete_parent_tree"
+            stop_reason = "coverage_gaps"
     elif halt == "limit_reached":
         coverage = "bounded"
         stop_reason = "limit_reached"

@@ -502,3 +502,13 @@ discard a previously seen reliable comment. The union consumes the item budget;
 retention has at most max_items plus one lookahead identity, with expansion-bounded
 revisions. Weak records are retained only from the initial snapshot; later weak
 observations add weak_identity_expansion/partial instead of text or position merging.
+
+Genuine empty comments require an identified post, a present comments section,
+explicit comments-exhausted evidence, a rendered count of zero, no observed comments
+across snapshots, no controls and no progress uncertainty. For fixtures that evidence
+is data-comments-exhausted=true (or JSON comments_exhausted=true); LIVE mappings
+remain unverified. Absence of controls alone never proves exhaustion. Contradictory
+counts add rendered_count_conflict; positive counts without sufficient comments or
+controls add missing_comments_controls; absent exhaustion evidence adds
+comments_scope_unverified. Every gap yields partial coverage and incomplete post
+evidence, never scope_satisfied. Counts whose semantics are unknown are not proof.
