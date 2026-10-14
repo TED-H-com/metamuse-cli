@@ -96,6 +96,13 @@ def load_config(root: Path) -> Config:
         return Config.model_validate(tomllib.loads(path.read_text(encoding="utf-8")))
     except ValidationError as exc:
         error = m.validation_error(exc)
+        for entry in exc.errors(include_input=False, include_context=False, include_url=False):
+            if entry["loc"] in (("remote_media", "provider"), ("remote_media", "account")):
+                error = m.CoreError(
+                    m.ErrorCode.INPUT_INVALID,
+                    "Invalid remote_media." + entry["loc"][1] + " setting",
+                )
+                break
     except (ValueError, UnicodeError):
         error = m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid workspace configuration")
     raise error

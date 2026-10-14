@@ -1067,3 +1067,8 @@ Owned scanning passes. On this main, core safety.redact_text is still quadratic
 for k=> and ordinary ampersand pairs. Strict xfails name B16a and fail on XPASS;
 no safety.py change is included. The 1 MiB CPU ceiling is 12 s, allowing ample
 margin above the passing sub-second measurements, while rejecting minute-long work.
+
+`approval_failure` preserves the original error when a preview callback raises a
+CoreError or any other Exception. Unexpected exceptions are contained and log only
+`Approval preview callback failed (TYPE)`, without exception text or a traceback.
+No preview or operation side effect is produced by this fallback.

@@ -463,3 +463,48 @@ def test_review_local_import_root_error_never_routes_to_remote_preview(entry, ch
     assert envelope["approval"] is None
     assert "Approval preview callback failed" not in "\n".join(entry.diagnostics)
     no_created_objects(entry)
+
+
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+def test_review_keyerror_preview_keeps_original_error_and_fixed_log(entry, monkeypatch, channel):
+    marker = f"SYNTHETIC_{'CALLBACK'}_SECRET"
+    monkeypatch.setenv("REMOTE_TEST_BROKEN_PREVIEW", marker)
+    entry.env["REMOTE_TEST_BROKEN_PREVIEW"] = marker
+    envelope = collect(entry, request(entry), channel)
+    assert envelope["error"]["code"] == "E_SCOPE_REQUIRED"
+    assert envelope["error"]["message"] == "A permit is required"
+    assert envelope["approval"] is None
+    logs = "\n".join(entry.diagnostics)
+    assert "Approval preview callback failed (KeyError)" in logs
+    assert marker not in logs + json.dumps(envelope)
+    no_created_objects(entry)
+
+
+@pytest.mark.parametrize("setting", ["provider", "account"])
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+def test_review_credential_shaped_labels_return_fixed_configuration_error(entry, setting, channel):
+    path = entry.workspace / "metamuse.toml"
+    marker = "sk-" + "labelvalue1"
+    old = PROVIDER if setting == "provider" else ACCOUNT
+    path.write_text(path.read_text().replace(f'{setting} = "{old}"', f'{setting} = "{marker}"'))
+    envelope = collect(entry, request(entry), channel, code=2)
+    assert envelope["error"]["code"] == "E_INPUT_INVALID"
+    assert envelope["error"]["message"] == f"Invalid remote_media.{setting} setting"
+    assert envelope["approval"] is None
+    assert marker not in json.dumps(envelope) + "\n".join(entry.diagnostics)
+    no_created_objects(entry)
+
+
+@pytest.mark.parametrize("setting", ["provider", "account"])
+def test_review_invalid_labels_never_echo_value(entry, setting):
+    path = entry.workspace / "metamuse.toml"
+    marker = "synthetic" + " invalid label"
+    old = PROVIDER if setting == "provider" else ACCOUNT
+    path.write_text(path.read_text().replace(f'{setting} = "{old}"', f'{setting} = "{marker}"'))
+    envelope = collect(entry, request(entry), code=2)
+    assert envelope["error"]["code"] == "E_INPUT_INVALID"
+    assert envelope["error"]["message"] == f"Invalid remote_media.{setting} setting"
+    assert envelope["approval"] is None
+    assert marker not in json.dumps(envelope) + "\n".join(entry.diagnostics)
+    path.write_text(path.read_text().replace(f'{setting} = "{marker}"', f'{setting} = "{old}"'))
+    no_created_objects(entry)

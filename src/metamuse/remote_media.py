@@ -658,6 +658,8 @@ def _parse_netscape_line(line: str, line_no: int) -> _Cookie:
         domain = safety.normalize_hostname(domain)
     except m.CoreError:
         raise _cookie_line_invalid(line_no) from None
+    if len(domain.split(".")) < 2:
+        raise _cookie_line_invalid(line_no)
     if _COOKIE_NAME.fullmatch(name) is None or not _cookie_value_ok(value):
         raise _cookie_line_invalid(line_no)
     if flag.upper() not in ("TRUE", "FALSE"):
@@ -995,6 +997,12 @@ def prepare_remote_media(
         raise _dependency_error()
     ctx.store.get(m.Project, request.project_id, conn=conn)
     workspace = _workspace(ctx) if workspace is None else workspace
+    for name in ("provider", "account"):
+        label = getattr(workspace.remote_media, name)
+        if safety.redact_text(label)[0] != label:
+            raise m.CoreError(
+                m.ErrorCode.INPUT_INVALID, "Invalid remote_media." + name + " setting"
+            )
     _check_limits(request, workspace)
     if workspace.app.network_mode == "offline":
         raise _offline_error()
@@ -1597,11 +1605,11 @@ def _challenge_marked(status: int, headers: dict[str, str], payload: bytes, reas
             return True
     if "challenge" in (reason or "").lower():
         return True
-    if b"/__rd_verify" in payload.lower():
+    if b"__rd_verify" in payload.lower():
         return True
     for name in ("refresh", "location"):
         for value in _header_values(headers, name):
-            if "/__rd_verify" in value.lower():
+            if "__rd_verify" in value.lower():
                 return True
     return False
 
@@ -3140,20 +3148,28 @@ def _halt_rate(net: _Net, headers: dict[str, str]) -> None:
 
 def _login_form(payload: bytes, url: str) -> bool:
     class LoginForms(HTMLParser):
-        found = False
+        def __init__(self) -> None:
+            super().__init__()
+            self.base: str | None = None
+            self.actions: list[str | None] = []
 
         def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            values = dict(attrs)
+            if tag == "base" and self.base is None and values.get("href") is not None:
+                self.base = values["href"]
             if tag == "form":
-                for name, value in attrs:
-                    if name == "action" and value is not None:
-                        try:
-                            self.found |= _login_target(urljoin(url, value))
-                        except ValueError:
-                            pass
+                self.actions.append(values.get("action"))
 
     parser = LoginForms()
     parser.feed(payload.decode("utf-8", "replace"))
-    return parser.found
+    try:
+        base = urljoin(url, parser.base) if parser.base is not None else url
+        # Missing/empty actions submit to the document URL, independent of base.
+        return any(
+            _login_target(urljoin(base, action) if action else url) for action in parser.actions
+        )
+    except ValueError:
+        return False
 
 
 def _resolve_share(net: _Net, url: str, key: str, approval: Any) -> str:
