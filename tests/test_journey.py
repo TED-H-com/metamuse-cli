@@ -6,6 +6,7 @@ import os
 import shlex
 import subprocess
 import sys
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -35,21 +36,31 @@ class Entrypoints:
         self.transcript = []
         self.diagnostics = []
         self.server_number = 0
-        self.cli_timeout = 60
+        self.deadline = time.monotonic() + 600
+
+    def remaining(self, command):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise AssertionError("Test deadline exceeded: " + command)
+        return remaining
 
     def cli(self, *args, operator=False, code=0, stdin=None):
         command = [str(self.command), "--workspace", str(self.workspace), "--json"]
         if not operator:
             command.append("--non-interactive")
         command.extend(str(arg) for arg in args)
-        result = subprocess.run(
-            command,
-            input=stdin,
-            capture_output=True,
-            text=True,
-            timeout=self.cli_timeout,
-            check=False,
-        )
+        label = shlex.join(command)
+        try:
+            result = subprocess.run(
+                command,
+                input=stdin,
+                capture_output=True,
+                text=True,
+                timeout=self.remaining(label),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise AssertionError("Test deadline exceeded: " + label) from None
         assert result.returncode == code, (result.stdout, result.stderr)
         envelope = json.loads(result.stdout)
         self.transcript.append(
@@ -121,17 +132,27 @@ class Entrypoints:
             args=["--workspace", str(self.workspace), "--non-interactive", "mcp", *extra],
             env=env,
         )
-        with log.open("w+") as errlog:
+        with (
+            log.open("w+") as errlog,
+            anyio.fail_after(self.remaining("MCP session " + " ".join(extra))),
+        ):
             async with stdio_client(params, errlog=errlog) as (read, write):
                 async with ClientSession(read, write) as session:
-                    with anyio.fail_after(60):
-                        await session.initialize()
+                    with anyio.fail_after(self.remaining("MCP initialize")):
+                        try:
+                            await session.initialize()
+                        except TimeoutError:
+                            raise AssertionError("Test deadline exceeded: MCP initialize") from None
                     yield session
         self.diagnostics.append(log.read_text())
 
     async def call(self, session, tool, request, *, error=False):
-        with anyio.fail_after(60):
-            result = await session.call_tool("metamuse_" + tool, request)
+        label = "MCP metamuse_" + tool
+        try:
+            with anyio.fail_after(self.remaining(label)):
+                result = await session.call_tool("metamuse_" + tool, request)
+        except TimeoutError:
+            raise AssertionError("Test deadline exceeded: " + label) from None
         assert result.is_error is error, json.dumps(result.structured_content, ensure_ascii=False)
         envelope = result.structured_content
         assert json.loads(result.content[0].text) == envelope
@@ -142,7 +163,7 @@ class Entrypoints:
         return envelope
 
     async def terminal(self, session, job_id):
-        with anyio.fail_after(60):
+        with anyio.fail_after(self.remaining("MCP job_get " + job_id)):
             while True:
                 data = (await self.call(session, "job_get", {"job_id": job_id}))["data"]
                 if data["job"]["state"] in (

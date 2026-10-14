@@ -104,7 +104,6 @@ remote_media._dial = dial
     for key, value in env.items():
         monkeypatch.setenv(key, value)
     result = Entrypoints(tmp_path)
-    result.cli_timeout = 180  # Disk contention can delay cold imports on the shared host.
     result.env = env
     result.egress = egress
     result.cli("init")
