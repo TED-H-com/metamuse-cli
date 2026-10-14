@@ -768,10 +768,10 @@ as classification/count only; malformed input never emits a worker traceback.
 
 B13 Chromium launches require chromium_sandbox=True. Failure is E_DEPENDENCY_MISSING
 with AppArmor userns and explicit operator opt-in remedies; no automatic downgrade.
-Only [facebook] allow_unsandboxed_browser=true changes the mode, recorded as
-disabled_by_operator in results/checkpoints and warned in inspect/doctor envelopes.
-A bounded cached headless launch without navigation/state verifies required sandbox
-readiness; an unavailable sandbox never yields environment=ready without the opt-in.
+Only [facebook] allow_unsandboxed_browser=true authorizes a disabled/unverified mode.
+Results/checkpoints record the running observation; inspect/doctor warn on the exception.
+A bounded cached headless blank-page launch without navigation/state verifies command-line
+and Linux renderer Seccomp state; an unavailable sandbox never yields environment=ready without the opt-in.
 The risk and generic AppArmor template are in docs/dev/FACEBOOK.md. Renderer compromise
 under the opt-in has operator UID access, so separate OS isolation is recommended.
 
@@ -814,3 +814,6 @@ Only a fetch/XHR synchronously initiated by the trusted expansion click can clas
 
 
 Facebook navigation barriers, page shapes and identity adoption apply only to the main frame. All network subframe document requests are aborted with blocked_subframe without setting navigation_error. A share identity is adopted only from the main frame.
+
+
+Facebook sandbox state is observed from Browser.getBrowserCommandLine and, on Linux, renderer /proc/<pid>/status Seccomp: 2. No --no-sandbox is allowed for enabled. Failed observation is unverified and refused without the operator exception. The production executable environment override is removed; tests inject an executable through a seam. Capability launch checks verify this running state, not exit status alone.

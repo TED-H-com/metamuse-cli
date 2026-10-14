@@ -385,3 +385,81 @@ def test_r5_n3_share_adopts_only_main_frame_identity(tmp_path, monkeypatch):
         assert job["error"] is None
         assert len(rows(ctx)) == 1
         assert not any("OTHER_POST" in path for path, _ in hits)
+
+
+def test_r5_n4_environment_cannot_override_executable(tmp_path, monkeypatch):
+    executable = facebook.find_playwright_browser()
+    if executable is None:
+        pytest.skip("Chromium is not installed")
+    wrapper = tmp_path / "synthetic-wrapper"
+    wrapper.write_text("#!/bin/sh\nexit 0\n")
+    wrapper.chmod(0o700)
+    monkeypatch.setenv("METAMUSE_CHROMIUM_EXECUTABLE", str(wrapper))
+    assert facebook.find_playwright_browser() == executable
+
+
+@pytest.mark.parametrize("opt_in", [False, True])
+def test_r5_n4_running_browser_mode_is_observed(tmp_path, monkeypatch, opt_in):
+    import sys
+
+    from test_facebook import _write_facebook_config
+
+    executable = facebook.find_playwright_browser()
+    if executable is None:
+        pytest.skip("Chromium is not installed")
+    wrapper = tmp_path / "synthetic-wrapper"
+    wrapper.write_text(
+        "#!"
+        + sys.executable
+        + "\nimport os, sys\nos.execv("
+        + repr(str(executable))
+        + ", ["
+        + repr(str(executable))
+        + ', "--no-sandbox", *sys.argv[1:]])\n'
+    )
+    wrapper.chmod(0o700)
+    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: _synthetic_post_html()}) as env:
+        ctx, project, permit, _, hits, _, driver = env
+        _write_facebook_config(
+            ctx.paths.root, auth_ref=ctx.policy.facebook.auth_ref, allow_unsandboxed_browser=opt_in
+        )
+        ctx = app.AppContext.open(ctx.paths.root)
+        driver._test_executable = wrapper
+        job_id = submit(ctx, project, permit)
+        job = finish(ctx, job_id)
+        if not opt_in:
+            assert job["error"]["code"] == "E_DEPENDENCY_MISSING"
+            assert (
+                app.get_job(ctx, {"job_id": job_id}).data["steps"][0]["checkpoint"][
+                    "browser_sandbox"
+                ]
+                == "unverified"
+            )
+            assert not hits
+        else:
+            assert job["error"] is None
+            assert (
+                job["result"]["data"]["steps"][0]["data"]["browser_sandbox"]
+                == "disabled_by_operator"
+            )
+
+
+@pytest.mark.parametrize(
+    "state,expected", [("0", "unverified"), ("1", "unverified"), ("2", "enabled")]
+)
+def test_r5_n4_linux_seccomp_must_be_observed(monkeypatch, state, expected):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(facebook.sys, "platform", "linux")
+
+    def send(method):
+        return (
+            {"arguments": []}
+            if method == "Browser.getBrowserCommandLine"
+            else {"processInfo": [{"type": "renderer", "id": 42}]}
+        )
+
+    browser = SimpleNamespace(new_browser_cdp_session=lambda: SimpleNamespace(send=send))
+    monkeypatch.setattr(Path, "read_text", lambda *a, **k: "Seccomp: " + state + "\n")
+    assert facebook._observed_sandbox_mode(browser) == expected

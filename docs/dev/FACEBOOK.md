@@ -38,7 +38,7 @@ once at the external read boundary; resume re-verifies it without another use.
 
 ## Browser sandbox is required
 
-Production launches pass `chromium_sandbox=True`. Failure stops with
+Default production launches pass `chromium_sandbox=True`. A verified launch failure stops with
 `E_DEPENDENCY_MISSING`; there is no automatic unsandboxed retry. `next_action` gives
 both remedies, in this order:
 
@@ -67,9 +67,11 @@ workspace-wide secrets, only ephemeral required Facebook state, and network cont
 that also apply to native sockets/UDP/DNS. The HTTP proxy alone does not contain native
 renderer compromise.
 
-Every Facebook result's `data.browser_sandbox` is `"enabled"` or
-`"disabled_by_operator"`; checkpoints and requested scope also expose the selected
-mode, including jobs that stop before producing a result. Inspector/doctor envelopes
+Every Facebook result’s data.browser_sandbox records observed enabled, disabled_by_operator
+or unverified. Enabled requires no --no-sandbox in CDP command-line inspection and, on
+Linux, renderer Seccomp: 2. Unverified is refused without the explicit exception.
+Submission/requested scope and pre-launch checkpoints say unverified; requested mode
+is a separate browser_sandbox_requested field. Launch failures never claim enabled. Inspector/doctor envelopes
 carry the fixed warning `Facebook browser sandbox is disabled by operator configuration`
 under the exception. This uses the existing envelope warning path and Capability fields.
 
@@ -243,7 +245,8 @@ THIRD_PARTY_NOTICES.md; no new dependency or core schema/migration is added.
 
 Chromium explicitly advertises automation. This also permits CDP command-line
 inspection in the real sandbox test, which verifies successful default launch with
-no --no-sandbox flag. The test skips only when that launch is unavailable.
+no --no-sandbox flag and Linux renderer Seccomp: 2. Local tests skip explicitly when
+unavailable; METAMUSE_REQUIRE_BROWSER_TESTS=1 makes browser skips fail in CI.
 
 
 A present but unparseable Facebook comment count adds comment_count_unparsed to post and job gaps; affirmative exhaustion never converts that uncertainty into scope_satisfied.
@@ -271,3 +274,6 @@ Only a fetch/XHR synchronously initiated by the trusted expansion click can clas
 
 
 Facebook navigation barriers, page shapes and identity adoption apply only to the main frame. All network subframe document requests are aborted with blocked_subframe without setting navigation_error. A share identity is adopted only from the main frame.
+
+
+Facebook sandbox state is observed from Browser.getBrowserCommandLine and, on Linux, renderer /proc/<pid>/status Seccomp: 2. No --no-sandbox is allowed for enabled. Failed observation is unverified and refused without the operator exception. The production executable environment override is removed; tests inject an executable through a seam. Capability launch checks verify this running state, not exit status alone.
