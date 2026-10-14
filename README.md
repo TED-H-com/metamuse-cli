@@ -15,8 +15,8 @@ SQLite migrations, content objects and backup/restore. Search, packets, drafts a
 exports share the same application and MCP server. Muse lifecycle
 supports explicitly selected fixture integration and separately authorized transport;
 LIVE remains unverified and requires an operator-authorized account. See
-[MUSE.md](docs/dev/MUSE.md) for binding, grants, jobs and recovery. Schema 3 requires
-B05/B06 migration 002; this development branch awaits its merge before production use.
+[MUSE.md](docs/dev/MUSE.md) for binding, grants, jobs and recovery. Schema 3 adds Muse
+lifecycle records after B05/B06's schema 2.
 
 ```sh
 uv sync --python 3.12
