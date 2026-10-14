@@ -85,7 +85,7 @@ SOFTWARE.
 | platformdirs | 4.13.0 | MIT | Adopted as a runtime dependency. See the Python package dependencies table below. |
 | mcp (official Python SDK) | 2.3.0 | MIT | Adopted as a runtime dependency. See the Python package dependencies table below. Speaks protocol revisions `2024-11-05` through `2026-07-28`. |
 | pydantic, as required by mcp | `>=2.12` (satisfied by 2.14.1) | MIT | Satisfied by the pydantic pin above. |
-| yt-dlp | 2026.8.19 | Unlicense | Planned. Not imported here. |
+| yt-dlp | 2026.8.19 (imported version `2026.08.19`) | Unlicense | Adopted as the optional extra `remote` and a dev-group pin. Imported lazily by `src/metamuse/remote_media.py`. Not vendored. |
 | playwright | 1.63.0 | Apache-2.0 | Planned. Browser binaries are an operator install, not part of this repo. |
 | ffmpeg | external binary; this machine has 8.0.1-3ubuntu2, configured `--enable-gpl` and `--enable-libx264` | LGPL-2.1-or-later, or GPL-2.0-or-later when GPL parts are enabled (this binary) | Not bundled. Operator-installed executable only. |
 | noiseprotocol | 0.3.1 | MIT. `Copyright (c) 2017 Piotr Lizończyk`. Full notice above. | Adopted. Imported by `src/metamuse/_muse_noise.py` and `spikes/muse/handshake.py`. Not vendored. |
@@ -153,6 +153,7 @@ Runtime dependencies:
 | starlette | 1.8.0 | BSD-3-Clause | ASGI framework (`mcp` and `sse-starlette` dependency). |
 | truststore | 0.10.5 | MIT | OS trust store certificate verification (`httpcore2` and `httpx2` dependency). |
 | uvicorn | 0.54.0 | BSD-3-Clause | ASGI server implementation (`mcp` dependency). |
+| yt-dlp | 2026.8.19 | Unlicense | Optional extra `remote`. Python API only. Lazy import from `remote_media.py`. |
 
 Development dependencies (not runtime requirements): pytest 9.1.1 (MIT), ruff 0.17.0
 (MIT), jsonschema 4.26.0 (MIT). These provide the requested test runner, lint/format
@@ -180,3 +181,35 @@ The standalone capture script uses Pillow 12.1.1 (MIT-CMU), an existing pinned s
 dependency, for X11 framebuffer capture and lossless PNG encoding. Pillow is not
 vendored or added to the product's runtime or development dependency groups.
 Its mature image functions avoid writing a separate capture or PNG encoder.
+
+## yt-dlp Unlicense
+
+The text below is copied from `yt_dlp-2026.8.19.dist-info/licenses/LICENSE` in the
+installed wheel. It is the Unlicense dedication shipped with `yt-dlp==2026.8.19`.
+
+```
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org/>
+```
