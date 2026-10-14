@@ -30,7 +30,7 @@ Each row uses one of four states: implemented with offline tests; implemented bu
 | MCP attached worker | implemented with offline tests | `metamuse mcp` starts one worker; `--no-worker` opts out. The workspace OS lock allows one executor. |
 | Approval previews and `metamuse permit approve` | implemented with offline tests | Human-only approval of the exact action; no MCP approval tool. |
 | Remote media (B12) | implemented with offline tests | Exact-action approval preview and human `permit approve`. OFFLINE and FIXTURE evidence; AT-040 LIVE has not been run. |
-| Facebook posts (B13) | not done | In progress elsewhere. Not in this tree. |
+| Facebook posts (B13) | not done | Not implemented on `main` yet. |
 | Publishing | not done | Not started. |
 | CI | implemented with offline tests | GitHub Actions `check` runs the offline gates and wheel smoke on every PR and `main` push; required status check on `main` since 2026-10-14. |
 

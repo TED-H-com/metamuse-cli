@@ -372,7 +372,7 @@ review echo normalizes or masks them; and approves its exact digest with
 --exact-digest ACTION_DIGEST --request-key APPROVAL_KEY`. Repeat with the returned
 grant, then compare source metadata, subtitles and any requested media bytes against
 the permitted source, recording limits, omissions, provenance and partial coverage.
-Stop at a login wall or challenge. This plan has not been executed; this branch's
+Stop at a login wall or challenge. This plan has not been executed; the shipped
 CLI/MCP tests use synthetic extractors and egress seams, with no network or accounts.
 
 The job uses yt-dlp's Python API with plugins and config disabled. Every request,

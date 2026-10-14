@@ -794,14 +794,18 @@
         "zh": "<strong>核准預覽與 metamuse permit approve</strong><br><code>implemented with offline tests</code><br>人類核准精確操作；MCP 沒有核准工具。"
       },
       {
+        "en": "<strong>Remote media (B12)</strong><br><code>implemented with offline tests</code><br>Exact-action approval preview and human <code>permit approve</code>. OFFLINE and FIXTURE evidence; AT-040 LIVE has not been run.",
+        "zh": "<strong>遠端影音（B12）</strong><br><code>implemented with offline tests</code><br>精確操作的核准預覽與人類執行的 <code>permit approve</code>。已有 OFFLINE 與 FIXTURE 證據；尚未執行 AT-040 LIVE。"
+      },
+      {
         "en": "<strong>CI</strong><br><code>implemented with offline tests</code><br>GitHub Actions check runs offline gates and wheel smoke on PRs and main pushes; required on main since 2026-10-14.",
         "zh": "<strong>CI</strong><br><code>implemented with offline tests</code><br>GitHub Actions check 在 PR 與 main push 執行離線檢查與 wheel smoke；自 2026-10-14 起為 main 的必要檢查。"
       }
     ],
     "limits": [
       {
-        "en": "<strong>Remote media (B12) and Facebook posts (B13)</strong><br><code>not done</code><br>Remote collection is not available.",
-        "zh": "<strong>遠端影音（B12）與 Facebook 貼文（B13）</strong><br><code>not done</code><br>尚未提供遠端收集。"
+        "en": "<strong>Facebook posts (B13)</strong><br><code>not done</code><br>Not implemented on <code>main</code> yet.",
+        "zh": "<strong>Facebook 貼文（B13）</strong><br><code>not done</code><br><code>main</code> 尚未實作。"
       },
       {
         "en": "<strong>Publishing</strong><br><code>not done</code><br>Not implemented.",

@@ -862,6 +862,16 @@ registers the sole dispatcher with `CollectRequest`; `_remote_route` selects the
 `remote_media.preview_remote_media`, using `prepare_remote_media` at all three boundaries.
 B13 adds its route to that selector/table rather than registering another callback.
 
+B12's target binds the whole canonical configured approval table (extractor key,
+normalized sorted hosts and opaque auth_ref or null), including all possible hop
+entries. Any edit requires a fresh preview before consumption/egress. Preparation
+checks binding metadata only; the step resolves/parses all bound secrets before use.
+Exact request receipts, including the grant ID, replay before permit verification.
+Workspace caps stay outside target and job identity; B12 checkpoints their acceptance
+snapshot and applies min(snapshot, current) at execution. Request limits remain bound
+and are checked against current workspace limits. Preparation bounds URL UTF-8 bytes
+at 8192 and checks cheap syntax before redaction, display or digest.
+
 B12 displays destinations structurally, with normalized hosts, non-default ports,
 complete paths (including semicolon parameters) and queries. Only known secret query
 values are masked using shared url_token rules. Request echo and operator review use
