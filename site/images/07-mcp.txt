@@ -1,4 +1,4 @@
-$ python3 /tmp/metamuse-demo/mcp_demo.py
+$ python3 mcp_demo.py
 client=mcp 2.3.0 stdio_client
 server=metamuse version=0.1.0.dev0
 protocol=2025-11-25
@@ -20,9 +20,8 @@ tool=metamuse_draft_preview readOnly=true
 tool=metamuse_export readOnly=false
 call=metamuse_search status=ok is_error=false
 search_mode=exact_substring
-ref=item_revision itm_582e7ac7d2104dd2802232b527c3fc2b revision=1
+ref=item_revision itm_30b1ff56067a484d9756b5fc701004ff revision=1
 upstream=synthetic_fixture
 collection=file_import
 complete=true
 snippet=正常留言第一行，測試逐項驗證。
-

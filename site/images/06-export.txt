@@ -1,0 +1,16 @@
+$ D=$(jq -r .draft_id out/draft.json)
+$ jq -n --arg id "$D" '[{kind:"draft_revision", id:$id, revision:1}]' > inputs/export-refs.json
+$ metamuse --workspace ws export --project "$P" --refs-file inputs/export-refs.json --format bundle --request-key export > out/export.json
+Warning: Local export only; nothing was published or uploaded.
+Warning: Bundle redaction is a guard, not a guarantee; assets are metadata only.
+$ jq -C '.manifest | {format, text_policy, asset_policy, redaction_notice}' out/export.json
+{
+  "format": "bundle",
+  "text_policy": "redacted",
+  "asset_policy": "metadata_only; opaque media bytes are not included",
+  "redaction_notice": "Automatic redaction is a guard, not a guarantee."
+}
+$ jq -cC '.manifest.files[]' out/export.json
+{"name":"object-0001.md","sha256":"5b91c4e4b84941ee86a9671aa5cbd1b125565ba33d30cf09947c21c0cebdf44e","bytes":250}
+{"name":"object-0002.md","sha256":"0d665296cbb298a4c36735451469ca09e16cd680c5cadc57dec0646204a85a66","bytes":340}
+{"name":"records.jsonl","sha256":"08a1084bf5a0e6c5c3a6e451e4e750b5bfb3095373fcc38d267c19e11488bc88","bytes":930}

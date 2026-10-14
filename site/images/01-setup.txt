@@ -1,0 +1,28 @@
+$ cd /tmp/metamuse-demo
+$ metamuse --workspace ws init
+{
+  "initialized": true,
+  "schema_version": 4
+}
+$ python3 configure_demo_workspace.py
+$ sed -n '/^network_mode/p;/^backend/p' ws/metamuse.toml
+network_mode = "offline"
+backend = "fixture"
+$ metamuse --workspace ws doctor > out/doctor.json
+$ jq -cC '{network_mode, worker_available}, (.capabilities[] | [.name, .verification, .effective])' out/doctor.json
+{"network_mode":"offline","worker_available":false}
+["metamuse_inspect","fixture_passed",true]
+["metamuse_project_create","fixture_passed",true]
+["metamuse_collect","fixture_passed",true]
+["metamuse_job_get","fixture_passed",true]
+["metamuse_job_list","fixture_passed",true]
+["metamuse_job_control","fixture_passed",true]
+["metamuse_search","fixture_passed",true]
+["metamuse_packet_prepare","fixture_passed",true]
+["metamuse_muse_open","fixture_passed",false]
+["metamuse_muse_send","fixture_passed",false]
+["metamuse_muse_read","fixture_passed",true]
+["metamuse_muse_close_exchange","fixture_passed",true]
+["metamuse_draft_save","fixture_passed",true]
+["metamuse_draft_preview","fixture_passed",true]
+["metamuse_export","fixture_passed",true]

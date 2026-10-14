@@ -1,0 +1,19 @@
+$ metamuse skill export --dest host-skill
+{
+  "files": [
+    "SKILL.md",
+    "references/degradation.md",
+    "references/limits.md",
+    "references/tools.md"
+  ],
+  "file_count": 4
+}
+$ ls -R host-skill
+host-skill:
+SKILL.md
+references
+
+host-skill/references:
+degradation.md
+limits.md
+tools.md

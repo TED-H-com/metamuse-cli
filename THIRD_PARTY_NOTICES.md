@@ -165,3 +165,17 @@ Licenses/versions above were read from the installed distributions' primary META
 not inferred from repository names. Hatchling 1.32.4 is the observed isolated build backend
 (MIT, verified from its cached distribution METADATA), used by uv for the src-layout wheel; it is not a runtime dependency. No
 project-wide license decision or permission to publish is made by this notice.
+
+## Project page (B17)
+
+The external renderer is `teddashh/teddashh.github.io` at full commit
+`d6d067412279ab61d73151e836722799662edb11`, MIT,
+`Copyright (c) 2026 Ted Huang`. Original paths: `kit/render.py`, `kit/base.css`,
+`kit/lang.js`, `kit/app.js`, `kit/flow.js` and `kit/flow.css`. Generated assets live
+under `site/`; the renderer remains external. The full MIT notice is retained in
+[site/README.md](site/README.md). No kit code is mechanically rewritten here.
+
+The standalone capture script uses Pillow 12.1.1 (MIT-CMU), an existing pinned script
+dependency, for X11 framebuffer capture and lossless PNG encoding. Pillow is not
+vendored or added to the product's runtime or development dependency groups.
+Its mature image functions avoid writing a separate capture or PNG encoder.

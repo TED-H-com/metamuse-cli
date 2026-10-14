@@ -1,38 +1,140 @@
 # Terminal captures
 
-These PNGs are crops of a real Alacritty window on Xvfb. The shell prints each
-command, then runs the installed `metamuse` binary against `/tmp/metamuse-demo`.
-No pixel inside the window was painted over. Cropping is the window rectangle
-from `xdotool`.
+Real Alacritty on a newly allocated Xvfb display; `WINIT_X11_SCALE_FACTOR=2`.
+The shell prints each literal command and executes it from `/tmp/metamuse-demo`.
+Variables set visibly in earlier scenes are retained between frames.
 
-Data is the committed synthetic corpus (`tests/fixtures/corpus/import/comments_mixed_bad.jsonl`
-and `tests/fixtures/corpus/security/secrets.jsonl`) copied under `/tmp/metamuse-demo/inputs`.
-Muse is configured `backend = "fixture"`. No account, credential, or network call is used.
+Each PNG keeps the full window width and its original top edge, ending one empty
+terminal row below the last ink. Pixels within that rectangle are unedited.
+Pillow's lossless PNG optimization is checked by decoding and comparing all RGB
+bytes. The manifest records window/crop rectangles in display coordinates,
+cell dimensions, content rows, commands, AT IDs, hashes, sizes and tool versions.
 
-The text file next to each PNG is the terminal transcript and the accessible
-text alternative. `manifest.json` records hashes and tool versions.
+Only the repository's synthetic `comments_mixed_bad.jsonl` and `secrets.jsonl`
+fixtures are used. In the copied secrets input, the first row's synthetic URL
+is shortened from `https://example.org/api/v1/feed?` to `https://example.org/?`
+and its label to `存取網址：` so the redaction fits together at 60 columns.
+The synthetic token and source labels are unchanged; this is input data, not an
+edit to CLI output. Muse is explicitly configured with `backend = "fixture"`.
+No credentials, real account, external network, send or publication is involved.
+The text file beside every image is its accessible transcript, linked from both
+languages on the page. The hero is a separate 60-column capture of the same packet.
 
 ## Frames
 
-| Image | Scene | What the reader sees | Commands |
-|---|---|---|---|
-| `01-health.png` | 01-health | Offline init, fixture Muse config, and doctor. network_mode=offline, backend = fixture, verification fixture_passed, worker_available=false. Muse open and send stay effective=false. | `metamuse --workspace /tmp/metamuse-demo/workspace init`<br>`python3 /tmp/metamuse-demo/configure_demo_workspace.py`<br>`sed -n '1,4p;/^\[muse\]/,/^\[publishing\]/p' /tmp/metamuse-demo/workspace/metamuse.toml`<br>`metamuse --workspace /tmp/metamuse-demo/workspace doctor \| jq -r '"network_mode=\(.network_mode) worker_available=\(.worker_available)", (.capabilities[] \| "\(.name) \(.verification) \(.environment) \(.permission) effective=\(.effective)")'` |
-| `02-import.png` | 02-import | Create a project and import the synthetic mixed file with --run. The job ends partial, stop row_errors, 7 committed and 7 rejected. worker_available stays false after the foreground run returns. | `metamuse --workspace /tmp/metamuse-demo/workspace project create --name 'Synthetic demo' --request-key project \| tee /tmp/metamuse-demo/out/project.json \| jq '{id, name, revision}'`<br>`jq -r .id /tmp/metamuse-demo/out/project.json \| tee /tmp/metamuse-demo/state/project_id`<br>`metamuse --workspace /tmp/metamuse-demo/workspace add --project $(cat /tmp/metamuse-demo/state/project_id) --file /tmp/metamuse-demo/inputs/comments_mixed_bad.jsonl --kind jsonl --request-key import --run \| tee /tmp/metamuse-demo/out/add.json \| jq '{job_id, state, worker_available, coverage: .job.coverage_status, stop: .job.stop_reason, committed: .job.observed_scope.steps[0].committed, rejected: .job.observed_scope.steps[0].rejected}'`<br>`jq -r .job_id /tmp/metamuse-demo/out/add.json \| tee /tmp/metamuse-demo/state/job_id` |
-| `03-rows.png` | 03-rows | jobs get for that import. Each line is committed or rejected. Rejected lines keep their error code. Coverage stays partial. | `metamuse --workspace /tmp/metamuse-demo/workspace jobs get $(cat /tmp/metamuse-demo/state/job_id) \| jq -r '"state=\(.job.state) coverage=\(.job.coverage_status) stop=\(.job.stop_reason)", "committed=\(.steps[0].result.observed_scope.committed) rejected=\(.steps[0].result.observed_scope.rejected)", (.steps[0].result.data.rows[] \| "line=\(.line) \(.status) code=\(.code // "-") field=\(.field // "-")")'` |
-| `04-search.png` | 04-search | Exact-substring search. The hit cites one item revision, with collection_method file_import and upstream synthetic_fixture. | `metamuse --workspace /tmp/metamuse-demo/workspace search --project $(cat /tmp/metamuse-demo/state/project_id) --query '正常留言第一行' --limit 1 \| tee /tmp/metamuse-demo/out/search.json \| jq -r '"search_mode=\(.search_mode)", "ref=\(.results[0].ref.kind) \(.results[0].ref.id) revision=\(.results[0].ref.revision)", "stale=\(.results[0].stale)", "platform=\(.results[0].source.platform)", "collection_method=\(.results[0].source.collection_method)", "upstream=\(.results[0].source.upstream_collection_method)", "complete=\(.results[0].source.complete)", "snippet=\(.results[0].snippet)"'` |
-| `05-packet.png` | 05-packet | Import the synthetic secrets file, select one revision, and preview the packet. The frame shows the exact pre-share text, redaction counts, and the SHA-256 digest. The token value is not printed; the preview shows [REDACTED]. | `metamuse --workspace /tmp/metamuse-demo/workspace add --project $(cat /tmp/metamuse-demo/state/project_id) --file /tmp/metamuse-demo/inputs/secrets.jsonl --kind jsonl --request-key secrets --run \| tee /tmp/metamuse-demo/out/secrets-add.json \| jq '{state, stop: .job.stop_reason, committed: .job.observed_scope.steps[0].committed, rejected: .job.observed_scope.steps[0].rejected}'`<br>`metamuse --workspace /tmp/metamuse-demo/workspace search --project $(cat /tmp/metamuse-demo/state/project_id) --query '存取網址' --limit 1 \| tee /tmp/metamuse-demo/out/secret-search.json \| jq '{search_mode, ref: .results[0].ref, upstream: .results[0].source.upstream_collection_method, collection: .results[0].source.collection_method, complete: .results[0].source.complete}'`<br>`jq '[.results[0].ref]' /tmp/metamuse-demo/out/secret-search.json \| tee /tmp/metamuse-demo/inputs/selection.json`<br>`metamuse --workspace /tmp/metamuse-demo/workspace packet prepare --project $(cat /tmp/metamuse-demo/state/project_id) --selection-file /tmp/metamuse-demo/inputs/selection.json --request-key packet \| tee /tmp/metamuse-demo/out/packet.json \| jq -r '"id=\(.id)", "digest=\(.digest)", "coverage=\(.coverage_status)", "stale=\(.stale)", "utf8_bytes=\(.utf8_bytes)", "redactions=\(.redactions)", "--- exact text ---", .rendered_text'` |
-| `06-draft.png` | 06-draft | The host writes the draft text. draft save stores that text and cites the local item revision from search. No model is called. | `printf "%s\n" "活動紀錄（host 撰寫）" "本地留言仍在。壞列沒有被算成完整匯入。" \| tee /tmp/metamuse-demo/inputs/draft.txt`<br>`jq '[.results[0].ref]' /tmp/metamuse-demo/out/search.json \| tee /tmp/metamuse-demo/inputs/facts.json`<br>`metamuse --workspace /tmp/metamuse-demo/workspace draft save --project $(cat /tmp/metamuse-demo/state/project_id) --text-file /tmp/metamuse-demo/inputs/draft.txt --platform generic --facts-file /tmp/metamuse-demo/inputs/facts.json --request-key draft \| tee /tmp/metamuse-demo/out/draft.json \| jq -r '"draft_id=\(.draft_id)", "revision=\(.revision)", "digest=\(.digest)", "stale=\(.stale)", "platform=\(.platform)", "facts=\(.facts_refs)", "--- host text ---", .text'`<br>`jq -r .draft_id /tmp/metamuse-demo/out/draft.json \| tee /tmp/metamuse-demo/state/draft_id` |
-| `07-export.png` | 07-export | Bundle export of the host draft. Stderr says nothing was published or uploaded. The manifest lists text_policy, the redaction notice, and each file SHA-256. | `jq -n --arg id "$(cat /tmp/metamuse-demo/state/draft_id)" '[{kind:"draft_revision", id:$id, revision:1}]' \| tee /tmp/metamuse-demo/inputs/export-refs.json`<br>`metamuse --workspace /tmp/metamuse-demo/workspace export --project $(cat /tmp/metamuse-demo/state/project_id) --refs-file /tmp/metamuse-demo/inputs/export-refs.json --format bundle --request-key export-bundle \| tee /tmp/metamuse-demo/out/export.json \| jq -r '"id=\(.id)", "state=\(.state)", "artifact=\(.artifact)", "format=\(.manifest.format)", "text_policy=\(.manifest.text_policy)", "asset_policy=\(.manifest.asset_policy)", "redaction_notice=\(.manifest.redaction_notice)", "redactions=\(.manifest.redactions)", (.manifest.files[] \| "\(.name) sha256=\(.sha256) bytes=\(.bytes)"), "selection=\(.manifest.selection)"'` |
-| `08-mcp.png` | 08-mcp | Official MCP Python client over metamuse mcp. It lists the tools, then calls the read-only metamuse_search tool. | `python3 /tmp/metamuse-demo/mcp_demo.py` |
+### 01-setup.png (AT-001)
+
+Offline init, explicit fixture config, and doctor capability rows.
+
+```sh
+cd /tmp/metamuse-demo
+metamuse --workspace ws init
+python3 configure_demo_workspace.py
+sed -n '/^network_mode/p;/^backend/p' ws/metamuse.toml
+metamuse --workspace ws doctor > out/doctor.json
+jq -cC '{network_mode, worker_available}, (.capabilities[] | [.name, .verification, .effective])' out/doctor.json
+```
+
+### 02-queue.png (AT-003, AT-008)
+
+Accepted and queued without a worker; run once, then partial with 7 committed and 7 rejected.
+
+```sh
+metamuse --workspace ws project create --name 'Synthetic demo' --request-key project > out/project.json
+P=$(jq -r .id out/project.json)
+metamuse --workspace ws --json add --project "$P" --file inputs/mixed.jsonl --kind jsonl --request-key import > out/add.json
+jq -C '{status, state: .data.state, worker_available: .data.worker_available}' out/add.json
+J=$(jq -r .data.job_id out/add.json)
+metamuse --workspace ws worker run --once
+metamuse --workspace ws jobs get "$J" > out/job.json
+jq -C '.job | {state, coverage_status}' out/job.json
+jq -cC '.steps[0].result.observed_scope | {committed, rejected}' out/job.json
+jq -cC '.steps[0].result.data.rows[] | select(.status == "rejected") | {line, code}' out/job.json
+```
+
+### 03-search.png (AT-017)
+
+One exact item revision, with file_import and synthetic_fixture source labels.
+
+```sh
+metamuse --workspace ws search --project "$P" --query 正常留言第一行 --limit 1 > out/search.json
+jq -C '.results[0] | {ref, snippet, source}' out/search.json
+```
+
+### 04-packet.png (AT-015, AT-028)
+
+Exact packet text, one url_token redaction, and its SHA-256. Nothing is sent.
+
+```sh
+metamuse --workspace ws add --project "$P" --file inputs/secrets.jsonl --kind jsonl --request-key secrets --run > out/secrets.json
+metamuse --workspace ws search --project "$P" --query 存取網址 --limit 1 > out/secret-search.json
+jq '[.results[0].ref]' out/secret-search.json > inputs/selection.json
+metamuse --workspace ws packet prepare --project "$P" --selection-file inputs/selection.json --request-key packet > out/packet.json
+jq -r .rendered_text out/packet.json
+jq -C '{redactions, digest}' out/packet.json
+```
+
+### 05-draft.png (AT-023)
+
+Host-supplied text stored as written, citing an exact item revision; no model call.
+
+```sh
+printf '%s\n' '活動紀錄（host 撰寫）' '本地留言仍在。壞列沒有被算成完整匯入。' > inputs/draft.txt
+jq '[.results[0].ref]' out/search.json > inputs/facts.json
+metamuse --workspace ws draft save --project "$P" --text-file inputs/draft.txt --platform generic --facts-file inputs/facts.json --request-key draft > out/draft.json
+jq -C '{draft_id, revision, text, facts_refs}' out/draft.json
+```
+
+### 06-export.png (AT-025)
+
+Local bundle manifest and the CLI's no-publish, no-upload, redaction-guard warnings.
+
+```sh
+D=$(jq -r .draft_id out/draft.json)
+jq -n --arg id "$D" '[{kind:"draft_revision", id:$id, revision:1}]' > inputs/export-refs.json
+metamuse --workspace ws export --project "$P" --refs-file inputs/export-refs.json --format bundle --request-key export > out/export.json
+jq -C '.manifest | {format, text_policy, asset_policy, redaction_notice}' out/export.json
+jq -cC '.manifest.files[]' out/export.json
+```
+
+### 07-mcp.png (AT-026)
+
+Official mcp stdio client lists 15 tools and readOnly hints, then calls metamuse_search.
+
+```sh
+python3 mcp_demo.py
+```
+
+### 08-skill.png (AT-027)
+
+Skill export writes SKILL.md and references to the named local destination.
+
+```sh
+metamuse skill export --dest host-skill
+ls -R host-skill
+```
+
+### 00-hero.png (AT-015, AT-028)
+
+The same packet's exact text, redaction count, and digest, captured for the hero.
+
+```sh
+jq -r .rendered_text out/packet.json
+jq -cC '{redactions, digest}' out/packet.json
+```
 
 ## Reproduce
 
-From the repository root, with the project virtualenv already synced:
+With Alacritty, Xvfb, xdotool, jq and the already-synced project virtualenv:
 
 ```sh
-uv run --script scripts/capture_site.py
+UV_OFFLINE=1 uv run --script scripts/capture_site.py
 ```
 
-The script refuses a transcript that contains `$USER`, the hostname, `/home/`,
-or a line from `$SITE_PRIVATE_DENYLIST` when that file is set. A scene that
-scrolls past the fixed 112x68 window fails the capture.
+The capture uses a pinned Pillow script dependency; it is not a product dependency.
+The script rejects local home paths, the operator's username or hostname, and any
+term from `SITE_PRIVATE_DENYLIST`. Commands over two rows and scenes over their row
+budget fail. The script stops its own terminal and virtual display on exit.
+
+Skill export demonstrates installation output, not full AT-027 missing-backend
+acceptance. MCP shows discovery and one search call, not every host/tool pairing.

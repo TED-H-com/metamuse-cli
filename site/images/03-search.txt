@@ -1,0 +1,18 @@
+$ metamuse --workspace ws search --project "$P" --query 正常留言第一行 --limit 1 > out/search.json
+$ jq -C '.results[0] | {ref, snippet, source}' out/search.json
+{
+  "ref": {
+    "kind": "item_revision",
+    "id": "itm_30b1ff56067a484d9756b5fc701004ff",
+    "revision": 1
+  },
+  "snippet": "正常留言第一行，測試逐項驗證。",
+  "source": {
+    "source_id": "src_7456e0e0b1ab413f9ff45c3ed5b2d11d",
+    "platform": "generic",
+    "collection_method": "file_import",
+    "upstream_collection_method": "synthetic_fixture",
+    "complete": true,
+    "missing_fields": []
+  }
+}

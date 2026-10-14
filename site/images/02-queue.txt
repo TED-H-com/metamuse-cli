@@ -1,0 +1,30 @@
+$ metamuse --workspace ws project create --name 'Synthetic demo' --request-key project > out/project.json
+$ P=$(jq -r .id out/project.json)
+$ metamuse --workspace ws --json add --project "$P" --file inputs/mixed.jsonl --kind jsonl --request-key import > out/add.json
+$ jq -C '{status, state: .data.state, worker_available: .data.worker_available}' out/add.json
+{
+  "status": "accepted",
+  "state": "queued",
+  "worker_available": false
+}
+$ J=$(jq -r .data.job_id out/add.json)
+$ metamuse --workspace ws worker run --once
+{
+  "steps_processed": 1
+}
+$ metamuse --workspace ws jobs get "$J" > out/job.json
+$ jq -C '.job | {state, coverage_status}' out/job.json
+{
+  "state": "partial",
+  "coverage_status": "partial"
+}
+$ jq -cC '.steps[0].result.observed_scope | {committed, rejected}' out/job.json
+{"committed":7,"rejected":7}
+$ jq -cC '.steps[0].result.data.rows[] | select(.status == "rejected") | {line, code}' out/job.json
+{"line":2,"code":"E_INPUT_INVALID"}
+{"line":4,"code":"E_INPUT_INVALID"}
+{"line":6,"code":"E_INPUT_INVALID"}
+{"line":8,"code":"E_INPUT_INVALID"}
+{"line":10,"code":"E_LIMIT_REACHED"}
+{"line":12,"code":"E_INPUT_INVALID"}
+{"line":13,"code":"E_INPUT_INVALID"}

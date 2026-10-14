@@ -1,0 +1,16 @@
+$ printf '%s\n' '活動紀錄（host 撰寫）' '本地留言仍在。壞列沒有被算成完整匯入。' > inputs/draft.txt
+$ jq '[.results[0].ref]' out/search.json > inputs/facts.json
+$ metamuse --workspace ws draft save --project "$P" --text-file inputs/draft.txt --platform generic --facts-file inputs/facts.json --request-key draft > out/draft.json
+$ jq -C '{draft_id, revision, text, facts_refs}' out/draft.json
+{
+  "draft_id": "drf_0610cfb77d204adfb31376974a4e9f91",
+  "revision": 1,
+  "text": "活動紀錄（host 撰寫）\n本地留言仍在。壞列沒有被算成完整匯入。\n",
+  "facts_refs": [
+    {
+      "kind": "item_revision",
+      "id": "itm_30b1ff56067a484d9756b5fc701004ff",
+      "revision": 1
+    }
+  ]
+}
