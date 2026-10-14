@@ -2996,6 +2996,8 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         post_media = None
         post_extra_evidence = {}
 
+    if any(record.kind == "reply" and record.parent_native_id is None for record in records):
+        observation_gaps.add("parent_comment")
     comment_identities = {
         r.native_id for r in records if r.kind in ("comment", "reply") and r.native_id
     }
@@ -3120,6 +3122,11 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 }
             )
         else:
+            if rec.kind == "reply" and (rec.parent_native_id is None or item.unresolved_parent):
+                missing.add("parent_comment")
+                if item.revision_new:
+                    item.missing_fields = sorted(set(item.missing_fields) | {"parent_comment"})
+                    item.complete = False
             if item.kind == "post" and item.revision_new:
                 merged_missing = list(item.missing_fields)
                 for gap in sorted(missing):

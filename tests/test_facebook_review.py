@@ -640,3 +640,28 @@ def test_finding_11_empty_requires_affirmative_evidence_and_counts_cannot_contra
             ).fetchone()
             assert post[0] == 0
             assert gap in json.loads(post[1])
+
+
+def test_finding_12_reply_without_parent_has_item_and_job_gap(tmp_path):
+    ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
+    driver = facebook.FixtureBrowserDriver(
+        observation(
+            _synthetic_post_html(
+                comments=[
+                    {"kind": "reply", "id": "parentless", "text": "Parent identity unavailable"}
+                ]
+            )
+        )
+    )
+    facebook.set_driver_factory(lambda: driver)
+    job = finish(ctx, submit(ctx, project, permit))
+    assert "parent_comment" in job["missing_fields"]
+    assert job["coverage_status"] == "partial"
+    with ctx.store.connection() as conn:
+        row = conn.execute(
+            "SELECT i.parent_id,i.unresolved_parent,r.complete,r.missing_fields "
+            "FROM items i JOIN item_revisions r ON r.item_id=i.id "
+            "WHERE i.native_id='parentless'"
+        ).fetchone()
+        assert row[:3] == (None, None, 0)
+        assert "parent_comment" in json.loads(row[3])
