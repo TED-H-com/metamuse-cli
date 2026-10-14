@@ -4,8 +4,11 @@ import signal
 import time
 
 import pytest
+from test_muse_lifecycle import fixture_ctx as fixture_ctx
+from test_muse_lifecycle import invoke
 
 from metamuse import safety
+from metamuse import models as m
 
 
 def bounded_redaction(text, budget):
@@ -42,3 +45,30 @@ def test_f2_cookie_chain_keeps_all_members_private(prefix, session_first):
     assert marker not in output and "S1" not in output
     assert any(record["kind"] == "cookie" for record in counts)
     assert safety.redact_text(output) == (output, [])
+
+
+def test_f5_topic_refusal_before_preview_or_state(fixture_ctx, monkeypatch):
+    from metamuse._muse_lifecycle import _wire, prepare_open
+
+    ctx = fixture_ctx
+    marker = f"{ctx._frontend}_MARKER_SYNTHETIC_ONLY"
+    request = m.MuseOpenRequest(
+        project_id="missing", topic=f"hatch_sess={marker}", request_key="topic-refused"
+    )
+    # Freeze a body using the previous rules, then exercise the worker's second check.
+    with monkeypatch.context() as old_rules:
+        old_rules.setattr("metamuse._muse_lifecycle._check_question", lambda value: None)
+        legacy = prepare_open(ctx, request)
+    monkeypatch.setattr(ctx.store, "get", lambda *a, **kw: pytest.fail("Refusal must come first"))
+    for call in (lambda: prepare_open(ctx, request), lambda: _wire(legacy)):
+        with pytest.raises(m.CoreError) as error:
+            call()
+        assert error.value.detail.code == m.ErrorCode.INPUT_INVALID
+        assert marker not in str(error.value)
+    result = invoke(ctx, "open", request)
+    assert result.error.code == m.ErrorCode.INPUT_INVALID and result.approval is None
+    assert marker not in result.model_dump_json()
+    with ctx.store.connection() as conn:
+        assert conn.execute("SELECT count(*) FROM jobs").fetchone()[0] == 0
+        assert conn.execute("SELECT count(*) FROM discussions").fetchone()[0] == 0
+    assert ctx.muse_gateway.calls == []

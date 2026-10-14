@@ -128,13 +128,13 @@ def world(tmp_path):
 
 
 @pytest.mark.parametrize("channel", ["cli", "mcp"])
-def test_nested_json_question_preview_redacts_each_field(world, channel):
+def test_nested_json_question_refused_before_preview(world, channel):
     entry, project, _, request = world
-    marker = "SYNTHETIC_NESTED_PASSWORD_MARKER"
+    marker = f"{channel}_MARKER_SYNTHETIC_ONLY"
     request = {**request, "question": 'Review {"password": "' + marker + '"} carefully.'}
     before = inventory(entry, project)
     if channel == "cli":
-        envelope = send(entry, request)
+        envelope = send(entry, request, code=2)
     else:
 
         async def preview_call():
@@ -142,20 +142,9 @@ def test_nested_json_question_preview_redacts_each_field(world, channel):
                 return await entry.call(session, "muse_send", request, error=True)
 
         envelope = anyio.run(preview_call)
-    assert envelope["error"]["code"] == "E_SCOPE_REQUIRED"
-    preview = envelope["approval"]
+    assert envelope["error"]["code"] == "E_INPUT_INVALID"
+    assert envelope["approval"] is None
     assert marker not in json.dumps(envelope)
-    assert preview["question"] == preview["request"]["question"]
-    assert preview["question"] in preview["summary"]
-    assert "[REDACTED]" in preview["question"]
-    # Save only the envelope's public request, exactly as a host would.
-    path = Path(preview["request_file"])
-    path.write_text(json.dumps(preview["request"]))
-    assert marker not in path.read_text()
-    refused = entry.approve(preview, preview["request"], "redacted-grant", code=3)
-    assert refused["error"]["code"] == "E_SCOPE_DENIED"
-    assert refused["error"]["message"] == "Approval digest differs from this request"
-    assert refused["approval"] is None
     assert inventory(entry, project) == before
     for row in entry.transcript:
         assert marker not in json.dumps(row["envelope"])
