@@ -324,7 +324,7 @@ logs, events or exports. SQLite backups contain these keys and are private sensi
 Initialization imports and removes the legacy content.cursor_key/v1 receipt once; old
 stateless cursors still verify. Pre-release schema-1 databases missing the table get the
 001 key amendment under maintenance/worker locks with a pre-amendment backup. No schema
-version bump or key-management CLI is introduced. Export-artifact backup remains pending.
+version bump or key-management CLI is introduced.
 
 `put_object(binary_stream, mime=..., max_bytes=..., duration_ms=None)` measures/hash-streams
 actual bytes into staging, fsyncs, atomically renames to the SHA-256 path, then commits a
@@ -334,10 +334,16 @@ or corrupt existing objects fail. MIME/codec validation is the media owner's job
 ready insertion. A crash may leave orphan staging/object files; no unsafe automatic
 orphan deletion is implemented. Ready files are not deleted by job failure.
 
-`backup(fresh_destination)` uses SQLite online backup and copies exactly the ready object
-snapshot with hashes/byte counts in manifest.json. `Store.restore(backup, fresh_paths)`
-checks schema version, SQLite integrity/FKs, manifest membership, object size/hash/path
-before copying into a fresh workspace. It clears stale worker owner metadata. Migration
+`verify_export(Export)` checks the ready directory, exact manifest bytes, every payload
+member's size/hash, and rejects symlinks/unexpected files. Export replay uses this same
+verifier. `backup(fresh_destination)` uses SQLite online backup and copies exactly the
+ready object and ready export snapshots. Backup manifest.json lists object hashes/sizes
+and export IDs/artifact paths/manifest hashes. Each export carries its payload manifest;
+uncommitted/orphan directories are excluded. Copying is followed by export verification.
+`Store.restore(backup, fresh_paths)` checks schema version, SQLite integrity/FKs, manifest
+membership, object size/hash/path and complete export directories before copying into a
+fresh workspace with private modes. Export receipts can replay their original artifacts;
+missing/corrupt artifacts fail honestly, and failed backups remove only their new target. It clears stale worker owner metadata. Migration
 uses an exclusive maintenance lock and the worker lock, pre-upgrade online backup, and
 transactional DDL; a failure rolls back without deleting original data. `PRAGMA
 user_version` is schema version 1; older builds refuse newer schemas on every connection.
