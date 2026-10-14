@@ -1364,7 +1364,7 @@ class EgressGuard:
                 raise exc from None
 
     def record_browser_refusal(self, reason: str) -> None:
-        assert reason in {"websocket_blocked", "blocked_subframe"}
+        assert reason in {"websocket_blocked", "blocked_subframe", "popup_blocked"}
         with self._lock:
             self.decisions.append(
                 EgressDecision(
@@ -1908,27 +1908,14 @@ class _PlaywrightSession:
         self._active_control: str | None = None
         self._pending_expansion_urls: list[str] = []
         self._expansion_requests: set[Any] = set()
-
-        def _on_popup(popup: Any) -> None:
-            self.popups_blocked += 1
-            try:
-                popup.close()
-            except Exception:
-                pass
-
-        def _on_download(download: Any) -> None:
-            self.downloads_blocked += 1
-            try:
-                download.cancel()
-            except Exception:
-                pass
+        self._closing_targets: set[str] = set()
 
         def _on_route(route: Any) -> None:
             req = route.request
             main_navigation = req.is_navigation_request() and req.frame == self._page.main_frame
             if req.is_navigation_request() and not main_navigation:
                 self._egress.record_browser_refusal("blocked_subframe")
-                route.abort("blockedbyclient")
+                self._finish_route(route, abort=True)
                 return
             redirected_from = req.redirected_from.url if req.redirected_from else None
             if main_navigation:
@@ -1941,12 +1928,9 @@ class _PlaywrightSession:
                     redirected_from=redirected_from,
                 )
             except m.CoreError:
-                try:
-                    route.abort("blockedbyclient")
-                except Exception:
-                    pass  # The document may already have been cancelled by Chromium.
+                self._finish_route(route, abort=True)
                 return
-            route.continue_()
+            self._finish_route(route, abort=False)
 
         def note_navigation(request: Any) -> None:
             if request.is_navigation_request() and request.frame == self._page.main_frame:
@@ -2056,9 +2040,9 @@ class _PlaywrightSession:
             # Await the pinned implementation; a nested sync close deadlocks that loop.
             await route._impl_obj.close(code=1008, reason="WebSockets are disabled")
 
-        self._context.on("page", _on_popup)
-        self._page.on("popup", _on_popup)
-        self._page.on("download", _on_download)
+        self._context.on("page", self._on_popup)
+        self._page.on("popup", self._on_popup)
+        self._page.on("download", self._on_download)
         self._context.route("**/*", _on_route)
         self._context.route_web_socket("**/*", _on_web_socket)
         self._page.on("response", _on_response)
@@ -2096,47 +2080,10 @@ class _PlaywrightSession:
         page_cdp.on("Network.webSocketHandshakeResponseReceived", unexpected_handshake)
         page_target = page_cdp.send("Target.getTargetInfo")["targetInfo"]["targetId"]
 
-        def _on_worker_attached(event: dict[str, Any]) -> None:
-            info = event["targetInfo"]
-            if info["type"] in ("worker", "shared_worker", "service_worker"):
-                self.workers_blocked += 1
-                try:
-                    # Apply network rules while paused; termination denies all worker code.
-                    channel = browser.new_browser_cdp_session()
-                    attached = channel.send(
-                        "Target.attachToTarget", {"targetId": info["targetId"], "flatten": False}
-                    )
-                    for command_id, (method, params) in enumerate(
-                        [
-                            ("Network.enable", {}),
-                            (
-                                "Network.emulateNetworkConditionsByRule",
-                                {"matchedNetworkConditions": rules},
-                            ),
-                        ],
-                        1,
-                    ):
-                        channel.send(
-                            "Target.sendMessageToTarget",
-                            {
-                                "sessionId": attached["sessionId"],
-                                "message": json.dumps(
-                                    {"id": command_id, "method": method, "params": params}
-                                ),
-                            },
-                        )
-                except Exception:
-                    pass  # A parent may have already terminated this still-paused target.
-                self._egress.record_proxy_protocol_refusal(hostname="proxy", reason="worker")
-                try:
-                    self._worker_cdp.send("Target.closeTarget", {"targetId": info["targetId"]})
-                except Exception:
-                    pass  # Disappeared targets cannot execute or open a socket.
-
-        self._worker_cdp.on("Target.attachedToTarget", _on_worker_attached)
+        self._worker_cdp.on("Target.attachedToTarget", self._on_worker_attached)
         # Shared workers have no page opener relation. Watch browser-level targets too.
         self._shared_worker_cdp = browser.new_browser_cdp_session()
-        self._shared_worker_cdp.on("Target.attachedToTarget", _on_worker_attached)
+        self._shared_worker_cdp.on("Target.attachedToTarget", self._on_worker_attached)
         self._shared_worker_cdp.send(
             "Target.setAutoAttach",
             {
@@ -2156,7 +2103,131 @@ class _PlaywrightSession:
             },
         )
 
+    def _finish_route(self, route: Any, *, abort: bool) -> None:
+        try:
+            if abort:
+                route.abort("blockedbyclient")
+            else:
+                route.continue_()
+        except Exception:
+            try:
+                gone = self._page.is_closed() or route.request.failure is not None
+            except Exception:
+                gone = False
+            if not gone:
+                self._guard_failed()
+
+    def _guard_failed(self) -> None:
+        if self._transport_error is None:
+            self._transport_error = m.CoreError(
+                m.ErrorCode.PROTOCOL_MISMATCH,
+                "Facebook browser guard could not verify target shutdown",
+                next_action="Stop collection and inspect the installed Chromium target controls",
+            )
+
+    def _target_gone(self, target_id: str) -> bool:
+        try:
+            targets = self._worker_cdp.send("Target.getTargets")["targetInfos"]
+            return not any(target["targetId"] == target_id for target in targets)
+        except Exception:
+            return False
+
+    def _close_target(self, target_id: str) -> None:
+        try:
+            result = self._worker_cdp.send("Target.closeTarget", {"targetId": target_id})
+        except Exception:
+            if not self._target_gone(target_id):
+                self._guard_failed()
+            return
+        if not result.get("success"):
+            if not self._target_gone(target_id):
+                self._guard_failed()
+        else:
+            # Dedicated worker destruction is asynchronous while its parent script runs.
+            # It stays debugger-paused; verify after the callback has returned.
+            self._closing_targets.add(target_id)
+
+    def _verify_target_shutdown(self) -> None:
+        deadline = time.monotonic() + 5
+        while self._closing_targets:
+            self._closing_targets = {
+                target for target in self._closing_targets if not self._target_gone(target)
+            }
+            if not self._closing_targets:
+                return
+            if time.monotonic() >= deadline:
+                self._guard_failed()
+                return
+            self._page.wait_for_timeout(50)
+
+    def _on_worker_attached(self, event: dict[str, Any]) -> None:
+        info = event["targetInfo"]
+        if info["type"] not in ("worker", "shared_worker", "service_worker"):
+            return
+        self.workers_blocked += 1
+        self._egress.record_proxy_protocol_refusal(hostname="proxy", reason="worker")
+        if event.get("waitingForDebugger") is not True:
+            self._guard_failed()
+        # Target.closeTarget alone leaves dedicated workers alive in the pinned build.
+        # Evaluate only our fixed self.close() in the debugger-paused realm; never
+        # resume the worker's source. Shared workers support closeTarget directly.
+        if info["type"] == "worker":
+            try:
+                channel = self._browser.new_browser_cdp_session()
+                attached = channel.send(
+                    "Target.attachToTarget",
+                    {
+                        "targetId": info["targetId"],
+                        "flatten": False,
+                    },
+                )
+                channel.send(
+                    "Target.sendMessageToTarget",
+                    {
+                        "sessionId": attached["sessionId"],
+                        "message": json.dumps(
+                            {
+                                "id": 1,
+                                "method": "Runtime.evaluate",
+                                "params": {"expression": "self.close()"},
+                            }
+                        ),
+                    },
+                )
+            except Exception:
+                if not self._target_gone(info["targetId"]):
+                    self._guard_failed()
+        self._close_target(info["targetId"])
+
+    def _on_popup(self, popup: Any) -> None:
+        self.popups_blocked += 1
+        self._egress.record_browser_refusal("popup_blocked")
+        try:
+            popup.close()
+        except Exception:
+            try:
+                gone = popup.is_closed()
+            except Exception:
+                gone = False
+            if not gone:
+                self._guard_failed()
+
+    def _on_download(self, download: Any) -> None:
+        self.downloads_blocked += 1
+        try:
+            download.cancel()
+        except Exception:
+            # Download.failure() may itself wait for the production read timeout.
+            # A live browser, or unavailable liveness evidence, fails closed.
+            try:
+                gone = not self._browser.is_connected()
+            except Exception:
+                gone = False
+            if not gone:
+                self._guard_failed()
+
     def _raise_if_byte_limit(self) -> None:
+        self._verify_target_shutdown()
         if self._transport_error is not None:
             raise self._transport_error
         if self._egress.byte_limit_exceeded or (
@@ -2309,16 +2380,25 @@ class _PlaywrightSession:
             try:
                 obj.close()
             except Exception:
-                pass
+                try:
+                    gone = (
+                        self._page.is_closed()
+                        if obj is self._page
+                        else (not self._browser.is_connected())
+                    )
+                except Exception:
+                    gone = False
+                if not gone:
+                    self._guard_failed()
         try:
             self._pw.stop()
         except Exception:
-            pass
+            self._guard_failed()
         if self._proxy is not None:
             try:
                 self._proxy.close()
             except Exception:
-                pass
+                self._guard_failed()
         if self._transport_error is not None:
             raise self._transport_error
 

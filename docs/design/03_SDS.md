@@ -736,7 +736,7 @@ Page WebSockets and WebSocketStream are refused by Chromium per-URL offline
 network rules for ws/wss and all ports. Network.setBlockedURLs alone is insufficient;
 context.route_web_socket is supplemental. Any observed handshake response yields a
 fixed E_PROTOCOL_MISMATCH before import; creation attempts count websocket_blocked.
-Workers receive the rules while paused, then are terminated before executing code.
+Workers are verified debugger-paused, then destroyed without resuming.
 CONNECT host/IP checks remain a separate boundary.
 
 Proxy policy/resolution waits are bounded by the read timeout and interruptible on
@@ -804,7 +804,7 @@ Facebook comment identifiers use the same stripped nonempty ASCII token validati
 Facebook weak-identity resume suppression begins only after an accepted batch has committed. A usage-only checkpoint from a login wall does not suppress a first import of weak comments; cumulative byte/expansion usage still survives.
 
 
-Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetworkConditionsByRule offline rules matching both schemes and all ports. setBlockedURLs alone is insufficient. Page WebSocket routing is supplemental. Workers receive the rules while paused and are terminated before code. Each observed attempt has the fixed websocket_blocked reason; any observed handshake response fails E_PROTOCOL_MISMATCH before import, including events drained at close.
+Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetworkConditionsByRule offline rules matching both schemes and all ports. setBlockedURLs alone is insufficient. Page WebSocket routing is supplemental. Workers are verified paused before their first script and destroyed without any resume command. Each observed attempt has the fixed websocket_blocked reason; any observed handshake response fails E_PROTOCOL_MISMATCH before import, including events drained at close.
 
 
 Facebook navigation failures use only the main-document request/redirect chain and its uncompleted CONNECT authorities. Refusals of WebSockets, workers, subresources or already-responded document authorities do not choose that error. Resolver capacity/timeouts use E_NETWORK_TIMEOUT with DNS-oriented advice, never a permit/policy denial.
@@ -852,3 +852,16 @@ classifying login/checkpoint or off-post navigation. Denied destinations return
 by egress policy”. Production requires HTTPS. Chromium route DNS checks share
 the proxy's bounded resolver slots/deadline; DNS capacity and timeout failures
 retain `E_NETWORK_TIMEOUT`. The proxy still independently checks every dial/hop.
+
+
+Facebook guard failures fail closed with fixed `E_PROTOCOL_MISMATCH`: a failed
+close/cancel/abort is ignored only if the target or request is provably gone;
+missing liveness evidence is failure. Worker attachments must report
+`waitingForDebugger=true`, and `Target.getTargets` must confirm destruction. No
+worker resume command exists. The redundant per-worker network-rule step is
+removed: no untrusted worker source executes, including nested worker creation.
+Dedicated workers need a fixed CDP `Runtime.evaluate("self.close()")` in their
+paused realm because `Target.closeTarget` alone leaves them alive in this build.
+Shared workers use `Target.closeTarget`. Destruction is checked after callbacks
+return, before import, with a bounded five-second wait; no resume command is sent. Popups,
+downloads, route aborts and session teardown use the same fail-closed rule.
