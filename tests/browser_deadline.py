@@ -23,6 +23,11 @@ def browser_deadline(test):
         arguments = inspect.signature(test).bind(*args, **kwargs).arguments
         scratch = arguments["tmp_path"] / "deadline-child"
         env = dict(os.environ, METAMUSE_BROWSER_TEST_CHILD=test.__name__, UV_OFFLINE="1")
+        node = (
+            arguments["request"].node.nodeid
+            if "request" in arguments
+            else str(Path(inspect.getfile(test))) + "::" + test.__name__
+        )
         process = subprocess.Popen(
             [
                 sys.executable,
@@ -33,7 +38,7 @@ def browser_deadline(test):
                 "no:cacheprovider",
                 "--basetemp",
                 str(scratch),
-                str(Path(inspect.getfile(test))) + "::" + test.__name__,
+                node,
             ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
