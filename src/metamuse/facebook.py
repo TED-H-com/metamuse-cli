@@ -1068,6 +1068,7 @@ class EgressGuard:
         self.checked_by_authority: dict[tuple[str, int], safety.CheckedURL] = {}
         self.verified_peers: dict[tuple[str, int], str] = {}
         self.aborted_urls: dict[str, m.CoreError] = {}
+        self.proxy_errors_by_authority: dict[tuple[str, int], m.CoreError] = {}
         self.last_proxy_error: m.CoreError | None = None
         self.navigation_error: m.CoreError | None = None
         self.proxy_port: int | None = None
@@ -1285,13 +1286,50 @@ class EgressGuard:
                 )
             )
 
-    def record_proxy_protocol_refusal(self, *, hostname: str, reason: str) -> None:
+    @staticmethod
+    def _authority(url: str) -> tuple[str, int] | None:
+        try:
+            parsed = urlsplit(url)
+            host = _normalize_host(parsed.hostname)
+            return (host, parsed.port or 443) if host else None
+        except ValueError:
+            return None
+
+    def navigation_proxy_error(self, urls: Iterable[str]) -> m.CoreError | None:
+        # CONNECT has no document path. Only DNS/policy errors for an authority in
+        # this document's own request chain can explain its failed connection.
+        with self._lock:
+            for url in reversed(tuple(urls)):
+                error = self.aborted_urls.get(url) or self.proxy_errors_by_authority.get(
+                    self._authority(url)
+                )
+                if error is not None:
+                    return error
+        return None
+
+    def record_proxy_protocol_refusal(
+        self, *, hostname: str, reason: str, url: str | None = None
+    ) -> None:
+        dns_failure = reason in {
+            "resolution_unavailable",
+            "resolution_timeout",
+            "resolution_failed",
+        }
         exc = m.CoreError(
-            m.ErrorCode.SCOPE_DENIED,
-            "Proxy refused request",
+            m.ErrorCode.NETWORK_TIMEOUT if dns_failure else m.ErrorCode.SCOPE_DENIED,
+            "Facebook DNS resolution is temporarily unavailable"
+            if dns_failure
+            else "Proxy refused request",
+            next_action="Check DNS resolution and resolver capacity, then retry"
+            if dns_failure
+            else None,
         )
         with self._lock:
-            self.last_proxy_error = exc
+            self.last_proxy_error = exc  # Compatibility diagnostic; never navigation attribution.
+            if dns_failure and url is not None:
+                authority = self._authority(url)
+                if authority is not None:
+                    self.proxy_errors_by_authority[authority] = exc
             self.decisions.append(
                 EgressDecision(
                     hostname=hostname,
@@ -1348,6 +1386,8 @@ class EgressGuard:
             with self._lock:
                 self.last_proxy_error = exc
                 self.aborted_urls[url] = exc
+                if is_connect and (authority := self._authority(url)) is not None:
+                    self.proxy_errors_by_authority[authority] = exc
                 if is_navigation and self.navigation_error is None:
                     self.navigation_error = exc
                 self.decisions.append(
@@ -1407,6 +1447,7 @@ class EgressGuard:
                     raise
 
         with self._lock:
+            self.proxy_errors_by_authority.pop((checked.hostname, checked.port), None)
             self.checked_by_url[url] = checked
             self.checked_by_url[checked.url] = checked
             self.checked_by_authority[(checked.hostname, checked.port)] = checked
@@ -1768,6 +1809,8 @@ class _PlaywrightSession:
         self.workers_blocked = 0
         self._transport_error: m.CoreError | None = None
         self._peer_error: m.CoreError | None = None
+        self._navigation_urls: list[str] = []
+        self._navigation_responded: set[str] = set()
         self._document_status = 200
         self._expansion_response_status: int | None = None
 
@@ -1788,6 +1831,8 @@ class _PlaywrightSession:
         def _on_route(route: Any) -> None:
             req = route.request
             redirected_from = req.redirected_from.url if req.redirected_from else None
+            if req.is_navigation_request():
+                self._navigation_urls.append(req.url)
             try:
                 self._egress.check_browser_route(
                     req.url,
@@ -1803,6 +1848,12 @@ class _PlaywrightSession:
                 return
             route.continue_()
 
+        def note_navigation(request: Any) -> None:
+            if request.is_navigation_request():
+                self._navigation_urls.append(request.url)
+
+        self._page.on("request", note_navigation)
+
         def _on_response(response: Any) -> None:
             req = response.request
             if req.is_navigation_request():
@@ -1811,7 +1862,6 @@ class _PlaywrightSession:
                 self._expansion_response_status = response.status
             with self._egress._lock:
                 aborted_err = self._egress.aborted_urls.get(response.url)
-                last_proxy_err = self._egress.last_proxy_error
             aborted_by_proxy = (
                 response.headers.get("x-metamuse-proxy-aborted") == "1" or aborted_err is not None
             )
@@ -1819,13 +1869,15 @@ class _PlaywrightSession:
                 if req.is_navigation_request() and self._egress.navigation_error is None:
                     self._egress.navigation_error = (
                         aborted_err
-                        or last_proxy_err
+                        or self._egress.navigation_proxy_error([req.url])
                         or m.CoreError(
                             m.ErrorCode.SCOPE_DENIED,
                             "Outbound navigation blocked by egress proxy",
                         )
                     )
                 return
+            if req.is_navigation_request():
+                self._navigation_responded.add(req.url)
             purpose: safety.URLPurpose = (
                 "request"
                 if req.is_navigation_request()
@@ -1975,6 +2027,11 @@ class _PlaywrightSession:
             target_url = f"{self._test_origin}{parsed.path}{suffix}"
         self._egress.navigation_error = None
         self._egress.last_proxy_error = None
+        self._navigation_urls = []
+        self._navigation_responded.clear()
+        with self._egress._lock:
+            self._egress.aborted_urls.clear()
+            self._egress.proxy_errors_by_authority.clear()
         self._peer_error = None
         try:
             response = self._page.goto(target_url, wait_until="load", timeout=self._timeout_ms)
@@ -1984,8 +2041,13 @@ class _PlaywrightSession:
                 raise self._egress.navigation_error from None
             if self._peer_error is not None:
                 raise self._peer_error from None
-            if self._egress.last_proxy_error is not None:
-                raise self._egress.last_proxy_error from None
+            navigation_error = self._egress.navigation_proxy_error(
+                url
+                for url in (self._navigation_urls or [target_url])
+                if url not in self._navigation_responded
+            )
+            if navigation_error is not None:
+                raise navigation_error from None
             raise m.CoreError(
                 m.ErrorCode.NETWORK_TIMEOUT,
                 "Browser navigation to Facebook post permalink failed",
