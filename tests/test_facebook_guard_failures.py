@@ -139,3 +139,23 @@ def test_r6_disconnected_browser_does_not_prove_download_cancelled():
     session._on_download(SimpleNamespace(cancel=cancel))
     assert session._transport_error is not None
     assert session._transport_error.detail.code.value == "E_PROTOCOL_MISMATCH"
+
+
+def test_r6_disconnected_browser_does_not_prove_route_aborted():
+    from types import SimpleNamespace
+
+    from metamuse import facebook
+
+    session = object.__new__(facebook._PlaywrightSession)
+    session._transport_error = None
+    session._browser = SimpleNamespace(is_connected=lambda: False)
+    session._page = SimpleNamespace(is_closed=lambda: True)
+
+    def abort(reason):
+        raise RuntimeError("synthetic lost browser transport")
+
+    session._finish_route(
+        SimpleNamespace(abort=abort, request=SimpleNamespace(failure=None)), abort=True
+    )
+    assert session._transport_error is not None
+    assert session._transport_error.detail.code.value == "E_PROTOCOL_MISMATCH"

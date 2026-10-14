@@ -18,7 +18,11 @@ CASES = {
     "F1": ["tests/test_facebook_popups.py"],
     "F2": ["tests/test_facebook_round6.py", "-k", "barrier_markers"],
     "F3": ["tests/test_facebook_round6.py", "-k", "policy_precedes"],
-    "GUARD": ["tests/test_facebook_guard_failures.py", "-k", "worker_shutdown"],
+    "GUARD": [
+        "tests/test_facebook_guard_failures.py",
+        "-k",
+        "worker_shutdown or disconnected_browser",
+    ],
     "G1": ["tests/test_facebook_byte_stop.py", "-k", "closes_registered_sockets"],
 }
 
