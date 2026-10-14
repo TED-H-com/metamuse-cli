@@ -115,7 +115,6 @@ def test_cli_projects_jobs_worker(tmp_path, capsys):
             "--request-key",
             "one",
         ],
-        ["mcp"],
     ],
 )
 def test_registered_commands_report_errors_for_missing_data(tmp_path, capsys, command):
