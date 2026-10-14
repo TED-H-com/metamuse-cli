@@ -34,7 +34,6 @@ Third-party provenance:
 from __future__ import annotations
 
 import hashlib
-import html as html_lib
 import ipaddress
 import json
 import os
@@ -2046,6 +2045,7 @@ class _DOMExtractor(HTMLParser):
         self._json_buf: list[str] = []
         self.post_attrs: dict[str, str] | None = None
         self.post_text_parts: list[str] = []
+        self.post_body_present = False
         self._in_post_body = 0
         self.attachments: list[dict[str, str]] = []
         self.comments_section_present = False
@@ -2058,6 +2058,31 @@ class _DOMExtractor(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = {k.lower(): (v or "") for k, v in attrs}
+        tag = tag.lower()
+        if tag in {
+            "area",
+            "base",
+            "br",
+            "col",
+            "embed",
+            "hr",
+            "img",
+            "input",
+            "link",
+            "meta",
+            "param",
+            "source",
+            "track",
+            "wbr",
+        }:
+            if tag == "br":
+                if self._in_post_body:
+                    self.post_text_parts.append("\n")
+                if self._in_comment_body and self._current_comment is not None:
+                    self._current_comment["text_parts"].append("\n")
+            return
+        if tag in {"div", "p", "section", "article", "li", "blockquote", "pre", "h1", "h2", "h3"}:
+            self._block_boundary()
         self._stack.append((tag.lower(), attr_map))
 
         if attr_map.get("data-comments-exhausted") == "true":
@@ -2088,6 +2113,7 @@ class _DOMExtractor(HTMLParser):
             if self.post_attrs is None:
                 self.post_attrs = dict(attr_map)
         if fb_role == "post-body" or attr_map.get("data-ad-preview") == "message":
+            self.post_body_present = True
             self._in_post_body += 1
         elif self._in_post_body > 0:
             self._in_post_body += 1
@@ -2125,12 +2151,14 @@ class _DOMExtractor(HTMLParser):
                 "permalink": attr_map.get("data-permalink") or None,
                 "mention_tag": attr_map.get("data-mention") or None,
                 "text_parts": [],
+                "body_present": False,
             }
             self.comments.append(self._current_comment)
 
         if self._current_comment is not None and (
             fb_role == "comment-body" or attr_map.get("data-comment-body") is not None
         ):
+            self._current_comment["body_present"] = True
             self._in_comment_body += 1
         elif self._in_comment_body > 0:
             self._in_comment_body += 1
@@ -2151,6 +2179,19 @@ class _DOMExtractor(HTMLParser):
             )
 
     def handle_endtag(self, tag: str) -> None:
+        if tag.lower() in {
+            "div",
+            "p",
+            "section",
+            "article",
+            "li",
+            "blockquote",
+            "pre",
+            "h1",
+            "h2",
+            "h3",
+        }:
+            self._block_boundary(nested_only=True)
         if self._in_json_script and tag.lower() == "script":
             self._in_json_script = False
             self.json_scripts.append("".join(self._json_buf))
@@ -2171,6 +2212,20 @@ class _DOMExtractor(HTMLParser):
                 )
             ) and popped_tag == tag.lower():
                 self._current_comment = None
+
+    def _block_boundary(self, *, nested_only: bool = False) -> None:
+        if self._in_post_body > (1 if nested_only else 0):
+            if self.post_text_parts and not self.post_text_parts[-1].endswith("\n"):
+                self.post_text_parts.append("\n")
+        if self._in_comment_body > (1 if nested_only else 0) and self._current_comment is not None:
+            parts = self._current_comment["text_parts"]
+            if parts and not parts[-1].endswith("\n"):
+                parts.append("\n")
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag.lower() not in {"br", "img", "hr", "input", "meta", "link", "source", "wbr"}:
+            self.handle_endtag(tag)
 
     def handle_data(self, data: str) -> None:
         if self._in_json_script:
@@ -2313,14 +2368,16 @@ def classify_and_parse_observation(
 
     _validate_extracted_identity(dom_post_id, attrs.get("data-actor"), permalink)
 
-    post_text_raw = html_lib.unescape("".join(extractor.post_text_parts)).strip()
-    post_text = post_text_raw if post_text_raw else (attrs.get("data-post-text") or None)
+    post_text = (
+        "".join(extractor.post_text_parts)
+        if extractor.post_body_present
+        else attrs.get("data-post-text")
+    )
     raw_time = attrs.get("data-created-at") or None
 
     parsed_comments: list[ParsedComment] = []
     for c in extractor.comments:
-        c_text_raw = html_lib.unescape("".join(c["text_parts"])).strip()
-        c_text = c_text_raw if c_text_raw else None
+        c_text = "".join(c["text_parts"]) if c["body_present"] else None
         c_kind: Literal["comment", "reply"] = "reply" if c["kind"] == "reply" else "comment"
         parent_native = c["parent_native_id"]
         if c_kind == "comment" and parent_native is None:

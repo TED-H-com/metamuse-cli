@@ -665,3 +665,25 @@ def test_finding_12_reply_without_parent_has_item_and_job_gap(tmp_path):
         ).fetchone()
         assert row[:3] == (None, None, 0)
         assert "parent_comment" in json.loads(row[3])
+
+
+@pytest.mark.parametrize("blocks", [False, True])
+def test_finding_13_text_and_hash_preserve_entities_breaks_and_edges(tmp_path, blocks):
+    ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
+    expected = "  literal &amp; &#65;\nnext  "
+    markup = _synthetic_post_html(
+        post_text="PLACEHOLDER", comments=[{"id": "fidelity", "text": "PLACEHOLDER"}]
+    )
+    replacement = "  literal &amp;amp; &amp;#65;<br>next  "
+    if blocks:
+        expected = "  start\nblock one\nblock two\nend  "
+        replacement = "  start<p>block one</p><div>block two</div>end  "
+    markup = markup.replace("PLACEHOLDER", replacement)
+    driver = facebook.FixtureBrowserDriver(observation(markup))
+    facebook.set_driver_factory(lambda: driver)
+    finish(ctx, submit(ctx, project, permit))
+    with ctx.store.connection() as conn:
+        rows = conn.execute("SELECT text,text_hash FROM item_revisions").fetchall()
+        assert len(rows) == 2
+        assert all(row[0] == expected for row in rows)
+        assert all(row[1] == m.payload_digest({"text": expected}) for row in rows)
