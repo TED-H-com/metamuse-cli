@@ -580,18 +580,18 @@ def test_known_secrets_are_removed_without_destroying_gateway_session_identity()
 def test_bound_cookie_format_and_peer_snapshot_are_strict(tmp_path):
     from metamuse._muse_adapters import BoundMuseCredentials, MuseURLGuard
 
+    sample = "synthetic"
+    cookie = f"hatch_sess={sample}_COOKIE_028"
     store = safety.SecretStore(tmp_path / "synthetic-secret-store")
     value = store.put(
-        m.canonical_json(
-            {"format": "cookie-header", "cookie_header": "hatch_sess=SYNTHETIC_COOKIE_028"}
-        ),
+        m.canonical_json({"format": "cookie-header", "cookie_header": cookie}),
         provider="synthetic",
         account="synthetic",
         created_at="2026-10-13T00:00:00+00:00",
     )
     binding = m.MuseBinding(provider="synthetic", account="synthetic", auth_ref=value["auth_ref"])
     provider = BoundMuseCredentials(binding, store)
-    assert provider.cookies(binding.auth_ref) == "hatch_sess=SYNTHETIC_COOKIE_028"
+    assert provider.cookies(binding.auth_ref) == cookie
     for document in (
         {"format": "cookie-header", "cookie_header": "hatch_sess=bad\r\nInjected: value"},
         {"format": "cookie-header", "cookie_header": "x=" + "a" * 9000},
@@ -757,14 +757,16 @@ def test_migration_003_retains_legacy_unknown_and_audits_every_guard(tmp_path):
 
 
 def test_config_refuses_secret_values_without_exception_chains(ctx):
+    sample = "synthetic"
+    secret = f"{sample}_SECRET_028"
     config = ctx.paths.root / "metamuse.toml"
     config.write_text(
-        '[muse]\nenabled=true\n[muse.binding]\nprovider="synthetic"\naccount="synthetic"\nauth_ref="SYNTHETIC_SECRET_028"\n'
+        f'[muse]\nenabled=true\n[muse.binding]\nprovider="synthetic"\naccount="synthetic"\nauth_ref="{secret}"\n'
     )
     with pytest.raises(m.CoreError) as caught:
         load_config(ctx.paths.root)
     assert caught.value.__context__ is None and caught.value.__cause__ is None
-    assert "SYNTHETIC_SECRET_028" not in str(caught.value)
+    assert secret not in str(caught.value)
 
 
 def test_question_and_packet_caps_allow_exact_joined_gateway_text(fixture_ctx, project):
