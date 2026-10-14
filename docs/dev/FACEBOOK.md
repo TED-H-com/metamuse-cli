@@ -172,7 +172,8 @@ still returns its normal `needs_auth` row. Valid unrelated origins are dropped.
 
 Jobs enforce max items/bytes, persisted core wall clock, workspace ceilings, expansion
 budget and read deadline. Clicks are charged before execution; observations checkpoint
-consumption before parsing. Resume persists cumulative expansions, bytes, accepted count
+consumption before parsing and final wire usage after shutdown, including navigation
+that stops at a barrier. Resume persists cumulative expansions, bytes, accepted count
 and a bounded set of accepted reliable identity digests, and allocates only remaining
 bytes. Reliable re-observation does not consume the item allowance again; edits append
 revisions. Wire bytes may include the received chunk that trips the cap, which is not

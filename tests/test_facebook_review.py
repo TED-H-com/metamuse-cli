@@ -527,6 +527,19 @@ def test_finding_07_resume_preserves_cumulative_budgets(tmp_path, budget):
     assert job["coverage_status"] in ("bounded", "partial")
 
 
+def test_finding_07_failed_navigation_still_checkpoints_wire_bytes(tmp_path, monkeypatch):
+    path = "/synth.lab/posts/pfbid0101synth"
+    pages = {path: (302, "/login/"), "/login/": _synthetic_post_html()}
+    with browser_fixture(tmp_path, monkeypatch, pages) as env:
+        ctx, project, permit, _, _, guard, _ = env
+        job_id = submit(ctx, project, permit)
+        job = finish(ctx, job_id)
+        assert job["error"] is not None
+        checkpoint = app.get_job(ctx, {"job_id": job_id}).data["steps"][0]["checkpoint"] or {}
+        assert guard.bytes_relayed > 0
+        assert checkpoint.get("bytes_used", 0) >= guard.bytes_relayed
+
+
 def test_finding_08_weak_records_never_duplicate_on_resume(tmp_path):
     ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
     markup = _synthetic_post_html(comments=[{"text": f"Weak {i}"} for i in range(60)])
