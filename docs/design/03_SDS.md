@@ -488,4 +488,3 @@ recomputed digest is required before the existing create_permit API. MCP cannot 
 permits. Model text cannot select provider/account or expand the action. Packet preview
 reads its immutable text; MCP packet_prepare replay returns the same fixed pre-share
 preview. No schema migration or separate approval store is needed.
-
