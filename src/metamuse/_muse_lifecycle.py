@@ -182,7 +182,18 @@ def prepare_open(ctx, request: m.MuseOpenRequest):
     )
 
 
+def _check_question(question: str) -> None:
+    if redact_text(question)[0] != question:
+        _error(
+            m.ErrorCode.INPUT_INVALID,
+            "Muse question contains credential-like or private text",
+            "Remove credentials and private paths from the question before sending",
+        )
+
+
 def prepare_send(ctx, request: m.MuseSendRequest):
+    # Also used by approval previews: refusal must precede any preview or grant request.
+    _check_question(request.question)
     discussion = ctx.store.get(m.Discussion, request.discussion_id)
     binding, backend = _binding(ctx, discussion)
     packet = ctx.store.get(m.Packet, request.packet_id)
@@ -209,10 +220,11 @@ def prepare_send(ctx, request: m.MuseSendRequest):
         session=discussion.remote_session,
         packet=packet.id,
     )
-    # No generated question or persona. A documented separator joins the two exact host texts.
+    packet_text = redact_text(packet.rendered_text)[0]
+    # The checked host question and redacted packet are the only send text inputs.
     body = {
         "session_id": discussion.remote_session,
-        "text": request.question + "\n\n" + packet.rendered_text,
+        "text": request.question + "\n\n" + packet_text,
         "node_id": discussion.project_id,
     }
     prepared = _prepared("chat.stream", target, body, "send-" + identity[4:], discussion.project_id)
@@ -221,7 +233,7 @@ def prepare_send(ctx, request: m.MuseSendRequest):
             "payload": {
                 **prepared.payload,
                 "question": request.question,
-                "packet_text": packet.rendered_text,
+                "packet_text": packet_text,
             }
         }
     )
@@ -419,6 +431,20 @@ def _wire(payload):
     }
     if any(payload.payload.get(key) != value for key, value in expected.items()):
         _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared wire bytes differ from verified payload")
+    if payload.route == "chat.stream":
+        question = payload.payload.get("question")
+        packet_text = payload.payload.get("packet_text")
+        if not isinstance(question, str) or not isinstance(packet_text, str):
+            _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared send text inputs are unavailable")
+        _check_question(question)
+        if redact_text(packet_text)[0] != packet_text:
+            _error(
+                m.ErrorCode.INPUT_INVALID,
+                "Prepared packet text requires updated privacy redaction",
+                "Prepare a new packet and send request with a new exact share grant",
+            )
+        if payload.body.get("text") != question + "\n\n" + packet_text:
+            _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared send body differs from checked inputs")
     return prepare_muse_request(
         payload.route,
         marker=payload.marker,
@@ -594,6 +620,7 @@ def open_muse_discussion(ctx, request):
 
 
 def submit_muse_exchange(ctx, request):
+    _check_question(request.question)
     register_operations()
     replay = _replay(ctx, "muse.send", request)
     if replay is not None:

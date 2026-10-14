@@ -1,8 +1,8 @@
 # B08 safety API
 
 This is the implementation detail for SPEC §7–§9 and SDS §2/§7/§9.
-`auth import`, `permit create`, `permit revoke` and `permit list` are local operator
-commands. They are absent from the MCP registry. Source text, Muse answers and
+`auth import`, `auth list`, `auth revoke`, `permit create`, `permit revoke` and
+`permit list` are local operator commands. They are absent from the MCP registry. Source text, Muse answers and
 `approved: true` fields are data; no parser extracts or widens permission from them.
 A host with arbitrary same-UID shell access can change local state; this is the SDS §2
 local misuse boundary, not a hostile-host sandbox.
@@ -86,10 +86,28 @@ The returned metadata is only `auth_ref`, optional non-secret `provider`/`accoun
 labels, `storage_kind=private_file`, and `created_at`. Each import creates a new reference.
 There is no browser-profile reader, secret-export command or secret-returning MCP tool.
 
+`list_auth(ctx)` / `metamuse auth list` require `ctx.require_interactive()` and return
+`data.references`: provider, account, auth_ref, created_at, storage_kind and config_bound.
+The binding flag checks the current workspace's Muse config, even if Muse is disabled.
+Only validated metadata is returned; neither secret values/base64 nor filesystem paths
+are exposed. A missing auth directory lists zero refs; unsafe/corrupt records fail with
+the fixed auth error, so a partial list cannot masquerade as complete.
+
+`revoke_auth(ctx, auth_ref)` / `metamuse auth revoke --auth-ref REF` also require human
+interaction. Dirfd traversal rejects symlink directories, and lstat rejects symlink or
+non-regular leaves. One owned regular file is unlinked and the directory fsynced, without
+reading its secret bytes; this also allows revoking a corrupt record. The response contains
+auth_ref, revoked=true, config_bound and nullable next_action. A remaining config binding
+gets an import-and-rebind next action; config and other references are preserved. This
+removes the local record, not credentials at their provider or copies in external backups.
+No MCP tool, automatic retention sweep or second credential store is added.
+
 `resolve_secret(auth_ref, *, provider, account, secret_store=None)` returns bytes for
 backend use only. Both nonempty provider/account labels are required keyword arguments,
 including on `SecretStore.resolve`; None/empty/mismatched labels fail before secret read.
 Wrong labels, unsafe/missing/corrupt files and invalid references fail with `E_AUTH_REQUIRED`.
+Resolution raises its fixed error outside exception handlers: both `__cause__` and
+`__context__` are None, including for JSON/UTF-8/base64 corruption.
 An import without both labels cannot be resolved by a backend; re-import with both labels
 to bind it. There is no unlabeled test escape or CLI/MCP path to secret bytes.
 Do not put bytes into envelopes, logs, exceptions, prompts, packets or diagnostics.

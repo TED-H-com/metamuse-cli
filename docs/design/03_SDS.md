@@ -205,7 +205,12 @@ CSV在source JSON附標記且維持formula-safe，JSONL text原文不變。Bundl
 Store.verify_export在原transaction或read-only archive connection從draft refs與immutable observations
 重建attribution，核對manifest muse_evidence、全部JSONL records/source與Markdown source headers；
 stripped/altered label即使hash與manifest bytes一致也拒絕，沿用固定export unavailable錯誤。
-Shared redaction漏bare hatch_sess pair由B16a修正；AT-042 strict xfail只固定已知bundle leak，不修改redactor。
+B16a extends the shared name-based redactor for bare session-cookie pairs, JSON
+cookie headers and query separators encoded through three layers. Packet digests and
+new bundle members use the redacted text; Muse checks questions before approval previews
+and constructs bodies from checked questions plus redacted packets. The AT-042 bare-cookie
+bundle regression is a normal passing test. Auth list/revoke are human-only private-file
+operations; resolution errors leave no cause/context chain holding corrupt file contents.
 
 ## 9. Grant與packet
 

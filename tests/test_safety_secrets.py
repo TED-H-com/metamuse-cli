@@ -254,3 +254,160 @@ def test_noninteractive_feature_auth_refuses_before_read(ctx, tmp_path, monkeypa
     with pytest.raises(m.CoreError) as error:
         safety.import_auth(ctx, m.AuthImportRequest(path=str(tmp_path / "FAKE_missing"), **LABELS))
     assert error.value.detail.code == m.ErrorCode.SCOPE_REQUIRED
+
+
+@pytest.mark.parametrize("corruption", ["json", "utf8", "base64", "metadata"])
+def test_corrupt_secret_has_no_reachable_exception_chain(ctx, tmp_path, corruption):
+    prefix = corruption
+    marker = f"{prefix}_MARKER_SYNTHETIC_ONLY"
+    imported = safety.import_auth(
+        ctx, m.AuthImportRequest(path=str(secret_file(tmp_path)), **LABELS)
+    )
+    path = tmp_path / "config/auth" / (imported.data["auth_ref"] + ".json")
+    record = json.loads(path.read_bytes())
+    if corruption == "json":
+        body = f'{{"secret_b64":"{marker}"'.encode()
+    elif corruption == "utf8":
+        body = marker.encode() + b"\xff"
+    elif corruption == "base64":
+        record["secret_b64"] = marker + "!"
+        body = m.canonical_json(record)
+    else:
+        body = m.canonical_json({"metadata": [marker]})
+    path.write_bytes(body)
+    with pytest.raises(m.CoreError) as caught:
+        safety.resolve_secret(imported.data["auth_ref"], **LABELS)
+    error = caught.value
+    assert error.detail.code == m.ErrorCode.AUTH_REQUIRED
+    assert error.__context__ is None and error.__cause__ is None
+    pending = [error]
+    visited = set()
+    while pending:
+        current = pending.pop()
+        if id(current) in visited:
+            continue
+        visited.add(id(current))
+        assert not hasattr(current, "doc")
+        assert marker not in str(current) + repr(current.args) + repr(vars(current))
+        pending.extend(
+            link for link in (current.__cause__, current.__context__) if link is not None
+        )
+    assert visited == {id(error)}
+    assert marker not in "".join(traceback.format_exception(error))
+
+
+def test_human_cli_import_twice_list_revoke_and_binding(ctx, tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli.app.AppContext, "open", lambda *a, **kw: ctx)
+    prefix = "lifecycle"
+    marker = f"{prefix}_MARKER_SYNTHETIC_ONLY"
+    path = secret_file(tmp_path, marker.encode())
+
+    def command(*args):
+        assert cli.main(["--json", "auth", *args]) == 0
+        output = capsys.readouterr()
+        assert marker not in output.out + output.err
+        assert str(tmp_path) not in output.out + output.err
+        assert base64.b64encode(marker.encode()).decode() not in output.out + output.err
+        return json.loads(output.out)["data"]
+
+    refs = [
+        command(
+            "import",
+            "--file",
+            str(path),
+            "--provider",
+            LABELS["provider"],
+            "--account",
+            LABELS["account"],
+        )["auth_ref"]
+        for _ in range(2)
+    ]
+    assert len(set(refs)) == 2
+    ctx.policy.muse.binding = m.MuseBinding(**LABELS, auth_ref=refs[0])
+    listed = command("list")["references"]
+    assert {record["auth_ref"] for record in listed} == set(refs)
+    assert all(
+        set(record)
+        == {"provider", "account", "auth_ref", "created_at", "storage_kind", "config_bound"}
+        for record in listed
+    )
+    assert {record["auth_ref"] for record in listed if record["config_bound"]} == {refs[0]}
+    before_binding = ctx.policy.muse.binding.model_dump()
+    revoked = command("revoke", "--auth-ref", refs[0])
+    assert revoked["revoked"] is True and revoked["config_bound"] is True
+    assert "Import" in revoked["next_action"] and "rebind" in revoked["next_action"]
+    assert ctx.policy.muse.binding.model_dump() == before_binding
+    remaining = command("list")["references"]
+    assert len(remaining) == 1 and remaining[0]["auth_ref"] == refs[1]
+    assert remaining[0]["config_bound"] is False
+    with pytest.raises(m.CoreError) as caught:
+        safety.resolve_secret(refs[0], **LABELS)
+    assert caught.value.detail.code == m.ErrorCode.AUTH_REQUIRED
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+    assert safety.resolve_secret(refs[1], **LABELS) == marker.encode()
+    assert command("revoke", "--auth-ref", refs[1])["next_action"] is None
+    assert command("list")["references"] == []
+
+
+@pytest.mark.parametrize("unsafe", ["symlink", "broken_symlink", "directory", "fifo"])
+def test_revoke_refuses_nonregular_records_and_preserves_target(ctx, tmp_path, unsafe):
+    store = safety.SecretStore(tmp_path / "config/auth")
+    imported = store.put(FAKE, **LABELS, created_at=ctx.clock())
+    path = store.root / (imported["auth_ref"] + ".json")
+    path.unlink()
+    target = secret_file(tmp_path)
+    if unsafe == "symlink":
+        path.symlink_to(target)
+    elif unsafe == "broken_symlink":
+        path.symlink_to(tmp_path / "missing")
+    elif unsafe == "directory":
+        path.mkdir()
+    else:
+        os.mkfifo(path, mode=0o600)
+    with pytest.raises(m.CoreError) as caught:
+        store.revoke(imported["auth_ref"])
+    assert caught.value.detail.code == m.ErrorCode.AUTH_REQUIRED
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+    assert path.exists() or path.is_symlink()
+    assert target.read_bytes() == FAKE
+
+
+def test_list_fixed_error_and_revoke_of_corrupt_record(ctx, tmp_path):
+    store = safety.SecretStore(tmp_path / "config/auth")
+    assert store.list() == []
+    record = store.put(FAKE, **LABELS, created_at=ctx.clock())
+    prefix = "corrupt_list"
+    marker = f"{prefix}_MARKER_SYNTHETIC_ONLY"
+    (store.root / (record["auth_ref"] + ".json")).write_text(marker)
+    with pytest.raises(m.CoreError) as caught:
+        store.list()
+    assert caught.value.detail.code == m.ErrorCode.AUTH_REQUIRED
+    assert caught.value.__context__ is None and caught.value.__cause__ is None
+    assert marker not in str(caught.value)
+    store.revoke(record["auth_ref"])
+    assert store.list() == []
+
+
+@pytest.mark.parametrize("action", ["list", "revoke"])
+def test_auth_lifecycle_is_human_only_before_filesystem(ctx, monkeypatch, action, capsys):
+    ctx.non_interactive = True
+    monkeypatch.setattr(cli.app.AppContext, "open", lambda *a, **kw: ctx)
+    monkeypatch.setattr(
+        safety.SecretStore,
+        "_directory",
+        lambda *a, **kw: pytest.fail("Noninteractive auth opened storage"),
+    )
+    with pytest.raises(m.CoreError) as caught:
+        if action == "list":
+            safety.list_auth(ctx)
+        else:
+            safety.revoke_auth(ctx, "auth_" + "a" * 32)
+    assert caught.value.detail.code == m.ErrorCode.SCOPE_REQUIRED
+    args = ["--auth-ref", "auth_" + "a" * 32] if action == "revoke" else []
+    assert cli.main(["--json", "--non-interactive", "auth", action, *args]) == 3
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "E_SCOPE_REQUIRED"
+    from metamuse import mcp
+
+    assert all("auth" not in tool.name for tool in mcp.list_tools())
+    refused = mcp.call_tool(ctx, "metamuse_auth_" + action, {})
+    assert refused.structured_content["error"]["code"] == "E_INPUT_INVALID"

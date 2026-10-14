@@ -81,6 +81,14 @@ metadata also redacts recognized sensitive keys and hyphen/underscore variants.
 Host/operator review and the independent grant/send verifier remain necessary for any
 actual external share.
 
+B16a keeps the existing names and adds normalized credential suffixes `sess`, `sessid`,
+`session`, `token`, `secret`, `cookie`, `password`, plus `cookie_header`. URL separators
+are decoded through at most three percent-encoding layers to locate the original value
+span; unaffected bytes stay unchanged. Sensitive JSON string values are covered even
+when the whole document is incomplete. Prose such as "the session ended", "token economy"
+and "cookie recipe", and URLs without credential parameters, remains unchanged.
+Original local search still exposes selected source snippets; it does not search packets.
+
 ## Host drafts and preview
 
 `DraftSaveRequest` adds optional `assets`, `variant`, and typed `preferences`.

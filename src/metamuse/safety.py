@@ -14,6 +14,7 @@ import socket
 import sqlite3
 import stat
 import unicodedata
+from array import array
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -725,7 +726,7 @@ class SecretStore:
             root if root is not None else user_config_path("metamuse", appauthor=False) / "auth"
         )
 
-    def _directory(self) -> int:
+    def _directory(self, *, create: bool = True) -> int:
         if ".." in self.root.parts:
             _secret_error()
         try:
@@ -733,7 +734,7 @@ class SecretStore:
             WorkspacePaths.resolve(self.root)
         except m.CoreError:
             _secret_error()
-        fd = _open_directory(self.root, create=True)
+        fd = _open_directory(self.root, create=create)
         try:
             if os.fstat(fd).st_uid != os.getuid():
                 _secret_error()
@@ -802,11 +803,8 @@ class SecretStore:
         try:
             _label(provider)
             _label(account)
-        except m.CoreError:
-            _secret_error()
-        if not isinstance(auth_ref, str) or not _AUTH_REF.fullmatch(auth_ref):
-            _secret_error()
-        try:
+            if not isinstance(auth_ref, str) or not _AUTH_REF.fullmatch(auth_ref):
+                _secret_error()
             value = json.loads(
                 _read_secret_file(self.root / (auth_ref + ".json"), SECRET_MAX_BYTES * 2)
             )
@@ -822,8 +820,95 @@ class SecretStore:
             if not 0 < len(secret) <= SECRET_MAX_BYTES:
                 _secret_error()
             return secret
-        except (ValueError, KeyError, TypeError, binascii.Error):
-            _secret_error()
+        except (m.CoreError, OSError, ValueError, KeyError, TypeError, binascii.Error):
+            pass
+        # Suppressing display with `from None` inside the handler still retains
+        # JSONDecodeError.doc through __context__. Leave the handler before raising.
+        _secret_error()
+
+    def list(self) -> list[dict[str, Any]]:
+        """Return validated metadata only, never secret values or filesystem paths."""
+        directory = None
+        try:
+            try:
+                directory = self._directory(create=False)
+            except FileNotFoundError:
+                return []
+            records = []
+            for name in sorted(os.listdir(directory)):
+                if not name.endswith(".json") or not _AUTH_REF.fullmatch(name[:-5]):
+                    continue
+                value = json.loads(_read_secret_file(self.root / name, SECRET_MAX_BYTES * 2))
+                metadata = value["metadata"]
+                if metadata["auth_ref"] != name[:-5] or metadata["storage_kind"] != "private_file":
+                    _secret_error()
+                _label(metadata["provider"], optional=True)
+                _label(metadata["account"], optional=True)
+                created_at = _timestamp(metadata["created_at"]).isoformat()
+                records.append(
+                    {
+                        "provider": metadata["provider"],
+                        "account": metadata["account"],
+                        "auth_ref": name[:-5],
+                        "created_at": created_at,
+                        "storage_kind": "private_file",
+                    }
+                )
+            return records
+        except (m.CoreError, OSError, ValueError, KeyError, TypeError):
+            pass
+        finally:
+            if directory is not None:
+                os.close(directory)
+        _secret_error()
+
+    def revoke(self, auth_ref: str) -> None:
+        """Unlink exactly one owned regular record without opening its contents."""
+        directory = None
+        try:
+            if not isinstance(auth_ref, str) or not _AUTH_REF.fullmatch(auth_ref):
+                _secret_error()
+            directory = self._directory(create=False)
+            name = auth_ref + ".json"
+            info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+                _secret_error()
+            os.unlink(name, dir_fd=directory)
+            os.fsync(directory)
+            return
+        except (m.CoreError, OSError, ValueError, TypeError):
+            pass
+        finally:
+            if directory is not None:
+                os.close(directory)
+        _secret_error()
+
+
+def list_auth(ctx: AppContext) -> m.Envelope:
+    ctx.require_interactive()
+    binding = ctx.policy.muse.binding
+    records = (ctx.secret_store or SecretStore()).list()
+    for record in records:
+        record["config_bound"] = binding is not None and binding.auth_ref == record["auth_ref"]
+    return m.Envelope(status="ok", data={"references": records})
+
+
+def revoke_auth(ctx: AppContext, auth_ref: str) -> m.Envelope:
+    ctx.require_interactive()
+    (ctx.secret_store or SecretStore()).revoke(auth_ref)
+    binding = ctx.policy.muse.binding
+    bound = binding is not None and binding.auth_ref == auth_ref
+    return m.Envelope(
+        status="ok",
+        data={
+            "auth_ref": auth_ref,
+            "revoked": True,
+            "config_bound": bound,
+            "next_action": "Import credentials and rebind the current config to the new auth_ref"
+            if bound
+            else None,
+        },
+    )
 
 
 def resolve_secret(
@@ -1195,53 +1280,90 @@ def redaction_sensitive_key(key: str) -> bool:
     import re
     from urllib.parse import unquote_plus
 
-    decoded = unquote_plus(key)
+    decoded = key
+    for _ in range(3):
+        decoded = unquote_plus(decoded)
     if re.fullmatch(r"[A-Za-z0-9_.-]+", decoded, flags=re.ASCII) is None:
         return False
     name = decoded.lower().replace("-", "").replace("_", "")
-    return name in {
-        "headers",
-        "authorization",
-        "cookie",
-        "setcookie",
-        "accesstoken",
-        "authtoken",
-        "apikey",
-        "token",
-        "refreshtoken",
-        "idtoken",
-        "clientsecret",
-        "secret",
-        "password",
-        "privatekey",
-        "session",
-        "sessionid",
-        "sessioncookie",
-        "sessiontoken",
-        "sid",
-        "phpsessid",
-        "jsessionid",
-        "asp.netsessionid",
-        "connect.sid",
-        "csrftoken",
-        "nextauth.sessiontoken",
-        "xs",
-        "cuser",
-        "datr",
-        "localpath",
-        "signature",
-        "sig",
-        "policy",
-        "keypairid",
-        "awsaccesskeyid",
-        "googleaccessid",
-    } or decoded.lower().startswith(("x-amz-", "x-goog-", "__secure-", "__host-"))
+    return (
+        name
+        in {
+            "headers",
+            "authorization",
+            "cookie",
+            "cookieheader",
+            "setcookie",
+            "accesstoken",
+            "authtoken",
+            "apikey",
+            "token",
+            "refreshtoken",
+            "idtoken",
+            "clientsecret",
+            "secret",
+            "password",
+            "privatekey",
+            "session",
+            "sessionid",
+            "sessioncookie",
+            "sessiontoken",
+            "sid",
+            "phpsessid",
+            "jsessionid",
+            "asp.netsessionid",
+            "connect.sid",
+            "csrftoken",
+            "nextauth.sessiontoken",
+            "xs",
+            "cuser",
+            "datr",
+            "localpath",
+            "signature",
+            "sig",
+            "policy",
+            "keypairid",
+            "awsaccesskeyid",
+            "googleaccessid",
+        }
+        or name.endswith(("sess", "sessid", "session", "token", "secret", "cookie", "password"))
+        or decoded.lower().startswith(("x-amz-", "x-goog-", "__secure-", "__host-"))
+    )
+
+
+def _redaction_decoded_spans(text: str) -> tuple[str, array | None]:
+    """Decode at most three layers, retaining original character boundaries.
+
+    ASCII separators can be encoded independently or inside an encoded redirect.
+    Mapping spans lets us replace the original value without re-encoding the URL.
+    """
+    if re.search(r"%[0-9a-fA-F]{2}", text) is None:
+        return text, None
+    # Compact numeric boundaries avoid allocating a Python tuple for every character
+    # in large exports; unencoded text needs no offset map at all.
+    spans = array("Q", range(len(text) + 1))
+    for _ in range(3):
+        parts = []
+        decoded_spans = array("Q")
+        start = 0
+        for match in re.finditer(r"%[0-9a-fA-F]{2}", text):
+            parts.append(text[start : match.start()])
+            decoded_spans.extend(spans[start : match.start()])
+            parts.append(chr(int(match.group()[1:], 16)))
+            decoded_spans.append(spans[match.start()])
+            start = match.end()
+        if start == 0:
+            break
+        parts.append(text[start:])
+        decoded_spans.extend(spans[start:])
+        text = "".join(parts)
+        spans = decoded_spans
+    return text, spans
 
 
 def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
     """Syntax-aware best-effort guard, not a guarantee. Audits contain no values."""
     import re
-    from urllib.parse import unquote_plus
 
     counts: dict[str, int] = {}
 
@@ -1261,7 +1383,13 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
 
     # Replace JSON/string-literal values, preserving delimiters and surrounding syntax.
     def json_value(match):
-        if redaction_sensitive_key(match["key"]):
+        key = match["key"]
+        if "\\" in key:
+            try:
+                key = json.loads('"' + key + '"')
+            except ValueError:
+                return match.group(0)
+        if redaction_sensitive_key(key):
             return (
                 match["q"]
                 + match["key"]
@@ -1274,7 +1402,8 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         return match.group(0)
 
     replace(
-        r"""(?P<q>["'])(?P<key>[A-Za-z0-9_.%\-]+)(?P=q)(?P<gap>\s*:\s*)"""
+        r"""(?P<q>["'])(?P<key>(?:[A-Za-z0-9_.%\-]|\\(?:u[0-9a-fA-F]{4}|[^\r\n]))+)"""
+        r"""(?P=q)(?P<gap>\s*:\s*)"""
         r"""(?P<vq>["'])(?P<value>(?:\\[^\r\n]|(?!(?P=vq))[^\\\r\n])*?)(?P=vq)""",
         "sensitive_field",
         json_value,
@@ -1302,13 +1431,9 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
 
     # Locate separators without swallowing outer redirect values, so encoded nested
     # query strings are examined too. Only secret values are replaced.
-    parameters = re.compile(
-        r"(?:[?&#]|%3f|%26|%23)"
-        r"(?P<key>(?:(?!%3d|%26|%3f|%23)(?:[A-Za-z0-9_.-]|%[0-9a-f]{2}))+)"
-        r"(?:=|%3d)",
-        re.IGNORECASE | re.ASCII,
-    )
-    ending = re.compile(r"""[\s&#"'<>{}\]]|%26|%23|%3f""", re.IGNORECASE | re.ASCII)
+    decoded, offsets = _redaction_decoded_spans(text)
+    parameters = re.compile(r"[?&#](?P<key>[A-Za-z0-9_.-]+)=", re.ASCII)
+    ending = re.compile(r"""[\s?&#"'<>{}\]]""", re.ASCII)
     signed = {
         "oh",
         "oe",
@@ -1325,14 +1450,25 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         "skv",
     }
     spans = []
-    for match in parameters.finditer(text):
-        if text.startswith("[REDACTED]", match.end()):
+    for match in parameters.finditer(decoded):
+        if decoded.startswith("[REDACTED]", match.end()):
             continue
-        name = unquote_plus(match["key"]).lower()
+        name = match["key"].lower()
         if redaction_sensitive_key(name) or name in signed:
-            end_match = ending.search(text, match.end())
-            end = end_match.start() if end_match else len(text)
-            spans.append((match.end(), end))
+            end_match = next(
+                (
+                    candidate
+                    for candidate in ending.finditer(decoded, match.end())
+                    if candidate.group() in "?&#"
+                    or offsets is None
+                    or offsets[candidate.end()] - offsets[candidate.start()] == 1
+                ),
+                None,
+            )
+            end = end_match.start() if end_match else len(decoded)
+            start_offset = offsets[match.end()] if offsets is not None else match.end()
+            end_offset = offsets[end] if offsets is not None else end
+            spans.append((start_offset, end_offset))
     for start, end in reversed(spans):
         if text[start:end] != "[REDACTED]":
             text = text[:start] + "[REDACTED]" + text[end:]
