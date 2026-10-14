@@ -717,3 +717,29 @@ def test_finding_14_invalid_origin_is_fixed_auth_error_and_inspection_row(tmp_pa
     )
     assert row["environment"] == "needs_auth"
     assert suffix not in envelope.model_dump_json()
+
+
+def test_finding_15_oversized_connect_port_gets_fixed_4xx_without_worker_traceback(
+    monkeypatch, capsys
+):
+    _allow_loopback_sockets(monkeypatch)
+    lookups = []
+    guard = facebook.EgressGuard(
+        allowed_hosts=("allowed.test",),
+        resolver=lambda host: lookups.append(host) or ["93.184.216.34"],
+    )
+    raw = b"CONNECT allowed.test:" + b"9" * 5000 + b" HTTP/1.1\r\n\r\n"
+    with pytest.raises(_browser_egress.ProxyRequestError) as error:
+        _browser_egress.parse_proxy_request(raw)
+    assert error.value.reason == "bad_port"
+    proxy = _browser_egress.BrowserEgressProxy(guard, idle_timeout_s=0.5)
+    try:
+        with socket.create_connection(("127.0.0.1", proxy.port), timeout=2) as client:
+            client.sendall(raw)
+            assert client.recv(4096).startswith(b"HTTP/1.1 403 Forbidden")
+        assert proxy._accept_thread.is_alive()
+        assert guard.summary()["aborted"] == 1
+        assert lookups == []
+    finally:
+        proxy.close()
+    assert "Traceback" not in capsys.readouterr().err
