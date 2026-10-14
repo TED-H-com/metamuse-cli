@@ -398,3 +398,26 @@ def test_f13_redaction_does_not_hold_sqlite_write_lock(ctx, project, monkeypatch
         else app.export_objects(ctx, {**request, "format": "bundle"})
     )
     assert result.status == "ok" and calls
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "<a href=/docs/setup>token={marker}</a>",
+        "cfg=/home/synthetic/x)token={marker}",
+        "opts=/srv/app/conf`password={marker}",
+        "user=bob|password={marker}",
+        "a=1/token={marker}",
+    ],
+)
+def test_f6_redaction_reaches_fixpoint_before_digest(template):
+    from metamuse._muse_lifecycle import _check_question
+
+    marker = f"{len(template)}_MARKER_SYNTHETIC_ONLY"
+    text = template.format(marker=marker)
+    output, counts = safety.redact_text(text)
+    assert marker not in output and counts
+    assert safety.redact_text(output) == (output, [])
+    with pytest.raises(m.CoreError) as refusal:
+        _check_question(text)
+    assert refusal.value.detail.code == m.ErrorCode.INPUT_INVALID
