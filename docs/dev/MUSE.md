@@ -46,6 +46,15 @@ The transport does not mint a core token and does not reserve a permit. B10 owns
 
 Question text is at most 8192 UTF-8 bytes. Packet text is at most 49152 UTF-8 bytes. Both caps are checked on the prepared payload and on the JSON body before `consume`. The marker matches `^[A-Za-z0-9._~-]{1,128}$` and is the caller's for both create and send. The transport does not generate one after authorization.
 
+B16a lifecycle checks the host question with `safety.redact_text` before preparation,
+replay, persistence or an approval preview. If it would change, the send returns fixed
+`E_INPUT_INVALID` with an action to remove credentials/private paths, never echoing the
+value or silently rewriting the question. Body text is only the checked question,
+`"\n\n"`, and packet text passed through the same redactor. The latter also guards older
+packets at preparation; the exact outbound digest still covers the actual prepared body.
+Wire construction rechecks these inputs before the worker's external-action boundary;
+an older queued body needing redaction is refused and must be prepared and granted anew.
+
 ## Prepared request
 
 ```python

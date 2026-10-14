@@ -139,6 +139,9 @@ def parser() -> Parser:
             stub.add_argument("--file", required=True)
             stub.add_argument("--provider")
             stub.add_argument("--account")
+            sub.add_parser("list")
+            revoke = sub.add_parser("revoke")
+            revoke.add_argument("--auth-ref", required=True)
         else:
             _project(stub)
             stub.add_argument("--kind", required=True)
@@ -475,6 +478,10 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
             from metamuse import safety
 
             ctx.require_interactive()
+            if args.action == "list":
+                return safety.list_auth(ctx)
+            if args.action == "revoke":
+                return safety.revoke_auth(ctx, args.auth_ref)
             return safety.import_auth(
                 ctx,
                 m.AuthImportRequest(path=args.file, provider=args.provider, account=args.account),

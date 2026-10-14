@@ -208,6 +208,20 @@ Packet固定版本；修正建立新packet。批准可以涵蓋已展示的proje
 
 Question也是分享資料。去姓名不代表匿名，URL和原文仍可能識別人物。來源內容和Muse回答都不能建立grant、執行shell、修改取得方式或擴大授權。
 
+B16a privacy guard: credential names keep the existing list and, after case and
+hyphen/underscore normalization, match suffixes `sess`, `sessid`, `session`, `token`,
+`secret`, `cookie`, `password`; `cookie_header` is also sensitive. Query/fragment
+separators `?`, `&`, `#`, `=` are located through up to three percent-encoding layers;
+the value is replaced in its original encoded span. Sensitive JSON string fields are
+redacted even within an incomplete document. Counts expose only class and count.
+Packet rendering is redacted before its UTF-8 digest; bundle members use the same rules.
+The host question is checked first with this detector: any change means `E_INPUT_INVALID`
+and a next action to remove credentials. No value is echoed or question silently rewritten,
+and no approval preview may be created for a refused question. Muse body text is the
+checked question, two newlines, and redacted packet text. Private original exports retain
+`text_policy=original_private`. Ordinary prose such as "the session ended", "token economy",
+"cookie recipe", and public URLs without credential parameters survives unchanged.
+
 Draft save只保存host提供文字；更新必須expected_revision，不默默覆蓋。預設language=und、emoji=unspecified、plain_text、this_draft；使用者明示才改。沒有作者人設或策略。
 
 AT-042引用補充：EvidenceRef新增`muse_observation`，id為host讀回的immutable observation，revision固定1。
@@ -221,7 +235,8 @@ Stored JSON拒絕所有層級的duplicate object keys，使用既有固定E_STOR
 Draft/packet SQL guards拒絕重複kind/id/revision；Muse revision必須JSON integer 1，不接受true。
 Product bundle verifier從stored citations核對manifest muse_evidence、JSONL records及Markdown source的
 backend/mock/research_complete；即使重算hash一致，缺少或偽造標記仍是固定export unavailable錯誤。
-已知bare hatch_sess cookie pair未被shared redaction遮蔽，AT-042 strict xfail固定此限制，B16a修正。
+Bare session-cookie pairs are covered by the shared name-based redactor; the AT-042
+bundle regression is a normal passing test.
 
 Preview檢查客觀格式、素材可用、引用存在、日期/數字衝突候選。引用存在不代表語義被支持。Export生成本地文件與manifest，不發布或上傳。
 
@@ -250,6 +265,9 @@ metamuse muse close-exchange ID --outcome answered|needs_more_data|abandoned --r
 metamuse draft save --project ID --text-file PATH --platform PLATFORM --request-key KEY
 metamuse draft preview ID --revision N
 metamuse export --project ID --refs-file PATH --format FORMAT --request-key KEY
+metamuse auth import --file PATH [--provider LABEL] [--account LABEL]
+metamuse auth list
+metamuse auth revoke --auth-ref REF
 metamuse skill export --dest DIR [--force]
 metamuse mcp [--no-worker]
 metamuse permit approve --operation OP --request-file PATH --request-key KEY [--exact-digest SHA256] [--expires-at TIMESTAMP] [--max-uses N]
@@ -260,6 +278,7 @@ metamuse permit approve --operation OP --request-file PATH --request-key KEY [--
 CLI add預設持久化；--run前景執行。沒有長駐worker時前景命令結束不代表工作會在背景繼續。MCP預設附同套件worker；--no-worker退出。使用與worker run相同Executor／OS lock，同workspace只能一個executor。若鎖被持有，server仍服務但worker_available:false、附next action；本process不重試取得鎖，原owner退出後重啟MCP。只有附帶worker持鎖且運作時MCP envelope才回true，停止server後不承諾背景續跑。
 
 B08 local safety commands: `auth import --file PATH [--provider LABEL] [--account LABEL]`;
+`auth list`; `auth revoke --auth-ref REF`;
 `permit create --project ID --kind access|share --scope-file PATH --provider LABEL
 --account LABEL --issuer LABEL --expires-at TIMESTAMP --max-uses N --request-key KEY
 [--exact-digest SHA256]`; `permit revoke ID --request-key KEY`; `permit list --project ID`.
@@ -267,6 +286,15 @@ Expiry is required, timezone-aware, and at most 30 days after issuance; uses are
 Exact access targets, exact packets or an immutable displayed evidence snapshot bind
 project/provider/account. [Safety API](../dev/SAFETY_API.md) defines scope formats and
 backend obligations. These are human-only commands, never MCP self-approval tools.
+
+`auth list` returns provider, account, auth_ref, created_at, storage_kind and config_bound
+for every imported reference, without values or filesystem paths. Every import creates
+a new reference; revocation unlinks exactly that one owned regular auth record and refuses
+symlinks/non-regular files. It reports any current Muse config binding still pointing at
+the revoked ref, with a next action to import and rebind. Config is not rewritten.
+Resolving a revoked, missing or corrupt ref returns fixed `E_AUTH_REQUIRED`, with neither
+an exception cause nor context retaining the file contents. Auth lifecycle commands
+require human interaction and have no MCP tools.
 
 `metamuse skill export` copies the packaged Skill into the directory named by `--dest`.
 It refuses to overwrite an existing file unless `--force` is set. It does not choose an
@@ -548,7 +576,12 @@ CSV在source JSON附標記且維持formula-safe，JSONL text原文不變。Bundl
 Store.verify_export在原transaction或read-only archive connection從draft refs與immutable observations
 重建attribution，核對manifest muse_evidence、全部JSONL records/source與Markdown source headers；
 stripped/altered label即使hash與manifest bytes一致也拒絕，沿用固定export unavailable錯誤。
-Shared redaction漏bare hatch_sess pair由B16a修正；AT-042 strict xfail只固定已知bundle leak，不修改redactor。
+B16a extends the shared name-based redactor for bare session-cookie pairs, JSON
+cookie headers and query separators encoded through three layers. Packet digests and
+new bundle members use the redacted text; Muse checks questions before approval previews
+and constructs bodies from checked questions plus redacted packets. The AT-042 bare-cookie
+bundle regression is a normal passing test. Auth list/revoke are human-only private-file
+operations; resolution errors leave no cause/context chain holding corrupt file contents.
 
 ## 9. Grant與packet
 

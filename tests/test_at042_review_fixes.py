@@ -564,9 +564,5 @@ def bare_cookie_bundle(ctx, project):
     return ctx.paths.root / exported.artifact
 
 
-@pytest.mark.xfail(
-    strict=True, reason="B16a: shared redact_text leaves a bare Muse session-cookie pair"
-)
 def test_b16a_bare_muse_cookie_must_not_leak_into_redacted_bundle(bare_cookie_bundle):
-    # Setup is outside the xfail test, so an unrelated export error cannot mask the leak.
     assert all(SECRET.encode() not in path.read_bytes() for path in bare_cookie_bundle.iterdir())

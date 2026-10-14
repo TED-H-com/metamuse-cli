@@ -35,3 +35,21 @@ not a second hand-synchronized copy of their clarifications.
 packaged Skill into that directory and is not a sixteenth MCP tool. The fifteen tool
 contracts are unchanged. Installation is documented in
 [SKILL.md](../../dev/SKILL.md).
+
+B16a human CLI auth contracts (shared Envelope, no new MCP tool):
+
+- `auth list`: no arguments; `data.references` is a complete list of objects with
+  `provider`/`account` (nullable non-secret labels), `auth_ref` (opaque auth ID),
+  `created_at` (timezone-aware timestamp), `storage_kind="private_file"` and
+  `config_bound` (boolean for the current Muse config). No secret values or paths.
+- `auth revoke --auth-ref REF`: `data` contains `auth_ref`, `revoked=true`,
+  `config_bound` and nullable `next_action`. A remaining binding requires import and
+  rebind. Symlinks/non-regular files are refused. Resolving after revocation returns
+  fixed `E_AUTH_REQUIRED` with an empty cause/context chain.
+- Both commands require human interaction; `--non-interactive` returns
+  `E_SCOPE_REQUIRED` before storage access. Unsafe or corrupt records return fixed
+  `E_AUTH_REQUIRED`. Missing storage lists zero refs; revoke requires an existing ref.
+
+Muse send's unchanged input schema now enforces a question privacy check before
+approval previews and persistence: any change under the shared packet redactor returns
+`E_INPUT_INVALID` with credential-removal guidance. The question is never rewritten.
