@@ -911,29 +911,9 @@ def load_storage_state(
 
 
 def _normalize_allowed_hosts(configured_hosts: Iterable[str]) -> tuple[str, ...]:
-    hosts: list[str] = []
-    for raw in configured_hosts:
-        if not isinstance(raw, str):
-            continue
-        candidate = raw.strip().lower()
-        if candidate.startswith("*."):
-            base = candidate[2:]
-            if base == "fbcdn.net":
-                for sub in (
-                    "static.xx.fbcdn.net",
-                    "scontent.xx.fbcdn.net",
-                    "external.xx.fbcdn.net",
-                ):
-                    if sub not in hosts:
-                        hosts.append(sub)
-            elif base == "fbsbx.com":
-                if "lookaside.fbsbx.com" not in hosts:
-                    hosts.append("lookaside.fbsbx.com")
-            continue
-        norm = _normalize_host(candidate)
-        if norm and not _is_forbidden_local_or_ip_host(norm) and norm not in hosts:
-            hosts.append(norm)
-    return tuple(hosts)
+    from metamuse.config import validate_facebook_hosts
+
+    return tuple(validate_facebook_hosts(list(configured_hosts)))
 
 
 class EgressGuard:
@@ -954,7 +934,11 @@ class EgressGuard:
         _fixture_url_checker: Callable[[str, safety.URLPurpose], safety.CheckedURL] | None = None,
         _fixture_nav_validator: Callable[[str], None] | None = None,
     ) -> None:
-        self.allowed_hosts = _normalize_allowed_hosts(allowed_hosts)
+        self.allowed_hosts = (
+            tuple(allowed_hosts)
+            if _fixture_url_checker is not None
+            else _normalize_allowed_hosts(allowed_hosts)
+        )
         self.resolver = resolver
         self.policy = safety.OutboundURLPolicy(
             resolver=resolver,
