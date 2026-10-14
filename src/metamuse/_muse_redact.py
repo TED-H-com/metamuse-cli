@@ -165,7 +165,7 @@ def _syntax_spans(value):
     offset = 0
     while match := _ASSIGNMENT.search(value, offset):
         if sensitive_key(match[2]):
-            yield match.start() + len(match[1]), match.end()
+            yield match.span()
             offset = match.end()
         else:
             offset = match.start() + len(match[1])

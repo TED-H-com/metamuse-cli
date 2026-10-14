@@ -547,3 +547,11 @@ and every usable id. Direct session-level hints cover every usable id. Every
 observation commits before refusal, including contradictory aliases and owner
 mismatch. False positives permanently refuse the connected standard tier; this
 intentionally errs toward confidentiality and there is no reset tool.
+
+Owned Muse redaction collects sorted, merged credential spans and renders the
+output with one join, without slicing the whole body per span or truncating
+before sanitization. Sensitive text assignments are removed as a unit, avoiding
+re-entry into the core's ordinary-pair pattern with a large assignment stream.
+The strict CPU doubling regression covers 128 KiB–1 MiB for text and body. The
+ordinary-pair core path remains a strict xfail until the shared safety owner
+makes it linear; no safety.py change is included here.
