@@ -345,3 +345,19 @@ def test_review_runtime_media_cap_is_minimum_of_acceptance_and_current(
     assert job["steps"][0]["checkpoint"]["remote_media_caps"]["media_max_bytes"] == old
     assert "media_max_bytes" not in job["job"]["limits"]
     assert permit(entry, grant)["used"] == 1
+
+
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+def test_review_url_byte_bound_precedes_preview(entry, channel):
+    from metamuse import safety
+
+    prefix = "https://media.fixture.test/one?pad="
+    at_cap = prefix + "a" * (safety.URL_MAX_BYTES - len(prefix.encode()))
+    preview = collect(entry, request(entry, url=at_cap), channel)
+    assert preview["error"]["code"] == "E_SCOPE_REQUIRED" and preview["approval"] is not None
+    over_cap = at_cap + "a"
+    refused = collect(entry, request(entry, url=over_cap), channel)
+    assert refused["error"]["code"] == "E_SCOPE_DENIED"
+    assert refused["error"]["message"] == "Outbound URL is outside the network policy"
+    assert refused["approval"] is None
+    no_created_objects(entry)

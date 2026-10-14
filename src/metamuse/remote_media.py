@@ -980,6 +980,20 @@ def prepare_remote_media(
 ) -> _PreparedRemote:
     """Read-only preparation shared by operator review, submission and execution."""
 
+    for item in request.inputs:
+        if item.kind == "url":
+            try:
+                over_limit = len(item.url.encode("utf-8")) > safety.URL_MAX_BYTES
+            except UnicodeError:
+                over_limit = True
+            if over_limit:
+                safety._url_error()
+            _host_of(item.url)
+            parsed = urlsplit(item.url)
+            if parsed.netloc.startswith("[") and not re.fullmatch(
+                r"\[[^\]]+\](?::[0-9]+)?", parsed.netloc
+            ):
+                safety._url_error()
     if not dependency_available():
         raise _dependency_error()
     ctx.store.get(m.Project, request.project_id, conn=conn)

@@ -54,3 +54,27 @@ def test_review_preview_reads_metadata_without_secret_bytes(ctx, project, tmp_pa
     assert positions and max(positions) == boundary
     assert marker not in envelope.model_dump_json()
     assert envelope.approval.provider == PROVIDER and envelope.approval.account == ACCOUNT
+
+
+def test_review_preview_cpu_at_url_cap_and_early_oversize_refusal(ctx, project, monkeypatch):
+    import time
+
+    from metamuse import safety
+
+    configure(ctx, [("FacebookReel", ["www.facebook.com"])])
+    prefix = REEL_URL + "?pad="
+    url = prefix + "a" * (safety.URL_MAX_BYTES - len(prefix.encode()))
+    started = time.process_time()
+    envelope = app.submit_collect(ctx, remote_request(project, url, ["media_metadata"]))
+    elapsed = time.process_time() - started
+    print(f"MEASURE preview at {safety.URL_MAX_BYTES} bytes: {elapsed:.6f} CPU seconds")
+    assert elapsed < 1.0
+    assert envelope.approval is not None
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Oversize URL reached display/redaction")
+
+    monkeypatch.setattr(safety, "redact_text", forbidden)
+    envelope = app.submit_collect(ctx, remote_request(project, url + "a", ["media_metadata"]))
+    assert envelope.error.code == m.ErrorCode.SCOPE_DENIED
+    assert envelope.approval is None

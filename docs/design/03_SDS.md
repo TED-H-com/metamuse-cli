@@ -658,3 +658,8 @@ Lower caps apply to queued jobs; increases cannot exceed the reviewed snapshot.
 Request limits remain digest-bound and are checked against current workspace limits.
 Retries above the effective B12 cap stop before consumption or egress, even if the
 core executor schedules another local attempt.
+
+B12 preparation enforces the shared 8192-byte UTF-8 URL bound and cheap HTTP(S)
+syntax checks before redaction, display, digest, preview or job creation. One byte
+over the bound returns the same outbound-policy error as the dial-time guard,
+without a preview. URLInput still needs a core-owned schema/validation bound.
