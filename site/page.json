@@ -778,6 +778,10 @@
         "zh": "<strong>fixture 後端的 Muse 流程</strong><br><code>implemented with offline tests</code><br>離線開啟、送出、讀取與結束；衍生紀錄保留 backend=fixture、mock=true、research_complete=false。"
       },
       {
+        "en": "<strong>Muse standard-VM transport</strong><br><code>implemented with offline tests</code><br>Strict Noise key/nonce verification, durable trust and bounded wake/redial. AT-038 and AT-043 LIVE have not run; CVM is unsupported.",
+        "zh": "<strong>Muse 標準 VM 傳輸</strong><br><code>implemented with offline tests</code><br>嚴格驗證 Noise 金鑰與 nonce、持久化信任紀錄，並有界喚醒與重連。AT-038、AT-043 尚未執行 LIVE；不支援 CVM。"
+      },
+      {
         "en": "<strong>MCP stdio</strong><br><code>implemented with offline tests</code><br>Fifteen tools; stdout is protocol, logs go to stderr.",
         "zh": "<strong>MCP stdio</strong><br><code>implemented with offline tests</code><br>15 個工具；stdout 僅傳協定，日誌送至 stderr。"
       },
@@ -795,10 +799,6 @@
       }
     ],
     "limits": [
-      {
-        "en": "<strong>Muse LIVE</strong><br><code>needs a real account (LIVE)</code><br>Blocked by upstream protocol drift; real-account integration is not verified.",
-        "zh": "<strong>Muse LIVE</strong><br><code>needs a real account (LIVE)</code><br>上游協定漂移導致阻擋；真實帳號整合尚未驗證。"
-      },
       {
         "en": "<strong>Remote media (B12) and Facebook posts (B13)</strong><br><code>not done</code><br>Remote collection is not available.",
         "zh": "<strong>遠端影音（B12）與 Facebook 貼文（B13）</strong><br><code>not done</code><br>尚未提供遠端收集。"
