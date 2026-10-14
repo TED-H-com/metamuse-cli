@@ -600,14 +600,16 @@ def metamuse_request_handler_send(handler: Any, request: Any) -> Any:
         headers.pop("Cookie", None)
     url = request.url
     purpose = _purpose.get()
+    # media_max follows the body. Redirect hops are still checked as "redirect".
+    body_cap = net.media_max if purpose == "media" else None
     redirects = 0
     while True:
         if net.budget.remaining <= 0:
             raise _limit_error()
         checked = net.checker(url, purpose=purpose)
         limit = net.budget.remaining
-        if purpose == "media":
-            limit = min(limit, net.media_max)
+        if body_cap is not None:
+            limit = min(limit, body_cap)
         status, response_headers, payload, peer = _dial(
             method, checked.url, headers, body, checked, net.timeout, limit
         )
