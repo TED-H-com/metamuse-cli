@@ -84,6 +84,10 @@ _MUSE_LISTENERS_LOCK = threading.Lock()
 
 
 _MUSE_STORAGE_ACTIONS = {
+    "Muse security state has a committed propagation barrier": (
+        "Stop Muse connections; in one maintenance transaction insert or retain the barrier, "
+        "rerun the owner/VM closure over the whole workspace, then remove the marker and commit; no restore is needed"
+    ),
     "Muse connection context changed": "Retry the connection with a fresh authenticated context",
     "Muse security state is unavailable or damaged": (
         "Repair the security-state store; restore only a verified backup, "
@@ -569,7 +573,10 @@ class Store:
                     elif _schema_signature(conn) != self._muse_schema_signature:
                         raise _muse_storage_error()
                     if conn.execute("SELECT 1 FROM muse_trust_propagating").fetchone():
-                        raise _muse_storage_error()
+                        message = "Muse security state has a committed propagation barrier"
+                        raise m.CoreError(
+                            m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message]
+                        )
                 validated = True
                 yield maintenance.close
         except m.CoreError as exc:
