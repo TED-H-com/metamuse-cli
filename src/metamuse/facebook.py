@@ -2330,7 +2330,7 @@ class _DOMExtractor(HTMLParser):
             )
             self._current_comment = {
                 "kind": kind,
-                "native_id": attr_map.get("data-comment-id") or None,
+                "native_id": _native_token(attr_map.get("data-comment-id")),
                 "parent_native_id": _native_token(attr_map.get("data-parent-comment-id")),
                 "author_display": attr_map.get("data-author") or None,
                 "created_at_raw": attr_map.get("data-created-at") or None,
@@ -2678,7 +2678,7 @@ def _parse_json_payload(
             continue
         kind_val = str(entry.get("kind") or "comment")
         c_kind: Literal["comment", "reply"] = "reply" if kind_val == "reply" else "comment"
-        native_id = str(entry["id"]).strip() if entry.get("id") else None
+        native_id = _native_token(entry.get("id"))
         parent_id = _native_token(entry.get("parent_id"))
         if parent_id is None and c_kind == "comment":
             parent_id = post_id
