@@ -285,6 +285,9 @@ mismatched or non-exact share grants retain E_SCOPE_DENIED and their actual mess
 without a preview; repeat the call without a grant for a fresh review. Stale packets
 return E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in submit and preview.
 Policy and authentication failures retain their actual errors without a preview.
+The preview's operator command uses the next unused digest-based approval key, so a
+fresh review cannot replay an exhausted/revoked/expired grant. Repeating a previously
+submitted approval command still replays its original permit and mutable use state.
 
 `permit approve` recomputes the preview through the same preparation code and displays it
 on stderr, including the effective absolute UTC expires_at, remaining duration and

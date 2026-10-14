@@ -743,6 +743,10 @@ null data. SCOPE_DENIED retains its code/message without a preview. Grant denial
 callers to repeat without a grant for a fresh preview; never reuse or widen the old one.
 Callbacks must redact raw text fields separately before encoding request JSON and use
 those same strings in the summary. Exact digests continue to bind the original bytes.
+The displayed operator command must use an unused approval request key; repeating
+an already submitted command replays its original permit, including consumed or
+revoked state. Muse selects the next unused digest-based key by reading receipts;
+displaying a fresh preview creates nothing.
 Disabled backend, missing credentials, stale/invalid references and unsupported routes retain their
 actual errors when preparation cannot produce a valid review. Callback failures create
 no grant. `permit approve` validates through that registry and recomputes/displays the

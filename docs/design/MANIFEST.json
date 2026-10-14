@@ -9,8 +9,8 @@
     },
     {
       "path": "02_SPEC.md",
-      "bytes": 21387,
-      "sha256": "e316dd0867181191130253b06a0dda9d38643ad1189525ad1cccbbb94c89ec5f"
+      "bytes": 21641,
+      "sha256": "aa8fe83f643337998a719e559bdd9860c8272958054ac8c002365ac0b2a35d31"
     },
     {
       "path": "03_SDS.md",
@@ -49,8 +49,8 @@
     },
     {
       "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
-      "bytes": 62778,
-      "sha256": "99e1f9d2295206ab81d78f1ee7ab0d2036233865f611177637cd0f6a0596abf0"
+      "bytes": 63032,
+      "sha256": "0d6c4ff6f95a63cdaaf61d3e3fead7762d3499608805401b7eb2c30240c97744"
     },
     {
       "path": "README.md",

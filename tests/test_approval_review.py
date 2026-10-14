@@ -5,6 +5,7 @@ with its job; unchanged shipped job inventories prove that those calls create no
 """
 
 import json
+import shlex
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -347,3 +348,47 @@ def test_policy_and_auth_errors_have_no_preview(world, monkeypatch, case, code, 
     assert result["error"]["message"] == message
     assert result["approval"] is None
     assert inventory(entry, project) == before
+
+
+def test_fresh_preview_command_does_not_replay_exhausted_read_permit(world):
+    entry, project, _, request = world
+    preview = send(entry, request)["approval"]
+    grant = entry.approve(preview, request, "share-grant")["data"]["id"]
+    sent = send(entry, {**request, "share_grant_id": grant}, code=0)["data"]
+    entry.cli("worker", "run", "--once")
+    exchange = sent["exchange_id"]
+    keys = set()
+    grant_ids = set()
+    digests = set()
+    for _ in range(2):
+        before = inventory(entry, project)
+        envelope = entry.cli("muse", "read", "--exchange", exchange, "--refresh", code=3)
+        assert envelope["error"]["code"] == "E_SCOPE_REQUIRED"
+        preview = envelope["approval"]
+        assert inventory(entry, project) == before
+        Path(preview["request_file"]).write_text(json.dumps(preview["request"]))
+        command = shlex.split(preview["next_action"])
+        key = command[command.index("--request-key") + 1]
+        assert key not in keys
+        keys.add(key)
+        digests.add(preview["action_digest"])
+        # Execute the displayed operator command with its key unchanged.
+        args = command[command.index("permit") :]
+        grant = entry.cli(*args, operator=True)["data"]
+        assert grant["id"] not in grant_ids and grant["used"] == 0
+        grant_ids.add(grant["id"])
+        refresh = entry.cli(
+            "muse", "read", "--exchange", exchange, "--refresh", "--access-grant", grant["id"]
+        )["data"]
+        entry.cli("worker", "run", "--once")
+        assert (
+            entry.cli("jobs", "get", refresh["refresh_job_id"])["data"]["job"]["state"]
+            == "succeeded"
+        )
+        # Retry the old command: receipt replay is still stable, without widening.
+        replay = entry.cli(*args, operator=True)["data"]
+        assert replay["id"] == grant["id"] and replay["replayed"] is True
+        assert replay["expires_at"] == grant["expires_at"] and replay["used"] == 1
+    assert len(digests) == 1
+    permits = inventory(entry, project)[1]
+    assert all(p["used"] == 1 and p["max_uses"] == 1 for p in permits if p["id"] in grant_ids)

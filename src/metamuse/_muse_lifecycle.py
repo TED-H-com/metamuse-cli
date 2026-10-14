@@ -311,6 +311,24 @@ def _approval_preview(ctx, request):
             ]
         )
     summary = "\n".join(details)
+    # A new review must not point at a receipt for a consumed/revoked/expired
+    # permit. Repeating an already submitted operator command still replays its
+    # original receipt; merely displaying the next unused key creates nothing.
+    approval_key = "approve-" + digest
+    with ctx.store.connection() as conn:
+        used_keys = {
+            row["request_key"]
+            for row in conn.execute(
+                "SELECT request_key FROM request_receipts "
+                "WHERE operation='permit.create' AND request_key LIKE ?",
+                (approval_key + "%",),
+            )
+        }
+    ordinal = 0
+    candidate = approval_key
+    while candidate in used_keys:
+        ordinal += 1
+        candidate = approval_key + "-" + str(ordinal)
     next_action = operator_command(
         ctx,
         "permit",
@@ -322,7 +340,7 @@ def _approval_preview(ctx, request):
         "--exact-digest",
         digest,
         "--request-key",
-        "approve-" + digest,
+        candidate,
     )
     return m.ApprovalPreview(
         operation=operation,
