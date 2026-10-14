@@ -333,3 +333,13 @@ def test_markerless_echo_uses_the_same_redaction_as_outbound_text(
     exchange = ctx.store.get(m.Exchange, identity)
     assert ctx.store.get(m.JobStep, exchange.submission_step_id).state == "succeeded"
     assert exchange.delivery_proof.kind == ("user_echo" if mode == "send_timeout" else "ack")
+
+
+def test_disabled_fixture_capabilities_keep_ready_dependencies_and_no_permission(fixture_ctx):
+    ctx = fixture_ctx
+    ctx.policy.muse.enabled = False
+    rows = {row["name"]: row for row in app.inspect_capabilities(ctx).data["capabilities"]}
+    assert {
+        (rows[name]["environment"], rows[name]["permission"], rows[name]["effective"])
+        for name in ("metamuse_muse_open", "metamuse_muse_send")
+    } == {("ready", "not_configured", False)}
