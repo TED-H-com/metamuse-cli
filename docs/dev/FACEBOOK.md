@@ -209,7 +209,8 @@ add `parent_comment` to new reply evidence and job gaps. Missing observations ne
 items. New incomplete post/reply evidence is marked incomplete.
 
 HTMLParser decodes character references exactly once. Source text retains edge
-whitespace, explicit empty bodies, br newlines and nested block boundaries. JSON text
+whitespace, explicit empty bodies, br newlines and nested block boundaries. Void tags
+still retain barrier and attachment attributes without changing body depth. JSON text
 is preserved as given. No normalized text replaces the source; revision hashes use
 canonical JSON `{text: preserved_text}` without whitespace/Unicode normalization.
 All content is inert data and cannot mint permissions or trigger tools.

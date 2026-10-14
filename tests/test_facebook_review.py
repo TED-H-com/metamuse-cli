@@ -689,6 +689,24 @@ def test_finding_13_text_and_hash_preserve_entities_breaks_and_edges(tmp_path, b
         assert all(row[1] == m.payload_digest({"text": expected}) for row in rows)
 
 
+@pytest.mark.parametrize(
+    "marker,code",
+    [
+        ('<meta data-fb-state="login_wall">', m.ErrorCode.AUTH_REQUIRED),
+        ('<meta data-page-state="challenge"/>', m.ErrorCode.CHECKPOINT_REQUIRED),
+        ('<input data-checkpoint="true">', m.ErrorCode.CHECKPOINT_REQUIRED),
+    ],
+)
+def test_finding_13_void_tags_preserve_barrier_classification(marker, code):
+    with pytest.raises(m.CoreError) as error:
+        facebook.classify_and_parse_observation(
+            observation(marker + _synthetic_post_html()),
+            permalink=facebook.parse_post_permalink(URL),
+            require_comments_section=True,
+        )
+    assert error.value.detail.code == code
+
+
 @pytest.mark.parametrize("suffix", [":NOT_A_PORT", ":70000", ":0", ":81", "/path", "?q=value"])
 def test_finding_14_invalid_origin_is_fixed_auth_error_and_inspection_row(tmp_path, suffix):
     ctx, _, _, _, secrets = _setup_fb_env(tmp_path)
