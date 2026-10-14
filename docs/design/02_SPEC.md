@@ -405,3 +405,9 @@ Owned scanning passes. On this main, core safety.redact_text is still quadratic
 for k=> and ordinary ampersand pairs. Strict xfails name B16a and fail on XPASS;
 no safety.py change is included. The 1 MiB CPU ceiling is 12 s, allowing ample
 margin above the passing sub-second measurements, while rejecting minute-long work.
+
+
+B12 preparation checks metadata for all bound cookie references without reading secret
+bytes: existence and provider/account must match, otherwise E_AUTH_REQUIRED without a
+preview. Execution resolves and parses every bound secret before permit consumption,
+including unused later-hop bindings. Parsed cookies are scoped to bound entries.

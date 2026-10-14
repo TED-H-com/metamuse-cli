@@ -1,0 +1,56 @@
+"""OFFLINE/MEASURE checks for B12 preparation and boundary internals."""
+
+import os
+from pathlib import Path
+
+from test_remote_media import ACCOUNT, PROVIDER, REEL_URL, configure, put_secret, remote_request
+
+from metamuse import app, remote_media
+from metamuse import models as m
+
+
+def test_review_preview_reads_metadata_without_secret_bytes(ctx, project, tmp_path, monkeypatch):
+    marker = f"SYNTHETIC_{'METADATA_ONLY'}_COOKIE_VALUE"
+    secret = f".facebook.com\tTRUE\t/\tTRUE\t0\tsid\t{marker}\n".encode()
+    store, ref = put_secret(tmp_path, ctx, secret)
+    configure(ctx, [("FacebookReel", ["www.facebook.com"], ref)])
+    path = store.root / (ref + ".json")
+    boundary = path.read_bytes().index(b',"secret_b64":')
+    positions = []
+    original = os.fdopen
+
+    class PrefixOnly:
+        def __init__(self, stream):
+            self.stream = stream
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return self.stream.__exit__(*args)
+
+        def __getattr__(self, name):
+            return getattr(self.stream, name)
+
+        def read(self, size=-1):
+            assert size > 0 and self.stream.tell() + size <= boundary
+            chunk = self.stream.read(size)
+            positions.append(self.stream.tell())
+            return chunk
+
+    def opened(fd, *args, **kwargs):
+        stream = original(fd, *args, **kwargs)
+        return PrefixOnly(stream) if Path(os.readlink(f"/proc/self/fd/{fd}")) == path else stream
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Preview resolved secret bytes or attempted egress")
+
+    monkeypatch.setattr(os, "fdopen", opened)
+    monkeypatch.setattr(remote_media.safety, "resolve_secret", forbidden)
+    monkeypatch.setattr(remote_media, "_checker_factory", forbidden)
+    envelope = app.submit_collect(ctx, remote_request(project, REEL_URL, ["media_metadata"]))
+    assert envelope.error.code == m.ErrorCode.SCOPE_REQUIRED
+    assert envelope.approval is not None
+    assert positions and max(positions) == boundary
+    assert marker not in envelope.model_dump_json()
+    assert envelope.approval.provider == PROVIDER and envelope.approval.account == ACCOUNT

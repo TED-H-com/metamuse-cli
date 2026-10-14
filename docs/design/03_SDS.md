@@ -642,3 +642,8 @@ parameter values are masked; request echo and operator stderr use the same displ
 Preparation refuses trailing-dot hosts and remaining free-text redaction of material
 URL structure with a fixed E_INPUT_INVALID and no preview or URL echo. Fragments are
 not fetched. The action digest continues to bind original bytes.
+
+B12 preparation checks metadata for all bound cookie references without reading secret
+bytes: existence and provider/account must match, otherwise E_AUTH_REQUIRED without a
+preview. Execution resolves and parses every bound secret before permit consumption,
+including unused later-hop bindings. Parsed cookies are scoped to bound entries.
