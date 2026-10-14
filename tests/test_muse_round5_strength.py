@@ -34,3 +34,23 @@ def test_r5_10_post_commit_session_change_is_context_storage(ctx, monkeypatch):
         freeze(ctx.store, confidential=True)
     assert caught.value.detail.code == ErrorCode.STORAGE
     assert caught.value.detail.message == "Muse connection context changed"
+
+
+def test_r5_10_repair_example_preserves_an_extra_owner(ctx, monkeypatch):
+    """Run the checked-in repair walkthrough with independent evidence present."""
+    from test_muse_round4_barrier import test_r4_3_committed_barrier_has_safe_repair
+
+    freeze(ctx.store, account="C", viewer_id="C", vm_id="z")
+    close = ctx.store._muse_close_bind
+
+    def closure_only(conn):
+        assert (
+            conn.execute(
+                "SELECT confidential_required FROM muse_trust_accounts WHERE account='C'"
+            ).fetchone()[0]
+            == 0
+        )
+        close(conn)
+
+    monkeypatch.setattr(ctx.store, "_muse_close_bind", closure_only)
+    test_r4_3_committed_barrier_has_safe_repair(ctx)
