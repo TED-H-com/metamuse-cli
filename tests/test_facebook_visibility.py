@@ -115,3 +115,38 @@ def test_r7_subtree_hiding_cannot_be_overridden(tmp_path, monkeypatch, hiding):
         assert rows(ctx)[0]["text"] == "Lead"
     for job in (fixture, browser):
         assert job["coverage_status"] != "scope_satisfied"
+
+
+@pytest.mark.parametrize(
+    "style",
+    [
+        "display:none;display:block",
+        "display:block!important;display:none",
+        "visibility:hidden;visibility:visible",
+        "visibility:visible!important;visibility:collapse",
+    ],
+)
+def test_r7_inline_css_declaration_precedence(style):
+    from test_facebook_round5 import parse
+
+    markup = _synthetic_post_html(post_text="BODY").replace(
+        ">BODY</div>", f'><span style="{style}">VISIBLE</span></div>'
+    )
+    assert parse(markup).text == "VISIBLE"
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "data-metamuse-invisible",
+        "data-metamuse-display-none",
+        'data-metamuse-visibility="hidden"',
+    ],
+)
+def test_r7_raw_html_ignores_all_snapshot_markers(marker):
+    from test_facebook_round5 import parse
+
+    markup = _synthetic_post_html(post_text="BODY").replace(
+        ">BODY</div>", f"><span {marker}>VISIBLE</span></div>"
+    )
+    assert parse(markup).text == "VISIBLE"
