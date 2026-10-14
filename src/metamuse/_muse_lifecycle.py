@@ -371,6 +371,21 @@ def _assert_available(conn, discussion_id, *, exclude=None):
         )
 
 
+def _assert_open_available(db, discussion):
+    if db.execute(
+        "SELECT 1 FROM discussions d LEFT JOIN job_steps s ON s.id=d.open_step_id "
+        "WHERE d.project_id=? AND d.provider=? AND d.account=? AND d.id<>? AND "
+        "(d.open_attempt_state IN ('submitting','open_uncertain') OR "
+        "s.state IN ('submitting','open_uncertain','needs_reconcile')) LIMIT 1",
+        (discussion.project_id, discussion.provider, discussion.account, discussion.id),
+    ).fetchone():
+        _error(
+            m.ErrorCode.EXTERNAL_STATE_UNKNOWN,
+            "Earlier session creation remains unresolved",
+            "Reconcile the original discussion; a new key is not proof of zero delivery",
+        )
+
+
 def open_muse_discussion(ctx, request):
     register_operations()
     if request.discussion_id is not None:
@@ -413,27 +428,11 @@ def open_muse_discussion(ctx, request):
             conn=conn,
         )
 
-    def available(db):
-        if db.execute(
-            (
-                "SELECT 1 FROM discussions d LEFT JOIN job_steps s ON s.id=d.open_step_"
-                "id WHERE d.project_id=? AND d.provider=? AND d.account=? AND (d.open_a"
-                "ttempt_state IN ('submitting','open_uncertain') OR s.state IN ('submit"
-                "ting','open_uncertain','needs_reconcile')) LIMIT 1"
-            ),
-            (discussion.project_id, discussion.provider, discussion.account),
-        ).fetchone():
-            _error(
-                m.ErrorCode.EXTERNAL_STATE_UNKNOWN,
-                "Earlier session creation remains unresolved",
-                "Reconcile the original discussion; a new key is not proof of zero delivery",
-            )
-
     with ctx.store.connection() as conn:
-        available(conn)
+        _assert_open_available(conn, discussion)
 
     def domain(writer, job, steps):
-        available(writer)
+        _assert_open_available(writer, discussion)
         writer.insert(discussion)
         writer.execute(
             "UPDATE discussions SET open_step_id=? WHERE id=?", (steps[0].id, discussion.id)
@@ -618,7 +617,9 @@ def _mutate(step):
     )
 
     def verify(conn, target):
-        if exchange is not None:
+        if is_open:
+            _assert_open_available(conn, discussion)
+        else:
             _assert_available(conn, discussion.id, exclude=exchange.id)
             permit = step.store.get(m.Permit, permit_id, conn=conn)
             _share_target(permit, use.digest)

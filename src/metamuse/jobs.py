@@ -599,6 +599,13 @@ class Executor:
     def _fail(self, conn: Any, job: m.Job, step: m.JobStep, error: m.CoreError) -> None:
         encoded = m.canonical_json(error.detail).decode()
         state = "awaiting_user" if error.detail.retry_class == "user_action" else "failed"
+        current = self.store.get(m.JobStep, step.id, conn=conn)
+        if current.side_effect_class == "external_submit" and current.state in (
+            "queued",
+            "running",
+        ):
+            # The committed submitting boundary was never entered; no token authorized I/O.
+            conn.execute("UPDATE jobs SET remote_state='not_submitted' WHERE id=?", (job.id,))
         conn.execute("UPDATE job_steps SET state='failed',error=? WHERE id=?", (encoded, step.id))
         conn.execute(
             "UPDATE jobs SET state=?,error=?,updated_at=? WHERE id=?",

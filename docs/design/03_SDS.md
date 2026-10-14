@@ -181,6 +181,7 @@ consume綁owner/epoch/job/step/operation/target/action digest。read不mint。tr
 record_not_submitted，原step經settle_uncertain變local failed/remote not_submitted；crash則unknown，不退用量。
 history/list在另一safe_read job，讀取current access grant；原step settlement不再reserve/send/requeue。
 live send先有已完成、授權的history baseline；已mapped discussion_id的open走history read，不做第二次create。
+open boundary在reservation與token之前重查未解create；拒絕時transaction rollback，不接觸remote、不標uncertain。
 
 ## 9. Grant與packet
 

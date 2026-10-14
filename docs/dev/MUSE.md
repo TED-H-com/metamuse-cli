@@ -150,7 +150,10 @@ no worker owns the workspace. `muse_send` does the same for the exchange. Replay
 use the original request and job; a changed payload is `E_IDEMPOTENCY_CONFLICT`.
 Unknown delivery returns reconciliation instructions and never enqueues a second send.
 An unresolved open also blocks another create under that project/account, including
-under a new request key. This is a refusal, never evidence based on title equality.
+under a new request key. Submission and the committed boundary both check this rule;
+an already-queued create is refused before reserving its grant or minting a token.
+Its step fails locally without uncertain delivery. This is a refusal, never evidence
+based on title equality.
 
 Operator preview helpers `_muse_lifecycle.prepare_open(ctx, MuseOpenRequest)` and
 `prepare_send(ctx, MuseSendRequest)` return the exact stored `MusePayload`. Compute
