@@ -10,7 +10,6 @@ import io
 import json
 import os
 import re
-import secrets
 import shutil
 import sqlite3
 from dataclasses import dataclass, field
@@ -20,7 +19,7 @@ from typing import TYPE_CHECKING, Any
 from metamuse import models as m
 from metamuse.paths import private_dir
 from metamuse.safety import redact_text, redaction_sensitive_key
-from metamuse.store import TransactionWriter
+from metamuse.store import CONTENT_CURSOR_KEY, TransactionWriter
 
 if TYPE_CHECKING:
     from metamuse.app import AppContext
@@ -325,29 +324,6 @@ def _sync_dir(path: Path) -> None:
         os.close(fd)
 
 
-def _cursor_key(ctx: AppContext) -> bytes:
-    """One SQLite-backed workspace MAC key; no per-query state or extra files.
-
-    Uses existing mutation receipts, preserved by backup/restore. See core change
-    requests for formal key-lifecycle support. This bookkeeping grants no scope.
-    """
-    with ctx.store.transaction() as conn:
-        record = ctx.store.mutate_once(
-            conn,
-            "content.cursor_key",
-            "v1",
-            {"version": 1},
-            lambda: {"key": secrets.token_hex(32)},
-        )
-    try:
-        key = bytes.fromhex(record["key"])
-        if len(key) != 32:
-            raise ValueError
-        return key
-    except (KeyError, ValueError, TypeError) as exc:
-        raise m.CoreError(m.ErrorCode.STORAGE, "Cursor signing key is unavailable") from exc
-
-
 def _encode_cursor(payload: dict[str, Any], key: bytes) -> str:
     raw = m.canonical_json(payload)
     return (
@@ -355,13 +331,21 @@ def _encode_cursor(payload: dict[str, Any], key: bytes) -> str:
     )
 
 
-def _decode_cursor(cursor: str, key: bytes, binding: dict[str, Any]) -> dict[str, Any]:
+def _decode_cursor(cursor: str, keys: tuple[bytes, ...], binding: dict[str, Any]) -> dict[str, Any]:
     try:
         if len(cursor) > 4096 or re.fullmatch(r"[A-Za-z0-9_-]+", cursor, flags=re.ASCII) is None:
             raise ValueError
         raw = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
         payload, signature = raw[:-32], raw[-32:]
-        if not hmac.compare_digest(signature, hmac.digest(key, payload, "sha256")):
+        key = next(
+            (
+                key
+                for key in keys
+                if hmac.compare_digest(signature, hmac.digest(key, payload, "sha256"))
+            ),
+            None,
+        )
+        if key is None:
             raise ValueError
         value = json.loads(payload)
         if not isinstance(value, dict) or _encode_cursor(value, key) != cursor:
@@ -445,13 +429,23 @@ def _search_rows(
 
 
 def search_evidence(ctx: AppContext, request: m.SearchRequest) -> m.Envelope:
-    key = _cursor_key(ctx)
+    key = ctx.store.get_workspace_key(CONTENT_CURSOR_KEY).key_material
     binding = {
         "version": 1,
         "project_id": request.project_id,
         "query_digest": m.payload_digest(request.query),
     }
-    cursor = _decode_cursor(request.cursor, key, binding) if request.cursor is not None else None
+    cursor = (
+        _decode_cursor(
+            request.cursor,
+            tuple(
+                k.key_material for k in ctx.store.workspace_verification_keys(CONTENT_CURSOR_KEY)
+            ),
+            binding,
+        )
+        if request.cursor is not None
+        else None
+    )
     with ctx.store.connection() as conn:
         conn.execute("BEGIN")
         ctx.store.get(m.Project, request.project_id, conn=conn)

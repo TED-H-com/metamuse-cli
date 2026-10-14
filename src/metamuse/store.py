@@ -6,12 +6,15 @@ import fcntl
 import hashlib
 import json
 import os
+import re
+import secrets
 import shutil
 import sqlite3
 import tempfile
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, BinaryIO, TypeVar
@@ -25,6 +28,20 @@ from metamuse.paths import WorkspacePaths, private_dir, private_file
 SCHEMA_VERSION = 1
 DATA = Path(__file__).parent / "data"
 MIGRATIONS = {1: DATA / "migrations" / "001_initial.sql"}
+CONTENT_CURSOR_KEY = "content.cursor"
+
+
+@dataclass(frozen=True)
+class WorkspaceKey:
+    """Internal signing material; never serialize into public records or events."""
+
+    name: str
+    version: int
+    key_material: bytes = field(repr=False)
+    created_at: str
+    status: str
+
+
 TABLE_MODELS = {
     "projects": m.Project,
     "jobs": m.Job,
@@ -153,6 +170,7 @@ class Store:
         self.schema_version = schema_version
         self.paths.initialize()
         self.migrate(migrations or MIGRATIONS)
+        self._provision_workspace_keys()
 
     def _open_database(self) -> sqlite3.Connection:
         # Check version before applying writable pragmas; older builds must not write newer DBs.
@@ -224,13 +242,29 @@ class Store:
             conn = self._open()
             try:
                 old_version = conn.execute("PRAGMA user_version").fetchone()[0]
-                if old_version == self.schema_version:
+                # Pre-release schema-1 workspaces can predate the key-table amendment.
+                key_amendment = (
+                    old_version >= 1
+                    and not conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_keys'"
+                    ).fetchone()
+                )
+                if old_version == self.schema_version and not key_amendment:
                     return
                 with file_lock(self.paths.worker_lock, blocking=False):
                     if had_database:
                         self._backup(conn, self.paths.root / "backups" / m.new_id("pre_upgrade"))
                     conn.execute("BEGIN IMMEDIATE")
                     try:
+                        if key_amendment:
+                            # Read the authoritative 001 statements, never a second DDL copy.
+                            for statement in _statements(MIGRATIONS[1].read_text()):
+                                if re.match(
+                                    r"CREATE (?:TABLE workspace_keys|UNIQUE INDEX workspace_key_|"
+                                    r"TRIGGER workspace_key_)",
+                                    statement.lstrip(),
+                                ):
+                                    conn.execute(statement)
                         for version in range(old_version + 1, self.schema_version + 1):
                             if version not in migrations:
                                 raise m.CoreError(m.ErrorCode.STORAGE, "Missing migration")
@@ -249,6 +283,106 @@ class Store:
                 ) from exc
             finally:
                 conn.close()
+
+    @staticmethod
+    def _key_name(name: str) -> None:
+        if re.fullmatch(r"[a-z][a-z0-9_.-]{0,63}", name, flags=re.ASCII) is None:
+            raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid workspace key name")
+
+    def get_workspace_key(
+        self, name: str, version: int | None = None, *, conn: sqlite3.Connection | None = None
+    ) -> WorkspaceKey:
+        """Read an active key or an exact older version without creating anything."""
+        self._key_name(name)
+        if conn is None:
+            with self.connection() as read:
+                return self.get_workspace_key(name, version, conn=read)
+        row = conn.execute(
+            "SELECT * FROM workspace_keys WHERE name=? AND "
+            + ("status='active'" if version is None else "version=?"),
+            (name,) if version is None else (name, version),
+        ).fetchone()
+        if row is None:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Workspace signing key is unavailable")
+        return WorkspaceKey(**dict(row))
+
+    def workspace_verification_keys(self, name: str) -> tuple[WorkspaceKey, ...]:
+        """Retained active/retired keys; read-only, including legacy cursor material."""
+        self._key_name(name)
+        with self.connection() as conn:
+            return tuple(
+                WorkspaceKey(**dict(row))
+                for row in conn.execute(
+                    "SELECT * FROM workspace_keys WHERE name=? ORDER BY version DESC", (name,)
+                )
+            )
+
+    def get_or_create_workspace_key(
+        self, name: str, *, conn: sqlite3.Connection | None = None
+    ) -> WorkspaceKey:
+        """Provision at initialization/mutation boundaries, never in a read-only tool."""
+        self._key_name(name)
+        if conn is None:
+            with self.transaction() as tx:
+                return self.get_or_create_workspace_key(name, conn=tx)
+        active = conn.execute(
+            "SELECT version FROM workspace_keys WHERE name=? AND status='active'", (name,)
+        ).fetchone()
+        if active:
+            return self.get_workspace_key(name, active[0], conn=conn)
+        version = conn.execute(
+            "SELECT coalesce(max(version),0)+1 FROM workspace_keys WHERE name=?", (name,)
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO workspace_keys VALUES(?,?,?,?, 'active')",
+            (name, version, secrets.token_bytes(32), self.clock()),
+        )
+        return self.get_workspace_key(name, version, conn=conn)
+
+    def rotate_workspace_key(self, name: str) -> WorkspaceKey:
+        """Create the next active version atomically, retaining all verification keys."""
+        self._key_name(name)
+        with self.transaction() as conn:
+            conn.execute(
+                "UPDATE workspace_keys SET status='retired' WHERE name=? AND status='active'",
+                (name,),
+            )
+            return self.get_or_create_workspace_key(name, conn=conn)
+
+    def _provision_workspace_keys(self) -> None:
+        with self.transaction() as conn:
+            legacy = conn.execute(
+                "SELECT response FROM request_receipts "
+                "WHERE operation='content.cursor_key' AND request_key='v1'"
+            ).fetchone()
+            if legacy:
+                try:
+                    material = bytes.fromhex(json.loads(legacy[0])["key"])
+                    if len(material) != 32:
+                        raise ValueError
+                except (ValueError, KeyError, TypeError) as exc:
+                    raise m.CoreError(
+                        m.ErrorCode.STORAGE, "Legacy cursor signing key is unavailable"
+                    ) from exc
+                rows = conn.execute(
+                    "SELECT * FROM workspace_keys WHERE name=?", (CONTENT_CURSOR_KEY,)
+                ).fetchall()
+                if not any(row["key_material"] == material for row in rows):
+                    conn.execute(
+                        "INSERT INTO workspace_keys VALUES(?,?,?,?,?)",
+                        (
+                            CONTENT_CURSOR_KEY,
+                            max((row["version"] for row in rows), default=0) + 1,
+                            material,
+                            self.clock(),
+                            "retired" if rows else "active",
+                        ),
+                    )
+                conn.execute(
+                    "DELETE FROM request_receipts "
+                    "WHERE operation='content.cursor_key' AND request_key='v1'"
+                )
+            self.get_or_create_workspace_key(CONTENT_CURSOR_KEY, conn=conn)
 
     def insert(self, record: T, *, conn: sqlite3.Connection | None = None) -> T:
         if conn is None:

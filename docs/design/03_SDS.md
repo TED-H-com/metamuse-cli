@@ -92,6 +92,7 @@ handlers只做parse/render，domain結果不print。所有mutations有request_ke
 | exports | project、selection、format、manifest/artifact、state。 |
 | events | event/object/job/project、類型、去秘密detail與time；不是存所有秘密的log。 |
 | worker_state | singleton owner nonce/epoch/heartbeat；不取代OS鎖。 |
+| workspace_keys | private name/version/key_material/created_at/status；active key及保留的舊verification版本。 |
 
 P1才加actions/action_attempts、metric_snapshots，不預建campaign/voice/formula策略庫。
 
@@ -260,9 +261,10 @@ Search uses exact case-sensitive substring matching without Traditional/Simplifi
 Unicode conversion. Stateless HMAC cursors carry project/query bindings, row watermarks,
 membership fingerprints and last sort keys; latest-as-of queries exclude later inserts
 and revisions. Deletion, replacement or loss of visibility fails rather than skipping a
-reference. A single workspace signing key uses existing SQLite receipts and survives
-backup/restore; no per-query files, second store or migration is added. Formal key lifecycle
-support remains a core request. Long snippets preserve the entire matched query.
+reference. Store initialization provisions a private versioned workspace key before read-only search.
+Active/retired keys survive backup/restore, and legacy receipt keys are imported once for
+existing cursor verification. Pre-release schema 001 is amended without a version bump;
+no per-query files or second store is added. Keys never enter tool results/events/exports. Long snippets preserve the entire matched query.
 
 Packet digests are SHA-256 of exact redacted rendered UTF-8 bytes, including source labels
 and limitations; the 48-KiB limit applies after rendering/redaction. Draft digests cover

@@ -34,11 +34,12 @@ watermarks, fingerprint/count and last sort key. Malformed, tampered, wrong-work
 foreign cursors are `E_INPUT_INVALID`. Cursors survive restart and backup/restore; page
 size can change. They grant no permission and are not an encryption mechanism.
 
-Search creates no per-query state or files. One random 32-byte workspace signing key
-uses the existing SQLite mutation-receipt API (`content.cursor_key`, key `v1`), so core
-backup/restore retains it. Search performs a short bookkeeping transaction before the
-read snapshot; the first call provisions that key. Formal key lifecycle/rotation support
-is a core change request. No migration or second store is added. Old file-marker cursors
+Search creates no per-query state or files and performs no writes. Store initialization
+provisions the active 32-byte `content.cursor` key in the private `workspace_keys` table.
+Search signs with the active key and verifies against retained versions; rotation and
+backup/restore preserve older cursors. Initialization imports a legacy
+`content.cursor_key`/`v1` receipt once, retaining its material for verification and removing
+the receipt. Schema 001 is amended in place before release; there is no second store. Old file-marker cursors
 are invalid; this implementation neither reads nor creates their files. Existing legacy
 markers require operator retention cleanup. Same-UID hostile shell access is outside
 this trust model.
