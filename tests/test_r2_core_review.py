@@ -80,12 +80,17 @@ def test_r2_f2_archive_schema_is_verified_before_target_write(ctx, records, tmp_
 
 
 def test_r2_f2_migration_cannot_drop_a_guard_and_commit(ctx, tmp_path):
-    migration = tmp_path / "002.sql"
+    current = core.SCHEMA_VERSION
+    migration = tmp_path / f"{current + 1:03}.sql"
     migration.write_text("DROP TRIGGER source_method_immutable;\n")
     with pytest.raises(m.CoreError, match="schema|guard"):
-        core.Store(ctx.paths, migrations={**core.MIGRATIONS, 2: migration}, schema_version=2)
+        core.Store(
+            ctx.paths,
+            migrations={**core.MIGRATIONS, current + 1: migration},
+            schema_version=current + 1,
+        )
     with closing(sqlite3.connect(ctx.paths.database)) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == current
         assert conn.execute(
             "SELECT 1 FROM sqlite_master WHERE name='source_method_immutable'"
         ).fetchone()
@@ -132,10 +137,11 @@ def test_r2_f4_partial_results_survive_warning_suppression_and_same_version_rest
 
 def test_r2_f4_upgrade_status_reaches_cli_and_inspect(ctx, records, tmp_path, monkeypatch, capsys):
     (ctx.paths.root / records["export"]["artifact"] / "records.jsonl").unlink()
-    migration = tmp_path / "002.sql"
+    current = core.SCHEMA_VERSION
+    migration = tmp_path / f"{current + 1:03}.sql"
     migration.write_text("CREATE TABLE upgrade_probe(id TEXT);\n")
-    monkeypatch.setattr(core, "MIGRATIONS", {**core.MIGRATIONS, 2: migration})
-    monkeypatch.setattr(core, "SCHEMA_VERSION", 2)
+    monkeypatch.setattr(core, "MIGRATIONS", {**core.MIGRATIONS, current + 1: migration})
+    monkeypatch.setattr(core, "SCHEMA_VERSION", current + 1)
     with pytest.warns(core.BackupWarning):
         assert cli.main(["--workspace", str(ctx.paths.root), "--json", "doctor"]) == 0
     envelope = json.loads(capsys.readouterr().out)
@@ -299,7 +305,8 @@ def test_r2_f2_all_schema_object_types_and_normal_open_are_checked(ctx, tmp_path
 
 
 def test_r2_f2_runtime_migration_schema_drift_rolls_back_before_commit(ctx, tmp_path, monkeypatch):
-    migration = tmp_path / "002.sql"
+    current = core.SCHEMA_VERSION
+    migration = tmp_path / f"{current + 1:03}.sql"
     migration.write_text("CREATE TABLE upgrade_probe(id TEXT);\n")
     original = core._statements
 
@@ -309,13 +316,19 @@ def test_r2_f2_runtime_migration_schema_drift_rolls_back_before_commit(ctx, tmp_
             yield "DROP TRIGGER source_method_immutable;"
 
     # Build the trusted expected schema first, then inject an execution-only bug.
-    scripts = (core.MIGRATIONS[1].read_text(), migration.read_text())
+    scripts = tuple(core.MIGRATIONS[v].read_text() for v in range(1, current + 1)) + (
+        migration.read_text(),
+    )
     core._expected_schema(scripts)
     monkeypatch.setattr(core, "_statements", changed)
     with pytest.raises(m.CoreError, match="canonical"):
-        core.Store(ctx.paths, migrations={**core.MIGRATIONS, 2: migration}, schema_version=2)
+        core.Store(
+            ctx.paths,
+            migrations={**core.MIGRATIONS, current + 1: migration},
+            schema_version=current + 1,
+        )
     with closing(sqlite3.connect(ctx.paths.database)) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == current
         assert conn.execute(
             "SELECT 1 FROM sqlite_master WHERE name='source_method_immutable'"
         ).fetchone()

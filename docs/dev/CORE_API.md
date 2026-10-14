@@ -396,8 +396,9 @@ O_NOFOLLOW. These checks protect application mistakes, not a hostile process con
 the same user and changing paths during a system call.
 
 Runtime restore.incomplete is written and fsynced before initialize, and removed with a
-subsequent directory fsync, both inside the maintenance lock, only after successful
-migration/integrity checks. Connection/migrate recheck the marker after acquiring that lock. Normal open,
+subsequent directory fsync inside the maintenance lock, only after successful
+migration/integrity checks. Connection/migrate recheck the marker after acquiring that
+lock. Normal open,
 connection, migrate and put_object reject even broken-symlink markers. Copied worker_state
 is cleared before the pre-upgrade backup. A failure leaves the target blocked; restore
 again into another fresh destination after resolving the failure. Do not remove a marker
@@ -406,10 +407,11 @@ Migration holds the maintenance/worker locks, disables foreign_keys before BEGIN
 for table rebuilds, checks foreign_key_check before commit, and restores enforcement in
 finally. DDL failure rolls back without deleting original data. `PRAGMA
 user_version` is schema version 2; older builds refuse newer schemas on every connection.
-Add future migrations only through the core owner. No LIVE, privacy erasure/compaction,
+Add future migrations only through the core owner.
 Schema 2 adds project-scoped transcript anchors and source_assets. Migration 002 copies
 a v1 transcript only when its asset links to exactly one project; ambiguity aborts safely.
-Windows ACL verification or performance SLA evidence is implied by these APIs.
+No LIVE, privacy erasure/compaction, Windows ACL verification or performance SLA
+evidence is implied by these APIs.
 
 ## Tables and columns
 
@@ -621,13 +623,20 @@ use their existing guarded APIs rather than immutable status values.
 | job_steps | id, job_id, sequence, target, side_effect_class, uncertain_state; entered attempt cannot reset/requeue |
 | workspace_keys | name/version, key_material, created_at; retired material retained, active slot rotated atomically |
 | exports | id, project_id always; ready/unavailable payload frozen, ready→unavailable allowed once |
+| transcript_segments | id/revision; whole row including project, anchors and rowid is append-only |
+| source_assets | source_id/asset_id/relation; whole row including project and rowid is immutable |
 
 Every table's no-replace guard includes primary, declared secondary unique and rowid
 conflicts. The F2 regression fixture uses unreferenced victims and asserts exact trigger
 messages; METAMUSE_TEST_DROP_GUARDS=1 is a test-only mutation switch proving all 38
 replacement cases fail when their guards are removed. Exports cannot regain ready state
 from unavailable. Receipt replay compares the authoritative row and verifies its artifact.
-Transcript guards/scoping remain B05/B06-owned until its migration rebase.
+Schema 2 retains the four B05/B06 guard names: transcript_revision_immutable,
+transcript_revision_no_replace, source_assets_immutable and source_assets_no_replace.
+Their whole-row UPDATE guards cover rowid and all binding columns; the INSERT guards
+cover the composite primary key and rowid. Neither table has a secondary UNIQUE index.
+Canonical checks replay both migrations for fresh v2, upgrades and restores. A retained
+table rebuild must preserve or recreate every prior guard name.
 
 Storage triggers freeze packet payloads (stale remains mutable), acquisition methods,
 permit scope and settled exchange outcomes. Permit used is monotonic, revocation sticky,
@@ -637,6 +646,7 @@ B08 owns verification and atomic consumption on the verifier's supplied connecti
 adds no competing permit API. New scope/expiry/use budgets require a new human grant.
 Ready object reads/inserts verify SHA-256; put_object can repair a corrupt occupant only
 with newly measured/hash-verified bytes and rejects a conflicting MIME classification.
-Failed backups remove only their newly created partial destination. Schema remains 1;
-001 is amended for fresh development workspaces, not an automatic upgrade of existing
-schema-1 development databases. Core still owns all migrations and generated schemas.
+Failed backups remove only their newly created partial destination. Schema is 2;
+001 and 002 are amended pre-release. Canonical v1 workspaces upgrade through 002;
+older development workspaces missing amendments in 001 must be recreated.
+Core still owns all migrations and generated schemas.

@@ -60,11 +60,12 @@ def test_f1_backup_is_standalone_and_verifies_the_copied_database(ctx, records, 
             core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "rejected"))
 
 
-def synthetic_v2(tmp_path, monkeypatch, script="CREATE TABLE upgrade_probe(id INT);\n"):
-    migration = tmp_path / "synthetic_002.sql"
+def synthetic_next(tmp_path, monkeypatch, script="CREATE TABLE upgrade_probe(id INT);\n"):
+    target_version = core.SCHEMA_VERSION + 1
+    migration = tmp_path / f"synthetic_{target_version:03}.sql"
     migration.write_text(script)
-    monkeypatch.setattr(core, "MIGRATIONS", {**core.MIGRATIONS, 2: migration})
-    monkeypatch.setattr(core, "SCHEMA_VERSION", 2)
+    monkeypatch.setattr(core, "MIGRATIONS", {**core.MIGRATIONS, target_version: migration})
+    monkeypatch.setattr(core, "SCHEMA_VERSION", target_version)
     return migration
 
 
@@ -83,10 +84,10 @@ def test_f4_unavailable_exports_warn_without_blocking_backup_open_or_migration(
     manifest = json.loads((backup / "manifest.json").read_bytes())
     assert manifest["status"] == "partial"
     assert manifest["exports"][0]["state"] == "unavailable"
-    synthetic_v2(tmp_path, monkeypatch)
+    synthetic_next(tmp_path, monkeypatch)
     with pytest.warns(UserWarning, match="unavailable"):
         upgraded = core.Store(ctx.paths)
-    assert upgraded.schema_version == 2
+    assert upgraded.schema_version == core.SCHEMA_VERSION
     with pytest.warns(UserWarning, match="unavailable"):
         restored = core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored")).store
     assert restored.get(m.Export, records["export"]["id"]).state == "unavailable"
@@ -141,7 +142,7 @@ def test_f6_marker_unlink_is_fsynced_and_preupgrade_worker_state_is_cleared(
     with ctx.store.transaction() as conn:
         conn.execute("UPDATE worker_state SET owner_nonce='99999:synthetic',heartbeat='2000-01-01'")
     backup = ctx.store.backup(tmp_path / "backup").path
-    synthetic_v2(tmp_path, monkeypatch)
+    synthetic_next(tmp_path, monkeypatch)
     paths = WorkspacePaths.resolve(tmp_path / "restored")
     observed = []
     original = core._fsync_dir
@@ -312,7 +313,7 @@ def test_f1_f4_old_backup_verification_is_independent_of_current_models(
     monkeypatch.setattr(
         core, "MODEL_TABLES", {**core.MODEL_TABLES, FutureAsset: "assets", FutureExport: "exports"}
     )
-    synthetic_v2(
+    synthetic_next(
         tmp_path,
         monkeypatch,
         "ALTER TABLE assets ADD COLUMN future_column TEXT NOT NULL DEFAULT 'v2';\n"

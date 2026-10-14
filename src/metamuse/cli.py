@@ -18,7 +18,6 @@ from pydantic import ValidationError
 from metamuse import app
 from metamuse import models as m
 from metamuse.jobs import TERMINAL, Executor, worker_available
-from metamuse.store import SCHEMA_VERSION
 
 
 class Parser(argparse.ArgumentParser):

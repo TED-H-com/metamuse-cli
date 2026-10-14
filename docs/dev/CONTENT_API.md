@@ -21,7 +21,8 @@ then binary ID order and revision. Keyset pagination keeps later insertions/revi
 out of the snapshot. Deletion, replacement or loss of visibility changes the fingerprint
 and fails with `E_REFERENCE_INVALID`; it never silently skips members or substitutes an
 older revision. Source metadata is read at page time, while selected text revisions are
-fixed. Schema-1 transcript visibility can shrink when current item attachments change.
+fixed. Transcript visibility uses the authoritative schema-2 project_id; sharing object
+bytes with another project grants no access to derived transcript text.
 
 Results contain `ref` (an exact EvidenceRef), `snippet` (normally at most 240 code points),
 `snippet_start_code_points` (offset into the original text), and whitelisted `source`
@@ -169,20 +170,15 @@ still replay after reference checks; they are never regenerated under an old rec
 Ready/unavailable export payloads are frozen, and replay compares the authoritative row
 with its receipt before verifying files. Orphan/uncommitted directories are excluded.
 
-## Integration pending
+## Schema-2 integration
 
-Schema 1 lacks transcript project ownership. All content visibility SQL lives in
-`_transcript_scope_sql`: a transcript requires an asset attachment through a current item
-revision in the requested project and no surviving attachment in any other project.
-The latter includes historical attachments, conservatively avoiding exposure after a
-different project's current item drops that asset. Shared assets hide transcripts from
-both projects; historical attachments in the requested project alone grant no access.
-This is a fail-closed stopgap, not an ownership inference. When B05/B06 migration 002
-lands, switch this helper to authoritative `transcript_segments.project_id` with nullable
-assets/item/source anchors, and adapt the core validator together. No migration, store
-semantics or jobs semantics were changed. Asset-independent transcripts and proactive
-core stale marking on transcript insertion remain pending; these content operations
-compute transcript/transitive staleness on creation, preview and replay.
+`_transcript_scope_sql` uses authoritative `transcript_segments.project_id`. Transcripts
+can use nullable asset/item/source anchors, and the core validator enforces project
+ownership separately from object-byte sharing. A v1 transcript upgrades only when its
+asset links to exactly one project; unlinked or ambiguous ownership aborts with the old
+data retained. New transcript revisions mark directly derived packets/drafts stale in
+the same transaction. Content operations also compute transitive staleness on creation,
+preview and replay. Absent item text is SQL NULL and flattens to `[missing text]`.
 
 `tools/measure_content_search.py` produces real MEASURE results for 30 fresh first-page
 calls on a fixed 10,000-record synthetic zh-Hant corpus. It uses a unique home-directory

@@ -1,14 +1,17 @@
 import io
 import json
+import re
 import sqlite3
+from contextlib import nullcontext
 from pathlib import Path
 
 import pytest
 
 from metamuse import app
 from metamuse import models as m
+from metamuse import store as core
 from metamuse.paths import WorkspacePaths
-from metamuse.store import MIGRATIONS, MIGRATIONS, SCHEMA_VERSION, Store
+from metamuse.store import MIGRATIONS, SCHEMA_VERSION, Store
 
 
 def source(ctx, project, sid="src_one"):
@@ -561,7 +564,9 @@ def test_migration_rollback_backup_and_newer_refusal(ctx, project, tmp_path):
     migration = tmp_path / "next_failure.sql"
     migration.write_text("CREATE TABLE intermediate(id TEXT);\nINSERT INTO missing VALUES(1);\n")
     with pytest.raises(m.CoreError) as error:
-        Store(ctx.paths, schema_version=current + 1, migrations={**MIGRATIONS, current + 1: migration})
+        Store(
+            ctx.paths, schema_version=current + 1, migrations={**MIGRATIONS, current + 1: migration}
+        )
     assert error.value.detail.code == m.ErrorCode.STORAGE
     with ctx.store.connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == current
@@ -572,7 +577,9 @@ def test_migration_rollback_backup_and_newer_refusal(ctx, project, tmp_path):
     restored = Store.restore(backup, WorkspacePaths.resolve(tmp_path / "pre_restored")).store
     assert restored.get(m.Project, project).id == project
     migration.write_text("CREATE TABLE added(id TEXT);\n")
-    newer = Store(ctx.paths, schema_version=current + 1, migrations={**MIGRATIONS, current + 1: migration})
+    newer = Store(
+        ctx.paths, schema_version=current + 1, migrations={**MIGRATIONS, current + 1: migration}
+    )
     with newer.connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == current + 1
     with pytest.raises(m.CoreError) as error:
@@ -697,7 +704,11 @@ def test_upgrade_refuses_live_executor(ctx, tmp_path):
     migration.write_text("CREATE TABLE added(id TEXT);\n")
     with Executor(ctx.store):
         with pytest.raises(m.CoreError) as error:
-            Store(ctx.paths, schema_version=current + 1, migrations={**MIGRATIONS, current + 1: migration})
+            Store(
+                ctx.paths,
+                schema_version=current + 1,
+                migrations={**MIGRATIONS, current + 1: migration},
+            )
         assert error.value.detail.code == m.ErrorCode.JOB_BUSY
     with ctx.store.connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == current
@@ -835,15 +846,116 @@ def test_r06_transcript_history_is_append_only_on_fresh_and_upgraded_databases(
     assert upgraded.get(m.TranscriptSegment, "seg_v1").text == "舊字幕"
 
 
-def test_r15_older_backup_restore_reports_protocol_mismatch(tmp_path):
-    """Older-backup restore is assigned to the core owner. This build refuses it."""
+@pytest.mark.parametrize("missing_export", [False, True], ids=["complete", "partial"])
+def test_r15_v1_backup_restores_through_real_002_with_receipt_replay(tmp_path, missing_export):
+    paths, asset = _v1_transcript_workspace(tmp_path, link_item=True)
+    legacy = Store(paths, schema_version=1, migrations={1: MIGRATIONS[1]})
+    legacy_ctx = app.AppContext(paths, legacy)
+    project_request = {"name": "Receipt project", "request_key": "v1-project"}
+    project_result = app.create_project(legacy_ctx, project_request)
+    assert project_result.status == "ok"
+    saved = app.save_draft(
+        legacy_ctx,
+        {
+            "project_id": "prj_v1",
+            "text": "備份稿",
+            "platform": "generic",
+            "request_key": "v1-draft",
+        },
+    )
+    assert saved.status == "ok"
+    request = {
+        "project_id": "prj_v1",
+        "selection": [{"kind": "draft_revision", "id": saved.data["draft_id"], "revision": 1}],
+        "format": "jsonl",
+        "request_key": "v1-export",
+    }
+    exported = app.export_objects(legacy_ctx, request)
+    assert exported.status == "ok"
+    if missing_export:
+        (paths.root / exported.data["artifact"] / "records.jsonl").unlink()
 
-    paths, _asset = _v1_transcript_workspace(tmp_path, link_item=True)
-    Store(paths)
-    backup = next((paths.root / "backups").glob("pre_upgrade_*"))
-    with pytest.raises(m.CoreError) as error:
-        Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored"))
-    assert error.value.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
+    def warning():
+        return pytest.warns(core.BackupWarning) if missing_export else nullcontext()
+
+    with warning():
+        backed_up = legacy.backup(tmp_path / "backup-v1")
+    backup = backed_up.path
+    before = {p.relative_to(backup): p.read_bytes() for p in backup.rglob("*") if p.is_file()}
+    entries = {p.relative_to(backup) for p in backup.rglob("*")}
+    target = WorkspacePaths.resolve(tmp_path / "restored-v2")
+    with warning():
+        result = Store.restore(backup, target)
+    expected_status = "partial" if missing_export else "complete"
+    assert backed_up.status == result.status == expected_status
+    assert result.path == target.root
+    assert result.unavailable_export_ids == ((exported.data["id"],) if missing_export else ())
+    assert bool(result.warnings) is missing_export
+    restored = result.store
+    assert restored.schema_version == 2
+    segment = restored.get(m.TranscriptSegment, "seg_v1", revision=1)
+    assert segment.project_id == "prj_v1"
+    assert segment.text == "舊字幕" and segment.language == "zh-Hant"
+    assert (segment.asset_id, segment.start_ms, segment.end_ms) == (asset.id, 0, 500)
+    assert (segment.cue_index, segment.overlap, segment.item_id, segment.source_id) == (
+        0,
+        False,
+        None,
+        None,
+    )
+    assert restored.get(m.ItemRevision, "itm_v1", revision=1).text == "舊稿"
+    ref = m.EvidenceRef(kind="transcript_segment", id=segment.id, revision=1)
+    with restored.connection() as conn:
+        restored.validate_evidence("prj_v1", [ref], conn=conn)
+        with pytest.raises(m.CoreError, match="Evidence is outside project"):
+            restored.validate_evidence(project_result.data["id"], [ref], conn=conn)
+        assert not conn.execute("PRAGMA foreign_key_check").fetchall()
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        core._verify_schema(conn, 2, MIGRATIONS)
+    restored_ctx = app.AppContext.open(target.root)
+    assert app.create_project(restored_ctx, project_request).data == project_result.data
+    replay = app.export_objects(restored_ctx, request)
+    if missing_export:
+        assert replay.status == "error"
+        assert replay.error.code == m.ErrorCode.RESOURCE_UNAVAILABLE
+        assert restored.get(m.Export, exported.data["id"]).state == "unavailable"
+    else:
+        assert replay.status == "ok" and replay.data == exported.data
+        artifact = restored.verify_export(restored.get(m.Export, exported.data["id"]))
+        assert (artifact / "records.jsonl").read_bytes() == before[
+            Path(exported.data["artifact"]) / "records.jsonl"
+        ]
+    snapshots = list((target.root / "backups").glob("pre_upgrade_*"))
+    assert len(snapshots) == 1
+    manifest = json.loads((snapshots[0] / "manifest.json").read_bytes())
+    assert manifest["schema_version"] == 1
+    assert manifest["status"] == ("partial" if missing_export else "ok")
+    with core._archive_connection(snapshots[0] / "state.sqlite3") as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("SELECT text FROM transcript_segments").fetchone()[0] == "舊字幕"
+        assert not conn.execute("SELECT 1 FROM sqlite_master WHERE name='source_assets'").fetchone()
+        core._verify_schema(conn, 1, {1: MIGRATIONS[1]})
+    assert restored.pre_upgrade_backups()[0]["status"] == expected_status
+    assert not (target.runtime / "restore.incomplete").exists()
+    assert {p.relative_to(backup) for p in backup.rglob("*")} == entries
+    assert {
+        p.relative_to(backup): p.read_bytes() for p in backup.rglob("*") if p.is_file()
+    } == before
+
+
+def test_v1_transcripts_upgrade_through_app_context_open(tmp_path):
+    paths, asset = _v1_transcript_workspace(tmp_path, link_item=True)
+    ctx = app.AppContext.open(paths.root)
+    assert ctx.store.schema_version == 2
+    segment = ctx.store.get(m.TranscriptSegment, "seg_v1", revision=1)
+    assert (segment.project_id, segment.text, segment.asset_id) == ("prj_v1", "舊字幕", asset.id)
+    with ctx.store.connection() as conn:
+        core._verify_schema(conn, 2, MIGRATIONS)
+        ctx.store.validate_evidence(
+            "prj_v1", [m.EvidenceRef(kind="transcript_segment", id="seg_v1", revision=1)], conn=conn
+        )
+    assert len(list((paths.root / "backups").glob("pre_upgrade_*"))) == 1
+    assert ctx.store.pre_upgrade_backups()[0]["status"] == "complete"
 
 
 _SEGMENT_COLUMNS = (
@@ -882,12 +994,11 @@ def _index_names(store, table: str) -> dict[str, tuple[bool, tuple[str, ...]]]:
 
 
 def _expect_rejected(store, sql: str, params: tuple, marker: str) -> None:
-    with pytest.raises(m.CoreError) as caught:
-        with store.transaction() as conn:
+    # Inspect the SQLite error at the connection boundary; Store errors deliberately
+    # suppress raw causes, which can contain private values.
+    with store.connection() as conn:
+        with pytest.raises(sqlite3.IntegrityError, match=re.escape(marker)):
             conn.execute(sql, params)
-    assert caught.value.detail.code == m.ErrorCode.REFERENCE_INVALID
-    assert caught.value.__cause__ is not None
-    assert marker in str(caught.value.__cause__)
 
 
 def _segment_sql(statement: str) -> str:

@@ -554,8 +554,9 @@ are checked at model/app/store boundaries. Unknown operation handlers leave work
 BEFORE INSERT guards prevent replacement/UPSERT of guarded identities; recursive delete
 triggers protect retained key versions. Ready/unavailable export payloads are immutable;
 only ready→unavailable changes state, and replay verifies the authoritative export row.
-Schema 001 guard fixes remain version 1 before release; transcript scope and immutability
-are deferred to B05/B06 migration 002, without treating shared bytes as derived-data permission.
+Schema 001 guard fixes remain amended in place before release. Schema version 2
+registers 002 for project-scoped transcripts and immutable source_assets; shared bytes
+never grant permission to another project's derived data.
 
 ### B07/B11 content implementation clarifications
 
@@ -599,12 +600,14 @@ preserves unavailable state; receipt replay fails honestly. Copied artifacts rem
 verified. Orphan cleanup remains pending. Legacy search-marker files are no longer read
 or created; cleanup of files from older development builds remains an operator task.
 
-Schema-1 transcript visibility requires a current item/asset link in the requested
-project and no surviving link (including historical) in any other project. Sharing bytes
-hides transcripts from both projects. Migration 002 must replace this fail-closed helper
-with authoritative project_id and coordinate the core validator, nullable-asset anchors
-and proactive transcript stale marking. B07/B11 computes transcript staleness at use;
-its fixture evidence does not claim pending integration or any LIVE result.
+Schema-2 transcript visibility uses authoritative project_id, with nullable asset/item/source
+anchors. Migration 002 copies a v1 transcript only when its asset links to exactly one
+project; unlinked or ambiguous ownership aborts and retains the original data. New
+transcript revisions mark directly derived records stale; B07/B11 also checks transitive
+staleness at use. Fresh v2 databases and restored/upgraded v1 databases must have the
+same canonical schema. Both 002 tables retain their guard names, use rowid-aware INSERT
+guards and whole-row UPDATE freezes, and have no secondary UNIQUE indexes. These
+changes are pre-release amendments to 001/002, not an additional migration.
 
 
 ### Core round-3 storage clarifications

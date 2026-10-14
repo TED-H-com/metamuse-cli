@@ -10,11 +10,12 @@ from metamuse import models as m
 from metamuse import store as core
 
 
-def synthetic_v2(tmp_path, monkeypatch, script="CREATE TABLE upgrade_probe(id INT);\n"):
-    migration = tmp_path / "synthetic_002.sql"
+def synthetic_next(tmp_path, monkeypatch, script="CREATE TABLE upgrade_probe(id INT);\n"):
+    target_version = core.SCHEMA_VERSION + 1
+    migration = tmp_path / f"synthetic_{target_version:03}.sql"
     migration.write_text(script)
-    monkeypatch.setattr(core, "MIGRATIONS", {**core.MIGRATIONS, 2: migration})
-    monkeypatch.setattr(core, "SCHEMA_VERSION", 2)
+    monkeypatch.setattr(core, "MIGRATIONS", {**core.MIGRATIONS, target_version: migration})
+    monkeypatch.setattr(core, "SCHEMA_VERSION", target_version)
     return migration
 
 
@@ -46,7 +47,7 @@ def test_f3_rebuild_with_child_rows_uses_fk_check_and_restores_enforcement(
     )
     if bad_fk:
         script += "INSERT INTO rebuild_child VALUES(2,99);\n"
-    synthetic_v2(tmp_path, monkeypatch, script)
+    synthetic_next(tmp_path, monkeypatch, script)
     trace = []
     original = core.Store._open
 
@@ -60,7 +61,7 @@ def test_f3_rebuild_with_child_rows_uses_fk_check_and_restores_enforcement(
         with pytest.raises(m.CoreError):
             core.Store(ctx.paths)
         with closing(sqlite3.connect(ctx.paths.database)) as conn:
-            assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+            assert conn.execute("PRAGMA user_version").fetchone()[0] == ctx.store.schema_version
             assert conn.execute("SELECT count(*) FROM rebuild_child").fetchone()[0] == 1
     else:
         upgraded = core.Store(ctx.paths)
