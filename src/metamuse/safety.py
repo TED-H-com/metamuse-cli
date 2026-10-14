@@ -14,11 +14,11 @@ import socket
 import sqlite3
 import stat
 import unicodedata
-from array import array
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from functools import lru_cache
 from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal
@@ -1318,6 +1318,7 @@ def external_action_verifier(
 # --- Redaction (B07/B11) ---
 
 
+@lru_cache(maxsize=2048)
 def redaction_sensitive_key(key: str) -> bool:
     """ASCII credential names only; normalize percent encoding and -/_ spelling."""
     import re
@@ -1408,34 +1409,58 @@ def _cookie_values(text: str) -> bool:
     return False
 
 
-def _redaction_decoded_spans(text: str) -> tuple[str, array | None]:
-    """Decode at most three layers, retaining original character boundaries.
+def _encoded_separator(char: str, *, literal: bool = True) -> str:
+    encoded = rf"%(?:25){{0,2}}{ord(char):02x}"
+    return "(?:" + (re.escape(char) + "|" if literal else "") + encoded + ")"
 
-    ASCII separators can be encoded independently or inside an encoded redirect.
-    Mapping spans lets us replace the original value without re-encoding the URL.
-    """
-    if re.search(r"%[0-9a-fA-F]{2}", text) is None:
-        return text, None
-    # Compact numeric boundaries avoid allocating a Python tuple for every character
-    # in large exports; unencoded text needs no offset map at all.
-    spans = array("Q", range(len(text) + 1))
-    for _ in range(3):
-        parts = []
-        decoded_spans = array("Q")
-        start = 0
-        for match in re.finditer(r"%[0-9a-fA-F]{2}", text):
-            parts.append(text[start : match.start()])
-            decoded_spans.extend(spans[start : match.start()])
-            parts.append(chr(int(match.group()[1:], 16)))
-            decoded_spans.append(spans[match.start()])
-            start = match.end()
-        if start == 0:
-            break
-        parts.append(text[start:])
-        decoded_spans.extend(spans[start:])
-        text = "".join(parts)
-        spans = decoded_spans
-    return text, spans
+
+def _url_redaction_spans(text: str) -> list[tuple[int, int]]:
+    """Locate bounded names and separators in original bytes, without a dense map."""
+    parameters = re.compile(
+        r"(?:[?&#]|%(?:25){0,2}(?:3f|26|23))(?P<key>[A-Za-z0-9_.%\-]{1,384}?)"
+        + _encoded_separator("="),
+        re.ASCII | re.IGNORECASE,
+    )
+    ending = re.compile(r"%(?:25){0,2}(?:3f|26|23)|[\s&#\"'<>{}\]]", re.ASCII | re.IGNORECASE)
+    signed = {
+        "oh",
+        "oe",
+        "sp",
+        "sv",
+        "sr",
+        "se",
+        "st",
+        "skoid",
+        "sktid",
+        "skt",
+        "ske",
+        "sks",
+        "skv",
+    }
+    spans = []
+    for match in parameters.finditer(text):
+        if spans and match.end() <= spans[-1][1]:
+            continue
+        name = match["key"]
+        decoded_name = name
+        for _ in range(3):
+            decoded_name = unquote(decoded_name)
+        if not (redaction_sensitive_key(name) or decoded_name.lower() in signed):
+            continue
+        end_match = ending.search(text, match.end())
+        if (
+            end_match
+            and text.startswith("[REDACTED]", match.end())
+            and end_match.start() == match.end() + len("[REDACTED]") - 1
+        ):
+            end_match = ending.search(text, end_match.end())
+        end = end_match.start() if end_match else len(text)
+        value = text[match.end() : end]
+        if value and redaction_sensitive_value(
+            "token" if decoded_name.lower() in signed else name, value
+        ):
+            spans.append((match.end(), end))
+    return spans
 
 
 def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
@@ -1514,68 +1539,16 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         ),
     )
 
-    # Locate separators without swallowing outer redirect values, so encoded nested
-    # query strings are examined too. Only secret values are replaced.
-    decoded, offsets = _redaction_decoded_spans(text)
-    parameters = re.compile(r"[?&#](?P<key>[A-Za-z0-9_.-]+)=", re.ASCII)
-    ending = re.compile(r"""[\s?&#"'<>{}\]]""", re.ASCII)
-    signed = {
-        "oh",
-        "oe",
-        "sp",
-        "sv",
-        "sr",
-        "se",
-        "st",
-        "skoid",
-        "sktid",
-        "skt",
-        "ske",
-        "sks",
-        "skv",
-    }
-    spans = []
-    for match in parameters.finditer(decoded):
-        name = match["key"].lower()
-        if redaction_sensitive_key(name) or name in signed:
-            end_match = next(
-                (
-                    candidate
-                    for candidate in ending.finditer(decoded, match.end())
-                    if not (
-                        candidate.group() == "]"
-                        and decoded.startswith("[REDACTED]", match.end())
-                        and candidate.start() == match.end() + len("[REDACTED]") - 1
-                    )
-                    and (
-                        candidate.group() in "&#"
-                        or (
-                            candidate.group() == "?"
-                            and offsets is not None
-                            and offsets[candidate.end()] - offsets[candidate.start()] > 1
-                        )
-                        or (
-                            candidate.group() != "?"
-                            and (
-                                offsets is None
-                                or offsets[candidate.end()] - offsets[candidate.start()] == 1
-                            )
-                        )
-                    )
-                ),
-                None,
-            )
-            end = end_match.start() if end_match else len(decoded)
-            start_offset = offsets[match.end()] if offsets is not None else match.end()
-            end_offset = offsets[end] if offsets is not None else end
-            if end > match.end() and redaction_sensitive_value(
-                "token" if name in signed else name, decoded[match.end() : end]
-            ):
-                spans.append((start_offset, end_offset))
-    for start, end in reversed(spans):
-        if text[start:end] != "[REDACTED]":
-            text = text[:start] + "[REDACTED]" + text[end:]
-            count("url_token")
+    # All replacements use the original encoded spans; no character-sized offset map.
+    parts = []
+    position = 0
+    for start, end in _url_redaction_spans(text):
+        parts.extend((text[position:start], "[REDACTED]"))
+        position = end
+        count("url_token")
+    if parts:
+        parts.append(text[position:])
+        text = "".join(parts)
 
     value = quoted + r"""|[^\s;,"'{}\]]+"""
 
