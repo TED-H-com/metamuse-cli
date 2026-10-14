@@ -706,3 +706,7 @@ Netscape browser export and never synthesize a broad-domain cookie.
 The digest-based approval-key ordinal is shared with journey. Two simultaneous
 previews can show the same key, and changing approval terms with an already-used
 key can conflict; this round leaves that core approval-key design unchanged.
+
+For an accepted job, removing a first-hop host or the whole approval table also
+returns E_SCOPE_DENIED with the fresh-preview next_action before consumption and
+egress, even when the current selector cannot find an extractor.

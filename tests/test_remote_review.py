@@ -508,3 +508,29 @@ def test_review_invalid_labels_never_echo_value(entry, setting):
     assert marker not in json.dumps(envelope) + "\n".join(entry.diagnostics)
     path.write_text(path.read_text().replace(f'{setting} = "{marker}"', f'{setting} = "{old}"'))
     no_created_objects(entry)
+
+
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+@pytest.mark.parametrize("edit", ["host_removed", "table_removed"])
+def test_review_approval_edits_that_remove_access_require_fresh_preview(entry, channel, edit):
+    body = request(entry)
+    preview = collect(entry, body, channel)["approval"]
+    grant = entry.approve(preview, body, approval_key(preview))["data"]["id"]
+    accepted = submit(entry, {**body, "access_grant_id": grant}, channel)
+    path = entry.workspace / "metamuse.toml"
+    text = path.read_text()
+    if edit == "host_removed":
+        text = text.replace('hosts = ["media.fixture.test"]', 'hosts = ["other.fixture.test"]')
+    else:
+        text = text.split("[[remote_media.approvals]]")[0]
+    path.write_text(text)
+    entry.cli("worker", "run", "--once")
+    job = entry.cli("jobs", "get", accepted["data"]["job_id"])["data"]["job"]
+    assert job["state"] == "awaiting_user"
+    assert job["error"]["code"] == "E_SCOPE_DENIED"
+    assert (
+        job["error"]["next_action"]
+        == "Repeat the call without a grant to get a fresh approval preview"
+    )
+    assert permit(entry, grant)["used"] == 0
+    assert not entry.egress.exists()
