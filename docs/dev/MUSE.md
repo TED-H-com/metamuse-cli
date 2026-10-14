@@ -194,8 +194,12 @@ Upgrade 401/403 is `E_AUTH_REQUIRED`, 429 is `E_RATE_LIMITED`; DNS/connect/TLS f
 is `E_NETWORK_TIMEOUT`, with `E_SCOPE_REQUIRED` when the guard refuses. Corrupt/stale trust
 or failed commit/CAS is `E_STORAGE` (`never`). The upgrade URL, query, response body and raw
 curl exception are never copied into any exception, envelope or log. Redaction covers
-all nonce/proof/recovery/RV/notary/endorsement/wake/attempt aliases in snake, camel and hyphen
-forms, raw/encoded envelopes, embedded wake bodies and known values under unknown keys.
+the tested compact nonce/token/proof/secret/notary/noise-key/attempt-id/request-id/recovery
+families and existing RV/endorsement/wake aliases, including prefixes/suffixes, snake/camel/hyphen/dotted
+keys in query, header, repr, JSON, arrow and XML forms. Ordinary vm_id/discussion_id/job_id remain visible.
+Known values are decoded through two percent-encoding levels (including quote_plus and lowercase escapes),
+then scrubbed over the union of matching spans. Raw envelopes and embedded wake bodies are scrubbed.
+Triple percent encoding, base32, colon-separated hex and bytes repr are outside this tested scope.
 Handshake nonce hex/base64/base64url and WSS request IDs are held per connection for scrubbing.
 Credential/binding/header/body dataclass reprs suppress those fields.
 The response body is not copied into these errors. Unavailable VM is not an auth failure. Provider and guard exceptions are replaced with a fixed message. The public error is raised outside the handler, so its chain does not carry the original text.

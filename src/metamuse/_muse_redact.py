@@ -3,7 +3,7 @@
 import json
 import re
 from typing import Any
-from urllib.parse import quote, quote_plus, unquote
+from urllib.parse import unquote
 
 from metamuse.safety import redact_text, redaction_sensitive_key
 
@@ -23,16 +23,12 @@ _EXTRA_KEYS = frozenset(
         "endorsement",
     }
 )
-# One alias grammar for query assignments and raw/truncated JSON. Compact keys
-# accept snake_case, camelCase and hyphenated forms without a second key list.
-_NAMES = "|".join(
-    "[-_]*".join(name) for name in sorted(_EXTRA_KEYS | {"authtoken", "accesstoken", "hatchsess"})
-)
-_QUERY = re.compile(rf"(?i)\b({_NAMES})\s*=\s*([^&\s\"']+)")
-_JSON_SECRET = re.compile(
-    rf"""(?i)((?:["'])?\b(?:{_NAMES})(?:["'])?\s*[:=]\s*)"""
+# The same compact sensitive family is used for JSON, headers, repr and queries.
+_ASSIGNMENT = re.compile(
+    r"""((?:["'])?([A-Za-z_][A-Za-z0-9_.-]*)(?:["'])?\s*(?:=>|:|=)\s*)"""
     r"""(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,}\]&\s]+)"""
 )
+_XML = re.compile(r"<([A-Za-z_][A-Za-z0-9_.-]*)>(.*?)</\1>", re.DOTALL)
 _WAKE_OBJECT = re.compile(r"\{[^{}]*\}")
 
 
@@ -53,41 +49,75 @@ _NOTARY = re.compile(r"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_-]+\.){5}[A-Za-z0-9_-]+(
 
 
 def sensitive_key(key: str) -> bool:
-    compact = re.sub(r"[^a-z0-9]", "", key.lower())
-    return compact in _EXTRA_KEYS or redaction_sensitive_key(key)
+    compact = re.sub(r"[^a-z0-9]", "", key.casefold())
+    return (
+        any(name in compact for name in _EXTRA_KEYS | {"hatchsess"})
+        or any(
+            family in compact
+            for family in (
+                "nonce",
+                "token",
+                "proof",
+                "secret",
+                "notary",
+                "noisekey",
+                "attemptid",
+                "requestid",
+                "recovery",
+            )
+        )
+        or redaction_sensitive_key(key)
+    )
 
 
-def _replace_known(value: str, secret: str) -> str:
-    # Hex and UUID diagnostics have no case semantics; base64 and tokens do.
-    if re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{64}|[0-9a-fA-F-]{36}", secret):
-        return re.sub(re.escape(secret), "redacted", value, flags=re.IGNORECASE)
-    return value.replace(secret, "redacted")
+def _known_spans(value: str, known: tuple[str, ...]) -> str:
+    variants = set()
+    for secret in known:
+        if len(secret) < 4:
+            continue
+        variants.add(secret)
+        variants.add(secret.replace(" ", "+"))  # quote_plus spelling after percent decoding
+        for _ in range(2):
+            secret = unquote(secret)
+            variants.add(secret)
+    spans = []
+    for secret in sorted(variants, key=len, reverse=True):
+        flags = (
+            re.IGNORECASE
+            if re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{64}|[0-9a-fA-F-]{36}", secret)
+            else 0
+        )
+        spans.extend(match.span() for match in re.finditer(re.escape(secret), value, flags))
+    # Merge overlaps before editing: replacing one value cannot destroy another match.
+    merged = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    for start, end in reversed(merged):
+        value = value[:start] + "redacted" + value[end:]
+    return value
 
 
 def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
-    variants = {
-        variant
-        for secret in known
-        if len(secret) >= 4
-        for variant in (secret, quote(secret, safe=""), quote_plus(secret, safe=""))
-    }
-    for variant in sorted(variants, key=len, reverse=True):
-        value = _replace_known(value, variant)
-    original = value
-    # Decode diagnostic percent-encoding before recognizing envelope/query grammars.
+    # Decode first, including lowercase escapes, so encoded containment is intact.
     for _ in range(2):
         value = unquote(value)
-    decoded = value
-    for secret in sorted(known, key=len, reverse=True):
-        if len(secret) >= 4:
-            value = _replace_known(value, secret)
+    value = _known_spans(value, known)
     value = _WAKE_OBJECT.sub(_embedded_wake, value)
-    value = _JSON_SECRET.sub(lambda match: match[1] + '"redacted"', value)
-    value = _QUERY.sub(lambda match: match[1] + "=redacted", value)
+    value = _ASSIGNMENT.sub(
+        lambda match: match[1] + '"redacted"' if sensitive_key(match[2]) else match[0], value
+    )
+    value = _XML.sub(
+        lambda match: (
+            "<" + match[1] + ">redacted</" + match[1] + ">" if sensitive_key(match[1]) else match[0]
+        ),
+        value,
+    )
     value = _ENVELOPE.sub("redacted", value)
     value = _NOTARY.sub("redacted", value)
-    cleaned = redact_text(value)[0]
-    return redact_text(original)[0] if cleaned == decoded else cleaned
+    return redact_text(value)[0]
 
 
 def sanitize_document(value: Any, known: tuple[str, ...] = (), depth=0) -> Any:
