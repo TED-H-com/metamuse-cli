@@ -2764,24 +2764,44 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
 
     driver = _DRIVER_FACTORY() if _DRIVER_FACTORY is not None else PlaywrightBrowserDriver()
     started = time.monotonic()
-    expansions_used = 0
-    bytes_used = 0
+    expansions_used = int(saved.get("expansions_used", 0))
+    previous_bytes = int(saved.get("bytes_used", 0))
+    bytes_used = previous_bytes
+    observation_bytes = 0
+    accepted = int(saved.get("accepted", 0))
+    accepted_identities = set(saved.get("accepted_identities", []))
     halt: str | None = None
     obs: PageObservation | None = None
     parsed: ParsedPostPage | None = None
     byte_limit_error: m.ErrorDetail | None = None
 
-    session = driver.open_session(
-        storage_state,
-        egress,
-        timeout_ms=timeout_ms,
-        max_bytes=max_bytes,
-    )
+    def checkpoint_usage() -> None:
+        step.commit_checkpoint(
+            {
+                **saved,
+                "expansions_used": expansions_used,
+                "bytes_used": bytes_used,
+                "accepted": accepted,
+                "accepted_identities": sorted(accepted_identities),
+            }
+        )
+
+    session: BrowserSession | None = None
     try:
         step.guard()
+        if previous_bytes >= max_bytes:
+            raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Facebook byte budget is exhausted")
+        session = driver.open_session(
+            storage_state,
+            egress,
+            timeout_ms=timeout_ms,
+            max_bytes=max_bytes - previous_bytes,
+        )
         obs = session.goto_post(permalink.fetch_url)
         egress.check_browser_route(obs.url, is_navigation=True)
-        bytes_used = max(egress.bytes_relayed, len(obs.html.encode("utf-8")))
+        observation_bytes += len(obs.html.encode("utf-8"))
+        bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
+        checkpoint_usage()
         if egress.byte_limit_exceeded or bytes_used > max_bytes:
             raise m.CoreError(
                 m.ErrorCode.LIMIT_REACHED,
@@ -2810,13 +2830,13 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             if pacing_ms > 0:
                 step.executor.sleep(pacing_ms / 1000.0)
             ctrl = parsed.expand_controls[0]
+            expansions_used += 1
+            checkpoint_usage()  # Charge before the click, including a failed/crashed click.
             obs = session.expand_next(ctrl.control_id)
             egress.check_browser_route(obs.url, is_navigation=True)
-            expansions_used += 1
-            bytes_used = max(
-                egress.bytes_relayed,
-                bytes_used + len(obs.html.encode("utf-8")),
-            )
+            observation_bytes += len(obs.html.encode("utf-8"))
+            bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
+            checkpoint_usage()
             if egress.byte_limit_exceeded or bytes_used > max_bytes:
                 raise m.CoreError(
                     m.ErrorCode.LIMIT_REACHED,
@@ -2833,7 +2853,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         cleaned_msg = storage_state.redact(exc.detail.message)
         if exc.detail.code == m.ErrorCode.LIMIT_REACHED or egress.byte_limit_exceeded:
             halt = "limit_reached"
-            bytes_used = max(bytes_used, egress.bytes_relayed)
+            bytes_used = max(bytes_used, previous_bytes + egress.bytes_relayed)
             byte_limit_error = m.ErrorDetail(
                 code=m.ErrorCode.LIMIT_REACHED,
                 message=cleaned_msg,
@@ -2848,7 +2868,8 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 retry_after=exc.retry_after,
             ) from None
     finally:
-        session.close()
+        if session is not None:
+            session.close()
 
     final_html = obs.html if obs is not None else ""
     egress_summary = egress.summary()
@@ -2895,7 +2916,6 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     missing: set[str] = set(saved.get("missing_fields", [])) | set(unexpanded_gaps)
     if byte_limit_error is not None:
         missing.add("byte_budget_exceeded")
-    accepted = 0
     batch_count = 0
 
     def _flush_checkpoint(processed_count: int) -> None:
@@ -2907,6 +2927,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             "halt": halt,
             "missing_fields": sorted(missing),
             "accepted": accepted,
+            "accepted_identities": sorted(accepted_identities),
         }
 
         def _write(writer: TransactionWriter) -> None:
@@ -2941,7 +2962,11 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
 
     for idx, rec in enumerate(records):
         step.guard()
-        if accepted >= max_items:
+        identity = (
+            m.payload_digest([rec.platform, rec.scope, rec.native_id]) if rec.native_id else None
+        )
+        already_accepted = identity is not None and identity in accepted_identities
+        if accepted >= max_items and not already_accepted:
             halt = "limit_reached"
             if len(records) > idx:
                 missing.add("uncollected_items_budget")
@@ -2981,7 +3006,10 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 item.missing_fields = merged_missing
                 item.complete = not merged_missing
                 item.evidence.update(post_extra_evidence)
-            accepted += 1
+            if not already_accepted:
+                accepted += 1
+                if identity is not None:
+                    accepted_identities.add(identity)
             for mf in item.missing_fields:
                 missing.add(mf)
             if item.unresolved_parent is not None:
@@ -3074,6 +3102,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         "expansions_used": expansions_used,
         "unexpanded_controls": len(parsed.expand_controls) if parsed is not None else 0,
         "bytes_used": bytes_used,
+        "accepted": accepted,
     }
     result_data: dict[str, Any] = {
         "rows": rows,

@@ -449,3 +449,71 @@ def test_finding_06_close_cancels_waiting_resolution_and_prevents_late_dial(monk
         proxy.close()
         client.close()
         target.close()
+
+
+def crash_after_batch(ctx, job_id):
+    def crash(_):
+        raise RuntimeError("synthetic checkpoint crash")
+
+    facebook.set_batch_hook(crash)
+    with jobs.Executor(ctx.store) as executor:
+        with ctx.store.transaction() as conn:
+            conn.execute(
+                "UPDATE jobs SET state='running',worker_epoch=? WHERE id=?",
+                (executor.epoch, job_id),
+            )
+            conn.execute(
+                "UPDATE job_steps SET state='running',worker_epoch=?,attempts=1 WHERE job_id=?",
+                (executor.epoch, job_id),
+            )
+        with ctx.store.connection() as conn:
+            step_id = conn.execute("SELECT id FROM job_steps WHERE job_id=?", (job_id,)).fetchone()[
+                0
+            ]
+        step = jobs.StepContext(
+            executor, ctx.store.get(m.Job, job_id), ctx.store.get(m.JobStep, step_id)
+        )
+        with pytest.raises(RuntimeError, match="synthetic checkpoint crash"):
+            facebook.run_facebook_post(step)
+    facebook.set_batch_hook(None)
+    return ctx.store.get(m.JobStep, step_id).checkpoint
+
+
+@pytest.mark.parametrize("budget", ["expansions", "bytes", "items"])
+def test_finding_07_resume_preserves_cumulative_budgets(tmp_path, budget):
+    ctx, project, permit, _, _ = _setup_fb_env(tmp_path, max_expansions=1)
+    comments = [{"id": f"c_{i}", "text": f"Observed {i}"} for i in range(60)]
+    first = _synthetic_post_html(expand_controls=[{"id": "more"}])
+    expanded = _synthetic_post_html(comments=comments)
+    byte_cap = (
+        len(first.encode()) + len(expanded.encode()) + 100 if budget == "bytes" else 1_000_000
+    )
+    item_cap = 61 if budget == "items" else 100
+    allocations = []
+
+    class BudgetDriver(facebook.FixtureBrowserDriver):
+        def open_session(self, *args, **kwargs):
+            allocations.append(kwargs.get("max_bytes"))
+            return super().open_session(*args, **kwargs)
+
+    driver = BudgetDriver(observation(first), {"more": observation(expanded)})
+    facebook.set_driver_factory(lambda: driver)
+    job_id = submit(ctx, project, permit, max_items=item_cap, max_bytes=byte_cap)
+    saved = crash_after_batch(ctx, job_id)
+    assert saved["accepted"] == 50
+    assert saved["expansions_used"] == 1
+    if budget == "items":
+        driver.initial = observation(
+            _synthetic_post_html(comments=[{"id": "new_top", "text": "New top"}, *comments])
+        )
+    job = finish(ctx, job_id)
+    observed = job["observed_scope"]["steps"][0]
+    assert observed["expansions_used"] == 1
+    assert observed["bytes_used"] >= saved["bytes_used"]
+    assert observed["accepted"] <= item_cap
+    assert allocations == [byte_cap, byte_cap - saved["bytes_used"]]
+    assert len(driver.expanded_controls) == 1
+    with ctx.store.connection() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] <= item_cap
+        assert conn.execute("SELECT used FROM permits WHERE id=?", (permit,)).fetchone()[0] == 1
+    assert job["coverage_status"] in ("bounded", "partial")

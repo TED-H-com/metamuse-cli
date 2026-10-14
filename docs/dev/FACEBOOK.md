@@ -141,3 +141,11 @@ abandoned daemon resolution tasks have no dialing capability and a process-wide
 16-slot bound, released only when their lookup returns. Capacity exhaustion refuses
 requests. An already entered dial is bounded by the socket timeout and closure waits
 for it before closing every registered socket.
+
+Resume checkpoints persist cumulative expansion, byte and accepted-item consumption.
+Clicks are charged before execution; observations persist consumption before parsing.
+A fresh proxy receives only remaining bytes. Accepted reliable identities are stored
+as bounded digests so unchanged re-observation does not refill or consume the item
+budget again; edits remain revisions of the same accepted identity. Fixture byte
+accounting uses cumulative UTF-8 observation bytes; real sessions use the larger
+of that accounting and relayed wire bytes. Wall-clock fencing remains core-owned.
