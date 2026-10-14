@@ -229,6 +229,9 @@ def test_r5_04_network_blocks_page_websocket_bypasses(tmp_path, monkeypatch, kin
         ctx, _, _, _, hits, guard, driver = env
         state = facebook.load_storage_state(ctx.policy.facebook.auth_ref, account="acct_synth")
         session = driver.open_session(state, guard, timeout_ms=5000)
+        # Isolate the network rules from the independent prompt-stop watcher.
+        # Otherwise closing the page could mask a removed network rule (M1).
+        session._byte_watch.cancel()
         try:
             try:
                 session.goto_post(URL)
@@ -263,6 +266,9 @@ def test_r5_04_unexpected_handshake_fails_job_closed(tmp_path, monkeypatch):
 
         def sabotaged(*args, **kwargs):
             session = original(*args, **kwargs)
+            # Let this isolated response-detector test observe the handshake;
+            # prompt interruption is tested separately with a stalled resource.
+            session._byte_watch.cancel()
             cdp = session._network_cdp
             cdp.send("Network.setBlockedURLs", {"urls": []})
             cdp.send("Network.emulateNetworkConditionsByRule", {"matchedNetworkConditions": []})

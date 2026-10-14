@@ -2233,14 +2233,16 @@ class _PlaywrightSession:
         )
 
         # The sync Playwright API pumps this pinned implementation loop during
-        # goto/click/evaluate. A proxy-thread latch must interrupt the page while
-        # a routed navigation is still awaiting its full production read timeout.
+        # goto/click/evaluate. Proxy and browser guard latches must interrupt the
+        # page while navigation is awaiting its full production read timeout.
         self._byte_watch = page._impl_obj._loop.create_task(self._watch_byte_limit())
 
     async def _watch_byte_limit(self) -> None:
         while not self._page.is_closed():
-            if self._egress.byte_limit_exceeded or (
-                self._proxy is not None and self._proxy.byte_limit_exceeded
+            if (
+                self._transport_error is not None
+                or self._egress.byte_limit_exceeded
+                or (self._proxy is not None and self._proxy.byte_limit_exceeded)
             ):
                 try:
                     await self._page._impl_obj.close()
