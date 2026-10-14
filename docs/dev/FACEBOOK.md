@@ -297,3 +297,6 @@ sandboxed launch verification and sandboxed WebSocketStream/_apiPassThrough test
 other loopback integration fixtures use a labelled operator exception. No browser
 test is excluded from hosted CI. Test scratch is a unique disk directory cleaned
 on exit. A hosted Actions result requires the orchestrator to publish this branch.
+
+Structural JSON scripts require both data-fb-post-payload and application/json MIME
+type. Every other script is excluded from body text, even if it carries that marker.

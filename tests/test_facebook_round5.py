@@ -614,3 +614,21 @@ def test_r5_n10_chromium_excludes_computed_hidden_text(tmp_path, monkeypatch):
         job = finish(ctx, submit(ctx, project, permit))
         assert job["error"] is None
         assert rows(ctx)[0]["text"] == "Visible"
+
+
+@pytest.mark.parametrize("real_browser", [False, True], ids=["fixture", "chromium"])
+def test_r5_n10_nonjson_marked_script_is_excluded(tmp_path, monkeypatch, real_browser):
+    markup = _synthetic_post_html(post_text="BODY").replace(
+        ">BODY</div>",
+        ">left<script data-fb-post-payload>window.syntheticText=1;</script>right</div>",
+    )
+    if real_browser:
+        with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}) as env:
+            ctx, project, permit, _, _, _, _ = env
+            job = finish(ctx, submit(ctx, project, permit))
+            result = rows(ctx)
+    else:
+        ctx, job = fixture_job(tmp_path, markup)
+        result = rows(ctx)
+    assert job["error"] is None
+    assert result[0]["text"] == "leftright"

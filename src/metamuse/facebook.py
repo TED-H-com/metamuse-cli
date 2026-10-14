@@ -2146,9 +2146,6 @@ class _PlaywrightSession:
             if (style.display === 'none' || style.visibility === 'hidden'
                 || style.visibility === 'collapse') clones[index].setAttribute('hidden', '');
           });
-          // Embedded payloads remain available to the JSON parser, not body text.
-          copy.querySelectorAll('script[data-fb-post-payload]')
-            .forEach(n => n.removeAttribute('hidden'));
           return copy.outerHTML;
         }""")
 
@@ -2597,7 +2594,6 @@ class _DOMExtractor(HTMLParser):
             if tag not in self._VOID_TAGS:
                 self._hidden_depth += 1
             return
-        is_payload = tag == "script" and "data-fb-post-payload" in attr_map
         style = attr_map.get("style", "").lower()
         hidden = (
             "hidden" in attr_map
@@ -2607,7 +2603,7 @@ class _DOMExtractor(HTMLParser):
                 r"(?:^|;)\s*visibility\s*:\s*(?:hidden|collapse)(?:\s*!important)?\s*(?:;|$)", style
             )
         )
-        if hidden or (tag in {"script", "style", "template"} and not is_payload):
+        if hidden or tag in {"script", "style", "template"}:
             if tag not in self._VOID_TAGS:
                 self._hidden_depth = 1
             return
