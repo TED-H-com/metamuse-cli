@@ -575,3 +575,30 @@ def test_finding_09_expansion_waits_for_progress_or_records_uncertainty(
             assert "expansion_progress_timeout" in job["missing_fields"]
             assert job["coverage_status"] == "partial"
             assert observed["comments_empty"] is False
+
+
+@pytest.mark.parametrize("edited", [False, True])
+def test_finding_10_paginated_observations_accumulate_by_identity(tmp_path, edited):
+    ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
+    initial = _synthetic_post_html(
+        comments=[{"id": "first", "text": "First page"}], expand_controls=[{"id": "more"}]
+    )
+    final_comments = [{"id": "second", "text": "Second page"}]
+    if edited:
+        final_comments.append({"id": "first", "text": "Edited first page"})
+    final = _synthetic_post_html(comments=final_comments)
+    driver = facebook.FixtureBrowserDriver(observation(initial), [observation(final)])
+    facebook.set_driver_factory(lambda: driver)
+    job = finish(ctx, submit(ctx, project, permit))
+    with ctx.store.connection() as conn:
+        ids = {row[0] for row in conn.execute("SELECT native_id FROM items")}
+        assert {"first", "second"} <= ids
+        revisions = [
+            row[0]
+            for row in conn.execute(
+                "SELECT r.text FROM item_revisions r JOIN items i ON i.id=r.item_id "
+                "WHERE i.native_id='first' ORDER BY r.revision"
+            )
+        ]
+        assert revisions == (["First page", "Edited first page"] if edited else ["First page"])
+    assert job["observed_scope"]["steps"][0]["comments_observed"] == 2

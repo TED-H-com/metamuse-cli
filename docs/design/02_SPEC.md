@@ -495,3 +495,10 @@ new relevant comment/reply node or changed identified content, or a classified
 HTTP failure response. An unchanged loaded document or disappearing button is
 not progress evidence. Deadline expiry records expansion_progress_timeout with
 partial coverage and comments_empty=false; HTTP failures retain their own codes.
+
+B13 accumulates reliable observations across expansions by platform/scope/native ID
+and preserves changed text as ordered revisions. Pagination/virtualization cannot
+discard a previously seen reliable comment. The union consumes the item budget;
+retention has at most max_items plus one lookahead identity, with expansion-bounded
+revisions. Weak records are retained only from the initial snapshot; later weak
+observations add weak_identity_expansion/partial instead of text or position merging.
