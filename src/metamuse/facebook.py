@@ -199,6 +199,7 @@ class ParsedPostPage:
     expand_controls: list[ExpandControl]
     comments_section_present: bool
     comments_exhausted: bool = False
+    missing_fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -2597,6 +2598,9 @@ def classify_and_parse_observation(
         expand_controls=list(extractor.expand_controls),
         comments_section_present=extractor.comments_section_present,
         comments_exhausted=extractor.comments_exhausted,
+        missing_fields=("comment_count_unparsed",)
+        if "data-comment-count" in attrs and _opt_int(attrs["data-comment-count"]) is None
+        else (),
     )
 
 
@@ -2704,6 +2708,9 @@ def _parse_json_payload(
         expand_controls=controls,
         comments_section_present=has_comments_key,
         comments_exhausted=payload.get("comments_exhausted") is True,
+        missing_fields=("comment_count_unparsed",)
+        if "comment_count" in post_obj and _opt_int(post_obj["comment_count"]) is None
+        else (),
     )
 
 
@@ -3101,6 +3108,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
 
     def accumulate_page(page: ParsedPostPage, html: str) -> None:
         nonlocal pages_seen
+        observation_gaps.update(page.missing_fields)
         snapshot_sha = hashlib.sha256(html.encode("utf-8")).hexdigest()
         records, _ = _records_from_page(page, permalink=permalink, resources=resources)
         for record in records:

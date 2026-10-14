@@ -785,3 +785,6 @@ text/position for identity. It compares the latest state per reliable native key
 reversions remain revisions. The existing Book receives each contributing hash; its
 frozen revisions retain those hashes and verified observation provenance. New Source
 use_basis identifies the first contributing snapshot, not the attempt’s final DOM.
+
+
+A present but unparseable Facebook comment count adds comment_count_unparsed to post and job gaps; affirmative exhaustion never converts that uncertainty into scope_satisfied.

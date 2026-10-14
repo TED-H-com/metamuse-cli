@@ -539,3 +539,6 @@ B13 retains ordered text transitions by reliable native identity, including A â†
 Only consecutive identical observations are discarded. Revision evidence carries the
 contributing HTML snapshot hash and verified requested/resolved locator, permit and
 account; a new Source identifies its first contributing snapshot.
+
+
+A present but unparseable Facebook comment count adds comment_count_unparsed to post and job gaps; affirmative exhaustion never converts that uncertainty into scope_satisfied.
