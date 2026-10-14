@@ -33,9 +33,9 @@ def apply_mutant(monkeypatch, mutant):
             evaluate = self._page.evaluate
 
             def preserve(script):
-                old = "if (attr.name.startsWith('data-metamuse-'))"
+                old = "if (attr.name.toLowerCase().startsWith('data-metamuse-'))"
                 new = (
-                    "if (attr.name.startsWith('data-metamuse-') && "
+                    "if (attr.name.toLowerCase().startsWith('data-metamuse-') && "
                     "attr.name !== 'data-metamuse-invisible')"
                 )
                 assert old in script
