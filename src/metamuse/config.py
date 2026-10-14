@@ -16,6 +16,23 @@ class AppPolicy(m.Model):
     import_roots: list[str] = Field(default_factory=list)
 
 
+class RemoteApproval(m.Model):
+    """One yt-dlp extractor key and the exact hosts it may contact.
+
+    Hosts are normalized exact names. A subdomain, a path, or a query does not
+    extend the approval. Generic and unknown extractor keys are never implied.
+    """
+
+    extractor: str = Field(min_length=1, max_length=64, pattern=r"[A-Za-z][A-Za-z0-9_-]{0,63}")
+    hosts: list[str] = Field(min_length=1, max_length=32)
+
+
+class RemoteMediaConfig(m.Model):
+    """Operator allowlist for remote media. Empty refuses every remote URL."""
+
+    approvals: list[RemoteApproval] = Field(default_factory=list, max_length=32)
+
+
 class WorkerConfig(m.Model):
     max_executors: Literal[1] = 1
 
@@ -35,6 +52,7 @@ class Config(m.Model):
     limits: m.Limits = Field(default_factory=m.Limits)
     muse: MuseConfig = Field(default_factory=MuseConfig)
     publishing: EnabledConfig = Field(default_factory=EnabledConfig)
+    remote_media: RemoteMediaConfig = Field(default_factory=RemoteMediaConfig)
 
 
 DEFAULT_CONFIG = """[app]
@@ -61,6 +79,7 @@ max_exchanges = 3
 enabled = false
 [publishing]
 enabled = false
+[remote_media]
 """
 
 
