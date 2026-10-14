@@ -383,6 +383,12 @@ and `next_action` lists those commands. Neither file contents nor paths are expo
 Human-only auth/permit commands refuse noninteractive calls before opening a workspace;
 scripted `permit approve --exact-digest` needs no TTY.
 
+B16a packets reach a redaction fixpoint before hashing. Muse sends exactly stored
+`packet.rendered_text`; it never transforms packets at send time. If the current
+redactor would change an older packet, submit/preview/wire refuse with
+`E_REFERENCE_INVALID`, "Packet is stale; prepare a new packet", without a preview.
+The send body is only the accepted original question, two newlines and that fixed text.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -807,6 +813,12 @@ rendering/redaction happens outside `BEGIN IMMEDIATE`. The write transaction rep
 scope/existence checks and compares the evidence snapshot before committing.
 Concurrent evidence changes require a fresh prepare/export; receipt conflicts and
 artifact verification retain the shared core API.
+
+B16a packets reach a redaction fixpoint before hashing. Muse sends exactly stored
+`packet.rendered_text`; it never transforms packets at send time. If the current
+redactor would change an older packet, submit/preview/wire refuse with
+`E_REFERENCE_INVALID`, "Packet is stale; prepare a new packet", without a preview.
+The send body is only the accepted original question, two newlines and that fixed text.
 
 ---
 

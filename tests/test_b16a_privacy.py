@@ -320,7 +320,7 @@ def test_question_refusal_precedes_state_reads_preview_and_persistence(
             assert conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
 
 
-def test_preexisting_packet_is_redacted_when_building_outbound(fixture_ctx, project):
+def test_preexisting_packet_is_refused_without_preview_or_rewriting(fixture_ctx, project):
     ctx = fixture_ctx
     opening, _ = opened(ctx, project)
     text, marker, _ = credential_shape("hatch")
@@ -334,18 +334,21 @@ def test_preexisting_packet_is_redacted_when_building_outbound(fixture_ctx, proj
             created_at=ctx.clock(),
         )
     )
-    prepared = prepare_send(
-        ctx,
-        m.MuseSendRequest(
-            discussion_id=opening.data["discussion_id"],
-            packet_id=packet.id,
-            question="List gaps.",
-            share_grant_id="pending",
-            request_key="legacy-packet",
-        ),
+    request = m.MuseSendRequest(
+        discussion_id=opening.data["discussion_id"],
+        packet_id=packet.id,
+        question="List gaps.",
+        share_grant_id="pending",
+        request_key="legacy-packet",
     )
-    assert_absent([marker], prepared.model_dump(mode="json"))
-    assert prepared.body["text"] == "List gaps.\n\n[REDACTED]"
+    with pytest.raises(m.CoreError) as caught:
+        prepare_send(ctx, request)
+    assert caught.value.detail.code == m.ErrorCode.REFERENCE_INVALID
+    assert caught.value.detail.message == "Packet is stale; prepare a new packet"
+    refused = invoke(ctx, "send", request)
+    assert refused.approval is None and refused.error.code == m.ErrorCode.REFERENCE_INVALID
+    assert marker not in refused.model_dump_json()
+    assert ctx.store.get(m.Packet, packet.id).rendered_text == text
 
 
 @pytest.mark.parametrize("field", ["question", "packet_text"])
@@ -380,6 +383,8 @@ def test_preexisting_prepared_body_is_refused_before_wire_construction(fixture_c
     unsafe = prepared.model_copy(update={"body": body, "payload": {**payload, "body": body}})
     with pytest.raises(m.CoreError) as caught:
         _wire(unsafe)
-    assert caught.value.detail.code == m.ErrorCode.INPUT_INVALID
+    assert caught.value.detail.code == (
+        m.ErrorCode.INPUT_INVALID if field == "question" else m.ErrorCode.REFERENCE_INVALID
+    )
     assert marker not in str(caught.value)
     assert [route for route, _ in ctx.muse_gateway.calls] == ["session.start"]

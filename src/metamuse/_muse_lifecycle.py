@@ -214,7 +214,7 @@ def prepare_send(ctx, request: m.MuseSendRequest):
     packet = ctx.store.get(m.Packet, request.packet_id)
     if packet.project_id != discussion.project_id:
         _error(m.ErrorCode.REFERENCE_INVALID, "Packet is outside this discussion project")
-    if packet.stale:
+    if packet.stale or redact_text(packet.rendered_text)[0] != packet.rendered_text:
         _error(m.ErrorCode.REFERENCE_INVALID, "Packet is stale; prepare a new packet")
     if not discussion.remote_session:
         _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Session mapping requires reconciliation")
@@ -235,7 +235,7 @@ def prepare_send(ctx, request: m.MuseSendRequest):
         session=discussion.remote_session,
         packet=packet.id,
     )
-    packet_text = redact_text(packet.rendered_text)[0]
+    packet_text = packet.rendered_text
     # The checked host question and redacted packet are the only send text inputs.
     body = {
         "session_id": discussion.remote_session,
@@ -456,8 +456,8 @@ def _wire(payload):
         _check_question(question)
         if redact_text(packet_text)[0] != packet_text:
             _error(
-                m.ErrorCode.INPUT_INVALID,
-                "Prepared packet text requires updated privacy redaction",
+                m.ErrorCode.REFERENCE_INVALID,
+                "Packet is stale; prepare a new packet",
                 "Prepare a new packet and send request with a new exact share grant",
             )
         if payload.body.get("text") != question + "\n\n" + packet_text:
