@@ -2320,27 +2320,28 @@ class _PlaywrightSession:
                 self._guard_failed()
 
     def _verify_target_shutdown(self) -> None:
+        # One deadline covers the original targets and attachments delivered by CDP
+        # while polling. Source remains debugger-paused; this path never resumes it.
         deadline = time.monotonic() + 5
-        while self._closing_targets:
-            if not self._browser.is_connected():
-                self._guard_failed()
-                return
-            self._closing_targets = {
-                target for target in self._closing_targets if not self._target_gone(target)
-            }
-            if not self._closing_targets:
-                return
-            if time.monotonic() >= deadline:
-                self._guard_failed()
-                return
-            try:
+        try:
+            while self._closing_targets:
+                if not self._browser.is_connected():
+                    self._guard_failed()
+                    return
+                for target in list(self._closing_targets):
+                    if self._target_gone(target):
+                        self._closing_targets.discard(target)
+                if not self._closing_targets:
+                    return
+                if time.monotonic() >= deadline:
+                    self._guard_failed()
+                    return
                 if self._page.is_closed():
                     self._worker_cdp._sync(asyncio.sleep(0.05))
                 else:
                     self._page.wait_for_timeout(50)
-            except Exception:
-                self._guard_failed()
-                return
+        except Exception:
+            self._guard_failed()
 
     def _on_worker_attached(self, event: dict[str, Any]) -> None:
         info = event["targetInfo"]
