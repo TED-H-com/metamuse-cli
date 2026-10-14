@@ -664,3 +664,9 @@ within the existing 50 ms polling interval, without waiting for resolution or th
 read deadline. Abandoned resolver tasks cannot dial, remain slot-bounded, and
 release their slot when the underlying lookup returns. A sandboxed streaming
 regression trips the byte budget while another URL is waiting on DNS.
+
+
+Stop evidence is monotonic: both state attributes are examined independently,
+and a later benign state cannot erase a barrier or form marker. When multiple
+recognized stop states coexist, the parser uses the existing classification
+order: rate limit, checkpoint/challenge, login wall, then access denial.
