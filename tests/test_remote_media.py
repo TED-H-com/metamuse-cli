@@ -4,6 +4,7 @@ The synthetic server is loopback-only. URL checks use ``check_fixture_url``.
 No test contacts a real site. AT-040 stays blocked.
 """
 
+import io
 import json
 import logging
 import shutil
@@ -336,11 +337,15 @@ def configure(ctx, approvals, *, live=True, timeout=2, media_max=None):
     if media_max is not None:
         text = text.replace("media_max_bytes = 536870912", f"media_max_bytes = {media_max}", 1)
     lines = [text.rstrip("\n")]
-    for extractor, hosts in approvals:
+    for item in approvals:
+        extractor, hosts = item[0], item[1]
+        auth_ref = item[2] if len(item) > 2 else None
         lines.append("[[remote_media.approvals]]")
         lines.append(f"extractor = {json.dumps(extractor)}")
         rendered = ", ".join(json.dumps(host) for host in hosts)
         lines.append(f"hosts = [{rendered}]")
+        if auth_ref:
+            lines.append(f"auth_ref = {json.dumps(auth_ref)}")
     path = ctx.paths.root / "metamuse.toml"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     loaded = app.Config.model_validate(tomllib.loads(path.read_text(encoding="utf-8")))
@@ -1801,3 +1806,1012 @@ def test_fabricated_title_is_stored_as_null(ctx, project, origin):
     again = finish(ctx, again_req.model_copy(update={"request_key": "title-again"}))
     assert again.state == "partial"
     assert q(ctx, "SELECT COUNT(*) AS n FROM item_revisions")[0]["n"] == 1
+
+
+REEL_ID = "123456789"
+SHARE_TOKEN = "Ab12token"
+SHARE_R = f"https://www.facebook.com/share/r/{SHARE_TOKEN}/"
+SHARE_V = "https://www.facebook.com/share/v/VideoToken/"
+REEL_URL = f"https://www.facebook.com/reel/{REEL_ID}"
+WATCH_URL = f"https://www.facebook.com/watch/?v={REEL_ID}"
+HOP_CALLS: list[str] = []
+
+
+def facebook_page(video_id: str) -> bytes:
+    payload = {
+        "require": [
+            [
+                "RelayPrefetchedStreamCache_synthetic",
+                "next",
+                [],
+                [
+                    "adp_synthetic",
+                    {
+                        "__bbox": {
+                            "result": {
+                                "data": {
+                                    "video": {
+                                        "id": video_id,
+                                        "name": "Synthetic reel",
+                                        "playable_url": "https://cdn.fixture.test/clip.mp4",
+                                        "owner": {"id": "page1", "name": "Synthetic page"},
+                                        "publish_time": 1700000000,
+                                    }
+                                }
+                            }
+                        }
+                    },
+                ],
+            ]
+        ]
+    }
+    html = (
+        "<!doctype html><title>Synthetic reel</title>"
+        '<script type="application/json" data-sjs>'
+        + json.dumps(payload, separators=(",", ":"))
+        + "</script>"
+    )
+    return html.encode()
+
+
+def allow_facebook(resolver):
+    resolver.extra["www.facebook.com"] = ["127.0.0.1"]
+    resolver.extra["m.facebook.com"] = ["127.0.0.1"]
+
+
+def route_dial(monkeypatch, routes):
+    dials = []
+
+    def dial(method, url, headers, body, checked, timeout, limit):
+        del body, checked, timeout, limit
+        parts = urlsplit(url)
+        dials.append(
+            {
+                "method": (method or "GET").upper(),
+                "url": url,
+                "host": (parts.hostname or "").lower(),
+                "path": parts.path,
+                "query": parts.query,
+                "cookie": headers.get("Cookie"),
+            }
+        )
+        route = routes.get(parts.path)
+        if route is None:
+            return 404, {}, b"missing", "127.0.0.1", "Not Found"
+        if route.get("location"):
+            return (
+                route.get("status", 302),
+                {"Location": route["location"]},
+                b"",
+                "127.0.0.1",
+                "Found",
+            )
+        return (
+            route.get("status", 200),
+            dict(route.get("headers") or {}),
+            route.get("body") or b"",
+            "127.0.0.1",
+            route.get("reason") or "",
+        )
+
+    monkeypatch.setattr(remote_media, "_dial", dial)
+    return dials
+
+
+def run(ctx, req, secret_store=None):
+    env = app.submit_collect(ctx, req)
+    assert env.status == "accepted", env.error
+    with jobs.Executor(ctx.store, secret_store=secret_store) as executor:
+        assert executor.run_once()
+    return ctx.store.get(m.Job, env.data["job_id"])
+
+
+def live_request(ctx, project, url, resources, approvals, keys):
+    configure(ctx, approvals)
+    req = remote_request(project, url, resources)
+    permit = issue(ctx, project, req, keys)
+    return req.model_copy(update={"access_grant_id": permit}), permit
+
+
+def stored_rows(ctx) -> int:
+    sources = q(ctx, "SELECT COUNT(*) AS n FROM sources")[0]["n"]
+    items = q(ctx, "SELECT COUNT(*) AS n FROM items")[0]["n"]
+    return sources + items
+
+
+def marker_value(prefix: str = "mm") -> str:
+    return f"{prefix}_MARKERCOOKIE"
+
+
+def netscape(domain, flag, path, secure, expiry, name, value) -> bytes:
+    return (
+        "# Netscape HTTP Cookie File\n"
+        f"{domain}\t{flag}\t{path}\t{secure}\t{expiry}\t{name}\t{value}\n"
+    ).encode()
+
+
+def put_secret(tmp_path, ctx, secret, *, provider=PROVIDER, account=ACCOUNT):
+    store = safety.SecretStore(root=tmp_path / "secrets")
+    meta = store.put(secret, provider=provider, account=account, created_at=ctx.clock())
+    return store, meta["auth_ref"]
+
+
+def assert_marker_absent(ctx, marker, job, caplog):
+    for path in ctx.paths.root.rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            assert marker.encode() not in path.read_bytes(), path
+    dumped = json.dumps(job.model_dump(mode="json"), default=str)
+    assert marker not in dumped
+    assert marker not in caplog.text
+
+
+# process_ie_result refuses a video dict with no formats. The URL is never fetched:
+# extraction runs with download=False and these tests request metadata only.
+_HOP_FORMAT = {
+    "url": "https://hop.fixture.test/media.wav",
+    "ext": "wav",
+    "protocol": "http",
+}
+
+
+class HopAIE(InfoExtractor):
+    _VALID_URL = r"https://hop\.fixture\.test/a/(?P<id>[A-Za-z0-9]+)"
+
+    def _real_extract(self, url):
+        del url
+        return self.url_result("https://hop.fixture.test/b/1", "HopB", "1")
+
+
+class HopBIE(InfoExtractor):
+    _VALID_URL = r"https://hop\.fixture\.test/b/(?P<id>[A-Za-z0-9]+)"
+
+    def _real_extract(self, url):
+        del url
+        return self.url_result("https://hop.fixture.test/c/1", "HopC", "1")
+
+
+class HopCIE(InfoExtractor):
+    _VALID_URL = r"https://hop\.fixture\.test/c/(?P<id>[A-Za-z0-9]+)"
+    stop = False
+
+    def _real_extract(self, url):
+        del url
+        HOP_CALLS.append("C")
+        if self.stop:
+            return self.url_result("https://hop.fixture.test/d/1", "HopD", "1")
+        return {
+            "id": "1",
+            "title": "Two hops",
+            "timestamp": 1700000000,
+            "channel_id": "hop",
+            "formats": [_HOP_FORMAT],
+        }
+
+
+class HopDIE(InfoExtractor):
+    _VALID_URL = r"https://hop\.fixture\.test/d/(?P<id>[A-Za-z0-9]+)"
+
+    def _real_extract(self, url):
+        del url
+        HOP_CALLS.append("D")
+        return {
+            "id": "1",
+            "title": "Landed hop",
+            "timestamp": 1700000000,
+            "formats": [_HOP_FORMAT],
+        }
+
+
+class OuterIE(InfoExtractor):
+    _VALID_URL = r"https://hop\.fixture\.test/outer/(?P<id>[A-Za-z0-9]+)"
+
+    def _real_extract(self, url):
+        del url
+        return self.url_result(
+            "https://hop.fixture.test/inner/1",
+            "Inner",
+            "1",
+            url_transparent=True,
+            title="Outer title",
+        )
+
+
+class InnerIE(InfoExtractor):
+    _VALID_URL = r"https://hop\.fixture\.test/inner/(?P<id>[A-Za-z0-9]+)"
+
+    def _real_extract(self, url):
+        del url
+        return {
+            "id": "inner-id",
+            "title": "Inner title",
+            "timestamp": 1700000000,
+            "channel_id": "inner-scope",
+            "formats": [_HOP_FORMAT],
+        }
+
+
+class SiblingIE(InfoExtractor):
+    _VALID_URL = r"https?://www\.fixture\.test(?::\d+)?/sib/(?P<id>[A-Za-z0-9]+)"
+
+    def _real_extract(self, url):
+        video_id = self._match_id(url)
+        port = urlsplit(url).port
+        self._request_webpage(f"http://m.fixture.test:{port}/sib-asset", video_id, note=False)
+        return self._download_json(url, video_id)
+
+
+def test_share_url_shape_and_canonical_form():
+    assert remote_media._share_parts(SHARE_R) == ("www.facebook.com", "r", SHARE_TOKEN)
+    assert remote_media._share_parts("https://www.facebook.com/share/v/VideoToken") == (
+        "www.facebook.com",
+        "v",
+        "VideoToken",
+    )
+    assert remote_media._share_parts("https://www.facebook.com/share/r/Ab12token/?x=1") is None
+    assert remote_media._share_parts("https://user@www.facebook.com/share/r/Ab12/") is None
+    assert remote_media._share_parts("http://www.facebook.com/share/r/Ab12/") is None
+    reel = remote_media._canonical_media("https://www.facebook.com/reel/123/?tracking=1#frag")
+    watch = remote_media._canonical_media("https://m.facebook.com/watch/?v=123&_rdr")
+    page = remote_media._canonical_media("https://www.facebook.com/page/videos/123?x=1")
+    assert reel == "https://www.facebook.com/reel/123"
+    assert watch == "https://m.facebook.com/watch/?v=123"
+    assert page == "https://www.facebook.com/page/videos/123"
+
+
+def test_facebook_challenge_page_stops_before_a_verify_post(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    dials = route_dial(
+        monkeypatch,
+        {
+            "/watch/": {
+                "status": 403,
+                "body": b"fetch('/__rd_verify_synthetic')",
+                "reason": "Forbidden",
+            }
+        },
+    )
+    req, permit = live_request(
+        ctx,
+        project,
+        WATCH_URL,
+        ["media_metadata"],
+        [("Facebook", ["www.facebook.com"])],
+        ["Facebook"],
+    )
+    job = run(ctx, req)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.CHECKPOINT_REQUIRED.value
+    assert job.error["message"] == "Platform challenge"
+    assert job.error["next_action"] == "Stop. Do not solve a challenge or retry it."
+    assert [item["method"] for item in dials] == ["GET"]
+    assert dials[0]["path"] == "/watch/"
+    assert all(not item["path"].startswith("/__rd_verify") for item in dials)
+    assert stored_rows(ctx) == 0
+    assert ctx.store.get(m.Permit, permit).used == 1
+
+
+def test_plain_facebook_403_stays_access_denied(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    dials = route_dial(
+        monkeypatch,
+        {"/watch/": {"status": 403, "body": b"no", "reason": "Forbidden"}},
+    )
+    req, _permit = live_request(
+        ctx,
+        project,
+        WATCH_URL,
+        ["media_metadata"],
+        [("Facebook", ["www.facebook.com"])],
+        ["Facebook"],
+    )
+    job = run(ctx, req)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.ACCESS_DENIED.value
+    assert job.error["message"] == "Upstream refused the request"
+    assert len(dials) == 1
+    assert stored_rows(ctx) == 0
+
+
+def test_cf_mitigated_challenge_stops_the_job(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    route_dial(
+        monkeypatch,
+        {
+            "/watch/": {
+                "status": 503,
+                "body": b"no",
+                "headers": {"cf-mitigated": "challenge"},
+            }
+        },
+    )
+    req, _permit = live_request(
+        ctx,
+        project,
+        WATCH_URL,
+        ["media_metadata"],
+        [("Facebook", ["www.facebook.com"])],
+        ["Facebook"],
+    )
+    job = run(ctx, req)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.CHECKPOINT_REQUIRED.value
+    assert stored_rows(ctx) == 0
+
+
+def test_rd_verify_path_is_refused_before_the_dial(tmp_path, monkeypatch):
+    """The extractor is already inside the pinned challenge branch.
+
+    ``_download_fb_webpage_and_verify`` lives on ``FacebookAdsIE``, not
+    ``FacebookIE``. Path refusal still prevents the verification POST.
+    """
+
+    from yt_dlp.extractor.facebook import FacebookAdsIE
+    from yt_dlp.networking.common import Response
+    from yt_dlp.networking.exceptions import HTTPError
+    from yt_dlp.utils import ExtractorError
+
+    dials = []
+
+    def dial(*args, **kwargs):
+        del kwargs
+        dials.append(args)
+        raise AssertionError("dial")
+
+    monkeypatch.setattr(remote_media, "_dial", dial)
+
+    def checker(url, *, purpose):
+        raise AssertionError(f"checker {purpose} {url}")
+
+    net = remote_media._Net(
+        checker=checker,
+        budget=remote_media._Budget(0, 1000),
+        media_max=1000,
+        timeout=2,
+    )
+    params = remote_media.ytdlp_params(
+        tmp_path,
+        max_items=1,
+        socket_timeout=2,
+        max_filesize=1000,
+        extractor="FacebookAds",
+    )
+    ydl = remote_media._open_ydl(params, FacebookAdsIE, net)
+    try:
+        ie = ydl.get_info_extractor("FacebookAds")
+        body = b"fetch('/__rd_verify_synthetic')"
+        response = Response(
+            io.BytesIO(body),
+            "https://www.facebook.com/ads/library/?id=1",
+            {},
+            status=403,
+            reason="Client challenge",
+        )
+        cause = HTTPError(response)
+
+        def boom(*args, **kwargs):
+            del args, kwargs
+            raise ExtractorError("HTTP Error 403: Client challenge", cause=cause)
+
+        ie._download_webpage = boom
+        try:
+            ie._download_fb_webpage_and_verify("https://www.facebook.com/ads/library/?id=1", "1")
+            raised = None
+        except Exception as exc:
+            raised = exc
+    finally:
+        ydl.close()
+    assert raised is not None
+    assert dials == []
+    cores = [node for node in remote_media._chain(raised) if isinstance(node, m.CoreError)]
+    assert cores
+    assert cores[0].detail.code == m.ErrorCode.CHECKPOINT_REQUIRED
+    assert cores[0].detail.message == "Platform challenge"
+
+
+def test_share_reel_resolves_and_hops_to_facebook(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    dials = route_dial(
+        monkeypatch,
+        {
+            f"/share/r/{SHARE_TOKEN}/": {
+                "status": 302,
+                "location": f"{REEL_URL}/?tracking=1",
+            },
+            "/watch/": {"status": 200, "body": facebook_page(REEL_ID)},
+        },
+    )
+    req, _permit = live_request(
+        ctx,
+        project,
+        SHARE_R,
+        ["media_metadata"],
+        [
+            ("FacebookReel", ["www.facebook.com"]),
+            ("Facebook", ["m.facebook.com", "www.facebook.com"]),
+        ],
+        ["FacebookReel"],
+    )
+    job = run(ctx, req)
+    assert job.state == "succeeded", job.error
+    assert [item["path"] for item in dials] == [f"/share/r/{SHARE_TOKEN}/", "/watch/"]
+    assert all(item["method"] == "GET" for item in dials)
+    assert "tracking" not in dials[1]["url"] or "v=" in dials[1]["query"]
+    assert all("__rd_verify" not in item["path"] for item in dials)
+    source = q(
+        ctx,
+        "SELECT upstream_collection_method, use_basis FROM sources",
+    )[0]
+    basis = json.loads(source["use_basis"])
+    assert source["upstream_collection_method"] == "Facebook"
+    assert basis["requested_url"] == SHARE_R
+    assert basis["resolved_url"] == REEL_URL
+    assert basis["extractor_chain"] == ["FacebookReel", "Facebook"]
+    assert "tracking" not in basis["resolved_url"]
+    row = step_data(job)["rows"][0]
+    assert row["requested_url"] == SHARE_R
+    assert row["resolved_url"] == REEL_URL
+    assert row["extractor_chain"] == ["FacebookReel", "Facebook"]
+    checkpoint = json.loads(q(ctx, "SELECT checkpoint FROM job_steps")[0]["checkpoint"])
+    assert "tracking" not in json.dumps(checkpoint)
+    assert q(ctx, "SELECT text FROM item_revisions")[0]["text"] == "Synthetic reel"
+
+
+def test_share_resume_reuses_the_canonical_url(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    routes = {
+        f"/share/r/{SHARE_TOKEN}/": {"status": 302, "location": f"{REEL_URL}/?tracking=1"},
+        "/watch/": {"status": 200, "body": facebook_page(REEL_ID)},
+    }
+    dials = route_dial(monkeypatch, routes)
+
+    def crash(step):
+        if (step.checkpoint or {}).get("phase") == "metadata":
+            raise SystemExit(7)
+
+    monkeypatch.setattr(remote_media, "_note", crash)
+    req, permit = live_request(
+        ctx,
+        project,
+        SHARE_R,
+        ["media_metadata", "subtitles"],
+        [
+            ("FacebookReel", ["www.facebook.com"]),
+            ("Facebook", ["m.facebook.com", "www.facebook.com"]),
+        ],
+        ["FacebookReel"],
+    )
+    env = app.submit_collect(ctx, req)
+    assert env.status == "accepted", env.error
+    with pytest.raises(SystemExit):
+        with jobs.Executor(ctx.store) as executor:
+            executor.run_once()
+    routes["/watch/"] = {"status": 200, "body": facebook_page("999")}
+    monkeypatch.setattr(remote_media, "_note", lambda step: None)
+    with jobs.Executor(ctx.store) as executor:
+        assert executor.run_once()
+    job = ctx.store.get(m.Job, env.data["job_id"])
+    assert job.state == "partial"
+    assert job.stop_reason == "data_stale"
+    assert [item["path"] for item in dials].count(f"/share/r/{SHARE_TOKEN}/") == 1
+    assert q(ctx, "SELECT native_id FROM items")[0]["native_id"] == REEL_ID
+    assert ctx.store.get(m.Permit, permit).used == 1
+
+
+def test_share_hop_without_facebook_approval_stores_nothing(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    dials = route_dial(
+        monkeypatch,
+        {
+            f"/share/r/{SHARE_TOKEN}/": {
+                "status": 302,
+                "location": f"{REEL_URL}/?tracking=1",
+            }
+        },
+    )
+    req, _permit = live_request(
+        ctx,
+        project,
+        SHARE_R,
+        ["media_metadata"],
+        [("FacebookReel", ["www.facebook.com"])],
+        ["FacebookReel"],
+    )
+    job = run(ctx, req)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.SCOPE_DENIED.value
+    assert "Facebook" in job.error["next_action"]
+    assert "m.facebook.com" in job.error["next_action"]
+    assert [item["path"] for item in dials] == [f"/share/r/{SHARE_TOKEN}/"]
+    assert stored_rows(ctx) == 0
+
+
+def test_reel_delegation_without_facebook_approval_is_refused(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    dials = route_dial(monkeypatch, {})
+    req, _permit = live_request(
+        ctx,
+        project,
+        REEL_URL,
+        ["media_metadata"],
+        [("FacebookReel", ["www.facebook.com"])],
+        ["FacebookReel"],
+    )
+    job = run(ctx, req)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.SCOPE_DENIED.value
+    assert job.error["next_action"] == "Approve Facebook for m.facebook.com"
+    assert dials == []
+    assert stored_rows(ctx) == 0
+
+
+def test_share_login_redirect_is_auth_required(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    dials = route_dial(
+        monkeypatch,
+        {
+            f"/share/r/{SHARE_TOKEN}/": {
+                "status": 302,
+                "location": "https://www.facebook.com/login/?next=1",
+            }
+        },
+    )
+    req, _permit = live_request(
+        ctx,
+        project,
+        SHARE_R,
+        ["media_metadata"],
+        [("FacebookReel", ["www.facebook.com"])],
+        ["FacebookReel"],
+    )
+    job = run(ctx, req)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.AUTH_REQUIRED.value
+    assert job.error["message"] == "Login required"
+    assert job.error["next_action"] == "Stop. Do not retry a login wall."
+    assert len(dials) == 1
+    assert stored_rows(ctx) == 0
+
+
+def test_share_200_page_is_auth_required(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    dials = route_dial(
+        monkeypatch,
+        {f"/share/r/{SHARE_TOKEN}/": {"status": 200, "body": b"<html>hello</html>"}},
+    )
+    req, _permit = live_request(
+        ctx,
+        project,
+        SHARE_R,
+        ["media_metadata"],
+        [("FacebookReel", ["www.facebook.com"])],
+        ["FacebookReel"],
+    )
+    job = run(ctx, req)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.AUTH_REQUIRED.value
+    assert job.error["message"] == "Login required"
+    assert len(dials) == 1
+    assert stored_rows(ctx) == 0
+
+
+def test_share_redirect_to_an_unapproved_host_is_not_dialed(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    dials = route_dial(
+        monkeypatch,
+        {
+            f"/share/r/{SHARE_TOKEN}/": {
+                "status": 302,
+                "location": f"https://evil.fixture.test/reel/{REEL_ID}",
+            }
+        },
+    )
+    req, _permit = live_request(
+        ctx,
+        project,
+        SHARE_R,
+        ["media_metadata"],
+        [("FacebookReel", ["www.facebook.com"])],
+        ["FacebookReel"],
+    )
+    job = run(ctx, req)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.SCOPE_DENIED.value
+    assert "evil.fixture.test" in job.error["next_action"]
+    assert [item["host"] for item in dials] == ["www.facebook.com"]
+    assert stored_rows(ctx) == 0
+
+
+def test_share_post_links_are_refused_at_submit(ctx, project):
+    before = jobs_count(ctx)
+    configure(ctx, [("Facebook", ["www.facebook.com"])])
+    env = app.submit_collect(
+        ctx,
+        remote_request(
+            project,
+            "https://www.facebook.com/share/p/PostToken/",
+            ["media_metadata"],
+            request_key="share-p",
+        ),
+    )
+    assert env.error.code == m.ErrorCode.UNSUPPORTED
+    assert env.error.next_action == "Use the Facebook post collector for /share/p/ links."
+    assert jobs_count(ctx) == before
+
+
+def test_share_video_resolves_to_facebook(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    dials = route_dial(
+        monkeypatch,
+        {
+            "/share/v/VideoToken/": {
+                "status": 302,
+                "location": f"{WATCH_URL}&tracking=1",
+            },
+            "/watch/": {"status": 200, "body": facebook_page(REEL_ID)},
+        },
+    )
+    req, _permit = live_request(
+        ctx,
+        project,
+        SHARE_V,
+        ["media_metadata"],
+        [("Facebook", ["www.facebook.com", "m.facebook.com"])],
+        ["Facebook"],
+    )
+    job = run(ctx, req)
+    assert job.state == "succeeded", job.error
+    basis = json.loads(q(ctx, "SELECT use_basis FROM sources")[0]["use_basis"])
+    assert basis["requested_url"] == SHARE_V
+    assert basis["resolved_url"] == WATCH_URL
+    assert basis["extractor_chain"] == ["Facebook"]
+    assert [item["path"] for item in dials] == ["/share/v/VideoToken/", "/watch/"]
+
+
+def test_mobile_host_approval_does_not_allow_the_desktop_dial(ctx, project, resolver, monkeypatch):
+    allow_facebook(resolver)
+    dials = route_dial(
+        monkeypatch,
+        {
+            f"/share/r/{SHARE_TOKEN}/": {
+                "status": 302,
+                "location": f"{REEL_URL}/?tracking=1",
+            },
+            "/watch/": {"status": 200, "body": facebook_page(REEL_ID)},
+        },
+    )
+    req, _permit = live_request(
+        ctx,
+        project,
+        SHARE_R,
+        ["media_metadata"],
+        [
+            ("FacebookReel", ["www.facebook.com"]),
+            ("Facebook", ["m.facebook.com"]),
+        ],
+        ["FacebookReel"],
+    )
+    job = run(ctx, req)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.SCOPE_DENIED.value
+    assert [item["path"] for item in dials] == [f"/share/r/{SHARE_TOKEN}/"]
+    assert stored_rows(ctx) == 0
+
+
+def _register_hops():
+    for cls in (HopAIE, HopBIE, HopCIE, HopDIE, OuterIE, InnerIE):
+        remote_media.register_test_extractor(cls)
+
+
+def _unregister_hops():
+    for cls in (HopAIE, HopBIE, HopCIE, HopDIE, OuterIE, InnerIE):
+        remote_media.unregister_test_extractor(cls)
+
+
+def test_two_hops_store_and_a_third_is_refused(ctx, project):
+    HOP_CALLS.clear()
+    HopCIE.stop = False
+    _register_hops()
+    try:
+        approvals = [
+            ("HopA", ["hop.fixture.test"]),
+            ("HopB", ["hop.fixture.test"]),
+            ("HopC", ["hop.fixture.test"]),
+            ("HopD", ["hop.fixture.test"]),
+        ]
+        req, _permit = live_request(
+            ctx,
+            project,
+            "https://hop.fixture.test/a/1",
+            ["media_metadata"],
+            approvals,
+            ["HopA"],
+        )
+        job = run(ctx, req)
+        assert job.state == "succeeded", job.error
+        basis = json.loads(q(ctx, "SELECT use_basis FROM sources")[0]["use_basis"])
+        assert basis["extractor_chain"] == ["HopA", "HopB", "HopC"]
+        assert q(ctx, "SELECT text FROM item_revisions")[0]["text"] == "Two hops"
+        HopCIE.stop = True
+        HOP_CALLS.clear()
+        limited, _permit = live_request(
+            ctx,
+            project,
+            "https://hop.fixture.test/a/1",
+            ["media_metadata"],
+            approvals,
+            ["HopA"],
+        )
+        limited = limited.model_copy(update={"request_key": "hop-limit"})
+        stopped = run(ctx, limited)
+        assert stopped.state == "failed"
+        assert stopped.error["code"] == m.ErrorCode.UNSUPPORTED.value
+        assert "2 hops" in stopped.error["message"]
+        assert "D" not in HOP_CALLS
+        assert q(ctx, "SELECT COUNT(*) AS n FROM items")[0]["n"] == 1
+    finally:
+        HopCIE.stop = False
+        _unregister_hops()
+
+
+def test_url_transparent_outer_fields_override(ctx, project):
+    _register_hops()
+    try:
+        req, _permit = live_request(
+            ctx,
+            project,
+            "https://hop.fixture.test/outer/1",
+            ["media_metadata"],
+            [
+                ("Outer", ["hop.fixture.test"]),
+                ("Inner", ["hop.fixture.test"]),
+            ],
+            ["Outer"],
+        )
+        job = run(ctx, req)
+        assert job.state == "succeeded", job.error
+        assert q(ctx, "SELECT text FROM item_revisions")[0]["text"] == "Outer title"
+        assert q(ctx, "SELECT native_id FROM items")[0]["native_id"] == "inner-id"
+        basis = json.loads(q(ctx, "SELECT use_basis FROM sources")[0]["use_basis"])
+        assert basis["extractor_chain"] == ["Outer", "Inner"]
+    finally:
+        _unregister_hops()
+
+
+def test_cookie_header_matches_only_an_approved_host():
+    marker = marker_value()
+    cookies = remote_media._parse_cookie_secret(b"Cookie: sid=" + marker.encode())
+    sent = remote_media._cookie_header(
+        cookies, "https://www.facebook.com/watch/", frozenset({"www.facebook.com"})
+    )
+    assert sent == f"sid={marker}"
+    assert (
+        remote_media._cookie_header(
+            cookies, "https://cdn.fixture.test/clip.mp4", frozenset({"www.facebook.com"})
+        )
+        is None
+    )
+    host_only = remote_media._parse_cookie_secret(
+        netscape("#HttpOnly_.www.fixture.test", "FALSE", "/", "TRUE", "4000000000", "sid", marker)
+    )
+    assert host_only[0].host_only is True
+    assert host_only[0].secure is True
+    sibling_hosts = frozenset({"www.fixture.test", "m.fixture.test"})
+    assert (
+        remote_media._cookie_header(host_only, "https://m.fixture.test/sib-asset", sibling_hosts)
+        is None
+    )
+    assert (
+        remote_media._cookie_header(
+            host_only, "http://www.fixture.test/sib/clip", frozenset({"www.fixture.test"})
+        )
+        is None
+    )
+    expired = remote_media._parse_cookie_secret(
+        netscape(".fixture.test", "TRUE", "/", "FALSE", "1", "sid", marker)
+    )
+    assert (
+        remote_media._cookie_header(
+            expired, "https://www.fixture.test/", frozenset({"www.fixture.test"})
+        )
+        is None
+    )
+
+
+def test_cookie_secret_does_not_echo_rejected_bytes():
+    marker = marker_value("zz")
+    with pytest.raises(m.CoreError) as exc:
+        remote_media._parse_cookie_secret(b"not a cookie file " + marker.encode())
+    assert exc.value.detail.code == m.ErrorCode.INPUT_INVALID
+    assert marker not in str(exc.value)
+    assert marker not in repr(exc.value)
+
+
+def test_cookie_reaches_only_the_approved_host(ctx, project, origin, resolver, tmp_path, caplog):
+    caplog.set_level(logging.DEBUG)
+    marker = marker_value()
+    secret = netscape("www.fixture.test", "FALSE", "/", "FALSE", "0", "sid", marker)
+    store, auth_ref = put_secret(tmp_path, ctx, secret)
+    port = origin.server_address[1]
+    payload = info_dict(port, "sibclip", title="Sibling clip")
+    origin.routes["sib/clip"] = {"status": 200, "body": dump(payload)}
+    origin.routes["sib-asset"] = {"status": 200, "body": b"ok", "type": "text/plain"}
+    resolver.extra["www.fixture.test"] = ["127.0.0.1"]
+    resolver.extra["m.fixture.test"] = ["127.0.0.1"]
+    remote_media.register_test_extractor(SiblingIE)
+    try:
+        req, _permit = live_request(
+            ctx,
+            project,
+            f"http://www.fixture.test:{port}/sib/clip",
+            ["media_metadata"],
+            [("Sibling", ["www.fixture.test", "m.fixture.test"], auth_ref)],
+            ["Sibling"],
+        )
+        job = run(ctx, req, secret_store=store)
+    finally:
+        remote_media.unregister_test_extractor(SiblingIE)
+    assert job.state == "succeeded", job.error
+    by_path = {hit["path"]: hit["cookie"] for hit in origin.hits}
+    assert marker in by_path["/sib/clip"]
+    assert by_path["/sib-asset"] is None
+    assert_marker_absent(ctx, marker, job, caplog)
+
+
+def test_secure_cookie_is_not_sent_over_http(ctx, project, origin, tmp_path, caplog):
+    caplog.set_level(logging.DEBUG)
+    marker = marker_value("sec")
+    secret = netscape("media.fixture.test", "FALSE", "/", "TRUE", "0", "sid", marker)
+    store, auth_ref = put_secret(tmp_path, ctx, secret)
+    req, _permit = live_request(
+        ctx,
+        project,
+        url_for(origin, "clip"),
+        ["media_metadata"],
+        [("MetamuseFixture", ["media.fixture.test"], auth_ref)],
+        ["MetamuseFixture"],
+    )
+    job = run(ctx, req, secret_store=store)
+    assert job.state == "succeeded", job.error
+    assert origin.hits
+    assert all(hit["cookie"] is None for hit in origin.hits)
+    assert_marker_absent(ctx, marker, job, caplog)
+
+
+def test_cookie_is_not_sent_to_an_unapproved_redirect(ctx, project, origin, tmp_path, caplog):
+    caplog.set_level(logging.DEBUG)
+    marker = marker_value("cdn")
+    secret = netscape(".fixture.test", "TRUE", "/", "FALSE", "0", "sid", marker)
+    store, auth_ref = put_secret(tmp_path, ctx, secret)
+    port = origin.server_address[1]
+    origin.routes["away"] = {
+        "status": 302,
+        "location": f"http://cdn.fixture.test:{port}/cdn-asset",
+    }
+    req, _permit = live_request(
+        ctx,
+        project,
+        url_for(origin, "away"),
+        ["media_metadata"],
+        [("MetamuseFixture", ["media.fixture.test"], auth_ref)],
+        ["MetamuseFixture"],
+    )
+    job = run(ctx, req, secret_store=store)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.SCOPE_DENIED.value
+    assert paths(origin) == ["/away"]
+    assert marker in origin.hits[0]["cookie"]
+    assert_marker_absent(ctx, marker, job, caplog)
+
+
+def test_cookie_binding_mismatch_dials_nothing(ctx, project, origin, tmp_path, monkeypatch):
+    marker = marker_value("bad")
+    secret = netscape("media.fixture.test", "FALSE", "/", "FALSE", "0", "sid", marker)
+    store, auth_ref = put_secret(tmp_path, ctx, secret, account="other-account")
+    dials = []
+
+    def dial(*args, **kwargs):
+        del kwargs
+        dials.append(args)
+        raise AssertionError("dial")
+
+    monkeypatch.setattr(remote_media, "_dial", dial)
+    req, _permit = live_request(
+        ctx,
+        project,
+        url_for(origin, "clip"),
+        ["media_metadata"],
+        [("MetamuseFixture", ["media.fixture.test"], auth_ref)],
+        ["MetamuseFixture"],
+    )
+    job = run(ctx, req, secret_store=store)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.AUTH_REQUIRED.value
+    assert job.error["message"] == "Secret file or reference is unavailable or unsafe"
+    assert dials == []
+    assert origin.hits == []
+    assert marker not in json.dumps(job.error)
+    assert stored_rows(ctx) == 0
+
+
+def test_set_cookie_is_not_replayed(ctx, project, origin, tmp_path):
+    marker = marker_value("set")
+    port = origin.server_address[1]
+    origin.routes["clip"] = {
+        "status": 200,
+        "body": lambda: dump(info_dict(port, "clip")),
+        "headers": {"Set-Cookie": f"injected={marker}"},
+    }
+    req, _permit = prepare(ctx, project, origin, "clip", ["media_metadata", "subtitles"])
+    job = finish(ctx, req)
+    assert job.state == "succeeded", job.error
+    assert all(hit["cookie"] is None for hit in origin.hits)
+    for path in ctx.paths.root.rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            assert marker.encode() not in path.read_bytes(), path
+
+
+def test_challenge_with_a_cookie_still_stops(ctx, project, resolver, monkeypatch, tmp_path, caplog):
+    caplog.set_level(logging.DEBUG)
+    marker = marker_value("ch")
+    secret = netscape(
+        "#HttpOnly_www.facebook.com", "FALSE", "/", "TRUE", "4000000000", "sid", marker
+    )
+    store, auth_ref = put_secret(tmp_path, ctx, secret)
+    allow_facebook(resolver)
+    dials = route_dial(
+        monkeypatch,
+        {
+            "/watch/": {
+                "status": 403,
+                "body": b"fetch('/__rd_verify_synthetic')",
+                "reason": "Forbidden",
+            }
+        },
+    )
+    req, _permit = live_request(
+        ctx,
+        project,
+        WATCH_URL,
+        ["media_metadata"],
+        [("Facebook", ["www.facebook.com"], auth_ref)],
+        ["Facebook"],
+    )
+    job = run(ctx, req, secret_store=store)
+    assert job.state == "awaiting_user"
+    assert job.error["code"] == m.ErrorCode.CHECKPOINT_REQUIRED.value
+    assert len(dials) == 1
+    assert marker in (dials[0]["cookie"] or "")
+    assert all(not item["path"].startswith("/__rd_verify") for item in dials)
+    assert stored_rows(ctx) == 0
+    assert_marker_absent(ctx, marker, job, caplog)
+
+
+def test_approval_auth_ref_is_config_only():
+    with pytest.raises(ValidationError):
+        app.Config.model_validate(
+            {
+                "remote_media": {
+                    "approvals": [
+                        {
+                            "extractor": "Facebook",
+                            "hosts": ["www.facebook.com"],
+                            "auth_ref": "not-a-ref",
+                        }
+                    ]
+                }
+            }
+        )
+    loaded = app.Config.model_validate(
+        {
+            "remote_media": {
+                "approvals": [
+                    {
+                        "extractor": "Facebook",
+                        "hosts": ["www.facebook.com"],
+                        "auth_ref": "auth_" + "ab" * 16,
+                    }
+                ]
+            }
+        }
+    )
+    assert loaded.remote_media.approvals[0].auth_ref == "auth_" + "ab" * 16
