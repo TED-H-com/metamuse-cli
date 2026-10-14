@@ -60,7 +60,7 @@
 - **使用者意圖**：在已授權範圍內開啟新的 Muse 主題討論。
 - **對應 CLI 命令**：`metamuse muse open`
 - **必要識別碼**：`project_id`、`access_grant_id`、`request_key`。
-- **成功語意**：`ok`。建立 discussion；若遠端建立狀態不明需先對帳。
+- **成功語意**：`accepted`。discussion 與 job 已 commit；沒有 worker 則 queued。可明示原 `discussion_id` 排 list 對帳，不再 create。
 
 ### 10. `metamuse_muse_send`
 - **使用者意圖**：向 Muse 討論主題發送問題與分享資料包。
@@ -72,7 +72,7 @@
 - **使用者意圖**：讀取 Muse 之交換回應或刷新最新狀態。
 - **對應 CLI 命令**：`metamuse muse read`
 - **必要識別碼**：`exchange_id`（若 refresh 需 `access_grant_id`）。
-- **成功語意**：`ok`（已讀取完整回應）或 `partial`（部分回應或等待中，不可冒稱完整）。
+- **成功語意**：`ok` 只表示本地有界讀取；`refresh=true` 回 `accepted` 與 refresh job。progress 不代表完整；fixture 回應有 backend/mock 標記。
 
 ### 12. `metamuse_muse_close_exchange`
 - **使用者意圖**：結算當前討論輪次並標記討論成果狀態。

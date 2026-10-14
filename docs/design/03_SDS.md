@@ -167,6 +167,21 @@ Browser context一個控制者，原生登入／2FA由人類處理。人接手�
 
 模型拒絕不以改來源、假身份或重寫同目的prompt迴避。兩個Agent同讀一份資料的共識不是獨立證據。分析prompt不會收回Muse原生工具權限，操作者需在服務本身設定。
 
+### B10持久化與boundary補充
+
+003_muse_lifecycle.sql在002後forward ALTER，不改001。exchanges保存精確prepared payload/marker/body digest、
+original submission_step_id、submit time、stream ID、nullable handoff、first attempt evidence、獨立delivery proof，
+及versioned association memory。discussions固定provider/account/auth_ref/backend與open intent/step/proof及quarantine。
+messages按discussion/account隔離identity；append-only muse_observations保存每次raw sanitized observation、digest、
+message/discussion FK與backend。legacy handoff與binding保持NULL；closed不reopen，proof不覆寫first evidence。
+新identity有BEFORE INSERT replacement/UPSERT guard與retention trigger；migration guard audit涵蓋所有版本。
+
+before_external_action transaction完成verifier/reservation/intent後才mint one-use issuer-registered token，
+consume綁owner/epoch/job/step/operation/target/action digest。read不mint。transport affirmative zero-handoff可同process
+record_not_submitted，原step經settle_uncertain變local failed/remote not_submitted；crash則unknown，不退用量。
+history/list在另一safe_read job，讀取current access grant；原step settlement不再reserve/send/requeue。
+live send先有已完成、授權的history baseline；已mapped discussion_id的open走history read，不做第二次create。
+
 ## 9. Grant與packet
 
 Grant由可信人類本地流程建立：kind、project/provider/account、可用snapshot或packet digests、expiry、max_uses、issuer。MCP無自我批准工具。對已展示snapshot可預先授權有界討論，不必每句打斷；新增來源／帳號不繼承。

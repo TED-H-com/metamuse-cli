@@ -2099,6 +2099,20 @@
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "additionalProperties": false,
         "properties": {
+          "discussion_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Discussion Id"
+          },
           "project_id": {
             "maxLength": 128,
             "minLength": 3,
@@ -2106,9 +2120,11 @@
             "type": "string"
           },
           "topic": {
-            "maxLength": 1000000,
+            "maxLength": 8192,
+            "minLength": 1,
             "title": "Topic",
-            "type": "string"
+            "type": "string",
+            "x-max-utf8-bytes": 8192
           },
           "access_grant_id": {
             "maxLength": 128,
