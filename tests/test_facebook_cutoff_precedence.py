@@ -178,6 +178,7 @@ def test_r7_denied_expansion_navigation_precedes_cutoff(tmp_path, monkeypatch):
         ("E_SCOPE_DENIED", "E_AUTH_REQUIRED"),
         ("E_AUTH_REQUIRED", "E_REFERENCE_INVALID"),
         ("E_CHECKPOINT_REQUIRED", "E_REFERENCE_INVALID"),
+        ("E_AUTH_REQUIRED", "E_CHECKPOINT_REQUIRED"),
     ],
 )
 def test_r7_simultaneous_fatal_precedence(winner, other):
@@ -192,7 +193,12 @@ def test_r7_simultaneous_fatal_precedence(winner, other):
     session._egress = facebook.EgressGuard(
         allowed_hosts=("www.facebook.com",), resolver=lambda _: ["93.184.216.34"]
     )
-    session._egress.navigation_error = m.CoreError(m.ErrorCode(other), "Other stop")
+    other_message = (
+        "Facebook navigation left the approved post"
+        if other == "E_CHECKPOINT_REQUIRED"
+        else "Other stop"
+    )
+    session._egress.navigation_error = m.CoreError(m.ErrorCode(other), other_message)
     session._egress.byte_limit_exceeded = True
     with pytest.raises(m.CoreError) as error:
         session._raise_if_byte_limit()
