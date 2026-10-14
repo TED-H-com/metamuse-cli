@@ -1601,6 +1601,7 @@ class _PlaywrightSession:
         self._test_origin = _test_origin.rstrip("/") if _test_origin else None
         self.popups_blocked = 0
         self.downloads_blocked = 0
+        self.workers_blocked = 0
         self._peer_error: m.CoreError | None = None
         self._document_status = 200
         self._expansion_response_status: int | None = None
@@ -1696,6 +1697,29 @@ class _PlaywrightSession:
         self._context.route_web_socket("**/*", _on_web_socket)
         self._page.on("response", _on_response)
         self._page.on("framenavigated", _on_frame_navigated)
+        # Playwright WebSocket routes do not cover worker sockets in the pinned build.
+        # Pause every related worker before its script starts, then terminate it.
+        self._worker_cdp = browser.new_browser_cdp_session()
+        page_cdp = context.new_cdp_session(page)
+        page_target = page_cdp.send("Target.getTargetInfo")["targetInfo"]["targetId"]
+
+        def _on_worker_attached(event: dict[str, Any]) -> None:
+            info = event["targetInfo"]
+            if info["type"] in ("worker", "shared_worker", "service_worker"):
+                self.workers_blocked += 1
+                self._egress.record_proxy_protocol_refusal(hostname="proxy", reason="worker")
+                self._worker_cdp.send("Target.closeTarget", {"targetId": info["targetId"]})
+
+        self._worker_cdp.on("Target.attachedToTarget", _on_worker_attached)
+        self._worker_cdp.send(
+            "Target.autoAttachRelated",
+            {
+                "targetId": page_target,
+                "waitForDebuggerOnStart": True,
+                "filter": [{"type": kind} for kind in ("worker", "shared_worker", "service_worker")]
+                + [{"exclude": True}],
+            },
+        )
 
     def _raise_if_byte_limit(self) -> None:
         if self._egress.byte_limit_exceeded or (

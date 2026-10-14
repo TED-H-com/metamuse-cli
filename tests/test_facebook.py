@@ -1710,6 +1710,9 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
         def route_web_socket(self, pattern: str, handler: Any) -> None:
             del pattern, handler
 
+        def new_cdp_session(self, page: Any) -> Any:
+            return _FakeCDP()
+
         def new_page(self) -> _FakePage:
             return _FakePage()
 
@@ -1717,11 +1720,21 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
             pass
 
     class _FakeBrowser:
+        def new_browser_cdp_session(self) -> Any:
+            return _FakeCDP()
+
         def new_context(self, **kwargs: Any) -> _FakeContext:
             launched["context_kwargs"] = kwargs
             return _FakeContext()
 
         def close(self) -> None:
+            pass
+
+    class _FakeCDP:
+        def send(self, method: str, params: Any = None) -> Any:
+            return {"targetInfo": {"targetId": "synthetic-page"}}
+
+        def on(self, event: str, handler: Any) -> None:
             pass
 
     class _FakeChromium:

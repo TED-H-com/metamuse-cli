@@ -741,3 +741,8 @@ abandoned daemon resolution tasks have no dialing capability and a process-wide
 16-slot bound, released only when their lookup returns. Capacity exhaustion refuses
 requests. An already entered dial is bounded by the socket timeout and closure waits
 for it before closing every registered socket.
+
+B13 closes page WSS with Playwright routing and terminates related dedicated/shared
+workers at CDP's pre-script pause because the pinned WebSocket hook omits workers.
+The protocol/worker controls are installed before navigation; worker-dependent
+Facebook rendering remains unverified until AT-039.
