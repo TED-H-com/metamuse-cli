@@ -306,7 +306,108 @@ def test_mcp_domain_error_scope_required_noninteractive(
     assert env["error"]["code"] == "E_SCOPE_REQUIRED"
     assert env["error"]["retry_class"] == "user_action"
     assert isinstance(env["error"]["next_action"], str)
-    assert env["error"]["next_action"]
+    assert env["error"]["next_action"] == m.DEFAULT_NEXT_ACTIONS[m.ErrorCode.SCOPE_REQUIRED]
+
+
+def test_mcp_package_data_only_and_annotations_match_contract() -> None:
+    mcp_source = Path(mcp.__file__).read_text(encoding="utf-8")
+    assert "docs/" not in mcp_source
+    assert "docs" not in mcp_source
+    assert not hasattr(mcp, "TOOL_SPECS")
+    assert not hasattr(mcp, "TOOL_ANNOTATIONS")
+    assert not hasattr(mcp, "DEFAULT_NEXT_ACTIONS")
+    assert not hasattr(mcp, "CONTRACT_PATH")
+
+    tools = mcp.list_tools()
+    assert len(tools) == len(CONTRACT_TOOLS) == 15
+    for tool, contract_entry in zip(tools, CONTRACT_TOOLS, strict=True):
+        assert tool.name == contract_entry["name"]
+        assert tool.description == contract_entry["description"]
+        assert tool.input_schema == contract_entry["inputSchema"]
+        assert tool.output_schema == contract_entry["outputSchema"]
+        assert tool.annotations is not None
+        assert (
+            tool.annotations.model_dump(by_alias=True, exclude_none=True)
+            == contract_entry["annotations"]
+        )
+
+
+def test_cli_json_and_mcp_structured_content_equal_on_errors(tmp_path: Path, capsys: Any) -> None:
+    from metamuse import cli
+
+    workspace = tmp_path / "workspace"
+    errlog_path = tmp_path / "stderr.log"
+
+    def run_cli_json(command: list[str]) -> tuple[int, dict[str, Any]]:
+        code = cli.main(["--workspace", str(workspace), "--json", "--non-interactive", *command])
+        captured = capsys.readouterr()
+        return code, json.loads(captured.out)
+
+    # 1. Input validation error on CLI --json
+    cli_in_code, cli_in_env = run_cli_json(
+        ["project", "create", "--name", "Fixture", "--request-key", ""]
+    )
+    assert cli_in_code == 2
+    assert cli_in_env["status"] == "error"
+    assert cli_in_env["error"]["code"] == "E_INPUT_INVALID"
+
+    # 2. Domain error (E_REFERENCE_INVALID) on CLI --json
+    cli_dom_code, cli_dom_env = run_cli_json(["jobs", "get", "job_missing_fixture"])
+    assert cli_dom_code == 2
+    assert cli_dom_env["status"] == "error"
+    assert cli_dom_env["error"]["code"] == "E_REFERENCE_INVALID"
+
+    # Compare against both direct mcp.call_tool and stdio MCP session.call_tool
+    ctx = app.AppContext.open(workspace)
+    direct_in_env = _assert_envelope_result(
+        mcp.call_tool(ctx, "metamuse_project_create", {"name": "Fixture", "request_key": ""}),
+        expected_error=True,
+    )
+    assert {**cli_in_env, "request_id": direct_in_env["request_id"]} == direct_in_env
+
+    direct_dom_env = _assert_envelope_result(
+        mcp.call_tool(ctx, "metamuse_job_get", {"job_id": "job_missing_fixture"}),
+        expected_error=True,
+    )
+    assert {**cli_dom_env, "request_id": direct_dom_env["request_id"]} == direct_dom_env
+
+    async def scenario() -> None:
+        params = _metamuse_command(workspace)
+        with errlog_path.open("w+", encoding="utf-8") as errlog:
+            async with stdio_client(params, errlog=errlog) as (read_stream, write_stream):
+                async with ClientSession(read_stream, write_stream) as session:
+                    await session.initialize()
+
+                    mcp_in_res = await session.call_tool(
+                        "metamuse_project_create", {"name": "Fixture", "request_key": ""}
+                    )
+                    mcp_in_env = _assert_envelope_result(mcp_in_res, expected_error=True)
+                    assert {**cli_in_env, "request_id": mcp_in_env["request_id"]} == mcp_in_env
+
+                    mcp_dom_res = await session.call_tool(
+                        "metamuse_job_get", {"job_id": "job_missing_fixture"}
+                    )
+                    mcp_dom_env = _assert_envelope_result(mcp_dom_res, expected_error=True)
+                    assert {**cli_dom_env, "request_id": mcp_dom_env["request_id"]} == mcp_dom_env
+
+    anyio.run(scenario)
+
+
+def test_mcp_otel_middleware_removed_by_type_only(ctx: app.AppContext, monkeypatch: Any) -> None:
+    from mcp.server.lowlevel.server import OpenTelemetryMiddleware, Server
+
+    sentinel_middleware = lambda req_ctx, call_next: call_next(req_ctx)  # noqa: E731
+    orig_init = Server.__init__
+
+    def patched_init(self: Server[Any], *args: Any, **kwargs: Any) -> None:
+        orig_init(self, *args, **kwargs)
+        self.middleware.append(sentinel_middleware)
+
+    monkeypatch.setattr(Server, "__init__", patched_init)
+    ctx.policy.app.telemetry_enabled = False
+    server = mcp.create_server(ctx)
+    assert not any(isinstance(mw, OpenTelemetryMiddleware) for mw in server.middleware)
+    assert sentinel_middleware in server.middleware
 
 
 def test_mcp_raw_pipe_stdout_cleanliness_with_logs_and_warnings(tmp_path: Path) -> None:
