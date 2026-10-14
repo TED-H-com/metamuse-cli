@@ -163,11 +163,19 @@ class Store:
         *,
         clock: Callable[[], str] = utc_now,
         migrations: dict[int, Path] | None = None,
-        schema_version: int = SCHEMA_VERSION,
+        schema_version: int | None = None,
+        _restore_in_progress: bool = False,
     ):
+        if (paths.runtime / "restore.incomplete").exists() and not _restore_in_progress:
+            raise m.CoreError(
+                m.ErrorCode.STORAGE,
+                "Workspace restore is incomplete",
+                next_action="Restore the verified backup into a fresh workspace",
+            )
         self.paths = paths
         self.clock = clock
-        self.schema_version = schema_version
+        self._restore_in_progress = _restore_in_progress
+        self.schema_version = SCHEMA_VERSION if schema_version is None else schema_version
         self.paths.initialize()
         self.migrate(migrations or MIGRATIONS)
         self._provision_workspace_keys()
@@ -202,6 +210,8 @@ class Store:
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
+        if (self.paths.runtime / "restore.incomplete").exists() and not self._restore_in_progress:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Workspace restore is incomplete")
         with file_lock(self.paths.runtime / "maintenance.lock", exclusive=False):
             conn = self._open()
             try:
@@ -736,27 +746,40 @@ class Store:
         if paths.root.exists() and any(paths.root.iterdir()):
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Restore requires a fresh workspace")
         manifest = json.loads((backup / "manifest.json").read_bytes())
-        if manifest["schema_version"] != SCHEMA_VERSION:
-            raise m.CoreError(m.ErrorCode.PROTOCOL_MISMATCH, "Restore schema version mismatch")
+        backup_version = manifest["schema_version"]
+        if type(backup_version) is not int or backup_version < 0:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Invalid backup schema version")
+        if backup_version > SCHEMA_VERSION:
+            raise m.CoreError(
+                m.ErrorCode.PROTOCOL_MISMATCH, "Backup schema is newer than this build"
+            )
         # Verify the backup before writing the new workspace.
         with closing(
             sqlite3.connect(f"{(backup / 'state.sqlite3').as_uri()}?mode=ro", uri=True)
         ) as conn:
             _configure(conn, writable=False)
-            if conn.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+            if conn.execute("PRAGMA user_version").fetchone()[0] != backup_version:
                 raise m.CoreError(m.ErrorCode.PROTOCOL_MISMATCH, "Backup schema mismatch")
             if (
                 conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok"
                 or conn.execute("PRAGMA foreign_key_check").fetchone()
             ):
                 raise m.CoreError(m.ErrorCode.STORAGE, "Backup integrity check failed")
-            rows = conn.execute(
-                "SELECT sha256,actual_bytes,object_path FROM assets WHERE state='ready'"
-            ).fetchall()
-            exports = [
-                cls.decode(m.Export, row)
-                for row in conn.execute("SELECT * FROM exports WHERE state='ready' ORDER BY id")
-            ]
+            rows = (
+                conn.execute(
+                    "SELECT sha256,actual_bytes,object_path FROM assets WHERE state='ready'"
+                ).fetchall()
+                if backup_version
+                else []
+            )
+            exports = (
+                [
+                    cls.decode(m.Export, row)
+                    for row in conn.execute("SELECT * FROM exports WHERE state='ready' ORDER BY id")
+                ]
+                if backup_version
+                else []
+            )
         expected = {row["sha256"]: row["actual_bytes"] for row in rows}
         if expected != {obj["sha256"]: obj["actual_bytes"] for obj in manifest["objects"]}:
             raise m.CoreError(m.ErrorCode.STORAGE, "Backup manifest mismatch")
@@ -781,19 +804,45 @@ class Store:
         for export in exports:
             _verify_export(export, backup)
         paths.initialize()
-        shutil.copyfile(backup / "state.sqlite3", paths.database)
-        paths.database.chmod(0o600)
-        for row in rows:
-            relative = Path(row["object_path"])
-            private_dir((paths.root / relative).parent)
-            shutil.copyfile(backup / relative, paths.root / relative)
-            (paths.root / relative).chmod(0o600)
-        for export in exports:
-            _copy_export(export, backup, paths.root)
-        store = cls(paths)
-        with store.transaction() as conn:
-            conn.execute("UPDATE worker_state SET owner_nonce=NULL,heartbeat=NULL")
-        return store
+        # Remains present across errors/crashes; a partially restored target is never opened.
+        marker = paths.runtime / "restore.incomplete"
+        private_file(marker)
+        with marker.open("wb") as stream:
+            stream.write(b"Restore in progress; do not use this workspace.\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        _fsync_dir(paths.runtime)
+        try:
+            shutil.copyfile(backup / "state.sqlite3", paths.database)
+            paths.database.chmod(0o600)
+            for row in rows:
+                relative = Path(row["object_path"])
+                private_dir((paths.root / relative).parent)
+                shutil.copyfile(backup / relative, paths.root / relative)
+                (paths.root / relative).chmod(0o600)
+            for export in exports:
+                _copy_export(export, backup, paths.root)
+            # Normal guarded open: maintenance + worker locks, pre-upgrade backup, DDL rollback.
+            store = cls(paths, _restore_in_progress=True)
+            with store.transaction() as conn:
+                if (
+                    conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok"
+                    or conn.execute("PRAGMA foreign_key_check").fetchone()
+                ):
+                    raise m.CoreError(
+                        m.ErrorCode.STORAGE, "Restored database integrity check failed"
+                    )
+                conn.execute("UPDATE worker_state SET owner_nonce=NULL,heartbeat=NULL")
+            _fsync_dir(paths.runtime)
+            marker.unlink()
+            store._restore_in_progress = False
+            return store
+        except Exception as exc:
+            raise m.CoreError(
+                m.ErrorCode.STORAGE,
+                "Restore failed; target workspace is incomplete",
+                next_action="Restore the verified backup into a fresh workspace",
+            ) from exc
 
 
 def _export_manifest_entry(export: m.Export) -> dict[str, Any]:
