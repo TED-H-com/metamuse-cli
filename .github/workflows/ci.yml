@@ -16,7 +16,7 @@ concurrency:
 jobs:
   check:
     timeout-minutes: 30
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
@@ -26,13 +26,23 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
-      - run: uv sync --locked --python 3.12 --group dev --extra remote
+      - run: uv sync --locked --python 3.12 --group dev --extra remote --extra facebook
+      - name: Install Chromium from the locked Playwright package
+        run: uv run --locked python -m playwright install --with-deps chromium
+      - name: Enable Chromium user namespace sandbox on the hosted runner
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run python docs/design/validate_design_pack.py
       - run: |
           uv run python -m metamuse.schemas
           git diff --exit-code
-      - run: uv run pytest -q --basetemp "${RUNNER_TEMP}/pytest"
+      - name: Run all tests including sandboxed loopback Chromium
+        env:
+          METAMUSE_REQUIRE_BROWSER_TESTS: "1"
+        run: |
+          pytest_temp_dir="$(mktemp -d "${RUNNER_TEMP}/metamuse-pytest.XXXXXX")"
+          trap 'rm -rf "$pytest_temp_dir"' EXIT
+          uv run pytest -q --basetemp "$pytest_temp_dir"
       - run: uv run python tests/fixtures/corpus/check_corpus.py
       - run: scripts/smoke_wheel.sh

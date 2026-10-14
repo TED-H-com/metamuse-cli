@@ -1,3 +1,4 @@
+import os
 import socket
 
 import pytest
@@ -36,3 +37,16 @@ def muse_transport_disk_root(request, monkeypatch):
         return
     tmp_path = request.getfixturevalue("tmp_path")
     monkeypatch.setenv("METAMUSE_TEST_STORE_ROOT", str(tmp_path / "muse-transports"))
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    report = yield
+    if (
+        os.environ.get("METAMUSE_REQUIRE_BROWSER_TESTS") == "1"
+        and report.skipped
+        and ("facebook" in item.path.name or item.get_closest_marker("browser"))
+    ):
+        report.outcome = "failed"
+        report.longrepr = "CI requires browser tests to run; Chromium/browser sandbox skip refused"
+    return report
