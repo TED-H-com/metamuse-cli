@@ -4,9 +4,9 @@ import json
 
 import pytest
 from test_facebook import _setup_fb_env, _synthetic_post_html
-from test_facebook_review import URL, finish, observation, submit
+from test_facebook_review import URL, finish, observation
 
-from metamuse import facebook
+from metamuse import app, facebook
 
 POST_PATH = "/synth.lab/posts/pfbid0101synth"
 
@@ -35,6 +35,28 @@ def json_page(comments=(), **post_fields):
     return (
         '<script type="application/json" data-fb-post-payload>' + json.dumps(payload) + "</script>"
     )
+
+
+def submit(ctx, project, permit, *, url=URL, max_items=100, max_bytes=1_000_000):
+    # Synthetic jobs allow disk stalls; browser read/expansion deadlines stay 2s.
+    result = app.submit_collect(
+        ctx,
+        {
+            "project_id": project,
+            "inputs": [{"kind": "url", "url": url}],
+            "resources": ["post", "comments"],
+            "access_grant_id": permit,
+            "limits": {
+                "max_urls": 1,
+                "max_items": max_items,
+                "max_bytes": max_bytes,
+                "wall_clock_seconds": 300,
+            },
+            "request_key": "review-round5-job",
+        },
+    )
+    assert result.status == "accepted", result
+    return result.data["job_id"]
 
 
 def fixture_job(tmp_path, markup):
@@ -148,3 +170,25 @@ def test_r5_12_json_whitespace_parent_gaps_item_and_job(tmp_path):
     assert reply["unresolved_parent"] is None
     assert "parent_comment" in json.loads(reply["missing_fields"])
     assert "parent_comment" in job["missing_fields"]
+
+
+@pytest.mark.parametrize("kind", ["dom", "json"])
+@pytest.mark.parametrize("identity", ["  ", "bad id", "bad/id"])
+def test_r5_n7_invalid_comment_ids_are_distinct_weak_observations(tmp_path, kind, identity):
+    comments = [
+        {"id": identity, "text": "Same text"},
+        {"id": identity, "text": "Same text"},
+        {"id": "  c_valid  ", "text": "Valid"},
+    ]
+    markup = json_page(comments) if kind == "json" else _synthetic_post_html(comments=comments)
+    assert [c.native_id for c in parse(markup).comments] == [None, None, "c_valid"]
+
+
+def test_r5_n7_weak_comments_do_not_merge_or_abort_batch(tmp_path):
+    markup = json_page([{"id": " ", "text": "Same"}, {"id": " ", "text": "Same"}])
+    ctx, job = fixture_job(tmp_path, markup)
+    assert job["error"] is None
+    comments = [row for row in rows(ctx) if row["kind"] == "comment"]
+    assert len(comments) == 2
+    assert [row["identity_confidence"] for row in comments] == ["weak", "weak"]
+    assert all(row["native_id"] is None for row in comments)
