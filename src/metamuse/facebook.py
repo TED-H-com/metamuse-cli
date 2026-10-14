@@ -36,6 +36,7 @@ from __future__ import annotations
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import re
 import signal
@@ -917,6 +918,28 @@ def sanitize_storage_state(
                 "Stored cookie entry is missing name or value",
                 next_action="Re-import a valid Playwright storage_state JSON file",
             )
+        path = entry.get("path", "/")
+        expiry = entry.get("expires", -1)
+        if (
+            not isinstance(path, str)
+            or not path.startswith("/")
+            or any(ord(ch) < 32 or ord(ch) == 127 for ch in path)
+            or isinstance(expiry, bool)
+            or not isinstance(expiry, (int, float))
+            or not (expiry == -1 or 0 <= expiry <= 253402300799)
+            or not math.isfinite(expiry)
+            or any(
+                key in entry and not isinstance(entry[key], bool) for key in ("httpOnly", "secure")
+            )
+            or ("sameSite" in entry and entry["sameSite"] not in ("Strict", "Lax", "None"))
+            or re.search(r"[\x00-\x20\x7f()<>@,;:\"/\[\]?={}]", name)
+            or any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+        ):
+            raise m.CoreError(
+                m.ErrorCode.AUTH_REQUIRED,
+                "Invalid Facebook storage-state cookie",
+                next_action="Re-import a valid Playwright storage_state JSON file",
+            )
         secret_tokens.append(value)
 
         cookie_url = entry.get("url")
@@ -950,8 +973,8 @@ def sanitize_storage_state(
                 "name": name,
                 "value": value,
                 "domain": exact_host,
-                "path": str(entry.get("path") or "/"),
-                "httpOnly": bool(entry.get("httpOnly", True)),
+                "path": path,
+                "httpOnly": entry.get("httpOnly", True),
                 "secure": True,
             }
             if isinstance(entry.get("expires"), (int, float)):
@@ -2345,6 +2368,12 @@ class PlaywrightBrowserDriver:
                     pass
             if isinstance(exc, m.CoreError):
                 raise exc from None
+            if stage == "context":
+                raise m.CoreError(
+                    m.ErrorCode.AUTH_REQUIRED,
+                    "Facebook browser context rejected authentication state",
+                    next_action="Re-import a valid Playwright storage_state JSON file",
+                ) from None
             raise m.CoreError(
                 m.ErrorCode.DEPENDENCY_MISSING,
                 "Facebook browser could not start with the required browser controls",

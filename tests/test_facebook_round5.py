@@ -7,6 +7,7 @@ from test_facebook import _setup_fb_env, _synthetic_post_html
 from test_facebook_review import URL, browser_fixture, finish, observation
 
 from metamuse import app, facebook
+from metamuse import models as m
 
 POST_PATH = "/synth.lab/posts/pfbid0101synth"
 
@@ -463,3 +464,79 @@ def test_r5_n4_linux_seccomp_must_be_observed(monkeypatch, state, expected):
     browser = SimpleNamespace(new_browser_cdp_session=lambda: SimpleNamespace(send=send))
     monkeypatch.setattr(Path, "read_text", lambda *a, **k: "Seccomp: " + state + "\n")
     assert facebook._observed_sandbox_mode(browser) == expected
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("expires", -5),
+        ("expires", 1e13),
+        ("expires", 1760000000000),
+        ("expires", True),
+        ("path", "noslash"),
+        ("path", 7),
+        ("httpOnly", "yes"),
+    ],
+)
+def test_r5_n5_invalid_cookie_is_auth_validation_not_sandbox(tmp_path, monkeypatch, field, value):
+    prefix = "SYNTH"
+    cookie = {
+        "name": "fixture",
+        "value": f"{prefix}_COOKIE",
+        "domain": "www.facebook.com",
+        "path": "/",
+        "httpOnly": False,
+        "secure": True,
+    }
+    cookie[field] = value
+    raw = json.dumps({"cookies": [cookie], "origins": []}).encode()
+    with pytest.raises(m.CoreError) as error:
+        facebook.sanitize_storage_state(raw)
+    assert error.value.detail.code == m.ErrorCode.AUTH_REQUIRED
+    assert "allow_unsandboxed_browser" not in error.value.detail.next_action
+
+
+def test_r5_n5_inspect_and_submit_classify_invalid_cookie_as_auth(tmp_path):
+    from test_facebook import _write_facebook_config
+
+    prefix = "SYNTH"
+    raw = json.dumps(
+        {
+            "cookies": [
+                {
+                    "name": "fixture",
+                    "value": f"{prefix}_COOKIE",
+                    "domain": "www.facebook.com",
+                    "path": "noslash",
+                }
+            ]
+        }
+    ).encode()
+    ctx, project, permit, auth_ref, secrets = _setup_fb_env(tmp_path)
+    ref = secrets.put(raw, provider="facebook", account="acct_synth", created_at=ctx.clock())[
+        "auth_ref"
+    ]
+    _write_facebook_config(ctx.paths.root, auth_ref=ref)
+    ctx = app.AppContext.open(ctx.paths.root)
+    driver = facebook.FixtureBrowserDriver(observation(_synthetic_post_html()))
+    facebook.set_driver_factory(lambda: driver)
+    row = facebook.capability_status(ctx)["metamuse_collect.facebook_post"]
+    assert row["environment"] == "needs_auth"
+    result = app.submit_collect(
+        ctx,
+        {
+            "project_id": project,
+            "inputs": [{"kind": "url", "url": URL}],
+            "resources": ["post", "comments"],
+            "limits": {
+                "max_urls": 1,
+                "max_items": 100,
+                "max_bytes": 1000000,
+                "wall_clock_seconds": 300,
+            },
+            "access_grant_id": permit,
+            "request_key": "invalid-cookie",
+        },
+    )
+    assert result.error.code == m.ErrorCode.AUTH_REQUIRED
+    assert "allow_unsandboxed_browser" not in result.error.next_action
