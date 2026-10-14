@@ -191,8 +191,9 @@ no JSON body. Read/mint success still requires bounded valid JSON and its own fi
 | CVM/RV/delegation/endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
 
 Upgrade 401/403 is `E_AUTH_REQUIRED`, 429 is `E_RATE_LIMITED`; DNS/connect/TLS failure
-is `E_NETWORK_TIMEOUT`, with `E_SCOPE_REQUIRED` when the guard refuses. Trust races/contention are `E_STORAGE` / `safe_read`; environment and integrity failures use
-`user_action` with cause-specific guidance. Effective confidentiality always stops first. The upgrade URL, query, response body and raw
+is `E_NETWORK_TIMEOUT`, with `E_SCOPE_REQUIRED` when the guard refuses. Trust contention is `E_STORAGE` / `safe_read`; environment failures use `user_action`.
+Changed context, integrity and committed-barrier failures remain `never`, with fixed guidance
+for reconnecting, verified restore or safe repair respectively. Effective confidentiality stops first. The upgrade URL, query, response body and raw
 curl exception are never copied into any exception, envelope or log. Redaction covers
 the tested compact nonce/token/proof/secret/notary/noise-key/attempt-id/request-id/recovery
 families and existing RV/endorsement/wake aliases, including prefixes/suffixes, snake/camel/hyphen/dotted
