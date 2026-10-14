@@ -722,6 +722,19 @@ def test_finding_13_void_tags_preserve_barrier_classification(marker, code):
     assert error.value.detail.code == code
 
 
+@pytest.mark.parametrize("self_closing", [False, True])
+def test_finding_13_void_spellings_do_not_truncate_source_text(self_closing):
+    suffix = "/" if self_closing else ""
+    markup = _synthetic_post_html(post_text="PLACEHOLDER")
+    body = f"before<area{suffix}><embed{suffix}><track{suffix}>after"
+    page = facebook.classify_and_parse_observation(
+        observation(markup.replace("PLACEHOLDER", body)),
+        permalink=facebook.parse_post_permalink(URL),
+        require_comments_section=True,
+    )
+    assert page.text == "beforeafter"
+
+
 @pytest.mark.parametrize("suffix", [":NOT_A_PORT", ":70000", ":0", ":81", "/path", "?q=value"])
 def test_finding_14_invalid_origin_is_fixed_auth_error_and_inspection_row(tmp_path, suffix):
     ctx, _, _, _, secrets = _setup_fb_env(tmp_path)
