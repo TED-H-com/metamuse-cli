@@ -523,11 +523,12 @@ def _approval_for(key: str, url: str, approvals: list[Any]) -> Any | None:
 
 
 def _path_segments(path: str) -> list[str]:
-    """Percent-decode, collapse slashes, resolve ``.`` and ``..``, then lowercase."""
+    """Decode, remove each segment's parameters, collapse dots, then lowercase."""
 
     decoded = unquote(path or "/")
     segments: list[str] = []
     for segment in decoded.split("/"):
+        segment = segment.split(";", 1)[0]
         if segment == "" or segment == ".":
             continue
         if segment == "..":

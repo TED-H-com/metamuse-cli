@@ -68,6 +68,8 @@ def dial(method, url, headers, body, checked, timeout, limit):
     with Path(os.environ['REMOTE_TEST_EGRESS']).open('a') as handle:
         handle.write(json.dumps({'event': 'dial', 'url': url,
             'cookie': headers.get('Cookie'), 'limit': limit}) + '\\n')
+    if os.environ.get('REMOTE_TEST_REDIRECT') and urlsplit(url).path == '/one':
+        return (302, {'Location': os.environ['REMOTE_TEST_REDIRECT']}, b'', '127.0.0.1', 'Found')
     if url.endswith('/media.wav'):
         samples = b'\\x00\\x00' * 800
         payload = struct.pack('<4sI4s4sIHHIIHH4sI', b'RIFF', 36+len(samples), b'WAVE',

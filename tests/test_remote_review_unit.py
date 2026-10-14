@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+import pytest
 from test_remote_media import ACCOUNT, PROVIDER, REEL_URL, configure, put_secret, remote_request
 
 from metamuse import app, remote_media
@@ -78,3 +79,29 @@ def test_review_preview_cpu_at_url_cap_and_early_oversize_refusal(ctx, project, 
     envelope = app.submit_collect(ctx, remote_request(project, url + "a", ["media_metadata"]))
     assert envelope.error.code == m.ErrorCode.SCOPE_DENIED
     assert envelope.approval is None
+
+
+@pytest.mark.parametrize(
+    "path,code",
+    [
+        ("/checkpoint/", "E_CHECKPOINT_REQUIRED"),
+        ("/checkpoint;x=1/", "E_CHECKPOINT_REQUIRED"),
+        ("/checkpoint%3Bx=1/", "E_CHECKPOINT_REQUIRED"),
+        ("/checkpoint%3bx=1/", "E_CHECKPOINT_REQUIRED"),
+        ("/login", "E_AUTH_REQUIRED"),
+        ("/login;x=1", "E_AUTH_REQUIRED"),
+        ("/login.php;x=1", "E_AUTH_REQUIRED"),
+        ("/challenge.html;x=1", "E_CHECKPOINT_REQUIRED"),
+        ("/__rd_verify;x=1", "E_CHECKPOINT_REQUIRED"),
+        ("/%255f%255frd_verify_1", None),
+        ("/ｃheckpoint/", None),
+        ("/LOGİN", None),
+    ],
+)
+def test_review_every_path_parameter_probe(path, code):
+    if code:
+        with pytest.raises(m.CoreError) as held:
+            remote_media._stop_for_target("https://www.facebook.com" + path)
+        assert held.value.detail.code.value == code
+    else:
+        remote_media._stop_for_target("https://www.facebook.com" + path)
