@@ -2216,6 +2216,23 @@ class _FixtureSession:
 class _DOMExtractor(HTMLParser):
     """Lightweight stdlib HTML parser for synthetic and Facebook post permalink DOMs."""
 
+    _VOID_TAGS = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.meta_state: str | None = None
@@ -2261,22 +2278,7 @@ class _DOMExtractor(HTMLParser):
                     "kind": attr_map.get("data-attachment-kind", "image"),
                 }
             )
-        if tag in {
-            "area",
-            "base",
-            "br",
-            "col",
-            "embed",
-            "hr",
-            "img",
-            "input",
-            "link",
-            "meta",
-            "param",
-            "source",
-            "track",
-            "wbr",
-        }:
+        if tag in self._VOID_TAGS:
             if tag == "br":
                 if self._in_post_body:
                     self.post_text_parts.append("\n")
@@ -2406,7 +2408,7 @@ class _DOMExtractor(HTMLParser):
 
     def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.handle_starttag(tag, attrs)
-        if tag.lower() not in {"br", "img", "hr", "input", "meta", "link", "source", "wbr"}:
+        if tag.lower() not in self._VOID_TAGS:
             self.handle_endtag(tag)
 
     def handle_data(self, data: str) -> None:
