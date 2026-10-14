@@ -727,8 +727,10 @@ Transparent outer pages may change descriptive titles, but never `channel_id`,
 from the final inner result, so collecting the inner URL and an outer delegation
 reuses the same source.
 
-Login form actions resolve against the document's first parsable `<base href>`;
-unparsable actions/hrefs are skipped and later ones are still checked. Missing or
+Login form actions use the first duplicate attribute value, following HTML.
+Only the first `<base>` with an `href` counts, including an empty href; if it cannot
+be parsed, the base remains the document URL and later bases are ignored.
+Unparsable form actions are skipped and later forms are still checked. Missing or
 empty actions use the document URL. Challenge detection matches `__rd_verify`
 (case-insensitive, with or without a preceding slash), including relative paths,
 literal `/`, HTML slash entities `&#47;`/`&#x2f;` and `%2F`. One percent-decoding

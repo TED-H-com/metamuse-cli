@@ -291,15 +291,18 @@ def test_r8_persisted_payload_tamper_after_boundary_fails_closed(ctx, project, o
 
 
 @pytest.mark.parametrize(
-    "html",
+    "html,expected",
     [
-        '<form action="http://[::1"></form><form action="/login/"></form>',
-        '<base href="http://[::1"><form action="/login/"></form>',
-        '<base href="http://[::1"><base href="/login/"><form action="./"></form>',
+        ('<form action="http://[::1"></form><form action="/login/"></form>', True),
+        ('<base href="http://[::1"><form action="/login/"></form>', True),
+        ('<base href="http://[::1"><base href="/login/"><form action="./"></form>', False),
     ],
 )
-def test_r8_invalid_form_or_base_does_not_hide_later_login(html):
-    assert remote_media._login_form(html.encode(), "https://www.facebook.com/share/r/Synthetic1/")
+def test_r8_invalid_form_or_base_follows_html_semantics(html, expected):
+    assert (
+        remote_media._login_form(html.encode(), "https://www.facebook.com/share/r/Synthetic1/")
+        is expected
+    )
 
 
 @pytest.mark.parametrize(

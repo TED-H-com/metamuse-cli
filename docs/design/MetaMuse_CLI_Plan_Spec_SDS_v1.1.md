@@ -544,7 +544,9 @@ original refusal without a preview; logging contains only a fixed line and type.
 Challenge normalization scans every response body in overlapping 32 KiB blocks,
 checking the step cancellation/wall deadline once per block and retaining the existing
 timeout error on expiry. Measured CPU costs per 512 MiB are documented in COLLECT.md.
-Login forms honor the first parsable base href, skipping unparsable hrefs/actions.
+Login forms keep the first duplicate attribute value. Only the first base with an
+href counts; an unparsable first href uses the document URL, ignoring later bases.
+Unparsable actions are skipped while later forms are checked.
 Challenge token __rd_verify matches case-insensitively with or without a preceding
 slash, after HTML entities, one percent-decoding, JavaScript \u005f/\x5f underscore
 escapes and NFKC folding. Split JavaScript string literals are not detected.
@@ -1243,7 +1245,9 @@ original refusal without a preview; logging contains only a fixed line and type.
 Challenge normalization scans every response body in overlapping 32 KiB blocks,
 checking the step cancellation/wall deadline once per block and retaining the existing
 timeout error on expiry. Measured CPU costs per 512 MiB are documented in COLLECT.md.
-Login forms honor the first parsable base href, skipping unparsable hrefs/actions.
+Login forms keep the first duplicate attribute value. Only the first base with an
+href counts; an unparsable first href uses the document URL, ignoring later bases.
+Unparsable actions are skipped while later forms are checked.
 Challenge token __rd_verify matches case-insensitively with or without a preceding
 slash, after HTML entities, one percent-decoding, JavaScript \u005f/\x5f underscore
 escapes and NFKC folding. Split JavaScript string literals are not detected.

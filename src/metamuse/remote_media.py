@@ -3286,21 +3286,22 @@ def _login_form(payload: bytes, url: str) -> bool:
             self.actions: list[str | None] = []
 
         def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-            values = dict(attrs)
-            if tag == "base" and values.get("href") is not None:
-                self.bases.append(values["href"])
+            values: dict[str, str | None] = {}
+            for name, value in attrs:
+                values.setdefault(name, value)
+            if tag == "base" and "href" in values and not self.bases:
+                self.bases.append(values["href"] or "")
             if tag == "form":
                 self.actions.append(values.get("action"))
 
     parser = LoginForms()
     parser.feed(payload.decode("utf-8", "replace"))
     base = url
-    for href in parser.bases:
+    if parser.bases:
         try:
-            base = urljoin(url, href)
-            break
+            base = urljoin(url, parser.bases[0])
         except ValueError:
-            continue
+            pass  # An invalid first base uses the document URL; later bases do not count.
     for action in parser.actions:
         try:
             # Missing/empty actions submit to the document URL, independent of base.
