@@ -125,7 +125,7 @@ def test_missing_database_is_not_recreated(ctx):
     [
         "DROP TRIGGER muse_trust_vm_guard",
         "PRAGMA ignore_check_constraints=ON; UPDATE muse_trust_vms SET version=0",
-        "UPDATE muse_trust_vms SET observed_at=''",
+        "PRAGMA ignore_check_constraints=ON; UPDATE muse_trust_vms SET observed_at=''",
     ],
 )
 def test_corrupt_or_unsupported_trust_blocks(ctx, mutation):

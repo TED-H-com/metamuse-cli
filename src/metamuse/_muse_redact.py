@@ -182,6 +182,9 @@ def _syntax_spans(value):
 def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
     spans = []
     for decoded, positions in _decoded_levels(value):
+        whole_wake = _WAKE_OBJECT.fullmatch(decoded)
+        if whole_wake is not None and _embedded_wake(whole_wake) != decoded:
+            return "[REDACTED]"
         for start, end in (*_known_spans(decoded, known), *_syntax_spans(decoded)):
             if start == end:
                 continue
