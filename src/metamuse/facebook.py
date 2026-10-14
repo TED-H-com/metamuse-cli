@@ -45,13 +45,13 @@ import sys
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from functools import lru_cache
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Literal, Protocol
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from metamuse import collect, jobs, safety
 from metamuse import models as m
@@ -158,6 +158,7 @@ class PostPermalinkTarget:
     post_id: str
     scope: str
     page_type: Literal["post_permalink"] = "post_permalink"
+    is_share: bool = False
 
 
 @dataclass(frozen=True)
@@ -687,7 +688,22 @@ def parse_post_permalink(url: str) -> PostPermalinkTarget:
             next_action=collect.REMOTE_NEXT,
         )
 
+    share = re.fullmatch(r"/share/p/([A-Za-z0-9]{1,64})/", parsed.path)
+    if share is not None and "?" not in url and "#" not in url:
+        canonical = f"https://www.facebook.com/share/p/{share[1]}/"
+        return PostPermalinkTarget(
+            original_url=url,
+            canonical_url=canonical,
+            fetch_url=canonical,
+            host=host,
+            actor="",
+            post_id="",
+            scope="",
+            is_share=True,
+        )
     segments = [seg for seg in parsed.path.split("/") if seg]
+    if segments and segments[0].lower() in ("share", "reel", "reels", "watch", "videos", "groups"):
+        raise _unsupported_resolution()
     actor: str | None = None
     post_id: str | None = None
 
@@ -738,6 +754,28 @@ def parse_post_permalink(url: str) -> PostPermalinkTarget:
         post_id=post_id,
         scope=f"{actor}/{post_id}",
     )
+
+
+def _unsupported_resolution() -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.UNSUPPORTED,
+        "URL is not a supported single Facebook post",
+        next_action=(
+            "For Reels and videos use the remote-media (B12) path; "
+            "group post URLs are unsupported in this round. Supply a single post permalink"
+        ),
+    )
+
+
+def parse_resolved_permalink(url: str) -> PostPermalinkTarget:
+    parsed = urlsplit(url)
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    if len(segments) == 3 and segments[1] == "posts":
+        url = urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
+    target = parse_post_permalink(url)
+    if target.is_share:
+        raise _unsupported_resolution()
+    return target
 
 
 def build_target(
@@ -1035,9 +1073,13 @@ class EgressGuard:
         self.bytes_relayed: int = 0
         self.byte_limit_exceeded: bool = False
         self.authorized_permalink: PostPermalinkTarget | None = None
+        self.resume_identity: PostPermalinkTarget | None = None
 
-    def authorize_permalink(self, target: PostPermalinkTarget) -> None:
+    def authorize_permalink(
+        self, target: PostPermalinkTarget, expected_resolution: PostPermalinkTarget | None = None
+    ) -> None:
         self.authorized_permalink = target
+        self.resume_identity = expected_resolution
 
     def validate_navigation_identity(self, url: str) -> None:
         target = self.authorized_permalink
@@ -1049,7 +1091,28 @@ class EgressGuard:
             url = "https://www.facebook.com" + parsed.path
             if parsed.query:
                 url += "?" + parsed.query
-        observed = parse_post_permalink(url)
+        if target.is_share:
+            if re.fullmatch(r"/share/p/[A-Za-z0-9]{1,64}/", urlsplit(url).path):
+                observed = parse_post_permalink(url)
+                if observed.canonical_url == target.canonical_url:
+                    return
+                raise m.CoreError(
+                    m.ErrorCode.REFERENCE_INVALID,
+                    "Facebook navigation changed the approved share link",
+                )
+            observed = parse_resolved_permalink(url)
+            if self.resume_identity is not None and (observed.actor, observed.post_id) != (
+                self.resume_identity.actor,
+                self.resume_identity.post_id,
+            ):
+                raise m.CoreError(
+                    m.ErrorCode.DATA_STALE,
+                    "Facebook share link resolved to a different post on resume",
+                    next_action="Review the changed target and approve a new share-link collection",
+                )
+            self.authorized_permalink = observed
+            return
+        observed = parse_resolved_permalink(url)
         if (observed.actor, observed.post_id) != (target.actor, target.post_id):
             raise m.CoreError(
                 m.ErrorCode.REFERENCE_INVALID,
@@ -1079,12 +1142,13 @@ class EgressGuard:
 
         def _nav_validator(url: str) -> None:
             parsed = urlsplit(url)
-            segs = [s for s in parsed.path.split("/") if s]
-            if not (len(segs) == 3 and segs[1] == "posts" and segs[0] not in RESERVED_ACTORS):
-                raise m.CoreError(
-                    m.ErrorCode.UNSUPPORTED,
-                    "URL is not an approved Facebook post_permalink page type",
-                )
+            mapped = "https://www.facebook.com" + parsed.path
+            if parsed.query:
+                mapped += "?" + parsed.query
+            if re.fullmatch(r"/share/p/[A-Za-z0-9]{1,64}/", parsed.path):
+                parse_post_permalink(mapped)
+            else:
+                parse_resolved_permalink(mapped)
 
         guard = cls(
             allowed_hosts=allowed_hosts,
@@ -1188,7 +1252,10 @@ class EgressGuard:
                 if self._fixture_nav_validator is not None:
                     self._fixture_nav_validator(url)
                 else:
-                    parse_post_permalink(url)
+                    if re.fullmatch(r"/share/p/[A-Za-z0-9]{1,64}/", urlsplit(url).path):
+                        parse_post_permalink(url)
+                    else:
+                        parse_resolved_permalink(url)
                 self.validate_navigation_identity(url)
             except m.CoreError as exc:
                 with self._lock:
@@ -1303,7 +1370,10 @@ class EgressGuard:
                     if self._fixture_nav_validator is not None:
                         self._fixture_nav_validator(url)
                     else:
-                        parse_post_permalink(url)
+                        if re.fullmatch(r"/share/p/[A-Za-z0-9]{1,64}/", urlsplit(url).path):
+                            parse_post_permalink(url)
+                        else:
+                            parse_resolved_permalink(url)
                     self.validate_navigation_identity(url)
                 except m.CoreError as exc:
                     with self._lock:
@@ -1845,6 +1915,18 @@ class _PlaywrightSession:
             ) from exc
         # Dispatch immediate script/meta navigations before the first DOM snapshot.
         self._page.wait_for_timeout(50)
+        resolution_deadline = time.monotonic() + self._timeout_ms / 1000
+        resolving_share = (
+            re.fullmatch(r"/share/p/[A-Za-z0-9]{1,64}/", urlsplit(url).path) is not None
+        )
+        while (
+            resolving_share
+            and re.fullmatch(r"/share/p/[A-Za-z0-9]{1,64}/", urlsplit(self._page.url).path)
+            is not None
+            and self._egress.navigation_error is None
+            and time.monotonic() < resolution_deadline
+        ):
+            self._page.wait_for_timeout(50)
         self._raise_if_byte_limit()
         if self._egress.navigation_error is not None:
             raise self._egress.navigation_error
@@ -2833,7 +2915,7 @@ def _records_from_page(
                 parent_native_id=None,
                 parent_set=True,
                 text=parsed.text,
-                source_url=parsed.permalink or permalink.canonical_url,
+                source_url=permalink.canonical_url,
                 upstream=UPSTREAM_METHOD,
                 created_at_raw=parsed.created_at_raw,
                 parsed_time=parsed.parsed_time,
@@ -2855,7 +2937,7 @@ def _records_from_page(
                     parent_native_id=comment.parent_native_id,
                     parent_set=True,
                     text=comment.text,
-                    source_url=comment.permalink or permalink.canonical_url,
+                    source_url=permalink.canonical_url,
                     upstream=UPSTREAM_METHOD,
                     created_at_raw=comment.created_at_raw,
                     parsed_time=comment.parsed_time,
@@ -2877,6 +2959,7 @@ def _insert_sources_before_flush(
     permit_id: str,
     account: str,
     page_sha: str,
+    requested_locator: str,
 ) -> None:
     """Insert Source rows with full provenance before book.flush runs (no post-insert UPDATE)."""
     for item in pending:
@@ -2887,6 +2970,8 @@ def _insert_sources_before_flush(
             "account": account,
             "page_type": PAGE_TYPE_POST_PERMALINK,
             "input_sha256": page_sha,
+            "requested_locator": requested_locator,
+            "resolved_permalink": canonical_url,
         }
         writer.insert(
             m.Source(
@@ -2895,7 +2980,7 @@ def _insert_sources_before_flush(
                 platform=item.platform,
                 native_scope=item.scope if item.native_id else (item.scope or None),
                 native_id=item.native_id,
-                original_url=item.original_url or original_url,
+                original_url=original_url,
                 canonical_url=canonical_url,
                 collection_method=item.collection_method,
                 upstream_collection_method=item.upstream,
@@ -2932,6 +3017,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     url_input = request.inputs[0]
     assert isinstance(url_input, m.URLInput)
     permalink = parse_post_permalink(url_input.url)
+    requested_locator = permalink.canonical_url
 
     target = build_target(
         project_id=request.project_id,
@@ -2969,9 +3055,14 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         account=account,
     )
     egress = _active_egress(fb_cfg.allowed_hosts)
-    egress.authorize_permalink(permalink)
-
     saved = dict(step.checkpoint or {})
+    is_resume = bool(saved)
+    expected = (
+        parse_post_permalink(saved["resolved_permalink"])
+        if saved.get("resolved_permalink")
+        else None
+    )
+    egress.authorize_permalink(permalink, expected if permalink.is_share else None)
     browser_sandbox = "disabled_by_operator" if fb_cfg.allow_unsandboxed_browser else "enabled"
     resources = set(request.resources)
     require_comments = "comments" in resources
@@ -3049,6 +3140,12 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         )
         obs = session.goto_post(permalink.fetch_url)
         egress.check_browser_route(obs.url, is_navigation=True)
+        if permalink.is_share:
+            resolved = egress.authorized_permalink
+            if resolved is None or resolved.is_share:
+                raise _unsupported_resolution()
+            permalink = replace(resolved, original_url=url_input.url)
+            saved["resolved_permalink"] = permalink.canonical_url
         observation_bytes += len(obs.html.encode("utf-8"))
         bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
         checkpoint_usage()
@@ -3195,6 +3292,9 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         batch_count = 0
         cp_payload = {
             "browser_sandbox": browser_sandbox,
+            "resolved_permalink": permalink.canonical_url
+            if not permalink.is_share
+            else saved.get("resolved_permalink"),
             "expansions_used": expansions_used,
             "bytes_used": bytes_used,
             "halt": halt,
@@ -3215,6 +3315,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 permit_id=permit_id,
                 account=account,
                 page_sha=page_sha,
+                requested_locator=requested_locator,
             )
             book.flush(writer, step.store)
             writer.insert(
@@ -3235,7 +3336,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
 
     for idx, rec in enumerate(records):
         step.guard()
-        if saved and rec.native_id is None:
+        if is_resume and rec.native_id is None:
             missing.add("weak_identity_resume")
             rows.append(
                 {
@@ -3385,6 +3486,8 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     observed_scope = {
         "page_type": PAGE_TYPE_POST_PERMALINK,
         "canonical_url": permalink.canonical_url,
+        "requested_locator": requested_locator,
+        "resolved_permalink": permalink.canonical_url,
         "committed": sum(r.get("status") == "committed" for r in rows),
         "unchanged": sum(r.get("status") == "unchanged" for r in rows),
         "rejected": sum(r.get("status") == "rejected" for r in rows),
@@ -3398,6 +3501,8 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     result_data: dict[str, Any] = {
         "rows": rows,
         "egress": egress_summary,
+        "requested_locator": requested_locator,
+        "resolved_permalink": permalink.canonical_url,
         "browser_sandbox": browser_sandbox,
     }
     if byte_limit_error is not None:
