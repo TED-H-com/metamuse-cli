@@ -56,8 +56,6 @@ if not origin.is_relative_to(prefix):
     raise SystemExit(f"import metamuse resolved outside the venv: {origin}")
 if origin.is_relative_to(root) or root in origin.parents:
     raise SystemExit(f"import metamuse resolved inside the checkout: {origin}")
-if origin.is_relative_to(work):
-    pass
 
 canonical = root / "skills" / "metamuse"
 expected: dict[str, bytes] = {}
@@ -71,20 +69,24 @@ if "SKILL.md" not in expected:
     raise SystemExit("canonical Skill is missing SKILL.md")
 
 prefix_skill = "metamuse/data/skills/metamuse/"
-required = [
-    "metamuse/data/THIRD_PARTY_NOTICES.md",
-    "metamuse/data/migrations/001_initial.sql",
-    "metamuse/data/migrations/002_collect_media.sql",
-    "metamuse/data/migrations/003_muse_lifecycle.sql",
-    "metamuse/data/migrations/004_muse_evidence.sql",
-    "metamuse/data/schemas/envelope.json",
-    "metamuse/data/schemas/mcp-tools.json",
-]
+# Every migration and generated schema in the source tree must ship byte-identical.
+data = root / "src" / "metamuse" / "data"
+sources = sorted([*data.glob("migrations/*.sql"), *data.glob("schemas/*.json")])
+if not any(path.parent.name == "migrations" for path in sources):
+    raise SystemExit("source tree has no migrations")
+required = {
+    f"metamuse/data/{path.relative_to(data).as_posix()}": path.read_bytes() for path in sources
+}
 with zipfile.ZipFile(wheel) as archive:
     names = set(archive.namelist())
-    missing = [name for name in required if name not in names]
+    if "metamuse/data/THIRD_PARTY_NOTICES.md" not in names:
+        raise SystemExit("wheel is missing metamuse/data/THIRD_PARTY_NOTICES.md")
+    missing = sorted(name for name in required if name not in names)
     if missing:
         raise SystemExit(f"wheel is missing {missing}")
+    changed = sorted(name for name, body in required.items() if archive.read(name) != body)
+    if changed:
+        raise SystemExit(f"wheel data differs from the source tree: {changed}")
     packaged = {
         name[len(prefix_skill) :]: archive.read(name)
         for name in names
@@ -114,38 +116,27 @@ for name in sys.argv[1:]:
 print("init and doctor ok")
 PY
 
-env -u PYTHONPATH "$py" - "$bin" "$work/ws" "$work" <<'PY'
+env -u PYTHONPATH "$py" - "$bin" "$work/ws" "$work" "$ROOT/src/metamuse/data/schemas/mcp-tools.json" <<'PY'
 import asyncio
+import json
 import os
 import sys
 
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-binary, workspace, work = sys.argv[1:]
+binary, workspace, work, contract = sys.argv[1:]
 env = {
     "PYTHONUNBUFFERED": "1",
     "PATH": os.environ.get("PATH", ""),
     "HOME": os.environ.get("HOME", ""),
     "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
 }
-expected = {
-    "metamuse_collect",
-    "metamuse_draft_preview",
-    "metamuse_draft_save",
-    "metamuse_export",
-    "metamuse_inspect",
-    "metamuse_job_control",
-    "metamuse_job_get",
-    "metamuse_job_list",
-    "metamuse_muse_close_exchange",
-    "metamuse_muse_open",
-    "metamuse_muse_read",
-    "metamuse_muse_send",
-    "metamuse_packet_prepare",
-    "metamuse_project_create",
-    "metamuse_search",
-}
+# The generated contract is the source of truth for the tool list.
+with open(contract, encoding="utf-8") as handle:
+    expected = {tool["name"] for tool in json.load(handle)["tools"]}
+if not expected:
+    raise SystemExit("generated MCP contract lists no tools")
 
 
 async def main() -> None:
@@ -173,7 +164,7 @@ async def main() -> None:
             text = result.content[0].text
             if '"status":"ok"' not in text.replace(" ", ""):
                 raise SystemExit("metamuse_inspect text content is not an ok envelope")
-    print("mcp stdio ok: 15 tools, metamuse_inspect")
+    print(f"mcp stdio ok: {len(expected)} tools, metamuse_inspect")
 
 
 asyncio.run(main())
