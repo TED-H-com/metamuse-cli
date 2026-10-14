@@ -21,14 +21,20 @@ unchanged title keeps its item revision; a changed upstream timestamp is an
 observation on the source ``use_basis``.
 
 A platform challenge stops the job inside the handler, before yt-dlp can
-answer it. A 403, 429, or 503 that carries a challenge marker, and any request
-whose path starts with ``/__rd_verify``, is ``E_CHECKPOINT_REQUIRED``. A plain
-403 stays ``E_ACCESS_DENIED``.
+answer it. The stop does not depend on HTTP status. A ``cf-mitigated`` value
+containing ``challenge``, a reason phrase containing ``challenge``, or
+``/__rd_verify`` in a body, ``Refresh``, or ``Location`` is
+``E_CHECKPOINT_REQUIRED``. The same code is used for a normalized path segment
+that starts with ``__rd_verify``, a ``challenge.html`` segment, or a
+``hash429`` query, and it is raised before that URL is dialed. A plain 403
+stays ``E_ACCESS_DENIED``. Extractors that compute a challenge answer cannot
+be approved.
 
 Facebook ``/share/r/`` and ``/share/v/`` links are resolved by MetaMuse, then
 extracted with at most two checked delegation hops. ``/share/p/`` is refused
-at submit. An optional ``auth_ref`` on one approval binds an operator cookie
-secret. ``CollectRequest`` still has no ``auth_ref``.
+at submit. An optional ``auth_ref`` on one approval binds a Netscape cookie
+file. A ``Cookie:`` header line is refused. ``CollectRequest`` still has no
+``auth_ref``.
 
 The optional extra is ``yt-dlp==2026.8.19``. Importing this module does not
 import yt-dlp. Offline local import does not call into this operation.
@@ -52,9 +58,10 @@ from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urljoin, urlsplit
+from urllib.parse import parse_qs, unquote, urljoin, urlsplit
 
 from metamuse import jobs, safety
 from metamuse import media as media_mod
@@ -70,15 +77,75 @@ YTDLP_VERSION = "2026.08.19"
 YTDLP_REQUIREMENT = "yt-dlp==2026.8.19"
 RESOURCES = frozenset({"media_metadata", "subtitles", "media_file"})
 REJECTED_EXTRACTORS = frozenset({"generic", "unsupported", "end"})
+# These extractors compute or submit an anti-bot, rate-limit, or captcha answer.
+# Player signature and nsig deciphering are not on this list. See COLLECT.md.
+_CHALLENGE_SOLVERS = frozenset(
+    {
+        "vk",
+        "vkbase",
+        "vkuservideos",
+        "vkwallpost",
+        "tiktok",
+        "tiktokbase",
+        "tiktokbaselist",
+        "tiktokuser",
+        "tiktoksound",
+        "tiktokeffect",
+        "tiktoktag",
+        "tiktokcollection",
+        "tiktoklive",
+        "douyin",
+        "facebookads",
+    }
+)
 COLLECTION_METHOD = "yt-dlp"
 MAX_REDIRECTS = 5
 MAX_HOPS = 2
 _OWNER_NAME = ".collect-owner"
 _REDIRECTS = frozenset({301, 302, 303, 307, 308})
-_CHALLENGE_STATUSES = frozenset({403, 429, 503})
-_CHALLENGE_FETCH = re.compile(
-    rb"""fetch\s*\(\s*["'][^"']*?/__rd_verify[^"']*["']""",
-    re.IGNORECASE,
+_LIST_TYPES = frozenset({"playlist", "multi_video", "compat_list"})
+_COOKIE_NAME = re.compile(r"^[0-9A-Za-z!#$%&'*+.^_`|~-]+$")
+# Inner result wins identity and media. Outer may replace only these fields.
+_OUTER_DESCRIPTIVE = frozenset(
+    {
+        "title",
+        "fulltitle",
+        "alt_title",
+        "description",
+        "timestamp",
+        "upload_date",
+        "release_timestamp",
+        "release_date",
+        "duration",
+        "channel",
+        "channel_id",
+        "channel_url",
+        "uploader",
+        "uploader_id",
+        "uploader_url",
+        "creator",
+        "artist",
+        "album",
+        "track",
+        "genre",
+        "categories",
+        "tags",
+        "thumbnail",
+        "thumbnails",
+        "view_count",
+        "like_count",
+        "comment_count",
+        "availability",
+        "age_limit",
+        "live_status",
+        "series",
+        "season",
+        "episode",
+        "episode_number",
+        "season_number",
+        "section_start",
+        "section_end",
+    }
 )
 _SHARE_URL = re.compile(
     r"^https://(?P<host>[A-Za-z0-9.-]+)/share/(?P<kind>r|v|p)/(?P<token>[A-Za-z0-9]{1,32})/?$"
@@ -384,14 +451,13 @@ def _workspace(ctx: Any) -> Any:
 
 def _host_of(url: str) -> str:
     parsed = urlsplit(url)
-    host = (parsed.hostname or "").lower().rstrip(".")
-    if not host or parsed.username is not None or parsed.password is not None:
+    if not parsed.hostname or parsed.username is not None or parsed.password is not None:
         raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Remote URL is not a bare http(s) URL")
-    return host
+    return safety.normalize_hostname(parsed.hostname)
 
 
 def _hosts(values: Iterable[str]) -> set[str]:
-    return {item.lower().rstrip(".") for item in values}
+    return {safety.normalize_hostname(item) for item in values}
 
 
 def _share_parts(url: str) -> tuple[str, str, str] | None:
@@ -400,7 +466,8 @@ def _share_parts(url: str) -> tuple[str, str, str] | None:
     match = _SHARE_URL.fullmatch(url)
     if match is None:
         return None
-    return match.group("host").lower().rstrip("."), match.group("kind"), match.group("token")
+    # A second trailing dot is outside the host policy and is refused at submit.
+    return safety.normalize_hostname(match.group("host")), match.group("kind"), match.group("token")
 
 
 def _share_key(url: str) -> str | None:
@@ -418,13 +485,52 @@ def _approval_for(key: str, url: str, approvals: list[Any]) -> Any | None:
     return None
 
 
-def _login_path(path: str) -> bool:
-    parts = [item.lower() for item in path.split("/") if item]
-    if not parts:
-        return False
-    if parts[0] == "login" or parts[0].startswith("login."):
-        return True
-    return "checkpoint" in parts
+def _path_segments(path: str) -> list[str]:
+    """Percent-decode, collapse slashes, resolve ``.`` and ``..``, then lowercase."""
+
+    decoded = unquote(path or "/")
+    segments: list[str] = []
+    for segment in decoded.split("/"):
+        if segment == "" or segment == ".":
+            continue
+        if segment == "..":
+            if segments:
+                segments.pop()
+            continue
+        segments.append(segment.lower())
+    return segments
+
+
+def _challenge_target(url: str) -> bool:
+    parts = urlsplit(url)
+    for segment in _path_segments(parts.path or "/"):
+        if segment.startswith("__rd_verify") or segment == "challenge.html":
+            return True
+    return "hash429" in unquote(parts.query or "").lower()
+
+
+def _checkpoint_target(url: str) -> bool:
+    return any(segment == "checkpoint" for segment in _path_segments(urlsplit(url).path or "/"))
+
+
+def _login_target(url: str) -> bool:
+    """A segment equal to ``login`` or ``login.php``, or starting with ``login.``."""
+
+    for segment in _path_segments(urlsplit(url).path or "/"):
+        if segment == "login" or segment == "login.php" or segment.startswith("login."):
+            return True
+    return False
+
+
+def _stop_for_target(url: str) -> None:
+    """Challenge, then checkpoint, then login. The caller already approved the host."""
+
+    if _challenge_target(url):
+        raise _challenge_error()
+    if _checkpoint_target(url):
+        raise _challenge_error()
+    if _login_target(url):
+        raise _login_error()
 
 
 def _canonical_media(url: str) -> str | None:
@@ -433,8 +539,9 @@ def _canonical_media(url: str) -> str | None:
     parts = urlsplit(url)
     if parts.scheme.lower() != "https" or parts.username or parts.password or parts.port:
         return None
-    host = (parts.hostname or "").lower().rstrip(".")
-    if not host:
+    try:
+        host = safety.normalize_hostname(parts.hostname or "")
+    except m.CoreError:
         return None
     path = parts.path or ""
     reel = re.fullmatch(r"/reel/(\d+)/?", path)
@@ -467,67 +574,68 @@ class _Cookie:
         return f"_Cookie(name={self.name!r}, domain={self.domain!r})"
 
 
+def _cookie_value_ok(value: str) -> bool:
+    """RFC 6265 cookie-octets, optionally wrapped in one DQUOTE pair."""
+
+    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+        body = value[1:-1]
+    else:
+        body = value
+    for char in body:
+        code = ord(char)
+        if code < 0x21 or code > 0x7E or char in {'"', ",", ";", "\\"}:
+            return False
+    return True
+
+
 def _parse_cookie_secret(secret: bytes) -> tuple[_Cookie, ...]:
-    """Netscape cookie file or one ``Cookie:`` header. Nothing is written to disk."""
+    """Netscape cookie file only. A ``Cookie:`` line has no domain scope."""
 
     try:
         text = secret.decode("utf-8")
-    except UnicodeError:
-        raise _cookie_invalid() from None
-    if "\x00" in text:
-        raise _cookie_invalid()
-    stripped = text.strip()
-    if not stripped:
-        raise _cookie_invalid()
-    if stripped.lower().startswith("cookie:") and "\t" not in stripped and "\n" not in stripped:
-        return _parse_cookie_header(stripped)
-    lines = text.splitlines()
-    if len(lines) == 1 and lines[0].lstrip().lower().startswith("cookie:"):
-        return _parse_cookie_header(lines[0].strip())
+    except UnicodeDecodeError as exc:
+        raise _cookie_line_invalid(secret[: exc.start].count(b"\n") + 1) from None
     parsed: list[_Cookie] = []
-    for raw in lines:
-        line = raw.strip()
-        if not line or line.startswith("#") and not line.startswith("#HttpOnly_"):
+    lines = text.split("\n")
+    for index, raw in enumerate(lines, start=1):
+        # Only CRLF/LF are terminators. A bare CR remains invalid cookie data.
+        line = raw[:-1] if index < len(lines) and raw.endswith("\r") else raw
+        comment = line.lstrip()
+        if not comment or (comment.startswith("#") and not comment.startswith("#HttpOnly_")):
             continue
-        parsed.append(_parse_netscape_line(line))
+        if comment.lower().startswith("cookie:"):
+            raise _cookie_invalid()
+        parsed.append(_parse_netscape_line(line, index))
     if not parsed:
         raise _cookie_invalid()
     return tuple(parsed)
 
 
-def _parse_cookie_header(line: str) -> tuple[_Cookie, ...]:
-    _, separator, rest = line.partition(":")
-    if separator != ":" or not rest.strip():
-        raise _cookie_invalid()
-    cookies: list[_Cookie] = []
-    for part in rest.split(";"):
-        piece = part.strip()
-        if "=" not in piece:
-            raise _cookie_invalid()
-        name, value = piece.split("=", 1)
-        name = name.strip()
-        if not name or any(char in name for char in " \t\r\n;,"):
-            raise _cookie_invalid()
-        cookies.append(_Cookie(name=name, value=value.strip()))
-    if not cookies:
-        raise _cookie_invalid()
-    return tuple(cookies)
-
-
-def _parse_netscape_line(line: str) -> _Cookie:
+def _parse_netscape_line(line: str, line_no: int) -> _Cookie:
     fields = line.split("\t")
     if len(fields) != 7:
-        raise _cookie_invalid()
+        raise _cookie_line_invalid(line_no)
     domain, flag, path, secure, expiry, name, value = fields
     if domain.startswith("#HttpOnly_"):
         domain = domain[len("#HttpOnly_") :]
-    domain = domain.lstrip(".").lower().rstrip(".")
-    if not domain or not name or flag.upper() not in ("TRUE", "FALSE"):
-        raise _cookie_invalid()
+    if domain.startswith("."):
+        domain = domain[1:]
+    try:
+        domain = safety.normalize_hostname(domain)
+    except m.CoreError:
+        raise _cookie_line_invalid(line_no) from None
+    if _COOKIE_NAME.fullmatch(name) is None or not _cookie_value_ok(value):
+        raise _cookie_line_invalid(line_no)
+    if flag.upper() not in ("TRUE", "FALSE"):
+        raise _cookie_line_invalid(line_no)
     if secure.upper() not in ("TRUE", "FALSE") or not path.startswith("/"):
-        raise _cookie_invalid()
+        raise _cookie_line_invalid(line_no)
     if expiry != "0" and (not expiry.isdigit() or expiry.startswith("0")):
-        raise _cookie_invalid()
+        raise _cookie_line_invalid(line_no)
+    try:
+        expires = None if expiry == "0" else int(expiry)
+    except ValueError:
+        raise _cookie_line_invalid(line_no) from None
     return _Cookie(
         name=name,
         value=value,
@@ -535,14 +643,14 @@ def _parse_netscape_line(line: str) -> _Cookie:
         host_only=flag.upper() == "FALSE",
         path=path,
         secure=secure.upper() == "TRUE",
-        expires=None if expiry == "0" else int(expiry),
+        expires=expires,
     )
 
 
 def _domain_match(host: str, cookie: _Cookie) -> bool:
-    if not cookie.domain:
-        return True
-    domain = cookie.domain.lower().rstrip(".")
+    domain = cookie.domain
+    if not domain:
+        return False
     if cookie.host_only:
         return host == domain
     return host == domain or host.endswith("." + domain)
@@ -562,7 +670,12 @@ def _path_match(request_path: str, cookie_path: str) -> bool:
 
 def _cookie_header(cookies: tuple[Any, ...], url: str, allowed_hosts: frozenset[str]) -> str | None:
     parts = urlsplit(url)
-    host = (parts.hostname or "").lower().rstrip(".")
+    if not parts.hostname:
+        return None
+    try:
+        host = safety.normalize_hostname(parts.hostname)
+    except m.CoreError:
+        return None
     if host not in allowed_hosts:
         return None
     scheme = (parts.scheme or "").lower()
@@ -615,10 +728,19 @@ def _extractor_class(key: str) -> type | None:
         return None
 
 
+def _solver_key(key: str) -> bool:
+    return key.lower() in _CHALLENGE_SOLVERS
+
+
 def _match(url: str, approvals: list[Any]) -> tuple[type, Any]:
     host = _host_of(url)
     suitable: list[tuple[type, Any]] = []
     for approval in approvals:
+        if _solver_key(approval.extractor):
+            cls = _extractor_class(approval.extractor)
+            if cls is not None and cls.suitable(url):
+                raise _solver_error()
+            continue
         cls = _extractor_class(approval.extractor)
         if cls is not None and cls.suitable(url):
             suitable.append((cls, approval))
@@ -959,7 +1081,7 @@ def _endpoint(url: str) -> tuple[str, str, int]:
 
     parts = urlsplit(url)
     scheme = (parts.scheme or "").lower()
-    host = (parts.hostname or "").lower().rstrip(".")
+    host = safety.normalize_hostname(parts.hostname or "")
     if parts.port is not None:
         port = parts.port
     elif scheme == "https":
@@ -1038,22 +1160,63 @@ def _hop_limit() -> m.CoreError:
 def _cookie_invalid() -> m.CoreError:
     return m.CoreError(
         m.ErrorCode.INPUT_INVALID,
-        "Cookie secret is not a Netscape file or a Cookie header",
-        next_action="Import a Netscape cookie file or one Cookie header line",
+        "A Netscape cookie file is required",
+        next_action="Import a Netscape cookie file. A Cookie header line is not accepted.",
     )
 
 
-def _challenge_marked(status: int, headers: dict[str, str], payload: bytes, reason: str) -> bool:
-    """True when this response is a platform challenge MetaMuse must not answer."""
+def _cookie_line_invalid(line_no: int) -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.INPUT_INVALID,
+        f"Cookie file line {line_no} is invalid",
+        next_action="Import a Netscape cookie file",
+    )
 
-    if status not in _CHALLENGE_STATUSES:
-        return False
-    if _CHALLENGE_FETCH.search(payload):
-        return True
-    for name, value in headers.items():
-        if name.lower() == "cf-mitigated" and "challenge" in value.lower():
+
+def _solver_error() -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.UNSUPPORTED,
+        "The extractor answers platform challenges",
+        next_action="Stop. MetaMuse does not run an extractor that answers a challenge.",
+    )
+
+
+def _share_no_redirect() -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.UNSUPPORTED,
+        "The share link did not redirect",
+        next_action="Stop. Submit the individual media URL.",
+    )
+
+
+def _unavailable() -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.RESOURCE_UNAVAILABLE,
+        "Media is unavailable",
+        next_action="Stop. The upstream item is not available.",
+    )
+
+
+def _header_values(headers: dict[str, str], name: str) -> list[str]:
+    return [value for key, value in headers.items() if key.lower() == name]
+
+
+def _challenge_marked(status: int, headers: dict[str, str], payload: bytes, reason: str) -> bool:
+    """True for a challenge marker at any HTTP status. MetaMuse does not answer it."""
+
+    del status
+    for value in _header_values(headers, "cf-mitigated"):
+        if "challenge" in value.lower():
             return True
-    return "challenge" in reason.lower()
+    if "challenge" in (reason or "").lower():
+        return True
+    if b"/__rd_verify" in payload.lower():
+        return True
+    for name in ("refresh", "location"):
+        for value in _header_values(headers, name):
+            if "/__rd_verify" in value.lower():
+                return True
+    return False
 
 
 def _unpack_dial(
@@ -1103,13 +1266,16 @@ def _exchange(
     purpose = _purpose.get()
     body_cap = net.media_max if purpose == "media" else None
     redirects = 0
+    followed = False
     while True:
-        path = urlsplit(url).path or "/"
-        if path.startswith("/__rd_verify"):
+        # A challenge URL is refused before DNS. Redirect targets are approved first.
+        if not followed and _challenge_target(url):
             raise _challenge_error()
         if net.budget.remaining <= 0:
             raise _limit_error()
         checked = net.checker(url, purpose=purpose)
+        if followed:
+            _stop_for_target(checked.url)
         _apply_cookies(headers, net, checked.url)
         limit = net.budget.remaining
         if body_cap is not None:
@@ -1124,8 +1290,18 @@ def _exchange(
         net.budget.take(len(payload))
         if net.state is not None:
             net.state.bytes_used = net.budget.used
+        # Check the redirect host before interpreting any challenge/login marker,
+        # including a marker in Location itself. This also covers follow=False.
+        target = _location(response_headers) if status in _REDIRECTS else None
+        redirect_url = None
+        if target:
+            nxt = urljoin(checked.url, target)
+            redirect = net.checker(nxt, purpose="redirect")
+            redirect_url = redirect.url
         if _challenge_marked(status, response_headers, payload, reason):
             raise _challenge_error()
+        if redirect_url is not None:
+            _stop_for_target(redirect_url)
         # Set-Cookie is not a credential we keep. The jar extension stays stripped.
         for name in list(response_headers):
             if name.lower() == "set-cookie":
@@ -1151,6 +1327,7 @@ def _exchange(
                 raise _body_forward_error()
             url = nxt
             purpose = "redirect"
+            followed = True
             if status in (301, 302, 303):
                 method = "GET"
                 body = None
@@ -2294,6 +2471,8 @@ def run_remote_media(step: StepContext) -> m.JobResult:
     classes: list[type] = []
     input_hosts: list[tuple[str, ...]] = []
     for url, key in zip(urls, keys, strict=True):
+        if _solver_key(key):
+            raise _solver_error()
         if not _still_approved(url, key, approvals):
             raise _host_denied() if _extractor_class(key) is not None else _extractor_denied()
         cls = _extractor_class(key)
@@ -2542,10 +2721,47 @@ def _access_denied() -> m.CoreError:
     )
 
 
+class _InputHalted(Exception):
+    """The share resolver stopped this input. The job result is already on ``state``."""
+
+
+def _halt_rate(net: _Net, headers: dict[str, str]) -> None:
+    state = net.state
+    if state is None:
+        raise m.CoreError(
+            m.ErrorCode.RATE_LIMITED,
+            "Upstream rate limit",
+            next_action="Wait for Retry-After before reading again.",
+        )
+    state.halt = "rate_limited"
+    state.retry_after = _retry_after(headers)
+    state.code = m.ErrorCode.RATE_LIMITED.value
+    state.message = "Upstream rate limit"
+    raise _InputHalted()
+
+
+def _login_form(payload: bytes, url: str) -> bool:
+    class LoginForms(HTMLParser):
+        found = False
+
+        def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+            if tag == "form":
+                for name, value in attrs:
+                    if name == "action" and value is not None:
+                        try:
+                            self.found |= _login_target(urljoin(url, value))
+                        except ValueError:
+                            pass
+
+    parser = LoginForms()
+    parser.feed(payload.decode("utf-8", "replace"))
+    return parser.found
+
+
 def _resolve_share(net: _Net, url: str, key: str, approval: Any) -> str:
     """One checked GET. The first redirect is read and not followed."""
 
-    status, headers, _payload, _final = _exchange(net, "GET", url, {}, None, follow=False)
+    status, headers, payload, _final = _exchange(net, "GET", url, {}, None, follow=False)
     if status in _REDIRECTS:
         target = _location(headers)
         if not target:
@@ -2556,11 +2772,13 @@ def _resolve_share(net: _Net, url: str, key: str, approval: Any) -> str:
         parts = urlsplit(nxt)
         if parts.username is not None or parts.password is not None:
             raise _share_unsupported()
-        if _login_path(parts.path or ""):
-            raise _login_error()
-        host = (parts.hostname or "").lower().rstrip(".")
-        if not host or host not in _hosts(approval.hosts):
-            raise _hop_denied(key, host or "unknown")
+        try:
+            host = safety.normalize_hostname(parts.hostname or "")
+        except m.CoreError:
+            raise _hop_denied(key, "unknown") from None
+        if host not in _hosts(approval.hosts):
+            raise _hop_denied(key, host)
+        _stop_for_target(nxt)
         canonical = _canonical_media(nxt)
         cls = _extractor_class(key)
         if canonical is None or cls is None or not cls.suitable(canonical):
@@ -2568,11 +2786,30 @@ def _resolve_share(net: _Net, url: str, key: str, approval: Any) -> str:
         if _host_of(canonical) not in _hosts(approval.hosts):
             raise _hop_denied(key, _host_of(canonical))
         return canonical
-    if status in (200, 401):
+    if status == 429:
+        _halt_rate(net, headers)
+    if status in (404, 410):
+        raise _unavailable()
+    if status == 401:
         raise _login_error()
     if status == 403:
         raise _access_denied()
+    if status == 200:
+        if _login_form(payload, url):
+            raise _login_error()
+        raise _share_no_redirect()
     raise _share_unsupported()
+
+
+def _resolved_still_approved(stored: str, key: str, approval: Any) -> None:
+    """A resumed canonical URL must still match this approval and extractor."""
+
+    host = _host_of(stored)
+    if host not in _hosts(approval.hosts):
+        raise _host_denied()
+    cls = _extractor_class(key)
+    if cls is None or not cls.suitable(stored):
+        raise _host_denied()
 
 
 def _page_url(
@@ -2582,29 +2819,29 @@ def _page_url(
 
     if _share_parts(url) is None:
         return url, None
-    stored = (state.current or {}).get("resolved_url")
-    if isinstance(stored, str) and _canonical_media(stored) == stored:
-        return stored, stored
     approval = _approval_for(key, url, approvals)
     if approval is None:
         raise _host_denied()
+    stored = (state.current or {}).get("resolved_url")
+    if isinstance(stored, str) and _canonical_media(stored) == stored:
+        _resolved_still_approved(stored, key, approval)
+        return stored, stored
     resolved = _resolve_share(net, url, key, approval)
     return resolved, resolved
 
 
 def _merge_transparent(inner: dict[str, Any], outer: dict[str, Any]) -> dict[str, Any]:
-    """Non-None outer fields override the inner result.
+    """Outer descriptive fields may override. Identity and media stay with the inner result.
 
-    yt-dlp does this in ``YoutubeDL.process_ie_result`` when ``_type`` is
-    ``url_transparent`` (``yt_dlp/YoutubeDL.py``, the ``exempted_fields`` update).
+    This is narrower than ``YoutubeDL.process_ie_result`` for ``url_transparent``.
+    That copy lets the outer page replace ``webpage_url``, and ``extractor_key``
+    when ``section_start`` is set. The stored canonical URL and platform come
+    from the final inner extractor.
     """
 
-    exempted = {"_type", "url", "ie_key"}
-    if not outer.get("section_end") and outer.get("section_start") is None:
-        exempted |= {"id", "extractor", "extractor_key"}
     merged = dict(inner)
     for name, value in outer.items():
-        if value is not None and name not in exempted:
+        if value is not None and name in _OUTER_DESCRIPTIVE:
             merged[name] = value
     if merged.get("_type") == "url":
         merged["_type"] = "url_transparent"
@@ -2624,6 +2861,8 @@ def _hop_target(info: dict[str, Any]) -> tuple[str, str]:
 
 
 def _prepare_hop(net: _Net, hop_url: str, hop_key: str, approvals: list[Any]) -> tuple[type, Any]:
+    if _solver_key(hop_key):
+        raise _solver_error()
     if hop_key.lower() in REJECTED_EXTRACTORS:
         raise _extractor_denied()
     host = _host_of(hop_url)
@@ -2654,6 +2893,44 @@ def _apply_extraction_error(state: _State, exc: Exception) -> None:
     if kind == "core":
         raise value from exc
     raise value from exc
+
+
+def _coerce_result(info: dict[str, Any]) -> dict[str, Any]:
+    """Refuse a multi-entry list, drop ``additional_urls``, and unwrap one entry.
+
+    A single ``url`` or ``url_transparent`` entry is returned so the hop loop
+    applies ``MAX_HOPS``, the approval, and ``suitable()``. Iteration of a lazy
+    playlist happens here, inside ``_extracting``.
+    """
+
+    seen: dict[int, dict[str, Any]] = {}
+    while True:
+        info.pop("additional_urls", None)
+        if (info.get("_type") or "video") not in _LIST_TYPES:
+            return info
+        if id(info) in seen:
+            raise _playlist_error()
+        seen[id(info)] = info
+        declared = info.get("playlist_count")
+        if isinstance(declared, int) and declared > 1:
+            raise _playlist_error()
+        entries: list[Any] = []
+        raw = info.get("entries")
+        if raw is not None:
+            for item in raw:
+                if item is None:
+                    continue
+                if isinstance(item, str):
+                    item = {"_type": "url", "url": item}
+                entries.append(item)
+                if len(entries) > 1:
+                    raise _playlist_error()
+        if not entries:
+            return {**info, "entries": []}
+        only = entries[0]
+        if not isinstance(only, dict):
+            raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Upstream response could not be parsed")
+        info = only
 
 
 def _extract_chain(
@@ -2690,31 +2967,33 @@ def _extract_chain(
             try:
                 with _extracting():
                     info = ydl.extract_info(current_url, download=False, process=False)
+                    if not isinstance(info, dict):
+                        raise m.CoreError(
+                            m.ErrorCode.INPUT_INVALID, "Upstream response could not be parsed"
+                        )
+                    info = _coerce_result(info)
+                    if pending is not None:
+                        info = _merge_transparent(info, pending)
+                        pending = None
+                    result_type = info.get("_type") or "video"
+                    if result_type in ("url", "url_transparent"):
+                        if hops >= MAX_HOPS:
+                            raise _hop_limit()
+                        hop_url, hop_key = _hop_target(info)
+                        hop_cls, _approval = _prepare_hop(net, hop_url, hop_key, approvals)
+                        if result_type == "url_transparent":
+                            pending = info
+                        hops += 1
+                        chain.append(hop_key)
+                        follow = (hop_url, hop_cls, hop_key)
+                    else:
+                        info.pop("additional_urls", None)
+                        info = ydl.process_ie_result(info, download=False)
             except m.CoreError:
                 raise
             except Exception as exc:
                 _apply_extraction_error(state, exc)
                 return None
-            if not isinstance(info, dict):
-                raise m.CoreError(
-                    m.ErrorCode.INPUT_INVALID, "Upstream response could not be parsed"
-                )
-            if pending is not None:
-                info = _merge_transparent(info, pending)
-                pending = None
-            result_type = info.get("_type") or "video"
-            if result_type in ("url", "url_transparent"):
-                if hops >= MAX_HOPS:
-                    raise _hop_limit()
-                hop_url, hop_key = _hop_target(info)
-                hop_cls, _approval = _prepare_hop(net, hop_url, hop_key, approvals)
-                if result_type == "url_transparent":
-                    pending = info
-                hops += 1
-                chain.append(hop_key)
-                follow = (hop_url, hop_cls, hop_key)
-            else:
-                info = ydl.process_ie_result(info, download=False)
         finally:
             ydl.close()
         if follow is None:
@@ -2740,7 +3019,10 @@ def _read_info(
 ) -> dict[str, Any] | None:
     """Fetch one page. None means this input stopped; the body still counts."""
 
-    extract_url, resolved = _page_url(state, url, key, net, approvals)
+    try:
+        extract_url, resolved = _page_url(state, url, key, net, approvals)
+    except _InputHalted:
+        return None
     found = _extract_chain(
         state,
         extract_url,
