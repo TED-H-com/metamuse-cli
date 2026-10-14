@@ -27,6 +27,17 @@ from metamuse._muse_codec import (
 from metamuse.models import CoreError, ErrorCode
 
 PATTERN = b"Noise_XX_25519_AESGCM_SHA256"
+_NOISE_FAILURES = frozenset(
+    {
+        "NoiseInvalidMessage",
+        "NoiseHandshakeError",
+        "NoiseValueError",
+        "NoiseMaxNonceError",
+        "NoiseValidationError",
+        "NoiseProtocolNameError",
+        "InvalidTag",
+    }
+)
 
 
 def load_noise() -> tuple[Any, Any, type[Exception]]:
@@ -47,8 +58,7 @@ class NoiseParty:
     """One Noise_XX role. Handshake payloads are empty. No socket."""
 
     def __init__(self, role: str) -> None:
-        noise_connection, keypair, invalid = load_noise()
-        self._invalid = invalid
+        noise_connection, keypair, _invalid = load_noise()
         self.conn = noise_connection.from_name(PATTERN)
         if role == "initiator":
             self.conn.set_as_initiator()
@@ -59,24 +69,36 @@ class NoiseParty:
         self.conn.set_keypair_from_private_bytes(keypair.STATIC, os.urandom(32))
         self.conn.start_handshake()
 
+    def _crypto(self, fn: Callable[[], bytes], message: str) -> bytes:
+        try:
+            return fn()
+        except Exception as exc:
+            if type(exc).__name__ not in _NOISE_FAILURES:
+                raise
+            failure = ProtocolMismatch(message)
+        raise failure
+
     def write(self, payload: bytes = b"") -> bytes:
         if payload != b"":
             raise ProtocolMismatch("handshake payload must be empty")
-        return bytes(self.conn.write_message(payload))
+        return self._crypto(
+            lambda: bytes(self.conn.write_message(payload)),
+            "noise handshake failed",
+        )
 
     def read(self, message: bytes) -> bytes:
-        try:
-            return bytes(self.conn.read_message(message))
-        except self._invalid:
-            raise ProtocolMismatch("handshake message was rejected") from None
+        return self._crypto(
+            lambda: bytes(self.conn.read_message(message)),
+            "handshake message was rejected",
+        )
 
     def encrypt(self, plaintext: bytes) -> bytes:
         if len(plaintext) > MAX_FRAME_BYTES:
             raise FrameTooLarge(f"frame is {len(plaintext)} bytes")
-        try:
-            ciphertext = bytes(self.conn.encrypt(plaintext))
-        except self._invalid:
-            raise ProtocolMismatch("noise encrypt failed") from None
+        ciphertext = self._crypto(
+            lambda: bytes(self.conn.encrypt(plaintext)),
+            "noise encrypt failed",
+        )
         if len(ciphertext) > NOISE_MAX_CIPHERTEXT_BYTES:
             raise FrameTooLarge(f"ciphertext is {len(ciphertext)} bytes")
         return ciphertext
@@ -84,10 +106,7 @@ class NoiseParty:
     def decrypt(self, ciphertext: bytes) -> bytes:
         if len(ciphertext) > NOISE_MAX_CIPHERTEXT_BYTES:
             raise FrameTooLarge(f"ciphertext is {len(ciphertext)} bytes")
-        try:
-            return bytes(self.conn.decrypt(ciphertext))
-        except self._invalid:
-            raise ProtocolMismatch("noise decrypt failed") from None
+        return self._crypto(lambda: bytes(self.conn.decrypt(ciphertext)), "noise decrypt failed")
 
     @property
     def finished(self) -> bool:
@@ -105,10 +124,11 @@ def handshake_initiator(
     deadline = clock() + timeout
 
     def recv() -> bytes:
-        remaining = deadline - clock()
-        if remaining <= 0:
+        if clock() >= deadline:
             raise IncompleteBody("receive deadline exhausted")
-        data = link.recv(remaining)
+        data = link.recv(max(0.0, deadline - clock()))
+        if clock() >= deadline:
+            raise IncompleteBody("receive deadline exhausted")
         if not data:
             raise IncompleteBody("receive deadline exhausted")
         return data

@@ -3,36 +3,35 @@
 ``curl_cffi`` is imported inside :func:`load_curl`. Importing this module does
 not import it, so offline commands keep working when the package is absent.
 
-The adapter always passes ``impersonate="chrome"`` and ``verify=True``.
 ``curl_cffi`` 0.16.3 stores ``trust_env`` and never reads it, and
-``WebSocket.connect`` defaults ``verify`` to ``None`` (TLS verification off).
-An empty ``CURLOPT_PROXY`` is what disables proxy variables from the
-environment. An explicit proxy is used only when the caller passes one.
-Redirects are not followed. ``WebSocket.recv`` waits forever, so the socket
-here uses ``recv_fragment`` and stops at the caller's timeout.
+``Session.request`` does not accept ``curl_options`` (the session constructor
+does). ``WebSocket.connect`` does accept ``curl_options`` and defaults
+``verify`` to ``None``. This adapter pins both calls to the certifi CA bundle,
+``impersonate="chrome"``, hostname verification, an empty ``CURLOPT_PROXY``,
+and ``CURLOPT_RESOLVE`` entries for the checked hostname. It does not accept
+an explicit proxy. Redirects are not followed. Auth bodies stop at
+``AUTH_RESPONSE_MAX_BYTES`` decompressed bytes. WebSocket reads stop at one
+ciphertext, a fragment budget, and the caller's monotonic deadline.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import select
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import urlparse
 
-from metamuse._muse_codec import redact
 from metamuse._muse_link import ByteLink, SendUncertain
 from metamuse.models import CoreError, ErrorCode
+from metamuse.safety import CheckedURL
 
-
-@dataclass(frozen=True)
-class AddressPin:
-    """Addresses the outbound guard tells the adapter to use for one host."""
-
-    host: str
-    port: int
-    addresses: tuple[str, ...]
+# Auth JSON is a token plus a vm id. 64 KiB is the decompressed cap, including
+# a body that arrives without Content-Length. Larger responses are not parsed.
+AUTH_RESPONSE_MAX_BYTES = 64 * 1024
+_WS_MESSAGE_MAX_BYTES = 65535
+_WS_PIECE_MAX = 64
 
 
 @dataclass(frozen=True)
@@ -40,6 +39,7 @@ class HttpResponse:
     status: int
     body: bytes
     headers: Mapping[str, str]
+    peer: str
 
 
 class HttpClient(Protocol):
@@ -50,9 +50,8 @@ class HttpClient(Protocol):
         *,
         headers: Mapping[str, str],
         body: bytes | None,
-        pins: AddressPin | None,
+        checked: CheckedURL,
         timeout: float,
-        proxy: str | None,
     ) -> HttpResponse: ...
 
 
@@ -61,10 +60,26 @@ class Connector(Protocol):
         self,
         url: str,
         *,
-        pins: AddressPin | None,
+        checked: CheckedURL,
         timeout: float,
-        proxy: str | None,
     ) -> ByteLink: ...
+
+
+class AuthBodyBuffer:
+    """Accumulates one HTTPS body and stops before the cap is exceeded."""
+
+    def __init__(self, limit: int = AUTH_RESPONSE_MAX_BYTES) -> None:
+        self.limit = limit
+        self.data = bytearray()
+        self.overflow = False
+
+    def __call__(self, chunk: bytes) -> int:
+        piece = bytes(chunk)
+        if len(self.data) + len(piece) > self.limit:
+            self.overflow = True
+            raise RuntimeError("auth body cap")
+        self.data.extend(piece)
+        return len(piece)
 
 
 def load_curl() -> tuple[Any, Any, Any]:
@@ -72,57 +87,131 @@ def load_curl() -> tuple[Any, Any, Any]:
     try:
         from curl_cffi.const import CurlOpt
         from curl_cffi.requests import Session, WebSocket
-    except ImportError as exc:
-        raise CoreError(
+    except ImportError:
+        failure = CoreError(
             ErrorCode.DEPENDENCY_MISSING,
             "curl_cffi is not installed",
             next_action="Install the pinned curl_cffi package. Do not add websockets.",
-        ) from exc
+        )
+    else:
+        failure = None
+    if failure is not None:
+        raise failure
     return Session, WebSocket, CurlOpt
 
 
-def resolve_entries(pin: AddressPin) -> list[str]:
-    """curl ``RESOLVE`` lines. IPv6 addresses are wrapped in brackets."""
-    if not pin.addresses:
+def _ca_bundle() -> str:
+    try:
+        import certifi
+    except ImportError:
+        failure = CoreError(
+            ErrorCode.DEPENDENCY_MISSING,
+            "certifi is not installed",
+            next_action="Install the pinned certifi bundle. Do not trust an environment CA path.",
+        )
+    else:
+        failure = None
+        path = certifi.where()
+    if failure is not None:
+        raise failure
+    if not isinstance(path, str) or not path:
+        raise CoreError(
+            ErrorCode.DEPENDENCY_MISSING,
+            "certifi did not provide a CA bundle",
+            next_action="Install the pinned certifi bundle.",
+        )
+    return path
+
+
+def _hostname(host: str) -> str:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    raise CoreError(
+        ErrorCode.SCOPE_REQUIRED,
+        "Outbound host must stay a hostname",
+        next_action="Pin the canonical hostname. Do not put an IP in Host or SNI.",
+    )
+
+
+def resolve_entries(checked: CheckedURL) -> list[str]:
+    """curl ``RESOLVE`` lines. The host is the pinned hostname, never an IP."""
+    host = _hostname(checked.hostname)
+    if not checked.addresses or checked.port <= 0:
         raise CoreError(
             ErrorCode.SCOPE_REQUIRED,
             "Pinned addresses were empty",
-            next_action="Return at least one address from the outbound guard or allow the URL",
+            next_action="Return at least one address from the outbound guard",
         )
     entries: list[str] = []
-    for address in pin.addresses:
-        if ":" in address and not address.startswith("["):
-            rendered = f"[{address}]"
-        else:
-            rendered = address
-        entries.append(f"{pin.host}:{pin.port}:{rendered}")
+    for address in checked.addresses:
+        if not isinstance(address, str) or not address or "/" in address:
+            raise CoreError(
+                ErrorCode.SCOPE_REQUIRED,
+                "Pinned addresses were empty",
+                next_action="Return IP addresses from the outbound guard",
+            )
+        rendered = f"[{address}]" if ":" in address and not address.startswith("[") else address
+        entries.append(f"{host}:{checked.port}:{rendered}")
     return entries
 
 
-def _options(curl_opt: Any, *, proxy: str | None, pins: AddressPin | None) -> dict[Any, Any]:
-    options: dict[Any, Any] = {}
-    if proxy is None:
-        # Empty string disables libcurl's use of http_proxy / https_proxy.
-        options[curl_opt.PROXY] = b""
-    if pins is not None:
-        if not hasattr(curl_opt, "RESOLVE"):
-            raise CoreError(
-                ErrorCode.SCOPE_REQUIRED,
-                "Pinned addresses could not be applied",
-                next_action="Use a curl_cffi build that supports CURLOPT_RESOLVE",
-            )
-        options[curl_opt.RESOLVE] = resolve_entries(pins)
-    return options
+def _options(curl_opt: Any, checked: CheckedURL) -> dict[Any, Any]:
+    if not hasattr(curl_opt, "RESOLVE") or not hasattr(curl_opt, "CAINFO"):
+        raise CoreError(
+            ErrorCode.DEPENDENCY_MISSING,
+            "curl_cffi API is not the pinned shape",
+            next_action="Install curl_cffi==0.16.3. Do not retry this process.",
+        )
+    return {
+        curl_opt.PROXY: b"",
+        curl_opt.CAINFO: _ca_bundle(),
+        curl_opt.SSL_VERIFYPEER: 1,
+        curl_opt.SSL_VERIFYHOST: 2,
+        curl_opt.RESOLVE: resolve_entries(checked),
+    }
 
 
-def _transport_failure(exc: Exception) -> CoreError:
-    if isinstance(exc, CoreError):
-        return exc
+def _api_mismatch() -> CoreError:
+    return CoreError(
+        ErrorCode.DEPENDENCY_MISSING,
+        "curl_cffi API is not the pinned shape",
+        next_action="Install curl_cffi==0.16.3. Do not retry this process.",
+    )
+
+
+def _https_failed() -> CoreError:
     return CoreError(
         ErrorCode.NETWORK_TIMEOUT,
-        redact(str(exc)),
-        next_action="Retry the connection. No gateway frame was handed off by this failure.",
+        "Muse HTTPS request failed",
+        next_action="Retry the auth request. No gateway frame was handed off.",
     )
+
+
+def _auth_too_large() -> CoreError:
+    return CoreError(
+        ErrorCode.LIMIT_REACHED,
+        "Muse auth response exceeded the size cap",
+        next_action="Stop. Do not parse an oversized auth response.",
+    )
+
+
+def _raise_if(error: CoreError | None) -> None:
+    if error is not None:
+        raise error
+
+
+def _send_uncertain() -> None:
+    raise SendUncertain("gateway send did not finish")
+
+
+def _peer_text(value: Any) -> str:
+    if isinstance(value, bytes):
+        value = value.decode("ascii", "replace")
+    if not isinstance(value, str):
+        return ""
+    return value.strip()
 
 
 class CurlHttp:
@@ -135,100 +224,179 @@ class CurlHttp:
         *,
         headers: Mapping[str, str],
         body: bytes | None,
-        pins: AddressPin | None,
+        checked: CheckedURL,
         timeout: float,
-        proxy: str | None,
     ) -> HttpResponse:
         session_type, _websocket, curl_opt = load_curl()
-        options = _options(curl_opt, proxy=proxy, pins=pins)
-        session = session_type(impersonate="chrome", verify=True, trust_env=False)
+        options = _options(curl_opt, checked)
+        bundle = _ca_bundle()
+        # A string verify skips Session.__init__'s REQUESTS_CA_BUNDLE override.
+        try:
+            session = session_type(
+                impersonate="chrome",
+                verify=bundle,
+                trust_env=False,
+                allow_redirects=False,
+                curl_options=options,
+            )
+        except (TypeError, AttributeError):
+            failure = _api_mismatch()
+            session = None
+        else:
+            failure = None
+        _raise_if(failure)
+        writer = AuthBodyBuffer()
+        response = None
         try:
             kwargs: dict[str, Any] = {
                 "headers": dict(headers),
                 "impersonate": "chrome",
-                "verify": True,
+                "verify": bundle,
                 "allow_redirects": False,
                 "timeout": timeout,
-                "curl_options": options,
+                "content_callback": writer,
             }
             if body is not None:
                 kwargs["data"] = body
-            if proxy is not None:
-                kwargs["proxy"] = proxy
             try:
                 response = session.request(method, url, **kwargs)
-            except CoreError:
-                raise
-            except Exception as exc:
-                raise _transport_failure(exc) from None
+            except (TypeError, AttributeError):
+                failure = _api_mismatch()
+            except Exception:
+                failure = _auth_too_large() if writer.overflow else _https_failed()
         finally:
-            session.close()
+            if session is not None:
+                closer = getattr(session, "close", None)
+                if closer is not None:
+                    try:
+                        closer()
+                    except Exception:
+                        pass
+        _raise_if(failure)
+        if writer.overflow or len(writer.data) > AUTH_RESPONSE_MAX_BYTES:
+            raise _auth_too_large()
+        peer = _peer_text(getattr(response, "primary_ip", ""))
         raw_headers = getattr(response, "headers", {}) or {}
         copied = {str(key): str(value) for key, value in dict(raw_headers).items()}
-        content = getattr(response, "content", b"") or b""
-        if isinstance(content, str):
-            content = content.encode("utf-8", "replace")
-        return HttpResponse(int(response.status_code), bytes(content), copied)
+        return HttpResponse(int(response.status_code), bytes(writer.data), copied, peer)
 
 
 class CurlSocket:
     """Byte pipe over one curl WebSocket. ``recv`` stops at ``timeout``."""
 
-    def __init__(self, ws: Any) -> None:
+    def __init__(self, ws: Any, peer_address: str) -> None:
         self._ws = ws
+        self.peer_address = peer_address
         self._closed = False
 
     def send(self, data: bytes) -> None:
+        failed = False
         try:
             self._ws.send_bytes(data)
-        except Exception as exc:
-            raise SendUncertain(redact(str(exc))) from None
+        except Exception:
+            failed = True
+        if failed:
+            _send_uncertain()
 
     def recv(self, timeout: float) -> bytes | None:
         from curl_cffi.const import CurlECode, CurlInfo, CurlWsFlag
         from curl_cffi.curl import CurlError
         from curl_cffi.requests.websockets import CURL_SOCKET_BAD
 
-        deadline = time.monotonic() + max(0.0, timeout)
+        if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
+            raise CoreError(
+                ErrorCode.PROTOCOL_MISMATCH,
+                "Muse read timeout is not finite",
+                next_action="Stop. Do not raise the collect deadline.",
+            )
+        if timeout < 0 or timeout != timeout or timeout == float("inf"):
+            raise CoreError(
+                ErrorCode.PROTOCOL_MISMATCH,
+                "Muse read timeout is not finite",
+                next_action="Stop. Do not raise the collect deadline.",
+            )
+        deadline = time.monotonic() + timeout
         chunks: list[bytes] = []
-        flags = 0
+        total = 0
+        pieces = 0
         while True:
+            if time.monotonic() >= deadline:
+                return None
+            if pieces >= _WS_PIECE_MAX:
+                raise CoreError(
+                    ErrorCode.PROTOCOL_MISMATCH,
+                    "Muse websocket fragment budget was exhausted",
+                    next_action="Stop. Do not assemble an unbounded websocket message.",
+                )
             try:
                 chunk, frame = self._ws.recv_fragment()
             except CurlError as exc:
-                if exc.code != CurlECode.AGAIN:
-                    raise CoreError(
+                again = getattr(exc, "code", None) == CurlECode.AGAIN
+                if not again:
+                    failure = CoreError(
                         ErrorCode.NETWORK_TIMEOUT,
-                        redact(str(exc)),
+                        "Muse websocket read failed",
                         next_action="Retry the read if no frame was handed off.",
-                    ) from None
+                    )
+                else:
+                    failure = None
+            except (TypeError, AttributeError):
+                failure = _api_mismatch()
+                again = False
+            except Exception:
+                failure = CoreError(
+                    ErrorCode.NETWORK_TIMEOUT,
+                    "Muse websocket read failed",
+                    next_action="Retry the read if no frame was handed off.",
+                )
+                again = False
+            else:
+                failure = None
+                again = False
+            if failure is not None:
+                raise failure
+            if again:
                 if time.monotonic() >= deadline:
                     return None
                 remaining = deadline - time.monotonic()
-                sock = self._ws.curl.getinfo(CurlInfo.ACTIVESOCKET)
+                try:
+                    sock = self._ws.curl.getinfo(CurlInfo.ACTIVESOCKET)
+                except (TypeError, AttributeError):
+                    sock_failure = _api_mismatch()
+                else:
+                    sock_failure = None
+                if sock_failure is not None:
+                    raise sock_failure
                 if sock == CURL_SOCKET_BAD:
                     raise CoreError(
                         ErrorCode.NETWORK_TIMEOUT,
                         "Muse socket has no file descriptor",
                         next_action="Retry the connection.",
-                    ) from None
+                    )
                 select.select([sock], [], [], min(remaining, 0.5))
                 if time.monotonic() >= deadline:
                     return None
                 continue
-            except Exception as exc:
-                raise CoreError(
-                    ErrorCode.NETWORK_TIMEOUT,
-                    redact(str(exc)),
-                    next_action="Retry the read if no frame was handed off.",
-                ) from None
+            pieces += 1
+            if time.monotonic() >= deadline:
+                return None
             if frame.flags & (CurlWsFlag.PING | CurlWsFlag.PONG):
                 continue
             if frame.flags & CurlWsFlag.CLOSE:
                 return None
-            chunks.append(chunk)
-            flags = frame.flags
-            if frame.bytesleft == 0 and flags & CurlWsFlag.CONT == 0:
+            piece = bytes(chunk)
+            if total + len(piece) > _WS_MESSAGE_MAX_BYTES:
+                raise CoreError(
+                    ErrorCode.PROTOCOL_MISMATCH,
+                    "Muse websocket message exceeds the ciphertext cap",
+                    next_action="Stop. Do not assemble an oversized websocket message.",
+                )
+            if piece:
+                chunks.append(piece)
+                total += len(piece)
+            if frame.bytesleft == 0 and frame.flags & CurlWsFlag.CONT == 0:
+                if time.monotonic() >= deadline:
+                    return None
                 return b"".join(chunks)
 
     def close(self) -> None:
@@ -250,10 +418,11 @@ class CurlConnector:
         self,
         url: str,
         *,
-        pins: AddressPin | None,
+        checked: CheckedURL,
         timeout: float,
-        proxy: str | None,
     ) -> ByteLink:
+        from urllib.parse import urlparse
+
         _session, websocket_type, curl_opt = load_curl()
         parsed = urlparse(url)
         if parsed.scheme != "wss" or not parsed.hostname:
@@ -262,22 +431,76 @@ class CurlConnector:
                 "Muse gateway URL is not a wss URL",
                 next_action="Use the hatch WebSocket endpoint.",
             )
-        options = _options(curl_opt, proxy=proxy, pins=pins)
-        ws = websocket_type()
-        kwargs: dict[str, Any] = {
-            "impersonate": "chrome",
-            "verify": True,
-            "allow_redirects": False,
-            "timeout": timeout,
-            "quote": False,
-            "curl_options": options,
-        }
-        if proxy is not None:
-            kwargs["proxy"] = proxy
+        if parsed.hostname != checked.hostname or (parsed.port or 443) != checked.port:
+            raise CoreError(
+                ErrorCode.SCOPE_REQUIRED,
+                "Outbound pin does not match the requested URL",
+                next_action="Pin the canonical hatch hostname before connecting.",
+            )
+        options = _options(curl_opt, checked)
+        bundle = _ca_bundle()
         try:
-            ws.connect(url, **kwargs)
+            ws = websocket_type()
+        except (TypeError, AttributeError):
+            failure = _api_mismatch()
+            ws = None
+        else:
+            failure = None
+        _raise_if(failure)
+        try:
+            ws.connect(
+                url,
+                impersonate="chrome",
+                verify=bundle,
+                allow_redirects=False,
+                timeout=timeout,
+                quote=False,
+                curl_options=options,
+            )
+        except (TypeError, AttributeError):
+            failure = _api_mismatch()
         except CoreError:
-            raise
-        except Exception as exc:
-            raise _transport_failure(exc) from None
-        return CurlSocket(ws)
+            failure = _https_failed()
+        except Exception:
+            failure = _https_failed()
+        else:
+            failure = None
+        if failure is not None:
+            closer = getattr(ws, "close", None)
+            if closer is not None:
+                try:
+                    closer()
+                except Exception:
+                    pass
+            raise failure
+        try:
+            from curl_cffi.const import CurlInfo
+
+            peer = _peer_text(ws.curl.getinfo(CurlInfo.PRIMARY_IP))
+        except (TypeError, AttributeError):
+            peer_failure = _api_mismatch()
+            peer = ""
+        except Exception:
+            peer_failure = CoreError(
+                ErrorCode.SCOPE_REQUIRED,
+                "Outbound peer was not available",
+                next_action="Do not use a connection whose peer address was not read.",
+            )
+            peer = ""
+        else:
+            peer_failure = None
+        if peer_failure is not None or not peer:
+            closer = getattr(ws, "close", None)
+            if closer is not None:
+                try:
+                    closer()
+                except Exception:
+                    pass
+            if peer_failure is None:
+                peer_failure = CoreError(
+                    ErrorCode.SCOPE_REQUIRED,
+                    "Outbound peer was not available",
+                    next_action="Do not use a connection whose peer address was not read.",
+                )
+            raise peer_failure
+        return CurlSocket(ws, peer)

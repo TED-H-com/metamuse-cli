@@ -61,6 +61,34 @@ _BEARER = re.compile(r"(?i)((?:authorization:\s*)?bearer\s+)\S+")
 _COOKIE = re.compile(r"(?i)cookie:\s*[^\r\n]+")
 
 
+def json_depth(body: bytes, *, limit: int = 32) -> int:
+    """Brace depth of a JSON text. Stops once ``limit`` is exceeded."""
+    depth = 0
+    maximum = 0
+    in_string = False
+    escape = False
+    for byte in body:
+        if in_string:
+            if escape:
+                escape = False
+            elif byte == 0x5C:
+                escape = True
+            elif byte == 0x22:
+                in_string = False
+            continue
+        if byte == 0x22:
+            in_string = True
+        elif byte in (0x7B, 0x5B):
+            depth += 1
+            if depth > maximum:
+                maximum = depth
+            if maximum > limit:
+                return maximum
+        elif byte in (0x7D, 0x5D) and depth:
+            depth -= 1
+    return maximum
+
+
 def redact(text: str) -> str:
     """Strip credential-shaped substrings before they reach an error or a log."""
     text = _COOKIE.sub("cookie: [redacted]", text)
@@ -148,6 +176,11 @@ class NoiseTransportFrame:
     payload: bytes
 
 
+_INT64_MAX = (1 << 63) - 1
+_INT32_MIN = -(1 << 31)
+_INT32_MAX = (1 << 31) - 1
+
+
 def _encode_varint(value: int) -> bytes:
     if value < 0:
         value += 1 << 64
@@ -165,27 +198,48 @@ def _encode_varint(value: int) -> bytes:
 
 
 def _decode_varint(buf: bytes, index: int) -> tuple[int, int]:
+    """Decode one uint64 varint. The tenth byte may only carry bit 63."""
     value = 0
     shift = 0
-    start = index
-    while index < len(buf):
+    for _ in range(10):
+        if index >= len(buf):
+            raise ProtocolMismatch("truncated varint")
         byte = buf[index]
         index += 1
+        if shift == 63 and byte > 1:
+            raise ProtocolMismatch("varint out of range")
         value |= (byte & 0x7F) << shift
-        if not byte & 0x80:
-            if index - start > 10:
-                raise ProtocolMismatch("varint too long")
+        if byte < 0x80:
+            if value >= 1 << 64:
+                raise ProtocolMismatch("varint out of range")
             return value, index
         shift += 7
-        if shift > 63:
-            raise ProtocolMismatch("varint too long")
-    raise ProtocolMismatch("truncated varint")
+    raise ProtocolMismatch("varint too long")
 
 
-def _signed(value: int) -> int:
+def _as_int64(value: int) -> int:
+    if value < 0 or value >= 1 << 64:
+        raise ProtocolMismatch("integer out of int64 range")
     if value >= 1 << 63:
         return value - (1 << 64)
     return value
+
+
+def _as_int32(value: int) -> int:
+    signed = _as_int64(value)
+    if signed < _INT32_MIN or signed > _INT32_MAX:
+        raise ProtocolMismatch("status out of int32 range")
+    return signed
+
+
+def _utf8(payload: bytes) -> str:
+    try:
+        text = payload.decode("utf-8")
+    except UnicodeDecodeError:
+        text = None
+    if text is None:
+        raise ProtocolMismatch("frame text is not utf-8")
+    return text
 
 
 def _key(field_number: int, wire_type: int) -> bytes:
@@ -235,7 +289,7 @@ def _decode_header(buf: bytes) -> Header:
     for field_number, wire_type, payload in _iter_fields(buf):
         if wire_type != 2 or field_number not in (1, 2):
             raise ProtocolMismatch("malformed header")
-        text = payload.decode("utf-8")
+        text = _utf8(payload)
         if field_number == 1:
             key = text
         else:
@@ -268,9 +322,9 @@ def _decode_application_request(buf: bytes) -> ApplicationRequest:
     seen_end = False
     for field_number, wire_type, payload in _iter_fields(buf):
         if field_number == 1 and wire_type == 2:
-            verb = payload.decode("utf-8")
+            verb = _utf8(payload)
         elif field_number == 2 and wire_type == 2:
-            path = payload.decode("utf-8")
+            path = _utf8(payload)
         elif field_number == 3 and wire_type == 2:
             headers.append(_decode_header(payload))
         elif field_number == 4 and wire_type == 2:
@@ -305,7 +359,7 @@ def _decode_application_response(buf: bytes) -> ApplicationResponse:
     end_body = False
     for field_number, wire_type, payload in _iter_fields(buf):
         if field_number == 1 and wire_type == 0:
-            status = _signed(payload)
+            status = _as_int32(payload)
         elif field_number == 2 and wire_type == 2:
             headers.append(_decode_header(payload))
         elif field_number == 3 and wire_type == 2:
@@ -357,7 +411,7 @@ def _decode_reset(buf: bytes) -> Reset:
         if field_number == 1 and wire_type == 0:
             code = payload
         elif field_number == 2 and wire_type == 2:
-            reason = payload.decode("utf-8")
+            reason = _utf8(payload)
         else:
             raise ProtocolMismatch("malformed reset")
     return Reset(code, reason)
@@ -366,6 +420,8 @@ def _decode_reset(buf: bytes) -> Reset:
 def encode_service_frame(frame: ServiceFrame) -> bytes:
     parts = []
     if frame.stream_id:
+        if type(frame.stream_id) is not int or not 1 <= frame.stream_id <= _INT64_MAX:
+            raise ProtocolMismatch("stream id out of positive int64 range")
         parts.append(_varint_field(1, frame.stream_id))
     if frame.kind == "request":
         if frame.request is None:
@@ -397,7 +453,9 @@ def decode_service_frame(buf: bytes) -> ServiceFrame:
     reset = None
     for field_number, wire_type, payload in _iter_fields(buf):
         if field_number == 1 and wire_type == 0:
-            stream_id = _signed(payload)
+            stream_id = _as_int64(payload)
+            if not 1 <= stream_id <= _INT64_MAX:
+                raise ProtocolMismatch("stream id out of positive int64 range")
         elif field_number == 2 and wire_type == 2:
             kind = _one_kind(kind, "request")
             request = _decode_application_request(payload)
@@ -495,7 +553,7 @@ def decode_noise_transport_frame(buf: bytes) -> NoiseTransportFrame:
     payload = None
     for field_number, wire_type, value in _iter_fields(buf):
         if field_number == 1 and wire_type == 0:
-            chunk_id = _signed(value)
+            chunk_id = _as_int64(value)
         elif field_number == 2 and wire_type == 0:
             chunk_index = value
         elif field_number == 3 and wire_type == 0:

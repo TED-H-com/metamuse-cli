@@ -11,6 +11,7 @@ is in ``THIRD_PARTY_NOTICES.md``.
 
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections import deque
@@ -18,6 +19,7 @@ from collections.abc import Callable
 from typing import Protocol, Self
 
 from metamuse._muse_codec import (
+    _INT64_MAX,
     MAX_BODY_BYTES,
     MAX_FRAME_BYTES,
     MAX_SKIPPED_FRAMES,
@@ -177,6 +179,7 @@ class ReceiveLoop:
         self.next_stream_id = 1
         self.last_stream_id: int | None = None
         self.handed_off = False
+        self.failed = False
 
     def __enter__(self) -> Self:
         self.link.acquire(self)
@@ -198,6 +201,9 @@ class ReceiveLoop:
     ) -> int:
         if not self._held:
             raise ProtocolMismatch("send outside receive ownership")
+        if type(self.next_stream_id) is not int or not 1 <= self.next_stream_id <= _INT64_MAX:
+            self.failed = True
+            raise ProtocolMismatch("stream id space is exhausted")
         stream_id = self.next_stream_id
         self.next_stream_id += 1
         self.last_stream_id = stream_id
@@ -216,11 +222,25 @@ class ReceiveLoop:
             ),
         )
         plaintext = encode_client_frame(service, frame, _CHUNK_ID)
-        wire = self.noise.encrypt(plaintext) if self.noise is not None else plaintext
+        encrypted = self.noise is not None
+        if encrypted:
+            assert self.noise is not None
+            try:
+                wire = self.noise.encrypt(plaintext)
+            except ProtocolMismatch:
+                self.failed = True
+                raise
+        else:
+            wire = plaintext
         try:
             self.link.send(wire)
         except SendUncertain:
             self.handed_off = True
+            self.failed = True
+            raise
+        except Exception:
+            if encrypted:
+                self.failed = True
             raise
         self.handed_off = True
         return stream_id
@@ -237,9 +257,14 @@ class ReceiveLoop:
         ``begin_collect`` runs outside the ``try`` so a refused second caller
         does not clear the owner's collecting flag.
         """
+        _check_budget(timeout_s, max_frames)
         self.link.begin_collect(self)
         try:
-            return self._collect(stream_id, timeout_s=timeout_s, max_frames=max_frames)
+            try:
+                return self._collect(stream_id, timeout_s=timeout_s, max_frames=max_frames)
+            except ProtocolMismatch:
+                self.failed = True
+                raise
         finally:
             self.link.end_collect(self)
 
@@ -265,6 +290,8 @@ class ReceiveLoop:
                 raise IncompleteBody("receive deadline exhausted")
             remaining = deadline - self._clock()
             raw = self.link.recv(timeout=max(0.0, remaining))
+            if self._clock() >= deadline:
+                raise IncompleteBody("receive deadline exhausted")
             if raw is None:
                 break
             seen += 1
@@ -280,12 +307,14 @@ class ReceiveLoop:
             if service_frame.kind == "response":
                 if service_frame.response is None:
                     raise ProtocolMismatch("response frame missing body")
+                if status is not None:
+                    raise ProtocolMismatch("duplicate application response")
                 status = service_frame.response.status
                 total = _take(parts, total, service_frame.response.body, self.max_body_bytes)
                 complete = service_frame.response.end_body
             elif service_frame.kind == "body_chunk":
-                if service_frame.body_chunk is None:
-                    raise ProtocolMismatch("body_chunk frame missing body")
+                if service_frame.body_chunk is None or status is None:
+                    raise ProtocolMismatch("body chunk before application response")
                 total = _take(parts, total, service_frame.body_chunk.data, self.max_body_bytes)
                 complete = service_frame.body_chunk.end_body
             elif service_frame.kind == "reset":
@@ -296,6 +325,24 @@ class ReceiveLoop:
         if not complete or status is None:
             raise IncompleteBody("response body is incomplete")
         return status, b"".join(parts)
+
+
+def _check_budget(timeout_s: float, max_frames: int) -> None:
+    if (
+        isinstance(timeout_s, bool)
+        or not isinstance(timeout_s, (int, float))
+        or not math.isfinite(timeout_s)
+        or timeout_s < 0
+        or timeout_s > DEFAULT_COLLECT_TIMEOUT_S
+    ):
+        raise ProtocolMismatch("collect timeout exceeds the cap")
+    if (
+        isinstance(max_frames, bool)
+        or not isinstance(max_frames, int)
+        or max_frames < 1
+        or max_frames > MAX_COLLECT_FRAMES
+    ):
+        raise ProtocolMismatch("collect frame budget exceeds the cap")
 
 
 def _take(parts: list[bytes], total: int, data: bytes, limit: int) -> int:

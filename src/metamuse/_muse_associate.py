@@ -56,6 +56,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 
+from metamuse._muse_codec import json_depth as _json_depth
 from metamuse._muse_codec import redact
 
 PREPARED = "prepared"
@@ -199,7 +200,10 @@ def _reply_to(event: dict) -> str:
 
 
 def _seq(event: dict) -> int:
-    return int(event.get("seq") or 0)
+    value = event.get("seq", 0)
+    if type(value) is int and 0 <= value <= (1 << 63) - 1:
+        return value
+    return -1
 
 
 def _message_id(event: dict) -> str:
@@ -229,8 +233,9 @@ def _can_enrich(prev: dict, new: dict) -> bool:
 def _event_time_ms(event: dict) -> int | None:
     payload = _payload(event)
     for source in (event, payload):
-        if source.get("time_ms") is not None:
-            return int(source["time_ms"])
+        value = source.get("time_ms")
+        if type(value) is int and 0 <= value <= (1 << 63) - 1:
+            return value
     return None
 
 
@@ -262,12 +267,13 @@ def _marker_echoed(event: dict, marker: str) -> bool:
 
 
 def _marker_conflict(exchange: Exchange, event: dict) -> bool:
+    """Any recognized marker other than this request disqualifies the event.
+
+    A second field that matches does not cancel a conflicting field.
+    """
     if not exchange.request_marker:
         return False
-    values = _marker_values(event)
-    if not values:
-        return False
-    return exchange.request_marker not in values
+    return any(value != exchange.request_marker for value in _marker_values(event))
 
 
 def _is_our_echo(exchange: Exchange, event: dict) -> bool:
@@ -517,9 +523,11 @@ def attempt_evidence(
         return AttemptEvidence(EVIDENCE_APP_ERROR, f"status {stream_status}")
     if not body:
         return AttemptEvidence(EVIDENCE_UNDECIDED, "empty body")
+    if len(body) > 1024 * 1024 or _json_depth(body) > 32:
+        return AttemptEvidence(EVIDENCE_UNDECIDED, "body is not usable json")
     try:
         payload = json.loads(body)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError, ValueError, OverflowError):
         return AttemptEvidence(EVIDENCE_UNDECIDED, "body is not json")
     if not isinstance(payload, dict):
         return AttemptEvidence(EVIDENCE_UNDECIDED, "body is not an object")

@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 import pytest
 
@@ -24,7 +24,7 @@ from metamuse._muse_codec import (
     encode_noise_transport_frame,
     encode_unknown_kind_frame,
 )
-from metamuse._muse_http import AddressPin, CurlConnector, CurlHttp, CurlSocket, HttpResponse
+from metamuse._muse_http import CurlHttp, CurlSocket, HttpResponse, resolve_entries
 from metamuse._muse_link import (
     DEFAULT_COLLECT_TIMEOUT_S,
     MAX_COLLECT_FRAMES,
@@ -35,7 +35,7 @@ from metamuse._muse_link import (
     chunk_frame,
     response_frame,
 )
-from metamuse._muse_noise import finished_pair
+from metamuse._muse_noise import NoiseParty, finished_pair
 from metamuse.models import CoreError, ErrorCode, canonical_json
 from metamuse.muse import (
     EVIDENCE_ACKED,
@@ -51,22 +51,70 @@ from metamuse.muse import (
     Exchange,
     MuseProgrammingError,
     MuseTransport,
+    PreparedMuseRequest,
     close_muse_exchange,
     open_muse_discussion,
+    prepare_muse_request,
     read_muse_exchange,
     register_operations,
     submit_muse_exchange,
 )
+from metamuse.safety import CheckedURL
 
 SECRET = "supersecret"
+REVIEW_SECRET = "synthetic-review-secret-42"
 COOKIE = f"hatch_sess={SECRET}"
+PEER = "203.0.113.10"
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def checked_url(
+    url: str,
+    addresses: tuple[str, ...] = (PEER,),
+    *,
+    hostname: str | None = None,
+    port: int | None = None,
+    canonical: str | None = None,
+) -> CheckedURL:
+    parts = urlsplit(url)
+    return CheckedURL(
+        url=canonical if canonical is not None else url,
+        hostname=hostname if hostname is not None else (parts.hostname or ""),
+        port=port if port is not None else (parts.port or 443),
+        addresses=addresses,
+        purpose="request",
+    )
+
+
+class Token:
+    """One-use stand-in for the core token B10 will mint."""
+
+    def __init__(self, *, refuse: bool = False) -> None:
+        self.refuse = refuse
+        self.digests: list[str] = []
+        self.calls = 0
+
+    def consume(self, *, action_digest: str) -> None:
+        self.calls += 1
+        if self.refuse or self.calls > 1:
+            raise RuntimeError(f"authorization refused auth_token={REVIEW_SECRET}")
+        self.digests.append(action_digest)
+
+
+def mutation(route: str, body: dict | None, marker: str = "req-1") -> PreparedMuseRequest:
+    return prepare_muse_request(route, marker=marker, body=body)
+
+
+def assert_no_chain(exc: BaseException) -> None:
+    assert exc.__cause__ is None
+    assert exc.__context__ is None
 
 
 class MemoryEndpoint:
     def __init__(self) -> None:
         self.peer: MemoryEndpoint | None = None
         self.queue: queue.Queue[bytes | None] = queue.Queue()
+        self.peer_address = PEER
 
     def send(self, data: bytes) -> None:
         if self.peer is None:
@@ -146,16 +194,41 @@ class Credentials:
 
 
 class Guard:
-    def __init__(self, pin: AddressPin | None = None, log: list[str] | None = None) -> None:
-        self.pin = pin
+    def __init__(
+        self,
+        log: list[str] | None = None,
+        *,
+        result: CheckedURL | None | object = None,
+        addresses: tuple[str, ...] = (PEER,),
+        peer_reject: str | None = None,
+    ) -> None:
         self.log = log
+        self.result = result
+        self.addresses = addresses
+        self.peer_reject = peer_reject
+        self.return_none = False
+        self.boom = False
         self.seen: list[tuple[str, str]] = []
+        self.peers: list[str] = []
 
-    def allow(self, url: str, *, purpose: str) -> AddressPin | None:
+    def check(self, url: str, *, purpose: str) -> CheckedURL:
         self.seen.append((purpose, url))
         if self.log is not None:
             self.log.append("guard:" + purpose)
-        return self.pin
+        if self.boom:
+            raise RuntimeError(f"guard failed auth_token={REVIEW_SECRET}")
+        if self.return_none:
+            return None  # type: ignore[return-value]
+        if self.result is not None:
+            return self.result  # type: ignore[return-value]
+        return checked_url(url, self.addresses)
+
+    def verify_peer(self, checked: CheckedURL, peer_address: str) -> None:
+        self.peers.append(peer_address)
+        if self.peer_reject is not None and peer_address == self.peer_reject:
+            raise RuntimeError(f"peer rejected auth_token={REVIEW_SECRET}")
+        if peer_address not in checked.addresses:
+            raise RuntimeError(f"peer {peer_address} auth_token={REVIEW_SECRET}")
 
 
 class FakeHttp:
@@ -168,16 +241,15 @@ class FakeHttp:
         self.calls: list[dict] = []
         self.log = log
 
-    def request(self, method, url, *, headers, body, pins, timeout, proxy):
+    def request(self, method, url, *, headers, body, checked, timeout):
         self.calls.append(
             {
                 "method": method,
                 "url": url,
                 "headers": dict(headers),
                 "body": body,
-                "pins": pins,
+                "checked": checked,
                 "timeout": timeout,
-                "proxy": proxy,
             }
         )
         if self.log is not None:
@@ -186,11 +258,11 @@ class FakeHttp:
         if path in self.responses:
             return self.responses[path]
         if path == "/api/auth/check":
-            return HttpResponse(200, json.dumps({"access_token": SECRET}).encode(), {})
+            return HttpResponse(200, json.dumps({"access_token": SECRET}).encode(), {}, PEER)
         if path == "/api/session":
-            return HttpResponse(200, json.dumps({"vm_id": "vm1"}).encode(), {})
+            return HttpResponse(200, json.dumps({"vm_id": "vm1"}).encode(), {}, PEER)
         if path == "/api/hatch/token":
-            return HttpResponse(200, json.dumps({"token": SECRET}).encode(), {})
+            return HttpResponse(200, json.dumps({"token": SECRET}).encode(), {}, PEER)
         raise AssertionError(path)
 
 
@@ -200,15 +272,14 @@ class FakeConnector:
         self.log = log
         self.factory = factory
         self.urls: list[str] = []
-        self.pins: list[AddressPin | None] = []
-        self.proxies: list[str | None] = []
+        self.checked: list[CheckedURL] = []
         self.errors: list[BaseException] = []
+        self.threads: list[threading.Thread] = []
         self.thread: threading.Thread | None = None
 
-    def connect(self, url, *, pins, timeout, proxy):
+    def connect(self, url, *, checked, timeout):
         self.urls.append(url)
-        self.pins.append(pins)
-        self.proxies.append(proxy)
+        self.checked.append(checked)
         if self.log is not None:
             self.log.append("ws")
         client, server = duplex()
@@ -217,6 +288,7 @@ class FakeConnector:
         self.thread = threading.Thread(
             target=serve, args=(server, self.handler, self.errors), daemon=True
         )
+        self.threads.append(self.thread)
         self.thread.start()
         return client
 
@@ -225,6 +297,7 @@ class FailAfter:
     def __init__(self, inner: MemoryEndpoint, succeed: int) -> None:
         self.inner = inner
         self.left = succeed
+        self.peer_address = inner.peer_address
 
     def send(self, data: bytes) -> None:
         if self.left <= 0:
@@ -329,7 +402,7 @@ def test_defaults_refuse_before_any_io():
         connector=connector,
     )
     with pytest.raises(CoreError) as caught:
-        guarded.chat_stream({"text": "hello"}, external_submit=True)
+        guarded.chat_stream(mutation("chat.stream", {"text": "hello"}), authorization=Token())
     assert caught.value.detail.code == ErrorCode.SCOPE_REQUIRED
     assert connector.urls == []
 
@@ -356,7 +429,7 @@ def test_offline_and_missing_submit_do_not_connect():
     assert "offline" in caught.value.detail.message
     transport._network_mode = "live"
     with pytest.raises(CoreError) as caught:
-        transport.chat_stream({"text": "hello"})
+        transport.chat_stream(mutation("chat.stream", {"text": "hello"}), authorization=None)
     assert caught.value.detail.code == ErrorCode.SCOPE_REQUIRED
     assert "before_external_action" in (caught.value.detail.next_action or "")
     assert http.calls == []
@@ -366,15 +439,20 @@ def test_offline_and_missing_submit_do_not_connect():
 def test_handshake_and_serial_calls_use_monotonic_stream_ids():
     frames: list = []
     log: list[str] = []
-    pin = AddressPin(host="muse.ai", port=443, addresses=("203.0.113.10",))
     transport, http, guard, connector = build(
         handler=ok_frames(frames),
         log=log,
-        guard=Guard(pin=pin, log=log),
+        guard=Guard(log=log),
     )
     with transport:
-        started = transport.session_start({"title": "topic"}, external_submit=True)
-        sent = transport.chat_stream({"text": "hello muse"}, external_submit=True)
+        started = transport.session_start(
+            mutation("session.start", {"title": "topic"}, marker="start-1"),
+            authorization=Token(),
+        )
+        sent = transport.chat_stream(
+            mutation("chat.stream", {"text": "hello muse"}, marker="send-1"),
+            authorization=Token(),
+        )
         again = transport.sessions_list()
     assert connector.thread is not None
     connector.thread.join(2)
@@ -417,9 +495,10 @@ def test_handshake_and_serial_calls_use_monotonic_stream_ids():
     assert http.calls[0]["headers"]["Cookie"] == COOKIE
     assert "Authorization" not in http.calls[0]["headers"]
     assert http.calls[2]["headers"]["Authorization"] == f"Bearer {SECRET}"
-    assert http.calls[0]["pins"] == pin
-    assert connector.pins == [pin]
-    assert connector.proxies == [None]
+    assert http.calls[0]["checked"].hostname == "muse.ai"
+    assert http.calls[0]["checked"].addresses == (PEER,)
+    assert connector.checked[0].hostname == "hatch.metaaivm.com"
+    assert connector.checked[0].url.startswith("wss://")
     hatch = json.loads(http.calls[2]["body"])
     assert hatch["vmAddress"] == VM_ADDRESS_TEMPLATE.format(vm_id="vm1")
     assert connector.urls[0].startswith(HATCH_WSS_BASE + "?vm_id=vm1&auth_token=")
@@ -459,7 +538,11 @@ def test_session_start_timeout_is_unknown_and_does_not_create_another():
     transport, _http, _guard, connector = build(handler=handler)
     with transport:
         with pytest.raises(CoreError) as caught:
-            transport.session_start({"title": "topic"}, external_submit=True, timeout_s=0)
+            transport.session_start(
+                mutation("session.start", {"title": "topic"}),
+                authorization=Token(),
+                timeout_s=0,
+            )
         listed = transport.sessions_list()
     connector.thread.join(2)
     assert connector.errors == []
@@ -486,7 +569,11 @@ def test_chat_timeout_stays_uncertain_and_echo_promotes_without_a_second_send():
 
     transport, _http, _guard, connector = build(handler=handler)
     with transport:
-        silent = transport.chat_stream({"text": "hello muse"}, external_submit=True, timeout_s=0)
+        silent = transport.chat_stream(
+            mutation("chat.stream", {"text": "hello muse"}),
+            authorization=Token(),
+            timeout_s=0,
+        )
     connector.thread.join(2)
     assert connector.errors == []
     assert silent.bytes_handed_off is True
@@ -512,8 +599,8 @@ def test_chat_timeout_stays_uncertain_and_echo_promotes_without_a_second_send():
     }
     with other:
         promoted = other.chat_stream(
-            {"text": "hello muse"},
-            external_submit=True,
+            mutation("chat.stream", {"text": "hello muse"}, marker="req-1"),
+            authorization=Token(),
             timeout_s=0,
             exchange=exchange,
             events=[echo],
@@ -537,7 +624,10 @@ def test_app_error_stays_uncertain_until_this_echo():
 
     transport, _http, _guard, connector = build(handler=handler)
     with transport:
-        attempt = transport.chat_stream({"text": "hello muse"}, external_submit=True)
+        attempt = transport.chat_stream(
+            mutation("chat.stream", {"text": "hello muse"}),
+            authorization=Token(),
+        )
     connector.thread.join(2)
     assert connector.errors == []
     assert attempt.bytes_handed_off is True
@@ -545,7 +635,8 @@ def test_app_error_stays_uncertain_until_this_echo():
     assert attempt.state == SEND_UNCERTAIN
     assert len(frames) == 1
     assert_clean(attempt.evidence.detail + attempt.body.decode() + repr(attempt))
-    assert "auth_token=[redacted]" in attempt.evidence.detail
+    assert "supersecret" not in attempt.evidence.detail
+    assert "REDACTED" in attempt.evidence.detail or "redacted" in attempt.evidence.detail
 
     promoted_frames: list = []
 
@@ -570,8 +661,8 @@ def test_app_error_stays_uncertain_until_this_echo():
     }
     with other:
         promoted = other.chat_stream(
-            {"text": "hello muse"},
-            external_submit=True,
+            mutation("chat.stream", {"text": "hello muse"}, marker="req-1"),
+            authorization=Token(),
             exchange=exchange,
             events=[echo],
         )
@@ -588,7 +679,10 @@ def test_never_sent_is_failed_before_send():
         connector=FakeConnector(ok_frames(frames), factory=lambda inner: FailAfter(inner, 2)),
     )
     with transport:
-        attempt = transport.chat_stream({"text": "hello muse"}, external_submit=True)
+        attempt = transport.chat_stream(
+            mutation("chat.stream", {"text": "hello muse"}),
+            authorization=Token(),
+        )
     connector.thread.join(2)
     assert attempt.bytes_handed_off is False
     assert attempt.state == FAILED_BEFORE_SEND
@@ -613,7 +707,10 @@ def test_protocol_mismatch_after_handoff_does_not_resend():
 
         transport, _http, _guard, connector = build(handler=wrapped)
         with transport, pytest.raises(CoreError) as caught:
-            transport.chat_stream({"text": "hello"}, external_submit=True)
+            transport.chat_stream(
+                mutation("chat.stream", {"text": "hello"}),
+                authorization=Token(),
+            )
         connector.thread.join(2)
         assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH, name
         assert caught.value.detail.retry_class == "never"
@@ -626,13 +723,11 @@ def test_nonempty_handshake_payload_is_protocol_mismatch():
     class Attested:
         urls: list[str] = []
 
-        def connect(self, url, *, pins, timeout, proxy):
+        def connect(self, url, *, checked, timeout):
             self.urls.append(url)
             client, server = duplex()
 
             def run() -> None:
-                from metamuse._muse_noise import NoiseParty
-
                 party = NoiseParty("responder")
                 first = server.recv(5)
                 party.read(first or b"")
@@ -643,8 +738,12 @@ def test_nonempty_handshake_payload_is_protocol_mismatch():
 
     connector = Attested()
     transport, _http, _guard, _connector = build(handler=lambda frame: [], connector=connector)
-    with transport, pytest.raises(ProtocolMismatch, match="attested") as caught:
+    with transport, pytest.raises(CoreError) as caught:
         transport.sessions_list()
+    assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    assert caught.value.detail.retry_class == "never"
+    assert "attested" not in str(caught.value)
+    assert_no_chain(caught.value)
     assert_clean(str(caught.value))
 
 
@@ -665,12 +764,12 @@ def test_second_receive_loop_and_concurrent_call_are_rejected():
     release = threading.Event()
 
     class BlockingHttp(FakeHttp):
-        def request(self, method, url, *, headers, body, pins, timeout, proxy):
+        def request(self, method, url, *, headers, body, checked, timeout):
             if not started.is_set():
                 started.set()
                 assert release.wait(3)
             return super().request(
-                method, url, headers=headers, body=body, pins=pins, timeout=timeout, proxy=proxy
+                method, url, headers=headers, body=body, checked=checked, timeout=timeout
             )
 
     blocker = BlockingHttp()
@@ -713,8 +812,10 @@ def test_vm_unavailable_is_not_an_auth_failure():
     )
     http = FakeHttp(
         {
-            "/api/auth/check": HttpResponse(200, json.dumps({"access_token": SECRET}).encode(), {}),
-            "/api/session": HttpResponse(200, body, {}),
+            "/api/auth/check": HttpResponse(
+                200, json.dumps({"access_token": SECRET}).encode(), {}, PEER
+            ),
+            "/api/session": HttpResponse(200, body, {}, PEER),
         }
     )
     transport, http, _guard, connector = build(handler=ok_frames([]), http=http)
@@ -731,22 +832,24 @@ def test_auth_rate_limit_redirect_and_bad_vm_id():
     secret_body = b'{"error":"auth_token=supersecret"}'
     cases = [
         (
-            HttpResponse(401, secret_body, {}),
+            HttpResponse(401, secret_body, {}, PEER),
             ErrorCode.AUTH_REQUIRED,
             "user_action",
         ),
         (
-            HttpResponse(429, secret_body, {"Retry-After": "12"}),
+            HttpResponse(429, secret_body, {"Retry-After": "12"}, PEER),
             ErrorCode.RATE_LIMITED,
             "safe_read",
         ),
         (
-            HttpResponse(302, b"", {"Location": f"https://evil.example/?auth_token={SECRET}"}),
+            HttpResponse(
+                302, b"", {"Location": f"https://evil.example/?auth_token={SECRET}"}, PEER
+            ),
             ErrorCode.SCOPE_REQUIRED,
             "user_action",
         ),
         (
-            HttpResponse(503, secret_body, {}),
+            HttpResponse(503, secret_body, {}, PEER),
             ErrorCode.RESOURCE_UNAVAILABLE,
             "user_action",
         ),
@@ -767,8 +870,10 @@ def test_auth_rate_limit_redirect_and_bad_vm_id():
 
     http = FakeHttp(
         {
-            "/api/auth/check": HttpResponse(200, json.dumps({"access_token": SECRET}).encode(), {}),
-            "/api/session": HttpResponse(200, b'{"vm_id":"../evil"}', {}),
+            "/api/auth/check": HttpResponse(
+                200, json.dumps({"access_token": SECRET}).encode(), {}, PEER
+            ),
+            "/api/session": HttpResponse(200, b'{"vm_id":"../evil"}', {}, PEER),
         }
     )
     transport, _http, _guard, connector = build(handler=ok_frames([]), http=http)
@@ -781,7 +886,7 @@ def test_auth_rate_limit_redirect_and_bad_vm_id():
 
 def test_connector_errors_are_redacted():
     class Boom:
-        def connect(self, url, *, pins, timeout, proxy):
+        def connect(self, url, *, checked, timeout):
             raise RuntimeError(
                 f"failed {url} Authorization: Bearer {SECRET} cookie: hatch_sess={SECRET}"
             )
@@ -792,8 +897,9 @@ def test_connector_errors_are_redacted():
     assert caught.value.detail.code == ErrorCode.NETWORK_TIMEOUT
     rendered = str(caught.value)
     assert_clean(rendered)
-    assert "auth_token=[redacted]" in rendered
-    assert "Bearer [redacted]" in rendered
+    assert "Bearer" not in rendered
+    assert "failed wss" not in rendered
+    assert_no_chain(caught.value)
     assert_clean(repr(transport))
 
 
@@ -821,9 +927,8 @@ def test_missing_curl_and_noise_are_dependency_errors(monkeypatch):
             MUSE_ORIGIN + "/api/session",
             headers={},
             body=None,
-            pins=None,
+            checked=checked_url(MUSE_ORIGIN + "/api/session"),
             timeout=1,
-            proxy=None,
         )
     assert caught.value.detail.code == ErrorCode.DEPENDENCY_MISSING
     monkeypatch.setattr(builtins, "__import__", real_import)
@@ -847,83 +952,6 @@ def test_missing_curl_and_noise_are_dependency_errors(monkeypatch):
     connector.thread.join(2)
 
 
-def test_curl_adapter_arguments_do_not_use_the_environment(monkeypatch):
-    monkeypatch.setenv("https_proxy", "http://env-proxy.invalid:8080")
-    monkeypatch.setenv("HTTPS_PROXY", "http://env-proxy.invalid:8080")
-    monkeypatch.setenv("http_proxy", "http://env-proxy.invalid:8080")
-    captured: dict = {}
-
-    class FakeResponse:
-        status_code = 204
-        content = b""
-        headers: dict[str, str] = {}
-
-    class FakeSession:
-        def __init__(self, **kwargs):
-            captured["init"] = kwargs
-
-        def request(self, method, url, **kwargs):
-            captured["request"] = (method, url, kwargs)
-            return FakeResponse()
-
-        def close(self):
-            captured["closed"] = True
-
-    class FakeSocket:
-        def connect(self, url, **kwargs):
-            captured["connect"] = (url, kwargs)
-            return self
-
-    class FakeOpt:
-        PROXY = "PROXY"
-        RESOLVE = "RESOLVE"
-
-    monkeypatch.setattr(
-        "metamuse._muse_http.load_curl",
-        lambda: (FakeSession, FakeSocket, FakeOpt),
-    )
-    pin = AddressPin("muse.ai", 443, ("203.0.113.10", "2001:db8::1"))
-    CurlHttp().request(
-        "POST",
-        MUSE_ORIGIN + "/api/auth/check",
-        headers={"Cookie": COOKIE},
-        body=b"",
-        pins=pin,
-        timeout=20,
-        proxy=None,
-    )
-    assert captured["init"] == {"impersonate": "chrome", "verify": True, "trust_env": False}
-    _method, _url, kwargs = captured["request"]
-    assert kwargs["impersonate"] == "chrome"
-    assert kwargs["verify"] is True
-    assert kwargs["allow_redirects"] is False
-    assert "proxy" not in kwargs
-    assert "proxies" not in kwargs
-    assert kwargs["curl_options"][FakeOpt.PROXY] == b""
-    assert kwargs["curl_options"][FakeOpt.RESOLVE] == [
-        "muse.ai:443:203.0.113.10",
-        "muse.ai:443:[2001:db8::1]",
-    ]
-    assert "env-proxy" not in repr(kwargs)
-    CurlConnector().connect(
-        HATCH_WSS_BASE + f"?vm_id=vm1&auth_token={SECRET}",
-        pins=None,
-        timeout=20,
-        proxy=None,
-    )
-    _ws_url, ws_kwargs = captured["connect"]
-    assert ws_kwargs["impersonate"] == "chrome"
-    assert ws_kwargs["verify"] is True
-    assert ws_kwargs["allow_redirects"] is False
-    assert ws_kwargs["quote"] is False
-    assert "proxy" not in ws_kwargs
-    assert ws_kwargs["curl_options"][FakeOpt.PROXY] == b""
-    CurlConnector().connect(HATCH_WSS_BASE, pins=None, timeout=5, proxy="http://127.0.0.1:9")
-    _ws_url, ws_kwargs = captured["connect"]
-    assert ws_kwargs["proxy"] == "http://127.0.0.1:9"
-    assert FakeOpt.PROXY not in ws_kwargs["curl_options"]
-
-
 def test_curl_recv_with_zero_timeout_does_not_block():
     from curl_cffi.const import CurlECode
     from curl_cffi.curl import CurlError
@@ -933,7 +961,7 @@ def test_curl_recv_with_zero_timeout_does_not_block():
             raise CurlError("again", CurlECode.AGAIN)
 
     started = time.monotonic()
-    assert CurlSocket(Socket()).recv(0) is None
+    assert CurlSocket(Socket(), PEER).recv(0) is None
     assert time.monotonic() - started < 0.5
 
 
@@ -966,9 +994,9 @@ def test_collect_caps_deadline_and_single_consumer():
     loop = ReceiveLoop(link)
     with loop:
         stream_id = loop.open_request(verb="POST", path="/chat/stream", body=b"{}")
-        for _ in range(MAX_COLLECT_FRAMES + 1):
-            link.push(chunk_frame(stream_id, b"", end_body=False))
-        link.push(response_frame(stream_id, 200, b'{"ok":true}', end_body=True))
+        link.push(response_frame(stream_id, 200, b"", end_body=False))
+        for _ in range(MAX_COLLECT_FRAMES - 1):
+            link.push(chunk_frame(stream_id, b"x", end_body=False))
         with pytest.raises(IncompleteBody, match="frame budget") as caught:
             loop.collect(stream_id)
     assert caught.value.detail.code == ErrorCode.LIMIT_REACHED
@@ -1054,7 +1082,5 @@ def test_collect_caps_deadline_and_single_consumer():
 
 def test_empty_pins_are_refused():
     with pytest.raises(CoreError) as caught:
-        from metamuse._muse_http import resolve_entries
-
-        resolve_entries(AddressPin("muse.ai", 443, ()))
+        resolve_entries(checked_url("https://muse.ai/api/session", ()))
     assert caught.value.detail.code == ErrorCode.SCOPE_REQUIRED

@@ -40,7 +40,7 @@ SOFTWARE.
 | `src/metamuse/_muse_associate.py` | Same muse-cli behaviors as `spikes/muse/associate.py` | Production pure functions. The spike rules are unchanged. |
 | `src/metamuse/_muse_link.py` | `src/muse_cli/gateway.py` `_read_frame` and `Gateway.request` | Production receive loop. One owner. Injected monotonic deadline. 64-frame collect budget. |
 | `src/metamuse/_muse_noise.py` | `docs/PROTOCOL.md` and `src/muse_cli/gateway.py` initiator, empty payloads, pattern name | Uses `noiseprotocol`. Does not copy the client handshake. |
-| `src/metamuse/_muse_http.py` | `src/muse_cli/gateway.py` HTTPS helpers and `WebSocket.connect(..., verify=True)` | New `curl_cffi` adapter. `impersonate="chrome"`, `verify=True`, redirects off, env proxies disabled. Not a copy of `gateway.py`. |
+| `src/metamuse/_muse_http.py` | `src/muse_cli/gateway.py` HTTPS helpers and `WebSocket.connect(..., verify=True)` | New `curl_cffi` adapter. `impersonate="chrome"`, certifi CA bundle, hostname verification, redirects off, empty `CURLOPT_PROXY`, `CURLOPT_RESOLVE` for the checked hostname. Not a copy of `gateway.py`. |
 | `src/metamuse/muse.py` | `src/muse_cli/gateway.py` auth chain and the four routes in `routes.json` | Allowlisted transport and attempt evidence. No discussion lifecycle. `gateway.py` was not copied. |
 
 ## noiseprotocol
@@ -95,13 +95,16 @@ SOFTWARE.
 | certifi | 2026.7.22 | MPL-2.0. Wheel `LICENSE` (Mozilla CA bundle). | Runtime transitive of `curl_cffi`. |
 | protobuf | 7.36.2 | BSD-3-Clause | Not adopted. Used on 2026-10-13 to read upstream descriptors. B09 kept the hand-written codec and does not depend on this package. |
 | curl_cffi | 0.16.3 | MIT. `Copyright (c) 2018 multippt`. `Copyright (c) 2022 curl_cffi developers`. Wheel `LICENSE`. Home: https://github.com/lexiforest/curl_cffi | Adopted. Imported lazily by `src/metamuse/_muse_http.py`. Not vendored. |
-| libcurl | 8.21.0-IMPERSONATE | curl license (MIT-style). Version string `libcurl/8.21.0-IMPERSONATE` inside the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. Not a separate Python package. |
-| BoringSSL | version string not exposed | Google BoringSSL (OpenSSL license and ISC). Error strings in the same wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
-| nghttp2 | version string not exposed | MIT. Header path `nghttp2/nghttp2.h` and `nghttp2/%s` in the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
-| nghttp3 | version string not exposed | MIT. Header path `nghttp3/nghttp3.h` in the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
-| zlib | version string not exposed | zlib license. `zlibVersion` symbol in the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
-| brotli | version string not exposed | MIT. Header path `brotli/decode.h` and `brotli/%u.%u.%u` in the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
-| zstd | version string not exposed | BSD-3-Clause for the bundled build. Name appears beside zlib and brotli in the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| libcurl | 8.21.0-IMPERSONATE | curl license (MIT-style). `Curl().version()` prints `libcurl/8.21.0-IMPERSONATE`. | Statically linked in `curl_cffi/_wrapper.abi3.so`. Not a separate Python package. |
+| BoringSSL | numeric version not exposed | Google BoringSSL (OpenSSL license and ISC). The version string names BoringSSL and does not print a number. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| zlib | 1.3.1 | zlib license. `Copyright (C) 1995-2024 Jean-loup Gailly and Mark Adler`. `Curl().version()` prints `zlib/1.3.1`. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| brotli | 1.2.0 | MIT. `Curl().version()` prints `brotli/1.2.0`. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| zstd | 1.5.7 | BSD-3-Clause for the bundled build. `Curl().version()` prints `zstd/1.5.7`. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| libidn2 | 2.3.7 | The installed C library is dual-licensed LGPLv3+ or GPLv2+. The rest of the libidn2 package is GPLv3+. `Copyright (C) 2011-2024 Simon Josefsson`. `Curl().version()` prints `libidn2/2.3.7`. | Statically linked in `curl_cffi/_wrapper.abi3.so`. `readelf -d` lists no external libidn2. Not a system library. |
+| nghttp2 | 1.63.0 | MIT. `Curl().version()` prints `nghttp2/1.63.0`. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| ngtcp2 | 1.20.0 | MIT. `Copyright (c) 2016 ngtcp2 contributors`. `Curl().version()` prints `ngtcp2/1.20.0`. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| nghttp3 | 1.15.0 | MIT. `Curl().version()` prints `nghttp3/1.15.0`. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| Unicode data / gnulib unistring | version string not exposed | Unicode, Inc. Copyright 1991-2016, Unicode Terms of Use (Unicode-DFS-2016), as in libidn2 `COPYING.unicode` at tag v2.3.7. The wheel contains gnulib unistring symbols (`u8_*`, `u32_*`, `uc_*`, `uninorm_nfc`, `uninorm_nfd`) from libidn2's in-tree unistring replacement. | Bundled inside libidn2 in the same `.so`. No separate libunistring version is exposed. This notice does not invent one. |
 | websockets | 17.2 looked up, not selected | BSD-3-Clause | Not adopted. The gateway client is `curl_cffi` with a Chrome TLS fingerprint. |
 
 SQLite is used through the Python standard library when the store lands (B03). No separate notice pin.
@@ -130,7 +133,7 @@ Runtime dependencies:
 | cffi | 2.1.1 | MIT-0 | C foreign function interface (`cryptography` and `curl_cffi` dependency). |
 | click | 8.5.0 | BSD-3-Clause | Command-line interface toolkit (`uvicorn` dependency). |
 | cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Cryptographic primitives (`pyjwt[crypto]` dependency required by `mcp`; also the cryptographic backend of noiseprotocol). OpenSSL 4.0.3 inside the wheel. |
-| curl_cffi | 0.16.3 | MIT | HTTPS and WSS with `impersonate="chrome"` and `verify=True`. Imported only when the adapter runs. |
+| curl_cffi | 0.16.3 | MIT | HTTPS and WSS with `impersonate="chrome"`, the certifi CA bundle, and hostname verification. `curl_options` are set on the `Session` constructor. Imported only when the adapter runs. |
 | h11 | 0.16.0 | MIT | HTTP/1.1 protocol state machine (`httpcore2` and `uvicorn` dependency). |
 | httpcore2 | 2.13.1 | BSD-3-Clause | Low-level HTTP transport core (`httpx2` dependency). |
 | httpx2 | 2.13.1 | BSD-3-Clause | HTTP client library (`mcp` dependency). |

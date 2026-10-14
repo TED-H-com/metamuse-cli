@@ -170,6 +170,25 @@ def test_two_candidates_stay_ambiguous_across_polls():
     assert resolved.reply["message_id"] == "m-12"
 
 
+def test_m7_contradictory_markers_do_not_prove_delivery():
+    exchange = _exchange()
+    event = _user(
+        11,
+        request_marker="req-1",
+        payload={"client_request_id": "req-2", "display_text": exchange.sent_text},
+    )
+    assert user_echo(exchange, [event]) is None
+    state = delivery_state(
+        wrote_any_bytes=True,
+        stream_complete=False,
+        stream_status=None,
+        exchange=exchange,
+        events=[event],
+        body=None,
+    )
+    assert state == SEND_UNCERTAIN
+
+
 def test_conflicting_marker_beats_identical_text():
     exchange = _exchange()
     conflict = _user(11, **{"x-request-id": "req-2"})

@@ -5,11 +5,11 @@ unary calls on the four allowlisted routes, and the attempt evidence B10
 persists. Discussion lifecycle stays unimplemented until B10.
 
 Nothing in this module is sent unless the caller passes ``network_mode="live"``,
-a credential provider, and an outbound guard. Mutations also require
-``external_submit=True``, which B10 may set only after
-``step.before_external_action`` returns. This module cannot see that helper
-without changing the executor, so the flag is the precondition. See
-``docs/dev/MUSE.md``.
+a credential provider, and an outbound guard. Mutations also require a frozen
+:class:`PreparedMuseRequest` and a :class:`SubmitAuthorization` whose
+``consume`` is called once, before any byte is written, with
+``safety.action_digest``. B10 binds that protocol to the core token minted
+after ``before_external_action`` commits. See ``docs/dev/MUSE.md``.
 
 ``curl_cffi`` and ``noiseprotocol`` are imported by the adapter and the Noise
 party on first use, not at import time.
@@ -18,7 +18,9 @@ party on first use, not at import time.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import json
+import math
 import re
 import threading
 import time
@@ -26,6 +28,7 @@ import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Protocol
 
 from metamuse import models as m
@@ -56,9 +59,9 @@ from metamuse._muse_associate import (
     observe,
     user_echo,
 )
-from metamuse._muse_codec import Header, ProtocolMismatch, redact
+from metamuse._muse_codec import Header, ProtocolMismatch, json_depth, redact
 from metamuse._muse_http import (
-    AddressPin,
+    AUTH_RESPONSE_MAX_BYTES,
     Connector,
     CurlConnector,
     CurlHttp,
@@ -74,6 +77,7 @@ from metamuse._muse_link import (
 )
 from metamuse._muse_noise import NoiseParty, handshake_initiator
 from metamuse.models import CoreError, ErrorCode
+from metamuse.safety import CheckedURL, action_digest, redact_text
 
 if TYPE_CHECKING:
     from metamuse.app import AppContext
@@ -90,23 +94,30 @@ __all__ = [
     "HATCH_WSS_BASE",
     "MUSE_ORIGIN",
     "NONE",
+    "PACKET_MAX_UTF8_BYTES",
     "PREPARED",
     "PROGRESS",
+    "QUESTION_MAX_UTF8_BYTES",
     "REPLY_OBSERVED",
     "SEND_UNCERTAIN",
     "SENT",
     "SUBMITTING",
     "UNVERIFIED_UPSTREAM_COMPLETE",
     "VM_ADDRESS_TEMPLATE",
-    "AddressPin",
     "Association",
     "AttemptEvidence",
+    "CredentialProvider",
     "Exchange",
     "GatewayResult",
     "MuseProgrammingError",
+    "MuseProtocolStop",
+    "MuseStateUnknown",
     "MuseTransport",
     "ObservationMemory",
+    "OutboundGuard",
+    "PreparedMuseRequest",
     "StreamAttempt",
+    "SubmitAuthorization",
     "associate_reply",
     "attempt_evidence",
     "close_muse_exchange",
@@ -114,6 +125,7 @@ __all__ = [
     "normalize_event",
     "observe",
     "open_muse_discussion",
+    "prepare_muse_request",
     "read_muse_exchange",
     "redact",
     "register_operations",
@@ -126,15 +138,69 @@ MUSE_ORIGIN = "https://muse.ai"
 HATCH_WSS_BASE = "wss://hatch.metaaivm.com/v1/noise"
 VM_ADDRESS_TEMPLATE = "wss://{vm_id}.metaaivm.com/"
 
+QUESTION_MAX_UTF8_BYTES = 8192
+PACKET_MAX_UTF8_BYTES = 49152
+_QUESTION_KEYS = ("question", "text")
+_PACKET_KEYS = ("packet_text", "rendered_text")
+
 _VM_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _TOKEN = re.compile(r"^[A-Za-z0-9._~+/=-]{1,4096}$")
 _MARKER = re.compile(r"^[A-Za-z0-9._~-]{1,128}$")
 _HTTP_TIMEOUT_S = 20.0
+_JSON_DEPTH = 32
 _MUTATING = frozenset({"session.start", "chat.stream"})
 
 
 class MuseProgrammingError(RuntimeError):
     """A route or argument the transport refuses before any I/O."""
+
+
+class MuseStateUnknown(CoreError):
+    """A create was handed off and the result was not read back."""
+
+    def __init__(
+        self,
+        *,
+        request_marker: str,
+        outbound_digest: str,
+        stream_id: int | None,
+        bytes_handed_off: bool,
+    ) -> None:
+        super().__init__(
+            ErrorCode.EXTERNAL_STATE_UNKNOWN,
+            "session.start did not finish after the request was handed off",
+            next_action=(
+                "Reconcile with sessions.list by session_id. Do not start another session."
+            ),
+        )
+        self.request_marker = request_marker
+        self.outbound_digest = outbound_digest
+        self.stream_id = stream_id
+        self.bytes_handed_off = bytes_handed_off
+
+
+class MuseProtocolStop(CoreError):
+    """Protocol failure after a mutation handoff. Delivery stays unknown."""
+
+    def __init__(
+        self,
+        *,
+        request_marker: str,
+        outbound_digest: str,
+        stream_id: int | None,
+        bytes_handed_off: bool,
+        attempt: StreamAttempt | None = None,
+    ) -> None:
+        super().__init__(
+            ErrorCode.PROTOCOL_MISMATCH,
+            "Muse protocol failed after the request was handed off",
+            next_action="Stop. Delivery is unknown. Do not resend and do not weaken TLS.",
+        )
+        self.request_marker = request_marker
+        self.outbound_digest = outbound_digest
+        self.stream_id = stream_id
+        self.bytes_handed_off = bytes_handed_off
+        self.attempt = attempt
 
 
 class CredentialProvider(Protocol):
@@ -144,13 +210,28 @@ class CredentialProvider(Protocol):
 
 
 class OutboundGuard(Protocol):
-    """B08 URL policy. Called before every HTTPS and WSS request.
+    """B08 checked-URL seam. ``check`` never returns ``None``.
 
-    Return ``None`` to allow the URL as written, or an :class:`AddressPin`
-    the adapter must apply. Raise :class:`CoreError` to deny.
+    Transport purposes are ``auth.check``, ``session``, ``hatch.token``, and
+    ``wss.noise``. B10 maps every one of them to B08 ``purpose="request"``.
+    The ``wss`` scheme is validated by B10 on an equivalent HTTPS URL, then
+    restored on the :class:`CheckedURL` handed back here.
     """
 
-    def allow(self, url: str, *, purpose: str) -> AddressPin | None: ...
+    def check(self, url: str, *, purpose: str) -> CheckedURL: ...
+
+    def verify_peer(self, checked: CheckedURL, peer_address: str) -> None: ...
+
+
+class SubmitAuthorization(Protocol):
+    """One-use proof that the external-action boundary committed.
+
+    B10 binds this to the core ``ExternalActionToken``. The transport calls
+    ``consume`` once with ``action_digest(target, payload)`` and sends nothing
+    when that call fails. A bool or any object without ``consume`` is refused.
+    """
+
+    def consume(self, *, action_digest: str) -> None: ...
 
 
 @dataclass(frozen=True)
@@ -166,6 +247,178 @@ ROUTES: dict[str, _Route] = {
     "chat.stream": _Route("POST", "/chat/stream", True),
     "chat.history": _Route("GET", "/chat/history", False),
 }
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        frozen: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise MuseProgrammingError("prepared request keys must be strings")
+            frozen[key] = _freeze(item)
+        return MappingProxyType(frozen)
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    if value is None or isinstance(value, (str, bool)):
+        return value
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise MuseProgrammingError("prepared request has a non-finite number")
+        return value
+    raise MuseProgrammingError("prepared request value is not JSON")
+
+
+def _thaw(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _thaw(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return [_thaw(item) for item in value]
+    return value
+
+
+def _utf8_size(value: object) -> int | None:
+    if isinstance(value, str):
+        return len(value.encode("utf-8"))
+    return None
+
+
+def _limit_error() -> CoreError:
+    return CoreError(
+        ErrorCode.LIMIT_REACHED,
+        "Muse question or packet text exceeds the UTF-8 cap",
+        next_action="Shorten the question to 8192 bytes or the packet text to 49152 bytes",
+    )
+
+
+def _check_mapping_limits(value: Mapping[str, Any]) -> None:
+    _walk_limits(value, 0)
+
+
+def _walk_limits(value: Any, depth: int) -> None:
+    """Apply the SPEC text caps at every object, including nested item text."""
+    if depth > _JSON_DEPTH:
+        raise _error(
+            ErrorCode.PROTOCOL_MISMATCH,
+            "Muse JSON nesting is too deep",
+            next_action="Stop. Do not retry a damaged payload.",
+        )
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if key in _QUESTION_KEYS:
+                size = _utf8_size(item)
+                if size is not None and size > QUESTION_MAX_UTF8_BYTES:
+                    raise _limit_error()
+            if key in _PACKET_KEYS:
+                size = _utf8_size(item)
+                if size is not None and size > PACKET_MAX_UTF8_BYTES:
+                    raise _limit_error()
+            _walk_limits(item, depth + 1)
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _walk_limits(item, depth + 1)
+
+
+def _check_body_limits(body: bytes) -> None:
+    if not body:
+        return
+    if len(body) > AUTH_RESPONSE_MAX_BYTES and len(body) > PACKET_MAX_UTF8_BYTES + 1024:
+        # The gateway body itself must fit a single frame. The text caps are
+        # enforced on the fields; an enormous envelope is still refused here.
+        if len(body) > 1024 * 1024:
+            raise _limit_error()
+    parsed = _json_value(body)
+    if not isinstance(parsed, dict):
+        raise MuseProgrammingError("prepared body is not a JSON object")
+    _check_mapping_limits(parsed)
+
+
+def _json_value(body: bytes) -> Any:
+    if json_depth(body, limit=_JSON_DEPTH) > _JSON_DEPTH:
+        raise _error(
+            ErrorCode.PROTOCOL_MISMATCH,
+            "Muse JSON nesting is too deep",
+            next_action="Stop. Do not retry a damaged payload.",
+        )
+    try:
+        return json.loads(body)
+    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError, ValueError, OverflowError):
+        failure = _error(
+            ErrorCode.PROTOCOL_MISMATCH,
+            "Muse payload was not JSON",
+            next_action="Stop. Do not retry a damaged payload.",
+        )
+    else:
+        failure = None
+    if failure is not None:
+        raise failure
+    return None
+
+
+@dataclass(frozen=True)
+class PreparedMuseRequest:
+    """Immutable mutation built before authorization and before any I/O.
+
+    ``body`` is the exact gateway JSON. ``target`` and ``payload`` are what
+    ``action_digest`` covers. The marker is the caller's for both create and
+    send; the transport does not mint one after ``consume``.
+    """
+
+    route: str
+    verb: str
+    path: str
+    marker: str
+    body: bytes
+    target: Mapping[str, Any]
+    payload: Mapping[str, Any]
+
+    def __post_init__(self) -> None:
+        spec = ROUTES.get(self.route)
+        if spec is None or not spec.mutating or self.verb != spec.verb or self.path != spec.path:
+            raise MuseProgrammingError("prepared request does not match a Muse mutation")
+        if not isinstance(self.marker, str) or _MARKER.fullmatch(self.marker) is None:
+            raise MuseProgrammingError("request marker is not usable")
+        if not isinstance(self.body, (bytes, bytearray)):
+            raise MuseProgrammingError("prepared body must be bytes")
+        object.__setattr__(self, "body", bytes(self.body))
+        object.__setattr__(self, "target", _freeze(self.target))
+        object.__setattr__(self, "payload", _freeze(self.payload))
+        _check_mapping_limits(self.payload)
+        _check_body_limits(bytes(self.body))
+
+
+def prepare_muse_request(
+    route: str,
+    *,
+    marker: str,
+    body: Mapping[str, Any] | None = None,
+    target: Mapping[str, Any] | None = None,
+    payload: Mapping[str, Any] | None = None,
+) -> PreparedMuseRequest:
+    """Freeze a mutation. ``body`` bytes are canonical JSON of ``body``."""
+    spec = ROUTES.get(route)
+    if spec is None or not spec.mutating:
+        raise MuseProgrammingError(f"route {route!r} is not a Muse mutation")
+    document = dict(body or {})
+    try:
+        raw = m.canonical_json(document) if body is not None else b""
+    except ValueError:
+        raise MuseProgrammingError("request body is not a JSON object") from None
+    if payload is None:
+        payload = document
+    if target is None:
+        target = {"origin": MUSE_ORIGIN, "route": route}
+    return PreparedMuseRequest(
+        route=route,
+        verb=spec.verb,
+        path=spec.path,
+        marker=marker,
+        body=raw,
+        target=dict(target),
+        payload=payload,
+    )
 
 
 @dataclass(frozen=True)
@@ -202,11 +455,41 @@ class StreamAttempt:
     error_code: str | None = None
 
     def __repr__(self) -> str:
+        detail = redact(self.evidence.detail)
         return (
             f"StreamAttempt(state={self.state!r}, verdict={self.evidence.verdict!r}, "
             f"bytes_handed_off={self.bytes_handed_off!r}, stream_id={self.stream_id!r}, "
-            f"error_code={self.error_code!r}, detail={redact(self.evidence.detail)!r})"
+            f"error_code={self.error_code!r}, detail={detail!r})"
         )
+
+
+class _Secrets:
+    """Ephemeral values seen on this call. Cleared before the call returns."""
+
+    def __init__(self) -> None:
+        self._values: list[str] = []
+
+    def add(self, value: object) -> None:
+        if isinstance(value, str) and len(value) >= 4 and value not in self._values:
+            self._values.append(value)
+
+    def text(self, value: str) -> str:
+        # A bracketed placeholder makes B08's assignment matcher drop the closer.
+        for secret in self._values:
+            if secret and secret in value:
+                value = value.replace(secret, "redacted")
+        cleaned, _findings = redact_text(value)
+        return cleaned
+
+    def body(self, raw: bytes) -> bytes:
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return b""
+        return self.text(text).encode("utf-8")
+
+    def clear(self) -> None:
+        self._values.clear()
 
 
 def _error(
@@ -216,15 +499,122 @@ def _error(
     next_action: str | None = None,
     retry_after: float = 0,
 ) -> CoreError:
-    return CoreError(code, redact(message), next_action=next_action, retry_after=retry_after)
+    return CoreError(code, message, next_action=next_action, retry_after=retry_after)
 
 
-def _public_body(body: bytes) -> bytes:
-    try:
-        text = body.decode("utf-8")
-    except UnicodeDecodeError:
-        return body
-    return redact(text).encode("utf-8")
+def _raise_if(error: CoreError | None) -> None:
+    if error is not None:
+        raise error
+
+
+# Messages the transport and the curl adapter already fixed. A caught provider
+# error is re-raised as one of these, outside the handler, so its text and
+# traceback chain are not the public error.
+_PUBLIC_ERRORS: dict[str, tuple[ErrorCode, str]] = {
+    "Outbound peer was rejected": (
+        ErrorCode.SCOPE_REQUIRED,
+        "Do not accept a response from an address outside the pin.",
+    ),
+    "Outbound peer was not available": (
+        ErrorCode.SCOPE_REQUIRED,
+        "Do not accept a response until the peer address matches the pin.",
+    ),
+    "Outbound pin does not match the requested URL": (
+        ErrorCode.SCOPE_REQUIRED,
+        "Pin the canonical hostname. Do not pin a different host.",
+    ),
+    "Outbound host must stay a hostname": (
+        ErrorCode.SCOPE_REQUIRED,
+        "Keep Host and SNI on the hostname. Do not substitute an IP.",
+    ),
+    "Pinned addresses were empty": (
+        ErrorCode.SCOPE_REQUIRED,
+        "Return at least one address from the outbound guard",
+    ),
+    "Muse gateway URL is not a wss URL": (
+        ErrorCode.SCOPE_REQUIRED,
+        "Use the hatch WebSocket endpoint.",
+    ),
+    "curl_cffi is not installed": (
+        ErrorCode.DEPENDENCY_MISSING,
+        "Install the pinned curl_cffi package. Do not add websockets.",
+    ),
+    "curl_cffi API is not the pinned shape": (
+        ErrorCode.DEPENDENCY_MISSING,
+        "Install curl_cffi==0.16.3. Do not retry this process.",
+    ),
+    "noiseprotocol is not installed": (
+        ErrorCode.DEPENDENCY_MISSING,
+        "Install the pinned noiseprotocol package. Do not hand-roll Noise.",
+    ),
+    "certifi is not installed": (
+        ErrorCode.DEPENDENCY_MISSING,
+        "Install the pinned certifi bundle. Do not trust an environment CA path.",
+    ),
+    "certifi did not provide a CA bundle": (
+        ErrorCode.DEPENDENCY_MISSING,
+        "Install the pinned certifi bundle.",
+    ),
+    "Muse auth response exceeded the size cap": (
+        ErrorCode.LIMIT_REACHED,
+        "Stop. Do not parse an oversized auth response.",
+    ),
+    "Muse HTTPS request failed": (
+        ErrorCode.NETWORK_TIMEOUT,
+        "Retry the auth request. No gateway frame was handed off.",
+    ),
+}
+
+_PUBLIC_CODES: dict[ErrorCode, tuple[str, str]] = {
+    ErrorCode.DEPENDENCY_MISSING: (
+        "A Muse dependency is not available",
+        "Install the pinned curl_cffi and noiseprotocol packages.",
+    ),
+    ErrorCode.PROTOCOL_MISMATCH: (
+        "Muse protocol failed",
+        "Stop. Do not retry this frame or weaken TLS.",
+    ),
+    ErrorCode.SCOPE_REQUIRED: (
+        "Outbound connection was refused",
+        "Approve the Muse URL through the outbound guard.",
+    ),
+    ErrorCode.LIMIT_REACHED: (
+        "Muse auth response exceeded the size cap",
+        "Stop. Do not parse an oversized auth response.",
+    ),
+    ErrorCode.NETWORK_TIMEOUT: (
+        "Muse connection failed",
+        "Retry the connection. No gateway request frame was sent.",
+    ),
+    ErrorCode.AUTH_REQUIRED: (
+        "Muse credentials are unavailable",
+        "Refresh the operator cookie jar for this auth_ref",
+    ),
+}
+
+
+def _sanitize_transport_error(exc: CoreError) -> CoreError:
+    """Fixed public error. The provider text is not copied."""
+    known = _PUBLIC_ERRORS.get(exc.detail.message)
+    if known is not None:
+        code, action = known
+        return _error(code, exc.detail.message, next_action=action)
+    fallback = _PUBLIC_CODES.get(exc.detail.code)
+    if fallback is not None:
+        message, action = fallback
+        return _error(exc.detail.code, message, next_action=action)
+    return _error(
+        ErrorCode.NETWORK_TIMEOUT,
+        "Muse connection failed",
+        next_action="Retry the connection. No gateway request frame was sent.",
+    )
+
+
+def _emit(value: GatewayResult | StreamAttempt | BaseException) -> GatewayResult | StreamAttempt:
+    """Raise a sanitized error outside the handler that built it."""
+    if isinstance(value, BaseException):
+        raise value
+    return value
 
 
 def _digest(raw: bytes) -> str:
@@ -233,20 +623,22 @@ def _digest(raw: bytes) -> str:
 
 def _retry_after(headers: Mapping[str, str]) -> float:
     for key, value in headers.items():
-        if key.lower() == "retry-after" and value.isdigit():
+        if str(key).lower() != "retry-after":
+            continue
+        if isinstance(value, str) and len(value) <= 6 and value.isdigit():
             return float(int(value))
+        return 0
     return 0
 
 
 def _json_object(body: bytes) -> dict[str, Any]:
-    try:
-        value = json.loads(body)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+    if len(body) > AUTH_RESPONSE_MAX_BYTES:
         raise _error(
-            ErrorCode.PROTOCOL_MISMATCH,
-            "Muse HTTPS response was not JSON",
-            next_action="Stop. Do not retry a damaged auth response.",
-        ) from None
+            ErrorCode.LIMIT_REACHED,
+            "Muse auth response exceeded the size cap",
+            next_action="Stop. Do not parse an oversized auth response.",
+        )
+    value = _json_value(body)
     if not isinstance(value, dict):
         raise _error(
             ErrorCode.PROTOCOL_MISMATCH,
@@ -256,19 +648,22 @@ def _json_object(body: bytes) -> dict[str, Any]:
     return value
 
 
+def _budget(timeout_s: float) -> float:
+    if (
+        isinstance(timeout_s, bool)
+        or not isinstance(timeout_s, (int, float))
+        or not math.isfinite(timeout_s)
+        or timeout_s < 0
+        or timeout_s > DEFAULT_COLLECT_TIMEOUT_S
+    ):
+        raise MuseProgrammingError("collect timeout exceeds the cap")
+    return float(timeout_s)
+
+
 def _wss_url(vm_id: str, token: str) -> str:
     quoted_vm = urllib.parse.quote(vm_id, safe="")
     quoted = urllib.parse.quote(token, safe="")
     return f"{HATCH_WSS_BASE}?vm_id={quoted_vm}&auth_token={quoted}"
-
-
-def _request_bytes(payload: dict | None) -> bytes:
-    if payload is None:
-        return b""
-    try:
-        return m.canonical_json(payload)
-    except ValueError:
-        raise MuseProgrammingError("request body is not a JSON object") from None
 
 
 def _apply_query(path: str, query: Mapping[str, Any]) -> str:
@@ -280,18 +675,20 @@ def _apply_query(path: str, query: Mapping[str, Any]) -> str:
     return path + "?" + urllib.parse.urlencode(clean)
 
 
-def _exchange_for(body: dict | None, marker: str, exchange: Exchange | None) -> Exchange:
+def _exchange_for(
+    body: Mapping[str, Any] | None, marker: str, exchange: Exchange | None
+) -> Exchange:
     if exchange is not None:
         return exchange
     text = ""
-    if isinstance(body, dict):
+    if isinstance(body, Mapping):
         items = body.get("items")
-        if isinstance(items, list) and items and isinstance(items[0], dict):
+        if isinstance(items, tuple) and items and isinstance(items[0], Mapping):
             raw_text = items[0].get("text")
             if isinstance(raw_text, str):
                 text = raw_text
         elif isinstance(body.get("text"), str):
-            text = body["text"]
+            text = str(body["text"])
     return Exchange(session_id="", baseline_seq=0, sent_text=text, request_marker=marker)
 
 
@@ -300,8 +697,8 @@ class MuseTransport:
 
     Defaults refuse. ``network_mode="offline"`` refuses with ``E_SCOPE_DENIED``.
     A missing credential provider refuses with ``E_AUTH_REQUIRED``. A missing
-    outbound guard refuses with ``E_SCOPE_REQUIRED``. ``session.start`` and
-    ``chat.stream`` also refuse until ``external_submit`` is true.
+    outbound guard refuses with ``E_SCOPE_REQUIRED``. Mutations refuse until
+    ``consume`` succeeds on the caller's authorization.
     """
 
     def __init__(
@@ -316,6 +713,12 @@ class MuseTransport:
         connector: Connector | None = None,
         proxy: str | None = None,
     ) -> None:
+        if proxy is not None:
+            raise _error(
+                ErrorCode.SCOPE_REQUIRED,
+                "Explicit proxies are not available",
+                next_action="Connect directly. No guard-validated proxy exists.",
+            )
         self._auth_ref = auth_ref
         self._credentials = credentials
         self._guard = guard
@@ -323,9 +726,9 @@ class MuseTransport:
         self._network_mode = network_mode
         self._http = http if http is not None else CurlHttp()
         self._connector = connector if connector is not None else CurlConnector()
-        self._proxy = proxy
         self._lock = threading.Lock()
         self._loop: ReceiveLoop | None = None
+        self._secrets = _Secrets()
 
     def __repr__(self) -> str:
         return (
@@ -340,6 +743,13 @@ class MuseTransport:
         self.close()
 
     def close(self) -> None:
+        self._lock.acquire()
+        try:
+            self._close_locked()
+        finally:
+            self._lock.release()
+
+    def _close_locked(self) -> None:
         loop = self._loop
         self._loop = None
         if loop is None:
@@ -349,15 +759,15 @@ class MuseTransport:
 
     def session_start(
         self,
-        body: dict[str, Any],
+        prepared: PreparedMuseRequest,
         *,
-        external_submit: bool = False,
+        authorization: SubmitAuthorization,
         timeout_s: float = DEFAULT_COLLECT_TIMEOUT_S,
     ) -> GatewayResult:
         result = self.call(
             "session.start",
-            body=body,
-            external_submit=external_submit,
+            prepared=prepared,
+            authorization=authorization,
             timeout_s=timeout_s,
         )
         if not isinstance(result, GatewayResult):
@@ -389,17 +799,17 @@ class MuseTransport:
 
     def chat_stream(
         self,
-        body: dict[str, Any],
+        prepared: PreparedMuseRequest,
         *,
-        external_submit: bool = False,
+        authorization: SubmitAuthorization,
         timeout_s: float = DEFAULT_COLLECT_TIMEOUT_S,
         exchange: Exchange | None = None,
         events: list[dict[str, Any]] | None = None,
     ) -> StreamAttempt:
         result = self.call(
             "chat.stream",
-            body=body,
-            external_submit=external_submit,
+            prepared=prepared,
+            authorization=authorization,
             timeout_s=timeout_s,
             exchange=exchange,
             events=events,
@@ -412,9 +822,9 @@ class MuseTransport:
         self,
         route: str,
         *,
-        body: dict[str, Any] | None = None,
+        prepared: PreparedMuseRequest | None = None,
+        authorization: SubmitAuthorization | None = None,
         query: Mapping[str, Any] | None = None,
-        external_submit: bool = False,
         timeout_s: float = DEFAULT_COLLECT_TIMEOUT_S,
         exchange: Exchange | None = None,
         events: list[dict[str, Any]] | None = None,
@@ -422,27 +832,51 @@ class MuseTransport:
         spec = ROUTES.get(route)
         if spec is None:
             raise MuseProgrammingError(f"route {route!r} is not on the Muse allowlist")
-        self._ready(spec, external_submit=external_submit)
-        marker = self._marker(exchange)
-        self._validate_body(spec, body, query)
+        timeout_s = _budget(timeout_s)
+        self._ready()
+        if spec.mutating:
+            if not isinstance(prepared, PreparedMuseRequest) or prepared.route != route:
+                raise MuseProgrammingError("mutation requires a prepared request for this route")
+            if (
+                exchange is not None
+                and exchange.request_marker
+                and exchange.request_marker != prepared.marker
+            ):
+                raise MuseProgrammingError("exchange marker does not match the prepared request")
+            self._authorize(authorization, prepared)
+            marker = prepared.marker
+            raw = prepared.body
+            payload: Mapping[str, Any] | None = prepared.payload
+        else:
+            if prepared is not None or authorization is not None:
+                raise MuseProgrammingError("reads do not take a mutation authorization")
+            marker = str(uuid.uuid4())
+            raw = b""
+            payload = None
         if not self._lock.acquire(blocking=False):
             raise ProtocolMismatch("concurrent collection")
+        self._secrets = _Secrets()
         try:
             self._connect()
             return self._unary(
                 route,
                 spec,
-                body=body,
-                query=query,
+                raw=raw,
+                path=(
+                    prepared.path if prepared is not None else _apply_query(spec.path, query or {})
+                ),
+                verb=prepared.verb if prepared is not None else spec.verb,
                 timeout_s=timeout_s,
                 exchange=exchange,
                 events=events,
                 marker=marker,
+                payload=payload,
             )
         finally:
+            self._secrets.clear()
             self._lock.release()
 
-    def _ready(self, spec: _Route, *, external_submit: bool) -> None:
+    def _ready(self) -> None:
         if self._network_mode == "offline":
             raise _error(
                 ErrorCode.SCOPE_DENIED,
@@ -451,17 +885,11 @@ class MuseTransport:
             )
         if self._network_mode != "live":
             raise MuseProgrammingError("network_mode must be offline or live")
-        if self._credentials is None:
+        if self._credentials is None or not self._auth_ref:
             raise _error(
                 ErrorCode.AUTH_REQUIRED,
                 "No credential provider is configured",
                 next_action="Inject a credential provider that returns the cookie jar for auth_ref",
-            )
-        if not self._auth_ref:
-            raise _error(
-                ErrorCode.AUTH_REQUIRED,
-                "auth_ref is required",
-                next_action="Pass the opaque auth_ref from the discussion row",
             )
         if self._guard is None:
             raise _error(
@@ -469,15 +897,32 @@ class MuseTransport:
                 "No outbound URL guard is configured",
                 next_action="Inject an outbound URL guard before any Muse request",
             )
-        if spec.mutating and not external_submit:
+
+    def _authorize(self, authorization: object, prepared: PreparedMuseRequest) -> None:
+        consume = getattr(authorization, "consume", None)
+        if authorization is None or isinstance(authorization, bool) or not callable(consume):
             raise _error(
                 ErrorCode.SCOPE_REQUIRED,
-                "Muse mutations require the external-action boundary",
+                "Muse mutations require a submit authorization",
                 next_action=(
-                    "Call before_external_action and pass external_submit=True "
-                    "only after it returns"
+                    "Call before_external_action and pass the committed token. "
+                    "Do not pass a boolean."
                 ),
             )
+        digest = action_digest(_thaw(prepared.target), _thaw(prepared.payload))
+        failure: CoreError | None = None
+        try:
+            consume(action_digest=digest)
+        except Exception:
+            failure = _error(
+                ErrorCode.SCOPE_REQUIRED,
+                "Submit authorization was refused",
+                next_action="Mint a new token only after a new committed boundary.",
+            )
+        _raise_if(failure)
+
+    def _remember(self, value: object) -> None:
+        self._secrets.add(value)
 
     def _cookie_jar(self) -> str:
         provider = self._credentials
@@ -487,14 +932,104 @@ class MuseTransport:
                 "No credential provider is configured",
                 next_action="Inject a credential provider that returns the cookie jar for auth_ref",
             )
-        jar = provider.cookies(self._auth_ref)
-        if not isinstance(jar, str) or not jar or "\r" in jar or "\n" in jar:
+        failure: CoreError | None = None
+        jar = ""
+        try:
+            jar = provider.cookies(self._auth_ref)
+        except Exception:
+            failure = _error(
+                ErrorCode.AUTH_REQUIRED,
+                "Muse credentials are unavailable",
+                next_action="Refresh the operator cookie jar for this auth_ref",
+            )
+            jar = ""
+        _raise_if(failure)
+        if (
+            not isinstance(jar, str)
+            or not jar
+            or any(ord(char) < 0x20 or ord(char) == 0x7F for char in jar)
+        ):
             raise _error(
                 ErrorCode.AUTH_REQUIRED,
                 "Credential jar is not usable",
-                next_action="Return one cookie header value with no line breaks",
+                next_action="Return one cookie header value with no control characters",
             )
+        self._remember(jar)
         return jar
+
+    def _check_url(self, url: str, purpose: str) -> CheckedURL:
+        guard = self._guard
+        if guard is None:
+            raise _error(
+                ErrorCode.SCOPE_REQUIRED,
+                "No outbound URL guard is configured",
+                next_action="Inject an outbound URL guard before any Muse request",
+            )
+        failure: CoreError | None = None
+        checked: CheckedURL | None = None
+        try:
+            checked = guard.check(url, purpose=purpose)
+        except Exception:
+            failure = _error(
+                ErrorCode.SCOPE_REQUIRED,
+                "Outbound URL check failed",
+                next_action="Approve the Muse URL through the outbound guard",
+            )
+        _raise_if(failure)
+        if not isinstance(checked, CheckedURL) or not checked.addresses:
+            raise _error(
+                ErrorCode.SCOPE_REQUIRED,
+                "Outbound URL check did not return pinned addresses",
+                next_action="Return the canonical URL and at least one address",
+            )
+        requested = urllib.parse.urlsplit(url)
+        req_host = (requested.hostname or "").rstrip(".").lower()
+        req_port = requested.port or (443 if requested.scheme in {"https", "wss"} else 80)
+        canonical = urllib.parse.urlsplit(checked.url)
+        if (
+            checked.hostname.lower() != req_host
+            or checked.port != req_port
+            or canonical.scheme != requested.scheme
+            or (canonical.hostname or "").lower() != req_host
+        ):
+            raise _error(
+                ErrorCode.SCOPE_REQUIRED,
+                "Outbound pin does not match the requested URL",
+                next_action="Pin the canonical hostname. Do not pin a different host.",
+            )
+        try:
+            ipaddress.ip_address(checked.hostname)
+        except ValueError:
+            ip_host = False
+        else:
+            ip_host = True
+        if ip_host:
+            raise _error(
+                ErrorCode.SCOPE_REQUIRED,
+                "Outbound host must stay a hostname",
+                next_action="Keep Host and SNI on the hostname. Do not substitute an IP.",
+            )
+        return checked
+
+    def _verify_peer(self, checked: CheckedURL, peer: str) -> None:
+        guard = self._guard
+        if guard is None or not isinstance(peer, str) or not peer:
+            failure = _error(
+                ErrorCode.SCOPE_REQUIRED,
+                "Outbound peer was not available",
+                next_action="Do not accept a response until the peer address matches the pin.",
+            )
+        else:
+            failure = None
+            try:
+                guard.verify_peer(checked, peer)
+            except Exception:
+                failure = _error(
+                    ErrorCode.SCOPE_REQUIRED,
+                    "Outbound peer was rejected",
+                    next_action="Do not accept a response from an address outside the pin.",
+                )
+        _raise_if(failure)
 
     def _https(
         self,
@@ -506,15 +1041,8 @@ class MuseTransport:
         purpose: str,
         bearer: str | None = None,
     ) -> dict[str, Any]:
-        guard = self._guard
-        if guard is None:
-            raise _error(
-                ErrorCode.SCOPE_REQUIRED,
-                "No outbound URL guard is configured",
-                next_action="Inject an outbound URL guard before any Muse request",
-            )
         url = MUSE_ORIGIN + path
-        pin = guard.allow(url, purpose=purpose)
+        checked = self._check_url(url, purpose)
         headers = {
             "Origin": MUSE_ORIGIN,
             "Referer": MUSE_ORIGIN + "/",
@@ -527,15 +1055,29 @@ class MuseTransport:
         }
         if bearer is not None:
             headers["Authorization"] = f"Bearer {bearer}"
-        response = self._http.request(
-            method,
-            url,
-            headers=headers,
-            body=body,
-            pins=pin,
-            timeout=_HTTP_TIMEOUT_S,
-            proxy=self._proxy,
-        )
+        failure: CoreError | None = None
+        response: HttpResponse | None = None
+        try:
+            response = self._http.request(
+                method,
+                checked.url,
+                headers=headers,
+                body=body,
+                checked=checked,
+                timeout=_HTTP_TIMEOUT_S,
+            )
+        except CoreError as exc:
+            failure = _sanitize_transport_error(exc)
+        except Exception:
+            failure = _error(
+                ErrorCode.NETWORK_TIMEOUT,
+                "Muse HTTPS request failed",
+                next_action="Retry the auth request. No gateway frame was handed off.",
+            )
+        _raise_if(failure)
+        if response is None:
+            raise MuseProgrammingError("https request did not return")
+        self._verify_peer(checked, response.peer)
         return self._read_https(path, response)
 
     def _read_https(self, path: str, response: HttpResponse) -> dict[str, Any]:
@@ -556,7 +1098,7 @@ class MuseTransport:
                 next_action="Wait and retry this read. Do not resend a handed-off chat.",
                 retry_after=_retry_after(response.headers),
             )
-        if status in (401, 403):
+        if status in (401, 403) or status != 200 and status < 500:
             raise _error(
                 ErrorCode.AUTH_REQUIRED,
                 "Muse authentication failed",
@@ -585,7 +1127,8 @@ class MuseTransport:
                     "Muse authentication response did not include a usable token",
                     next_action="Refresh the operator cookie jar for this auth_ref",
                 )
-            return payload
+            self._remember(token)
+            return {"access_token": token}
         if path == "/api/hatch/token":
             token = payload.get("token")
             if not isinstance(token, str) or _TOKEN.fullmatch(token) is None:
@@ -594,7 +1137,8 @@ class MuseTransport:
                     "Muse hatch response did not include a usable token",
                     next_action="Refresh the operator cookie jar for this auth_ref",
                 )
-            return payload
+            self._remember(token)
+            return {"token": token}
         raise MuseProgrammingError("unexpected Muse HTTPS path")
 
     def _session_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
@@ -611,7 +1155,7 @@ class MuseTransport:
                 "Muse session vm_id was not usable",
                 next_action="Stop. Do not dial a host derived from vm_id.",
             )
-        return payload
+        return {"vm_id": vm_id}
 
     def _connect(self) -> None:
         if self._loop is not None:
@@ -633,18 +1177,13 @@ class MuseTransport:
             bearer=access,
         )
         url = _wss_url(vm_id, hatch["token"])
-        guard = self._guard
-        if guard is None:
-            raise _error(
-                ErrorCode.SCOPE_REQUIRED,
-                "No outbound URL guard is configured",
-                next_action="Inject an outbound URL guard before any Muse request",
-            )
-        pin = guard.allow(url, purpose="wss.noise")
-        raw = None
+        checked = self._check_url(url, "wss.noise")
+        raw: Any = None
         loop: ReceiveLoop | None = None
+        failure: CoreError | None = None
         try:
-            raw = self._connector.connect(url, pins=pin, timeout=_HTTP_TIMEOUT_S, proxy=self._proxy)
+            raw = self._connector.connect(checked.url, checked=checked, timeout=_HTTP_TIMEOUT_S)
+            self._verify_peer(checked, str(getattr(raw, "peer_address", "")))
             party = NoiseParty("initiator")
             owned = OwnedLink(raw)
             loop = ReceiveLoop(owned, noise=party, clock=self._clock)
@@ -656,27 +1195,30 @@ class MuseTransport:
                 clock=self._clock,
             )
         except IncompleteBody:
-            self._drop(loop, raw)
-            raise _error(
+            failure = _error(
                 ErrorCode.NETWORK_TIMEOUT,
                 "Muse handshake timed out",
                 next_action="Retry the connection. No gateway request frame was sent.",
-            ) from None
+            )
         except ProtocolMismatch:
-            self._drop(loop, raw)
-            raise
-        except CoreError:
-            self._drop(loop, raw)
-            raise
-        except Exception as exc:
-            self._drop(loop, raw)
-            raise _error(
+            failure = _error(
+                ErrorCode.PROTOCOL_MISMATCH,
+                "Muse handshake failed",
+                next_action="Stop. Do not retry this handshake or weaken TLS.",
+            )
+        except CoreError as exc:
+            failure = _sanitize_transport_error(exc)
+        except Exception:
+            failure = _error(
                 ErrorCode.NETWORK_TIMEOUT,
-                redact(str(exc)),
+                "Muse handshake failed",
                 next_action="Retry the connection. No gateway request frame was sent.",
-            ) from None
+            )
         else:
             self._loop = loop
+            return
+        self._drop(loop, raw)
+        _raise_if(failure)
 
     def _drop(self, loop: ReceiveLoop | None, raw: Any) -> None:
         if loop is not None:
@@ -691,20 +1233,15 @@ class MuseTransport:
         route: str,
         spec: _Route,
         *,
-        body: dict[str, Any] | None,
-        query: Mapping[str, Any] | None,
+        raw: bytes,
+        path: str,
+        verb: str,
         timeout_s: float,
         exchange: Exchange | None,
         events: list[dict[str, Any]] | None,
         marker: str,
+        payload: Mapping[str, Any] | None,
     ) -> GatewayResult | StreamAttempt:
-        payload = body
-        query_items = dict(query or {})
-        if spec.verb == "GET" and payload is not None and not query_items:
-            query_items = dict(payload)
-            payload = None
-        path = _apply_query(spec.path, query_items)
-        raw = _request_bytes(payload)
         headers = [Header("x-request-id", marker)]
         if raw:
             headers.append(Header("content-type", "application/json"))
@@ -712,68 +1249,156 @@ class MuseTransport:
         if loop is None:
             raise MuseProgrammingError("gateway connection is not open")
         stream_id: int | None = None
+        result: GatewayResult | StreamAttempt | BaseException
         try:
-            stream_id = loop.open_request(verb=spec.verb, path=path, body=raw, headers=headers)
+            stream_id = loop.open_request(verb=verb, path=path, body=raw, headers=headers)
             status, response_body = loop.collect(stream_id, timeout_s=timeout_s)
         except IncompleteBody as exc:
-            return self._incomplete(route, exc, loop, marker, raw, body, exchange, events)
-        except ProtocolMismatch as exc:
-            raise self._protocol(route, exc, loop) from None
-        except SendUncertain as exc:
-            return self._after_uncertain_send(route, exc, loop, marker, raw, body, exchange, events)
-        except CoreError:
-            raise
-        except Exception as exc:
-            if route == "chat.stream" and not loop.handed_off:
-                return self._never_sent(marker, raw, redact(str(exc)))
-            raise _error(
-                ErrorCode.NETWORK_TIMEOUT,
-                redact(str(exc)),
-                next_action="Retry the read if no frame was handed off.",
-            ) from None
-        public = _public_body(response_body)
-        if route == "chat.stream":
-            return self._stream_attempt(
-                status=status,
-                response_body=public,
-                stream_id=stream_id,
+            self._abandon(loop)
+            result = self._incomplete(route, exc, loop, marker, raw, payload, exchange, events)
+        except ProtocolMismatch:
+            self._abandon(loop)
+            result = self._from_code(
+                route,
+                ErrorCode.PROTOCOL_MISMATCH,
+                loop.handed_off,
+                loop,
+                marker,
+                raw,
+                payload,
+                exchange,
+                events,
+            )
+        except SendUncertain:
+            self._abandon(loop)
+            result = self._after_uncertain_send(route, loop, marker, raw, payload, exchange, events)
+        except CoreError as exc:
+            code = exc.detail.code
+            handed = loop.handed_off
+            self._abandon(loop)
+            result = self._from_code(
+                route, code, handed, loop, marker, raw, payload, exchange, events
+            )
+        except Exception:
+            handed = loop.handed_off
+            self._abandon(loop)
+            if route == "chat.stream" and not handed:
+                result = self._never_sent(marker, raw)
+            elif handed and route in _MUTATING:
+                result = self._from_code(
+                    route,
+                    ErrorCode.EXTERNAL_STATE_UNKNOWN,
+                    True,
+                    loop,
+                    marker,
+                    raw,
+                    payload,
+                    exchange,
+                    events,
+                )
+            else:
+                result = _error(
+                    ErrorCode.NETWORK_TIMEOUT,
+                    "Muse read failed",
+                    next_action="Retry the read if no frame was handed off.",
+                )
+        else:
+            public = self._secrets.body(response_body)
+            if route == "chat.stream":
+                result = self._stream_attempt(
+                    status=status,
+                    response_body=response_body,
+                    stream_id=stream_id,
+                    marker=marker,
+                    raw=raw,
+                    payload=payload,
+                    exchange=exchange,
+                    events=events,
+                    handed=True,
+                    error_code=None,
+                    public_body=public,
+                )
+            else:
+                result = GatewayResult(
+                    route=route,
+                    status=status,
+                    body=public,
+                    stream_id=stream_id,
+                    request_marker=marker,
+                    outbound_digest=_digest(raw),
+                    bytes_handed_off=True,
+                )
+        return _emit(result)
+
+    def _abandon(self, loop: ReceiveLoop) -> None:
+        if loop.failed:
+            self._close_locked()
+
+    def _from_code(
+        self,
+        route: str,
+        code: ErrorCode,
+        handed: bool,
+        loop: ReceiveLoop,
+        marker: str,
+        raw: bytes,
+        payload: Mapping[str, Any] | None,
+        exchange: Exchange | None,
+        events: list[dict[str, Any]] | None,
+    ) -> GatewayResult | StreamAttempt | CoreError:
+        if route == "session.start" and handed:
+            if code == ErrorCode.PROTOCOL_MISMATCH:
+                return MuseProtocolStop(
+                    request_marker=marker,
+                    outbound_digest=_digest(raw),
+                    stream_id=loop.last_stream_id,
+                    bytes_handed_off=True,
+                )
+            return MuseStateUnknown(
+                request_marker=marker,
+                outbound_digest=_digest(raw),
+                stream_id=loop.last_stream_id,
+                bytes_handed_off=True,
+            )
+        if route == "chat.stream" and handed:
+            error_code = (
+                ErrorCode.PROTOCOL_MISMATCH.value
+                if code == ErrorCode.PROTOCOL_MISMATCH
+                else str(code)
+            )
+            attempt = self._stream_attempt(
+                status=None,
+                response_body=b"",
+                stream_id=loop.last_stream_id,
                 marker=marker,
                 raw=raw,
-                body=body,
+                payload=payload,
                 exchange=exchange,
                 events=events,
                 handed=True,
-                error_code=None,
+                error_code=error_code,
+                stream_complete=False,
             )
-        return GatewayResult(
-            route=route,
-            status=status,
-            body=public,
-            stream_id=stream_id,
-            request_marker=marker,
-            outbound_digest=_digest(raw),
-            bytes_handed_off=True,
+            if code == ErrorCode.PROTOCOL_MISMATCH:
+                return MuseProtocolStop(
+                    request_marker=marker,
+                    outbound_digest=_digest(raw),
+                    stream_id=loop.last_stream_id,
+                    bytes_handed_off=True,
+                    attempt=attempt,
+                )
+            return attempt
+        if route == "chat.stream":
+            return self._never_sent(marker, raw)
+        return _error(
+            code if code == ErrorCode.PROTOCOL_MISMATCH else ErrorCode.NETWORK_TIMEOUT,
+            "Muse read failed" if code != ErrorCode.PROTOCOL_MISMATCH else "Muse protocol failed",
+            next_action=(
+                "Stop. Do not retry this frame or weaken TLS."
+                if code == ErrorCode.PROTOCOL_MISMATCH
+                else "Retry the read. No mutation was handed off."
+            ),
         )
-
-    def _validate_body(
-        self,
-        spec: _Route,
-        body: dict[str, Any] | None,
-        query: Mapping[str, Any] | None,
-    ) -> None:
-        payload = body
-        if spec.verb == "GET" and payload is not None and not query:
-            payload = None
-        _request_bytes(payload)
-
-    def _marker(self, exchange: Exchange | None) -> str:
-        if exchange is not None and exchange.request_marker:
-            marker = exchange.request_marker
-        else:
-            marker = str(uuid.uuid4())
-        if _MARKER.fullmatch(marker) is None:
-            raise MuseProgrammingError("request marker is not usable")
-        return marker
 
     def _incomplete(
         self,
@@ -782,89 +1407,55 @@ class MuseTransport:
         loop: ReceiveLoop,
         marker: str,
         raw: bytes,
-        body: dict[str, Any] | None,
+        payload: Mapping[str, Any] | None,
         exchange: Exchange | None,
         events: list[dict[str, Any]] | None,
-    ) -> GatewayResult | StreamAttempt:
-        handed = loop.handed_off
-        if route == "session.start" and handed:
-            raise _error(
-                ErrorCode.EXTERNAL_STATE_UNKNOWN,
-                "session.start timed out after the request was handed off",
-                next_action=(
-                    "Reconcile with sessions.list by session_id. Do not start another session."
-                ),
-            ) from None
-        if route == "chat.stream":
-            if not handed:
-                return self._never_sent(marker, raw, redact(exc.detail.message))
-            return self._stream_attempt(
-                status=None,
-                response_body=b"",
-                stream_id=loop.last_stream_id,
-                marker=marker,
-                raw=raw,
-                body=body,
-                exchange=exchange,
-                events=events,
-                handed=True,
-                error_code=str(exc.detail.code),
-                stream_complete=False,
-            )
-        raise exc
-
-    def _protocol(self, route: str, exc: ProtocolMismatch, loop: ReceiveLoop) -> CoreError:
-        if loop.handed_off and route in _MUTATING:
-            return _error(
-                ErrorCode.PROTOCOL_MISMATCH,
-                exc.detail.message,
-                next_action="Stop. Delivery is unknown. Do not resend and do not weaken TLS.",
-            )
-        return exc
+    ) -> GatewayResult | StreamAttempt | CoreError:
+        return self._from_code(
+            route,
+            exc.detail.code,
+            loop.handed_off,
+            loop,
+            marker,
+            raw,
+            payload,
+            exchange,
+            events,
+        )
 
     def _after_uncertain_send(
         self,
         route: str,
-        exc: SendUncertain,
         loop: ReceiveLoop,
         marker: str,
         raw: bytes,
-        body: dict[str, Any] | None,
+        payload: Mapping[str, Any] | None,
         exchange: Exchange | None,
         events: list[dict[str, Any]] | None,
-    ) -> StreamAttempt:
-        if route == "session.start":
-            raise _error(
-                ErrorCode.EXTERNAL_STATE_UNKNOWN,
-                "session.start may have been handed off",
-                next_action=(
-                    "Reconcile with sessions.list by session_id. Do not start another session."
-                ),
-            ) from None
+    ) -> StreamAttempt | MuseStateUnknown:
         if route != "chat.stream":
-            raise _error(
-                ErrorCode.EXTERNAL_STATE_UNKNOWN,
-                "A gateway read may have been handed off",
-                next_action="Reconcile with a later read. Do not repeat a mutation.",
-            ) from None
-        detail = redact(str(exc))
+            return MuseStateUnknown(
+                request_marker=marker,
+                outbound_digest=_digest(raw),
+                stream_id=loop.last_stream_id,
+                bytes_handed_off=True,
+            )
         return self._stream_attempt(
             status=None,
             response_body=b"",
             stream_id=loop.last_stream_id,
             marker=marker,
             raw=raw,
-            body=body,
+            payload=payload,
             exchange=exchange,
             events=events,
             handed=True,
             error_code=ErrorCode.EXTERNAL_STATE_UNKNOWN.value,
             stream_complete=False,
-            detail=detail,
         )
 
-    def _never_sent(self, marker: str, raw: bytes, detail: str) -> StreamAttempt:
-        evidence = AttemptEvidence(EVIDENCE_UNDECIDED, redact(detail))
+    def _never_sent(self, marker: str, raw: bytes) -> StreamAttempt:
+        evidence = AttemptEvidence(EVIDENCE_UNDECIDED, "request was not handed off")
         return StreamAttempt(
             outbound_digest=_digest(raw),
             request_marker=marker,
@@ -883,23 +1474,23 @@ class MuseTransport:
         stream_id: int | None,
         marker: str,
         raw: bytes,
-        body: dict[str, Any] | None,
+        payload: Mapping[str, Any] | None,
         exchange: Exchange | None,
         events: list[dict[str, Any]] | None,
         handed: bool,
         error_code: str | None,
         stream_complete: bool = True,
-        detail: str | None = None,
+        public_body: bytes | None = None,
     ) -> StreamAttempt:
-        if detail is None:
-            evidence = attempt_evidence(
-                stream_complete=stream_complete,
-                stream_status=status,
-                body=response_body,
-            )
-        else:
-            evidence = AttemptEvidence(EVIDENCE_UNDECIDED, redact(detail))
-        row = _exchange_for(body, marker, exchange)
+        evidence = attempt_evidence(
+            stream_complete=stream_complete,
+            stream_status=status,
+            body=response_body if stream_complete else None,
+        )
+        evidence = AttemptEvidence(evidence.verdict, self._secrets.text(evidence.detail))
+        if public_body is None:
+            public_body = self._secrets.body(response_body) if stream_complete else b""
+        row = _exchange_for(payload, marker, exchange)
         state = delivery_state(
             wrote_any_bytes=handed,
             stream_complete=stream_complete,
@@ -916,7 +1507,7 @@ class MuseTransport:
             evidence=evidence,
             state=state,
             status=status,
-            body=response_body,
+            body=public_body,
             error_code=error_code,
         )
 
