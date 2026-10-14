@@ -167,3 +167,7 @@ discard a previously seen reliable comment. The union consumes the item budget;
 retention has at most max_items plus one lookahead identity, with expansion-bounded
 revisions. Weak records are retained only from the initial snapshot; later weak
 observations add weak_identity_expansion/partial instead of text or position merging.
+
+The pinned Playwright 1.63 sync WebSocket callback runs on its asyncio loop; the
+close handler awaits the underlying route implementation instead of nesting a
+synchronous API call. The local WSS regression covers page and worker closures.

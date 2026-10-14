@@ -1683,9 +1683,11 @@ class _PlaywrightSession:
                 except m.CoreError as exc:
                     self._egress.navigation_error = exc
 
-        def _on_web_socket(route: Any) -> None:
+        async def _on_web_socket(route: Any) -> None:
             self._egress.record_proxy_protocol_refusal(hostname="proxy", reason="websocket")
-            route.close(code=1008, reason="WebSockets are disabled")
+            # Playwright 1.63 invokes WebSocket handlers directly on its asyncio loop.
+            # Await the pinned implementation; a nested sync close deadlocks that loop.
+            await route._impl_obj.close(code=1008, reason="WebSockets are disabled")
 
         self._context.on("page", _on_popup)
         self._page.on("popup", _on_popup)
