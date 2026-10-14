@@ -492,8 +492,13 @@ events只記必要去秘密狀態，完整來源和對話留私人store。診斷
 備份用SQLite一致backup加ready object及ready export manifests；每個export保留manifest與payload，驗bytes/hash並拒unexpected members；在新workspace做FK/hash/schema檢查。migration維護鎖＋升級前備份；不能只複製live DB主檔或刪庫假成功。舊版程式遇新schema拒絕寫入。
 Restore refuses newer-version backups; older backups are verified at their recorded
 schema version before forward migration through normal guarded open, including its own
-pre-upgrade backup. A private runtime/restore.incomplete marker blocks failed/interrupted
-targets; only successful migration and integrity checks remove it. The original backup
+pre-upgrade backup. Archives use rollback-journal SQLite, reject sidecars/unknown entries,
+and are inspected read-only without current Pydantic models. Copied DB and artifacts are
+reverified; backup/workspace/restore roots must not overlap except internal pre-upgrade paths.
+All verified files reject symlinks/hardlinks, and unlisted objects/exports fail verification.
+A private runtime/restore.incomplete marker is fsynced before initialization, blocks even
+broken-symlink markers, and is removed then directory-fsynced only after success. Copied
+worker ownership is cleared before the pre-upgrade backup. The original backup
 is retained, and migration failure rolls back the restored database without claiming success.
 Table-rebuild migrations disable foreign_keys before BEGIN IMMEDIATE, run foreign_key_check
 before commit, and restore enforcement in finally; runtime connections keep foreign_keys ON.
@@ -587,7 +592,10 @@ verified against exact stored bytes. Ready state follows fsync and rename. No ex
 publishes/uploads; handled failures clean owned artifacts and crashes may leave orphans.
 Core backups include every ready export directory and manifest, verifying exact membership,
 manifest bytes and member hashes/sizes at backup and restore. Restored receipts replay the
-original artifact; missing/corrupt artifacts fail honestly. Orphan cleanup remains pending. Legacy search-marker files are no longer read
+original artifact. Missing/changed live export files are recorded as unavailable in a partial
+backup manifest with an explicit warning, without blocking migrations or backup. Restore
+preserves unavailable state; receipt replay fails honestly. Copied artifacts remain strictly
+verified. Orphan cleanup remains pending. Legacy search-marker files are no longer read
 or created; cleanup of files from older development builds remains an operator task.
 
 Schema-1 transcript visibility requires a current item/asset link in the requested

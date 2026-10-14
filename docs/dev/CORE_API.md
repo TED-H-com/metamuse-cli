@@ -323,7 +323,9 @@ WorkspaceKey hides material from repr, but callers must never serialize it to en
 logs, events or exports. SQLite backups contain these keys and are private sensitive data.
 Pre-release 001 amendments apply to fresh development workspaces. There is no schema-1
 key shim or legacy content.cursor_key receipt import: a development DB missing the key
-table fails open with guidance to create a fresh workspace. No released compatibility
+table fails open with guidance to create a fresh workspace. A same-version DB missing
+001's required storage triggers also fails open rather than claiming the current guards.
+No released compatibility
 is implied. Rotation still retains keys already provisioned in workspace_keys.
 
 `put_object(binary_stream, mime=..., max_bytes=..., duration_ms=None)` measures/hash-streams
@@ -335,27 +337,38 @@ ready insertion. A crash may leave orphan staging/object files; no unsafe automa
 orphan deletion is implemented. Ready files are not deleted by job failure.
 
 `verify_export(Export)` checks the ready directory, exact manifest bytes, every payload
-member's size/hash, and rejects symlinks/unexpected files. Export replay uses this same
-verifier. `backup(fresh_destination)` uses SQLite online backup and copies exactly the
-ready object and ready export snapshots. Backup manifest.json lists object hashes/sizes
-and export IDs/artifact paths/manifest hashes. Each export carries its payload manifest;
-uncommitted/orphan directories are excluded. Copying is followed by export verification.
-`Store.restore(backup, fresh_paths)` checks schema version, SQLite integrity/FKs, manifest
-membership, object size/hash/path and complete export directories before copying into a
-fresh workspace with private modes. Export receipts can replay their original artifacts;
-missing/corrupt artifacts fail honestly, and failed backups remove only their new target.
-It clears stale worker owner metadata. Newer-version backups are refused; older backups
-are first verified at their recorded version, then the restored copy follows normal
-forward migration with its own pre-upgrade backup. Store's default schema version is
-resolved at open time. Runtime `restore.incomplete` is created before copying and removed
-only after successful migration/integrity checks; an error/crash leaves the target blocked
-from normal Store/AppContext open. Restore the original verified backup into another fresh
-workspace after resolving a failure; do not remove the marker to pretend a partial restore
-succeeded. The original backup and rolled-back target/pre-upgrade backup are retained.
-Migration uses an exclusive maintenance lock and the worker lock, pre-upgrade online
-backup, and transactional DDL; a failure rolls back without deleting original data.
-Migration disables FK enforcement before BEGIN IMMEDIATE for documented table rebuilds,
-checks foreign_key_check before commit, and restores FK enforcement in finally. `PRAGMA
+member's size/hash, and rejects symlinks, hardlinks and unexpected files. Receipt replay
+compares the authoritative row to its receipt and verifies that row, not a receipt copy.
+
+`backup(fresh_destination)` returns the archive Path. The destination must be outside
+and disjoint from the live workspace; only automatic pre-upgrade backups use the private
+workspace/backups directory. SQLite online backup is converted to rollback-journal mode.
+The manifest records DB hash/size, ready objects, export IDs/artifact paths/manifest hashes,
+and export state. Verified artifacts are copied and reverified. Missing/changed export
+files are recorded as unavailable, with manifest status=partial and warnings; BackupWarning
+is emitted on stderr. Both explicit and pre-upgrade backups use this policy. Missing or
+corrupt authoritative object bytes still fail; uncommitted/orphan exports are excluded.
+Callers may capture BackupWarning and read manifest.json; no envelope is emitted by Store.
+
+`Store.restore(backup, fresh_paths)` rejects overlapping paths, SQLite sidecars and unknown
+archive entries. Inspection is immutable/read-only: it neither creates journals nor
+requires write access to the backup. Every verified file must be regular, unsymlinked,
+and have st_nlink=1; unlisted object/export members are rejected. Verification uses raw
+SQL and stable archive columns at the backup version, not current Pydantic models.
+Copied DB bytes, inventory and artifact hashes are checked again before migration and
+afterward. Newer backups are refused; older copies follow normal guarded forward
+migration with their own pre-upgrade backup. Restored unavailable exports stay unavailable,
+so old receipt replay fails honestly; verified old artifacts still replay byte-for-byte.
+
+Runtime restore.incomplete is written and fsynced before initialize, and removed with a
+subsequent directory fsync only after successful migration/integrity checks. Normal open,
+connection, migrate and put_object reject even broken-symlink markers. Copied worker_state
+is cleared before the pre-upgrade backup. A failure leaves the target blocked; restore
+again into another fresh destination after resolving the failure. Do not remove a marker
+to pretend a partial target succeeded. Original backups and rolled-back targets remain.
+Migration holds the maintenance/worker locks, disables foreign_keys before BEGIN IMMEDIATE
+for table rebuilds, checks foreign_key_check before commit, and restores enforcement in
+finally. DDL failure rolls back without deleting original data. `PRAGMA
 user_version` is schema version 1; older builds refuse newer schemas on every connection.
 Add future migrations only through the core owner. No LIVE, privacy erasure/compaction,
 Windows ACL verification or performance SLA evidence is implied by these APIs.

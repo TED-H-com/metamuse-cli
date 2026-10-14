@@ -105,16 +105,20 @@ DAMAGE = [
 
 
 @pytest.mark.parametrize("kind", DAMAGE)
-def test_backup_rejects_incomplete_artifact_and_cleans_partial_destination(
+def test_backup_records_unavailable_artifact_with_explicit_partial_warning(
     ctx, export_request, tmp_path, kind
 ):
     data = ready_export(ctx, export_request)
     damage(ctx.paths.root / data["artifact"], kind)
     destination = tmp_path / "failed-backup"
-    with pytest.raises(m.CoreError) as error:
-        ctx.store.backup(destination)
-    assert error.value.detail.code == m.ErrorCode.RESOURCE_UNAVAILABLE
-    assert not destination.exists()
+    with pytest.warns(UserWarning, match="unavailable"):
+        assert ctx.store.backup(destination) == destination
+    manifest = json.loads((destination / "manifest.json").read_bytes())
+    assert manifest["status"] == "partial" and manifest["warnings"]
+    assert manifest["exports"][0]["state"] == "unavailable"
+    assert not (destination / data["artifact"]).exists()
+    restored = Store.restore(destination, WorkspacePaths.resolve(tmp_path / "partial-restored"))
+    assert restored.get(m.Export, data["id"]).state == "unavailable"
     assert ctx.store.get(m.Export, data["id"]).state == "ready"
     assert app.export_objects(ctx, export_request).status == "error"
 

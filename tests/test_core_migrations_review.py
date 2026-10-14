@@ -88,3 +88,33 @@ def test_f8_no_legacy_shim_or_secret_exception_chain(ctx, missing_table):
         assert not list((ctx.paths.root / "backups").glob("pre_upgrade_*"))
     else:
         assert core.Store(ctx.paths).get_workspace_key(core.CONTENT_CURSOR_KEY) == key
+
+
+@pytest.mark.parametrize("kind", ["record", "receipt"])
+def test_f8_invalid_private_json_has_no_visible_secret_cause(ctx, project, kind):
+    secret = "SYNTHETIC_PRIVATE_JSON_SECRET"
+    source = ctx.store.insert(
+        m.Source(
+            id="src_bad_json",
+            project_id=project,
+            platform="generic",
+            collection_method="file_import",
+            fetched_at=ctx.clock(),
+        )
+    )
+    with ctx.store.transaction() as conn:
+        if kind == "record":
+            conn.execute("UPDATE sources SET use_basis=?", ('{"' + secret,))
+        else:
+            conn.execute(
+                "INSERT INTO request_receipts VALUES('fixture','key',?,?)",
+                (m.payload_digest({}), '{"' + secret),
+            )
+    with pytest.raises(m.CoreError) as error:
+        if kind == "record":
+            ctx.store.get(m.Source, source.id)
+        else:
+            with ctx.store.transaction() as conn:
+                ctx.store.mutate_once(conn, "fixture", "key", {}, lambda: {})
+    assert error.value.__cause__ is None
+    assert secret not in "".join(traceback.format_exception(error.value))
