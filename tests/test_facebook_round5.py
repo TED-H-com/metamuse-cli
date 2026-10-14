@@ -265,3 +265,38 @@ def test_r5_04_unexpected_handshake_fails_job_closed(tmp_path, monkeypatch):
         assert job["error"]["message"] == "Facebook WebSocket handshake bypassed browser blocking"
         assert any(upgrade for _, upgrade in hits)
         assert not rows(ctx)
+
+
+@pytest.mark.parametrize("refusal", ["websocket", "worker", "image"])
+def test_r5_n1_unrelated_refusal_cannot_reclassify_navigation_timeout(
+    tmp_path, monkeypatch, refusal
+):
+    scripts = {
+        "websocket": "new WebSocket('wss://' + location.host + '/socket');",
+        "worker": "new Worker(URL.createObjectURL(new Blob(['postMessage(1)'])));",
+        "image": "new Image().src='https://denied.example/image';",
+    }
+    markup = _synthetic_post_html().replace(
+        "</body>", '<img src="/slow.png"><script>' + scripts[refusal] + "</script></body>"
+    )
+    with browser_fixture(
+        tmp_path, monkeypatch, {POST_PATH: markup, "/slow.png": ""}, delays={"/slow.png": 4}
+    ) as env:
+        ctx, project, permit, _, _, _, _ = env
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["error"]["code"] == "E_NETWORK_TIMEOUT"
+        assert job["error"]["retry_class"] == "safe_read"
+
+
+def test_r5_n1_resolver_capacity_is_transient_dns_failure(tmp_path, monkeypatch):
+    import threading
+
+    from metamuse import _browser_egress
+
+    monkeypatch.setattr(_browser_egress, "_RESOLUTION_SLOTS", threading.BoundedSemaphore(0))
+    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: _synthetic_post_html()}) as env:
+        ctx, project, permit, _, hits, _, _ = env
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["error"]["code"] in ("E_NETWORK_TIMEOUT", "E_RESOURCE_UNAVAILABLE")
+        assert "dns" in job["error"]["next_action"].lower()
+        assert not hits

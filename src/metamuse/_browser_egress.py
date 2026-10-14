@@ -471,6 +471,7 @@ class BrowserEgressProxy:
     def _handle_client(self, client_sock: socket.socket) -> None:
         upstream_sock: socket.socket | None = None
         slot_acquired = False
+        parsed: ParsedProxyRequest | None = None
         try:
             with self._lock:
                 if self._active_tunnels >= self.max_concurrent_tunnels:
@@ -531,6 +532,7 @@ class BrowserEgressProxy:
             self.egress.record_proxy_protocol_refusal(
                 hostname="proxy",
                 reason=exc.reason,
+                url=parsed.check_url if parsed is not None else None,
             )
             self._send_forbidden(client_sock)
         except m.CoreError:
