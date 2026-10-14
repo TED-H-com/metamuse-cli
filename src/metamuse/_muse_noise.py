@@ -100,7 +100,7 @@ class NoiseParty:
         )
 
     def read(self, message: bytes) -> bytes:
-        if len(message) > HANDSHAKE_PAYLOAD_MAX_BYTES + 96:
+        if len(message) > NOISE_MAX_CIPHERTEXT_BYTES:
             raise ProtocolMismatch("handshake message exceeds cap")
         return self._crypto(
             lambda: bytes(self.conn.read_message(message)),

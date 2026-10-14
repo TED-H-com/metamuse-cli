@@ -22,6 +22,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from metamuse._muse_link import ByteLink, SendUncertain
 from metamuse.models import CoreError, ErrorCode
@@ -30,6 +31,7 @@ from metamuse.safety import CheckedURL
 # Auth JSON is a token plus a vm id. 64 KiB is the decompressed cap, including
 # a body that arrives without Content-Length. Larger responses are not parsed.
 AUTH_RESPONSE_MAX_BYTES = 64 * 1024
+SESSION_RESPONSE_MAX_BYTES = 1024 * 1024
 _WS_MESSAGE_MAX_BYTES = 65535
 _WS_PIECE_MAX = 64
 
@@ -243,11 +245,15 @@ def _upgrade_failed(ws: Any) -> CoreError:
     )
 
 
-def _auth_too_large() -> CoreError:
+def _auth_too_large(session: bool = False) -> CoreError:
     return CoreError(
         ErrorCode.LIMIT_REACHED,
-        "Muse auth response exceeded the size cap",
-        next_action="Stop. Do not parse an oversized auth response.",
+        "Muse session response exceeded the size cap"
+        if session
+        else "Muse auth response exceeded the size cap",
+        next_action="Stop. Do not parse an oversized session response."
+        if session
+        else "Stop. Do not parse an oversized auth response.",
     )
 
 
@@ -299,7 +305,10 @@ class CurlHttp:
         else:
             failure = None
         _raise_if(failure)
-        writer = AuthBodyBuffer()
+        is_session = urlsplit(url).path == "/api/session"
+        writer = AuthBodyBuffer(
+            SESSION_RESPONSE_MAX_BYTES if is_session else AUTH_RESPONSE_MAX_BYTES
+        )
         response = None
         try:
             kwargs: dict[str, Any] = {
@@ -317,7 +326,7 @@ class CurlHttp:
             except (TypeError, AttributeError):
                 failure = _api_mismatch()
             except Exception:
-                failure = _auth_too_large() if writer.overflow else _https_failed()
+                failure = _auth_too_large(is_session) if writer.overflow else _https_failed()
         finally:
             if session is not None:
                 closer = getattr(session, "close", None)
@@ -327,8 +336,8 @@ class CurlHttp:
                     except Exception:
                         pass
         _raise_if(failure)
-        if writer.overflow or len(writer.data) > AUTH_RESPONSE_MAX_BYTES:
-            raise _auth_too_large()
+        if writer.overflow or len(writer.data) > writer.limit:
+            raise _auth_too_large(is_session)
         peer = _peer_text(getattr(response, "primary_ip", ""))
         raw_headers = getattr(response, "headers", {}) or {}
         copied = {str(key): str(value) for key, value in dict(raw_headers).items()}

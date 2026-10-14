@@ -45,7 +45,7 @@ def rv_shaped(data: bytes) -> bool:
     Recognition can only record a refusal, never accept an RV payload. Even an
     invalid/truncated state after this discriminator is permanent confidential evidence.
     """
-    if not data or len(data) > HANDSHAKE_PAYLOAD_MAX_BYTES:
+    if not data:
         return False
     offset = 0
     try:

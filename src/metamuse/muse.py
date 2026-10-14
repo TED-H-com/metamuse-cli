@@ -63,6 +63,7 @@ from metamuse._muse_associate import (
 from metamuse._muse_codec import Header, ProtocolMismatch, json_depth, redact
 from metamuse._muse_http import (
     AUTH_RESPONSE_MAX_BYTES,
+    SESSION_RESPONSE_MAX_BYTES,
     Connector,
     CurlConnector,
     CurlHttp,
@@ -576,6 +577,10 @@ def _raise_if(error: CoreError | None) -> None:
 # error is re-raised as one of these, outside the handler, so its text and
 # traceback chain are not the public error.
 _PUBLIC_ERRORS: dict[str, tuple[ErrorCode, str]] = {
+    "Muse session response exceeded the size cap": (
+        ErrorCode.LIMIT_REACHED,
+        "Stop. Do not parse an oversized session response.",
+    ),
     "Muse confidentiality could not be recorded": (
         ErrorCode.STORAGE,
         "Repair the security-state store before reconnecting; confidentiality could not be recorded",
@@ -716,12 +721,16 @@ def _retry_after(headers: Mapping[str, str]) -> float:
     return 0
 
 
-def _json_object(body: bytes) -> dict[str, Any]:
-    if len(body) > AUTH_RESPONSE_MAX_BYTES:
+def _json_object(body: bytes, *, session: bool = False) -> dict[str, Any]:
+    if len(body) > (SESSION_RESPONSE_MAX_BYTES if session else AUTH_RESPONSE_MAX_BYTES):
         raise _error(
             ErrorCode.LIMIT_REACHED,
-            "Muse auth response exceeded the size cap",
-            next_action="Stop. Do not parse an oversized auth response.",
+            "Muse session response exceeded the size cap"
+            if session
+            else "Muse auth response exceeded the size cap",
+            next_action="Stop. Do not parse an oversized session response."
+            if session
+            else "Stop. Do not parse an oversized auth response.",
         )
     value = _json_value(body)
     if not isinstance(value, dict):
@@ -1310,7 +1319,7 @@ class MuseTransport:
             raise protocol_stop()
         if path == "/api/hatch/vm/wake":
             return {}
-        payload = _json_object(response.body)
+        payload = _json_object(response.body, session=path == "/api/session?vm_state=live")
         if path == "/api/session?vm_state=live":
             return payload
         if path == "/api/auth/check":
