@@ -23,7 +23,7 @@ def entry(tmp_path, monkeypatch):
     # Only the existing extractor, clock and egress seams are replaced. The command,
     # approval registry, permits, receipts, submission and worker remain production code.
     (hook / "sitecustomize.py").write_text(
-        """import json, os, socket
+        """import json, os, socket, struct
 from pathlib import Path
 from urllib.parse import urlsplit
 from metamuse import app, remote_media, safety
@@ -68,9 +68,19 @@ def dial(method, url, headers, body, checked, timeout, limit):
     with Path(os.environ['REMOTE_TEST_EGRESS']).open('a') as handle:
         handle.write(json.dumps({'event': 'dial', 'url': url,
             'cookie': headers.get('Cookie'), 'limit': limit}) + '\\n')
+    if url.endswith('/media.wav'):
+        samples = b'\\x00\\x00' * 800
+        payload = struct.pack('<4sI4s4sIHHIIHH4sI', b'RIFF', 36+len(samples), b'WAVE',
+            b'fmt ', 16, 1, 1, 8000, 16000, 2, 16, b'data', len(samples)) + samples
+        if len(payload) > limit:
+            raise remote_media._limit_error()
+        return (200, {}, payload, '127.0.0.1', 'OK')
     payload = {'id': urlsplit(url).path.strip('/'), 'title': 'Synthetic media',
         'webpage_url': url, 'formats': [{'format_id': 'fixture', 'ext': 'mp4',
         'url': 'https://media.fixture.test/media.mp4'}]}
+    if os.environ.get('REMOTE_TEST_MEDIA'):
+        payload['formats'] = [{'format_id': 'fixture', 'ext': 'wav',
+            'url': 'https://media.fixture.test/media.wav'}]
     return (200, {'Content-Type': 'application/json'},
         json.dumps(payload).encode(), '127.0.0.1', 'OK')
 remote_media._dial = dial

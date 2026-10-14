@@ -311,3 +311,37 @@ def test_review_exact_replay_ignores_spent_grant_and_workspace_caps(entry, chann
     assert permit(entry, other_grant)["used"] == 0
     jobs = entry.cli("jobs", "list", "--project", entry.project)["data"]["jobs"]
     assert len(jobs) == 1
+
+
+@pytest.mark.parametrize("change", ["lower", "raise"])
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+def test_review_runtime_media_cap_is_minimum_of_acceptance_and_current(
+    entry, monkeypatch, channel, change
+):
+    monkeypatch.setenv("REMOTE_TEST_MEDIA", "1")
+    entry.env["REMOTE_TEST_MEDIA"] = "1"
+    path = entry.workspace / "metamuse.toml"
+    if change == "raise":
+        path.write_text(
+            path.read_text().replace("media_max_bytes = 536870912", "media_max_bytes = 100")
+        )
+    body = {**request(entry), "resources": ["media_metadata", "media_file"]}
+    preview = collect(entry, body, channel)["approval"]
+    grant = entry.approve(preview, body, approval_key(preview))["data"]["id"]
+    accepted = submit(entry, {**body, "access_grant_id": grant}, channel)
+    old, new = (536870912, 100) if change == "lower" else (100, 536870912)
+    path.write_text(
+        path.read_text().replace(f"media_max_bytes = {old}", f"media_max_bytes = {new}")
+    )
+    entry.cli("worker", "run", "--once")
+    job = entry.cli("jobs", "get", accepted["data"]["job_id"])["data"]
+    dials = [json.loads(line) for line in entry.egress.read_text().splitlines()]
+    media = [
+        row for row in dials if row.get("event") == "dial" and row["url"].endswith("/media.wav")
+    ]
+    assert len(media) == 1 and media[0]["limit"] == 100, (job, dials)
+    assert "Lower workspace caps at run time apply" in preview["summary"]
+    assert job["job"]["state"] == "partial", job
+    assert job["steps"][0]["checkpoint"]["remote_media_caps"]["media_max_bytes"] == old
+    assert "media_max_bytes" not in job["job"]["limits"]
+    assert permit(entry, grant)["used"] == 1
