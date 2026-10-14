@@ -2331,7 +2331,7 @@ class _DOMExtractor(HTMLParser):
             self._current_comment = {
                 "kind": kind,
                 "native_id": attr_map.get("data-comment-id") or None,
-                "parent_native_id": attr_map.get("data-parent-comment-id") or None,
+                "parent_native_id": _native_token(attr_map.get("data-parent-comment-id")),
                 "author_display": attr_map.get("data-author") or None,
                 "created_at_raw": attr_map.get("data-created-at") or None,
                 "permalink": attr_map.get("data-permalink") or None,
@@ -2361,7 +2361,7 @@ class _DOMExtractor(HTMLParser):
                 ExpandControl(
                     control_id=control_id,
                     kind="more_replies" if expand_kind == "more_replies" else "more_comments",
-                    parent_comment_id=attr_map.get("data-parent-comment-id") or None,
+                    parent_comment_id=_native_token(attr_map.get("data-parent-comment-id")),
                     remaining_hint=hint,
                 )
             )
@@ -2444,6 +2444,13 @@ def _parse_iso_time(raw: str | None) -> str | None:
         return dt.astimezone(UTC).isoformat().replace("+00:00", "Z")
     except ValueError:
         return None
+
+
+def _native_token(value: Any) -> str | None:
+    if isinstance(value, bool) or not isinstance(value, (str, int)):
+        return None
+    text = str(value).strip()
+    return text if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", text) else None
 
 
 def _opt_int(val: Any) -> int | None:
@@ -2672,11 +2679,9 @@ def _parse_json_payload(
         kind_val = str(entry.get("kind") or "comment")
         c_kind: Literal["comment", "reply"] = "reply" if kind_val == "reply" else "comment"
         native_id = str(entry["id"]).strip() if entry.get("id") else None
-        parent_id = (
-            str(entry["parent_id"]).strip()
-            if entry.get("parent_id")
-            else (post_id if c_kind == "comment" else None)
-        )
+        parent_id = _native_token(entry.get("parent_id"))
+        if parent_id is None and c_kind == "comment":
+            parent_id = post_id
         c_time = str(entry["created_at"]) if entry.get("created_at") is not None else None
         comments_list.append(
             ParsedComment(
@@ -2707,9 +2712,7 @@ def _parse_json_payload(
             ExpandControl(
                 control_id=cid,
                 kind=ckind,
-                parent_comment_id=(
-                    str(ctrl["parent_comment_id"]) if ctrl.get("parent_comment_id") else None
-                ),
+                parent_comment_id=(_native_token(ctrl.get("parent_comment_id"))),
                 remaining_hint=_opt_int(ctrl.get("remaining")),
             )
         )

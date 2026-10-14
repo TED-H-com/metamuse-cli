@@ -130,3 +130,21 @@ def test_r5_n6_unicode_count_keeps_observed_post(tmp_path):
     assert job["error"] is None
     assert len(rows(ctx)) == 1
     assert "comment_count_unparsed" in job["missing_fields"]
+
+
+@pytest.mark.parametrize("parent", ["   ", "", "bad parent", "bad/parent"])
+@pytest.mark.parametrize("kind", ["dom", "json"])
+def test_r5_12_invalid_parent_has_item_and_job_gap(tmp_path, kind, parent):
+    comments = [{"id": "r_1", "kind": "reply", "parent_id": parent, "text": "Reply"}]
+    markup = json_page(comments) if kind == "json" else _synthetic_post_html(comments=comments)
+    assert parse(markup).comments[0].parent_native_id is None
+
+
+def test_r5_12_json_whitespace_parent_gaps_item_and_job(tmp_path):
+    markup = json_page([{"id": "r_1", "kind": "reply", "parent_id": "   ", "text": "Reply"}])
+    ctx, job = fixture_job(tmp_path, markup)
+    reply = next(row for row in rows(ctx) if row["kind"] == "reply")
+    assert not reply["complete"]
+    assert reply["unresolved_parent"] is None
+    assert "parent_comment" in json.loads(reply["missing_fields"])
+    assert "parent_comment" in job["missing_fields"]
