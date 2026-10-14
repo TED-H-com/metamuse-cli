@@ -144,6 +144,7 @@ def test_share_resume_requires_same_identity_and_retains_committed_items(
         if changed:
             assert job["error"]["code"] == "E_DATA_STALE"
         else:
+            assert job["error"] is None, job["error"]
             assert job["coverage_status"] == "scope_satisfied"
             assert job["result"]["data"]["steps"][0]["data"]["resolved_permalink"] == URL
         with ctx.store.connection() as conn:
