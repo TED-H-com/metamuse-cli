@@ -61,7 +61,6 @@ from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from html import unescape as html_unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -1647,12 +1646,19 @@ def _challenge_marked(status: int, headers: dict[str, str], payload: bytes, reas
         return True
 
     def marked(value: str) -> bool:
-        decoded = unquote(html_unescape(value))
+        # Slash entities need no expansion: the token matches with any prefix.
+        decoded = unquote(value)
         decoded = re.sub(r"\\(?:u005f|x5f)", "_", decoded, flags=re.IGNORECASE)
         return "__rd_verify" in unicodedata.normalize("NFKC", decoded).lower()
 
-    if marked(payload.decode("utf-8", "replace")):
-        return True
+    # Bodies include media bytes. Bound temporary Unicode allocations while
+    # retaining enough overlap for a complete encoded marker across a block edge.
+    block = 32 * 1024
+    overlap = 256
+    for start in range(0, len(payload), block):
+        part = payload[max(0, start - overlap) : start + block + overlap]
+        if marked(part.decode("utf-8", "replace")):
+            return True
     for name in ("refresh", "location"):
         for value in _header_values(headers, name):
             if marked(value):

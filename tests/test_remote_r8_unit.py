@@ -315,6 +315,28 @@ def test_r8_encoded_underscore_challenge_is_stopped(value, channel):
     )
 
 
+@pytest.mark.parametrize(
+    "value", ["__rd%5Fverify", r"\u005f\u005frd_verify", r"\x5f\x5frd_verify", "＿＿rd_verify"]
+)
+def test_r8_encoded_challenge_spanning_response_blocks_is_stopped(value):
+    payload = b"x" * 65533 + value.encode() + b"x" * 65536
+    assert remote_media._challenge_marked(200, {}, payload, "OK")
+
+
+def test_r8_challenge_scan_has_bounded_temporary_allocations():
+    import tracemalloc
+
+    payload = b"\xff" * (2 * 1024 * 1024)
+    tracemalloc.start()
+    try:
+        assert not remote_media._challenge_marked(200, {}, payload, "OK")
+        _current, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    print(f"MEASURE challenge scan of 2 MiB: {peak} temporary bytes")
+    assert peak < 1024 * 1024, peak
+
+
 @pytest.mark.parametrize("domain", ["127.0.0.1", ".1", "127.1", "0x7f000001", "[::1]"])
 def test_r8_ip_cookie_domain_is_refused(domain):
     with pytest.raises(m.CoreError) as held:
