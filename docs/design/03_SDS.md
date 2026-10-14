@@ -829,3 +829,7 @@ Facebook HTML text includes inline image alt text (including emoji), excludes sc
 
 Structural JSON scripts require both data-fb-post-payload and application/json MIME
 type. Every other script is excluded from body text, even if it carries that marker.
+
+Embedded JSON integer tokens over 128 characters stay lexical for field validation.
+Oversized counts add their fixed *_count_unparsed gap and retain the observed post;
+they do not turn a valid JSON document into a malformed-payload error.

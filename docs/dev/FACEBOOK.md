@@ -304,3 +304,7 @@ type. Every other script is excluded from body text, even if it carries that mar
 Synthetic review/share-resume jobs use a 300-second wall budget to allow host storage
 stalls while committing batches. This changes only test requests; their two-second
 browser deadlines and production limits remain unchanged.
+
+Embedded JSON integer tokens over 128 characters stay lexical for field validation.
+Oversized counts add their fixed *_count_unparsed gap and retain the observed post;
+they do not turn a valid JSON document into a malformed-payload error.

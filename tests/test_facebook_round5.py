@@ -632,3 +632,15 @@ def test_r5_n10_nonjson_marked_script_is_excluded(tmp_path, monkeypatch, real_br
         result = rows(ctx)
     assert job["error"] is None
     assert result[0]["text"] == "leftright"
+
+
+@pytest.mark.parametrize("field", ["reaction_count", "comment_count", "share_count"])
+def test_r5_n6_oversized_json_integer_is_field_uncertainty(tmp_path, field):
+    # Valid JSON can exceed Python's integer-to-decimal conversion limit.
+    decimal = "7" * 5000
+    markup = json_page(**{field: 7}).replace('"' + field + '": 7', '"' + field + '": ' + decimal)
+    ctx, job = fixture_job(tmp_path, markup)
+    assert job["error"] is None, job["error"]
+    assert job["coverage_status"] == "partial"
+    assert field + "_unparsed" in job["missing_fields"]
+    assert rows(ctx)[0]["text"] == "Synthetic"

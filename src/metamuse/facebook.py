@@ -2990,7 +2990,11 @@ def _parse_json_payload(
     require_comments_section: bool,
 ) -> ParsedPostPage:
     try:
-        payload = json.loads(raw_json)
+        # Keep oversized decimal tokens lexical for per-field validation.
+        # This avoids dropping a valid post at Python’s integer conversion bound.
+        payload = json.loads(
+            raw_json, parse_int=lambda token: int(token) if len(token) <= 128 else token
+        )
     except (ValueError, TypeError) as exc:
         raise m.CoreError(
             m.ErrorCode.SELECTOR_DRIFT,
