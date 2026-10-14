@@ -1307,6 +1307,18 @@ class EgressGuard:
                         parse_resolved_permalink(url)
                 self.validate_navigation_identity(url)
             except m.CoreError as exc:
+                if (
+                    exc.detail.code == m.ErrorCode.UNSUPPORTED
+                    and self.authorized_permalink is not None
+                    and not self.authorized_permalink.is_share
+                ):
+                    exc = m.CoreError(
+                        m.ErrorCode.CHECKPOINT_REQUIRED,
+                        "Facebook navigation left the approved post",
+                        next_action=(
+                            "Check the account session in a browser before resuming collection"
+                        ),
+                    )
                 with self._lock:
                     self.navigation_error = exc
                     self.decisions.append(
@@ -1318,7 +1330,7 @@ class EgressGuard:
                             reason=f"navigation_unapproved:{exc.detail.code.value}",
                         )
                     )
-                raise
+                raise exc from None
 
     def record_browser_refusal(self, reason: str) -> None:
         assert reason in {"websocket_blocked", "blocked_subframe"}
