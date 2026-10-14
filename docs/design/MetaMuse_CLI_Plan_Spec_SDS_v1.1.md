@@ -357,15 +357,69 @@ HTTP 200 session: status=unavailable或missing vm_id回resource；其他非assig
 
 Confidential write後notify全部workspace live listeners，跨local labels立即close sockets；下一call仍重查durable state。
 
-Round 4 hint scan walks the authenticated session object iteratively, once, to depth 32 within the 1 MiB body. Compact/casefold key family: vm_type, type, vm_state, state, kind, vm_kind, vm_resolution_issue, cvm_required, cvm_replacement_enabled. A compact string containing cvm or confidentialvm is a marker; the two boolean keys also count any truthy value. Nested metadata and nested vms containers are scanned. A marker within a VM row records the row’s first usable id (including compact vmId aliases); nested metadata cannot redirect that id, and a nested vms container starts a new row scope; a marker outside rows records the owner seed and all usable ids. With no id, owner-only evidence is committed. A false positive permanently refuses standard for the connected owner/VM component: this deliberately errs toward confidentiality. Invalid depth or an oversized body is refused before dialing.
 
-Redaction uses the tested compact secret-key family in text and JSON without matching generic ids. It accepts prefix/suffix aliases, =/:/=> and XML delimiters. It percent-decodes up to two levels before longest-first matching and merging overlapping known spans; quote_plus and lowercase escapes are covered. Alias scanning covers full WSS queries even after an ordinary URL scheme. Non-sensitive text retains its original percent encoding. This is a specific tested encoding scope, not a claim about every possible representation.
 
 Round 4 amends unreleased migration 005 again, with no 006: muse_trust_accounts now checks lower-case hexadecimal viewer/session hashes and normalized nonempty active VM ids, or NULL only with confidentiality set. The same constraints are verified on fresh v5, v4→v5 and confidential backup→restore. Noncanonical development v5 databases still fail schema verification.
 
 Round 4 provenance design: source and observed_at are frozen once an observation or label VM row has confidential_required=1, including later direct evidence. A direct hint/RV may stamp a prior cr=0 observation during its transition to 1; a standard freeze never restamps a cr=1 row. Inherited propagation retains the association’s prior provenance, rather than claiming direct CVM evidence. Existing immutable guards enforce this metadata rule; no first-cause column is needed because nothing overwrites confidential provenance.
 
-Operational SQLite IOERR/CANTOPEN/PERM回workspace access/user_action，無restore advice；ENOSPC/EROFS回full-disk/read-only。Restore只適用明確integrity/schema failures。
+
+Session and selected-row keys whose compact form is `vmid` must all be valid and
+normalize to one VM identity, independently of key order. Name, endpoint and the
+persistent trust key use that identity. The exact server `vm_id` may be retained
+on the wire only after that agreement check (case and surrounding whitespace
+are the only permitted differences). A confidential hint records every usable
+identity alias before any disagreement is refused, before mint, wake or dial.
+
+Muse sanitization includes the codec's cookie, bearer and credential-pair
+shapes, and treats Authorization and Proxy-Authorization scheme plus credential
+as one value. Known secrets are matched in both raw text and up to two decoded
+percent-encoding layers; their coordinate-mapped span union is merged before
+one output join. A literal percent next to a hex nonce or UUID cannot hide it.
+
+Muse secret aliases are matched by separator and camelCase components: an
+exact extra key, or a final component/pair from the secret family. Prefixed and
+versioned aliases remain covered. Ordinary words (awake, proofread, tokenizer,
+secretary), token counts, handshake_ms and wake_time remain visible. Exact
+session_id and the three association marker keys are exempt from key-family
+redaction, while known values are still scrubbed. The shared core continues to
+classify policy as sensitive.
+
+Effective Muse trust and SQL inherit guards seed a recursive component at the
+requested owner and VM. Every traversal uses indexed owner/VM edges, including
+active selections, historical label VMs and label-independent observations.
+Unrelated confidential components are not enumerated. Confidential bulk bind
+and human barrier repair retain the whole-workspace set-wise closure and raw-SQL
+propagation guards. Unreleased migration 005 is amended in place; no 006.
+
+Muse trust failures classify SQLite primary codes (including extended codes):
+IOERR/CANTOPEN/PERM/NOLFS/READONLY/FULL are environment/user_action;
+BUSY/LOCKED/PROTOCOL/NOMEM/INTERRUPT are transient/safe_read;
+CORRUPT/NOTADB/SCHEMA/CONSTRAINT and invalid stored types are damage/never.
+Unclassified codes and Python exceptions return a fixed internal failure and
+report action, without restore or permissions advice. Recording retains its
+honest failure prefix and the underlying guidance. A committed barrier uses
+closure-only human repair. Unreleased 005 enforces integer generation/flags,
+text identities/hashes and nonempty text timestamps, also on upgrade and restore.
+
+Hint matching walks all object/list values to the parser's depth bound, using
+NFKC casefolding and compaction. Any string containing cvm or confidential is
+evidence; a key containing either is evidence when truthy, except false, 0, null,
+empty values or compact false/no/0/none. Each marker records every usable identity
+of its innermost identity-bearing object; child rows own their evidence. A vms
+container starts a row scope. Without an identity scope, persist owner evidence
+and every usable id. Direct session-level hints cover every usable id. Every
+observation commits before refusal, including contradictory aliases and owner
+mismatch. False positives permanently refuse the connected standard tier; this
+intentionally errs toward confidentiality and there is no reset tool.
+
+Owned Muse redaction collects sorted, merged credential spans and renders the
+output with one join, without slicing the whole body per span or truncating
+before sanitization. Sensitive text assignments are removed as a unit, avoiding
+re-entry into the core's ordinary-pair pattern with a large assignment stream.
+The strict CPU doubling regression covers 128 KiB–1 MiB for text and body. The
+ordinary-pair core path remains a strict xfail until the shared safety owner
+makes it linear; no safety.py change is included here.
 
 ---
 
@@ -869,15 +923,69 @@ HTTP 200 session: status=unavailable或missing vm_id回resource；其他非assig
 
 Confidential write後notify全部workspace live listeners，跨local labels立即close sockets；下一call仍重查durable state。
 
-Round 4 hint scan walks the authenticated session object iteratively, once, to depth 32 within the 1 MiB body. Compact/casefold key family: vm_type, type, vm_state, state, kind, vm_kind, vm_resolution_issue, cvm_required, cvm_replacement_enabled. A compact string containing cvm or confidentialvm is a marker; the two boolean keys also count any truthy value. Nested metadata and nested vms containers are scanned. A marker within a VM row records the row’s first usable id (including compact vmId aliases); nested metadata cannot redirect that id, and a nested vms container starts a new row scope; a marker outside rows records the owner seed and all usable ids. With no id, owner-only evidence is committed. A false positive permanently refuses standard for the connected owner/VM component: this deliberately errs toward confidentiality. Invalid depth or an oversized body is refused before dialing.
 
-Redaction uses the tested compact secret-key family in text and JSON without matching generic ids. It accepts prefix/suffix aliases, =/:/=> and XML delimiters. It percent-decodes up to two levels before longest-first matching and merging overlapping known spans; quote_plus and lowercase escapes are covered. Alias scanning covers full WSS queries even after an ordinary URL scheme. Non-sensitive text retains its original percent encoding. This is a specific tested encoding scope, not a claim about every possible representation.
 
 Round 4 amends unreleased migration 005 again, with no 006: muse_trust_accounts now checks lower-case hexadecimal viewer/session hashes and normalized nonempty active VM ids, or NULL only with confidentiality set. The same constraints are verified on fresh v5, v4→v5 and confidential backup→restore. Noncanonical development v5 databases still fail schema verification.
 
 Round 4 provenance design: source and observed_at are frozen once an observation or label VM row has confidential_required=1, including later direct evidence. A direct hint/RV may stamp a prior cr=0 observation during its transition to 1; a standard freeze never restamps a cr=1 row. Inherited propagation retains the association’s prior provenance, rather than claiming direct CVM evidence. Existing immutable guards enforce this metadata rule; no first-cause column is needed because nothing overwrites confidential provenance.
 
-Operational SQLite IOERR/CANTOPEN/PERM回workspace access/user_action，無restore advice；ENOSPC/EROFS回full-disk/read-only。Restore只適用明確integrity/schema failures。
+
+Session and selected-row keys whose compact form is `vmid` must all be valid and
+normalize to one VM identity, independently of key order. Name, endpoint and the
+persistent trust key use that identity. The exact server `vm_id` may be retained
+on the wire only after that agreement check (case and surrounding whitespace
+are the only permitted differences). A confidential hint records every usable
+identity alias before any disagreement is refused, before mint, wake or dial.
+
+Muse sanitization includes the codec's cookie, bearer and credential-pair
+shapes, and treats Authorization and Proxy-Authorization scheme plus credential
+as one value. Known secrets are matched in both raw text and up to two decoded
+percent-encoding layers; their coordinate-mapped span union is merged before
+one output join. A literal percent next to a hex nonce or UUID cannot hide it.
+
+Muse secret aliases are matched by separator and camelCase components: an
+exact extra key, or a final component/pair from the secret family. Prefixed and
+versioned aliases remain covered. Ordinary words (awake, proofread, tokenizer,
+secretary), token counts, handshake_ms and wake_time remain visible. Exact
+session_id and the three association marker keys are exempt from key-family
+redaction, while known values are still scrubbed. The shared core continues to
+classify policy as sensitive.
+
+Effective Muse trust and SQL inherit guards seed a recursive component at the
+requested owner and VM. Every traversal uses indexed owner/VM edges, including
+active selections, historical label VMs and label-independent observations.
+Unrelated confidential components are not enumerated. Confidential bulk bind
+and human barrier repair retain the whole-workspace set-wise closure and raw-SQL
+propagation guards. Unreleased migration 005 is amended in place; no 006.
+
+Muse trust failures classify SQLite primary codes (including extended codes):
+IOERR/CANTOPEN/PERM/NOLFS/READONLY/FULL are environment/user_action;
+BUSY/LOCKED/PROTOCOL/NOMEM/INTERRUPT are transient/safe_read;
+CORRUPT/NOTADB/SCHEMA/CONSTRAINT and invalid stored types are damage/never.
+Unclassified codes and Python exceptions return a fixed internal failure and
+report action, without restore or permissions advice. Recording retains its
+honest failure prefix and the underlying guidance. A committed barrier uses
+closure-only human repair. Unreleased 005 enforces integer generation/flags,
+text identities/hashes and nonempty text timestamps, also on upgrade and restore.
+
+Hint matching walks all object/list values to the parser's depth bound, using
+NFKC casefolding and compaction. Any string containing cvm or confidential is
+evidence; a key containing either is evidence when truthy, except false, 0, null,
+empty values or compact false/no/0/none. Each marker records every usable identity
+of its innermost identity-bearing object; child rows own their evidence. A vms
+container starts a row scope. Without an identity scope, persist owner evidence
+and every usable id. Direct session-level hints cover every usable id. Every
+observation commits before refusal, including contradictory aliases and owner
+mismatch. False positives permanently refuse the connected standard tier; this
+intentionally errs toward confidentiality and there is no reset tool.
+
+Owned Muse redaction collects sorted, merged credential spans and renders the
+output with one join, without slicing the whole body per span or truncating
+before sanitization. Sensitive text assignments are removed as a unit, avoiding
+re-entry into the core's ordinary-pair pattern with a large assignment stream.
+The strict CPU doubling regression covers 128 KiB–1 MiB for text and body. The
+ordinary-pair core path remains a strict xfail until the shared safety owner
+makes it linear; no safety.py change is included here.
 
 ---
 
