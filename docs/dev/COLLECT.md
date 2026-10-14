@@ -365,7 +365,9 @@ cookie configurations must set the provider/account labels to match their import
 ### AT-040 operator plan (LIVE remains blocked)
 
 In a separately authorized, permitted real-account environment, the operator first
-reviews the remote preview, saves the request, and approves its exact digest with
+reviews every first-hop/later-hop approval, its hosts and cookie label/account, the
+structural destination and cap snapshot; saves the original request bytes when the
+review echo normalizes or masks them; and approves its exact digest with
 `metamuse permit approve --operation collect.remote --request-file REQUEST_FILE
 --exact-digest ACTION_DIGEST --request-key APPROVAL_KEY`. Repeat with the returned
 grant, then compare source metadata, subtitles and any requested media bytes against
@@ -689,3 +691,18 @@ Transparent outer pages may change descriptive titles, but never `channel_id`,
 `uploader_id`, `channel_url` or `uploader_url`. Native identity scope comes only
 from the final inner result, so collecting the inner URL and an outer delegation
 reuses the same source.
+
+Login form actions resolve against the document's first `<base href>`; missing or
+empty actions use the document URL. Challenge detection matches `__rd_verify` without
+regard to case or a preceding slash spelling, including relative and encoded paths.
+Invalid or credential-shaped `remote_media.provider` / `remote_media.account` labels
+return a fixed E_INPUT_INVALID configuration error naming the setting, never its value.
+
+Cookie domains must have at least two labels: `.com`, `com` and `localhost` are refused.
+Without a public-suffix list, B12 does not detect multi-label public suffixes such as
+`co.uk`. Browser exports never contain public-suffix cookies; use an unmodified
+Netscape browser export and never synthesize a broad-domain cookie.
+
+The digest-based approval-key ordinal is shared with journey. Two simultaneous
+previews can show the same key, and changing approval terms with an already-used
+key can conflict; this round leaves that core approval-key design unchanged.

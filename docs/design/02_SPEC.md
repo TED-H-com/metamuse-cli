@@ -427,3 +427,10 @@ B12 preparation enforces the shared 8192-byte UTF-8 URL bound and cheap HTTP(S)
 syntax checks before redaction, display, digest, preview or job creation. One byte
 over the bound returns the same outbound-policy error as the dial-time guard,
 without a preview. URLInput still needs a core-owned schema/validation bound.
+
+Remote configuration labels that are invalid or credential-shaped return fixed
+E_INPUT_INVALID naming only the setting. Approval callback Exceptions preserve the
+original refusal without a preview; logging contains only a fixed line and type.
+Login form actions honor the first base href. Challenge token __rd_verify matches
+case-insensitively regardless of preceding slash encoding. Cookie domains require
+at least two labels; multi-label public suffix detection needs a public-suffix list.

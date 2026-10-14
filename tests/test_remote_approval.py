@@ -27,6 +27,11 @@ def entry(tmp_path, monkeypatch):
 from pathlib import Path
 from urllib.parse import urlsplit
 from metamuse import app, remote_media, safety
+if os.environ.get('REMOTE_TEST_BROKEN_PREVIEW'):
+    from metamuse import collect
+    def broken_preview(ctx, request):
+        raise KeyError(os.environ['REMOTE_TEST_BROKEN_PREVIEW'])
+    collect._REMOTE_APPROVAL_ROUTES[remote_media.OPERATION] = broken_preview
 original_open = app.AppContext.open
 app.AppContext.open = classmethod(lambda cls, workspace=None, **kw:
     original_open(workspace, clock=lambda: os.environ['REMOTE_TEST_CLOCK']))

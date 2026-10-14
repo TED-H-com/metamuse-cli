@@ -83,6 +83,9 @@ def approval_failure(ctx: AppContext, request: m.Model, error: m.CoreError) -> m
                 preview = approval_preview(ctx, operation, request.model_dump(mode="python"))
             except m.CoreError:
                 return m.failure(error)
+            except Exception as exc:
+                ctx.logger.warning("Approval preview callback failed (%s)", type(exc).__name__)
+                return m.failure(error)
             return m.Envelope(
                 status="error",
                 error=error.detail.model_copy(update={"next_action": preview.next_action}),

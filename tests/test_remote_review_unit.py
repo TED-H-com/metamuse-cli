@@ -114,3 +114,43 @@ def test_review_outer_identity_fields_never_override_inner(field):
     merged = remote_media._merge_transparent(inner, outer)
     assert merged[field] == "inner-real-scope"
     assert merged["title"] == "Outer"
+
+
+@pytest.mark.parametrize(
+    "html,expected",
+    [
+        (b'<form action="login.php"></form>', True),
+        (b'<form action="&#47;login&#47;"></form>', True),
+        (b'<form action="https://www.facebook.com/login/device-based/"></form>', True),
+        (b'<base href="https://www.facebook.com/login/"><form action="?next=1"></form>', True),
+        (b'<base href="/login/"><form action="./"></form>', True),
+        (b'<base href="/login/"><form method="post"></form>', False),
+        (b'<base href="/login/"><form action=""></form>', False),
+        (b'<form action="./"></form><base href="/login/">', True),
+    ],
+)
+def test_review_login_forms_resolve_against_base(html, expected):
+    assert (
+        remote_media._login_form(html, "https://www.facebook.com/share/r/Synthetic1/") is expected
+    )
+
+
+@pytest.mark.parametrize(
+    "prefix", ["/", "\\/", "\\u002f", "&#47;", "&#x2f;", "%2F", "", "relative/"]
+)
+@pytest.mark.parametrize("channel", ["body", "refresh", "location"])
+def test_review_challenge_token_all_spellings(prefix, channel):
+    value = prefix + "__RD_VERIFY_1"
+    body = value.encode() if channel == "body" else b""
+    headers = {} if channel == "body" else {channel: value}
+    assert remote_media._challenge_marked(200, headers, body, "OK")
+
+
+@pytest.mark.parametrize("domain", [".com", "com", "localhost"])
+def test_review_cookie_domains_need_two_labels(domain):
+    secret = f"{domain}\tTRUE\t/\tTRUE\t0\tsid\t{'synthetic'}\n".encode()
+    with pytest.raises(m.CoreError) as held:
+        remote_media._parse_cookie_secret(secret)
+    assert held.value.detail.code == m.ErrorCode.INPUT_INVALID
+    assert held.value.detail.message == "Cookie file line 1 is invalid"
+    assert domain not in held.value.detail.message
