@@ -108,6 +108,29 @@ Runtime dependencies:
 | annotated-types | 0.8.0 | MIT | Pydantic annotation support. |
 | typing-inspection | 0.4.4 | MIT | Pydantic typing support. |
 | typing_extensions | 4.16.0 | PSF-2.0 | Pydantic typing compatibility. |
+| mcp | 2.3.0 | MIT | Official MCP Python SDK for stdio transport and JSON-RPC wire framing; avoid hand-rolled protocol machinery. |
+| mcp-types | 2.3.0 | MIT | MCP protocol type models and version constants (`mcp` dependency). |
+| anyio | 4.15.1 | MIT | Structured async concurrency and stream wrappers (`mcp` dependency). |
+| attrs | 26.1.0 | MIT | Class and attribute helpers (`jsonschema` dependency). |
+| cffi | 2.1.1 | MIT-0 | C foreign function interface (`cryptography` dependency). |
+| click | 8.5.0 | BSD-3-Clause | Command-line interface toolkit (`uvicorn` dependency). |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Cryptographic primitives (`pyjwt[crypto]` dependency required by `mcp`). |
+| h11 | 0.16.0 | MIT | HTTP/1.1 protocol state machine (`httpcore2` and `uvicorn` dependency). |
+| httpcore2 | 2.13.1 | BSD-3-Clause | Low-level HTTP transport core (`httpx2` dependency). |
+| httpx2 | 2.13.1 | BSD-3-Clause | HTTP client library (`mcp` dependency). |
+| idna | 3.20 | BSD-3-Clause | Internationalized domain names in applications (`anyio` and `httpx2` dependency). |
+| jsonschema | 4.26.0 | MIT | JSON Schema Draft 2020-12 validation (`mcp` dependency). |
+| jsonschema-specifications | 2025.9.1 | MIT | JSON Schema meta-schemas and vocabularies (`jsonschema` dependency). |
+| opentelemetry-api | 1.45.1 | Apache-2.0 | Telemetry tracing API (`mcp` dependency; no exporter enabled). |
+| pycparser | 3.11 | BSD-3-Clause | C parser in Python (`cffi` dependency). |
+| pyjwt | 2.15.1 | MIT | JSON Web Token implementation (`PyJWT`; `mcp` dependency). |
+| python-multipart | 0.0.32 | Apache-2.0 | Streaming multipart parser (`mcp` dependency). |
+| referencing | 0.37.0 | MIT | JSON Schema `$ref` resolution (`jsonschema` dependency). |
+| rpds-py | 2026.9.1 | MIT | Persistent data structures (`jsonschema` and `referencing` dependency). |
+| sse-starlette | 3.5.0 | BSD-3-Clause | Server-sent events for Starlette (`mcp` dependency). |
+| starlette | 1.8.0 | BSD-3-Clause | ASGI framework (`mcp` and `sse-starlette` dependency). |
+| truststore | 0.10.5 | MIT | OS trust store certificate verification (`httpcore2` and `httpx2` dependency). |
+| uvicorn | 0.54.0 | BSD-3-Clause | ASGI server implementation (`mcp` dependency). |
 
 Development dependencies (not runtime requirements): pytest 9.1.1 (MIT), ruff 0.17.0
 (MIT), jsonschema 4.26.0 (MIT). These provide the requested test runner, lint/format
