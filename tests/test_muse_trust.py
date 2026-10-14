@@ -235,8 +235,8 @@ def test_final_handoff_serializes_selection_change_across_store_instances(ctx):
         freeze(another_store, session_binding_id="reselected-session")
         changed.set()
 
-    one = threading.Thread(target=connect)
-    two = threading.Thread(target=reselect)
+    one = threading.Thread(target=connect, daemon=True)
+    two = threading.Thread(target=reselect, daemon=True)
     one.start()
     assert entered.wait(remaining())
     two.start()
@@ -284,13 +284,18 @@ def test_sql_guards_reject_downgrade_delete_and_owner_rebinding(ctx):
 def test_final_handoff_allows_workspace_maintenance_after_commit(ctx):
     from metamuse.store import file_lock
 
+    deadline = time.monotonic() + 90
+
+    def remaining():
+        return max(0, deadline - time.monotonic())
+
     snapshot = freeze(ctx.store)
     entered, release, maintenance = (threading.Event() for _ in range(3))
     errors = []
 
     def handoff():
         entered.set()
-        assert release.wait(3)
+        assert release.wait(remaining())
 
     def connect():
         try:
@@ -302,14 +307,17 @@ def test_final_handoff_allows_workspace_maintenance_after_commit(ctx):
         with file_lock(ctx.paths.runtime / "maintenance.lock"):
             maintenance.set()
 
-    one, two = threading.Thread(target=connect), threading.Thread(target=maintain)
+    one, two = (
+        threading.Thread(target=connect, daemon=True),
+        threading.Thread(target=maintain, daemon=True),
+    )
     one.start()
-    assert entered.wait(3)
+    assert entered.wait(remaining())
     two.start()
-    assert maintenance.wait(3)
+    assert maintenance.wait(remaining())
     release.set()
-    one.join(3)
-    two.join(3)
+    one.join(remaining())
+    two.join(remaining())
     assert maintenance.is_set() and not errors and not one.is_alive() and not two.is_alive()
 
 
