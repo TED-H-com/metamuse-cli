@@ -534,9 +534,6 @@ class _Secrets:
 
     def text(self, value: str) -> str:
         # A bracketed placeholder makes B08's assignment matcher drop the closer.
-        for secret in self._values:
-            if secret and secret in value:
-                value = value.replace(secret, "redacted")
         from metamuse._muse_redact import sanitize_text
 
         return sanitize_text(value, tuple(self._values))
@@ -1111,6 +1108,18 @@ class MuseTransport:
 
     def _remember(self, value: object) -> None:
         self._secrets.add(value)
+        if isinstance(value, str) and len(value) in (32, 36):
+            try:
+                identifier = uuid.UUID(value)
+            except ValueError:
+                return
+            for variant in (
+                str(identifier),
+                str(identifier).upper(),
+                identifier.hex,
+                identifier.hex.upper(),
+            ):
+                self._secrets.add(variant)
 
     def _cookie_jar(self) -> str:
         provider = self._credentials
@@ -1462,7 +1471,9 @@ class MuseTransport:
     def _remember_nonce(self, nonce: bytes) -> None:
         for value in (
             nonce.hex(),
+            nonce.hex().upper(),
             base64.b64encode(nonce).decode(),
+            base64.b64encode(nonce).decode().rstrip("="),
             base64.urlsafe_b64encode(nonce).decode(),
             base64.urlsafe_b64encode(nonce).decode().rstrip("="),
         ):

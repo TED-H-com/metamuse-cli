@@ -28,8 +28,11 @@ _EXTRA_KEYS = frozenset(
 _NAMES = "|".join(
     "[-_]*".join(name) for name in sorted(_EXTRA_KEYS | {"authtoken", "accesstoken", "hatchsess"})
 )
-_QUERY = re.compile(rf"(?i)\b({_NAMES})=([^&\s\"']+)")
-_JSON_SECRET = re.compile(rf'(?i)("(?:{_NAMES})"\s*:\s*)(?:"(?:[^"\\]|\\.)*"|[^,}}\s]+)')
+_QUERY = re.compile(rf"(?i)\b({_NAMES})\s*=\s*([^&\s\"']+)")
+_JSON_SECRET = re.compile(
+    rf"""(?i)((?:["'])?\b(?:{_NAMES})(?:["'])?\s*[:=]\s*)"""
+    r"""(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,}\]&\s]+)"""
+)
 _WAKE_OBJECT = re.compile(r"\{[^{}]*\}")
 
 
@@ -55,16 +58,20 @@ def sensitive_key(key: str) -> bool:
 
 
 def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
-    for secret in known:
-        if len(secret) >= 4:
-            for variant in (secret, quote(secret, safe=""), quote_plus(secret, safe="")):
-                value = value.replace(variant, "redacted")
+    variants = {
+        variant
+        for secret in known
+        if len(secret) >= 4
+        for variant in (secret, quote(secret, safe=""), quote_plus(secret, safe=""))
+    }
+    for variant in sorted(variants, key=len, reverse=True):
+        value = value.replace(variant, "redacted")
     original = value
     # Decode diagnostic percent-encoding before recognizing envelope/query grammars.
     for _ in range(2):
         value = unquote(value)
     decoded = value
-    for secret in known:
+    for secret in sorted(known, key=len, reverse=True):
         if len(secret) >= 4:
             value = value.replace(secret, "redacted")
     value = _WAKE_OBJECT.sub(_embedded_wake, value)
