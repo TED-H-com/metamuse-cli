@@ -310,3 +310,36 @@ def test_f9_human_only_subprocess_never_opens_workspace(tmp_path, command):
     assert process.returncode == 3, process.stderr
     assert json.loads(process.stdout)["error"]["code"] == "E_SCOPE_REQUIRED"
     assert not workspace.exists()
+
+
+def test_f10_auth_list_partial_retains_valid_refs_and_exact_revoke(ctx, tmp_path):
+    secret = safety.SecretStore(tmp_path / "auth")
+    ctx.secret_store = secret
+    marker = f"{tmp_path.name}_MARKER_SYNTHETIC_ONLY"
+    valid = [
+        secret.put(
+            marker.encode(), provider="synthetic", account="synthetic", created_at=ctx.clock()
+        )
+        for _ in range(2)
+    ]
+    bad_ref = "auth_" + uuid.uuid4().hex
+    path = secret.root / (bad_ref + ".json")
+    path.write_text('{"secret": "' + marker)
+    path.chmod(0o600)
+    ctx.policy.muse.binding = m.MuseBinding(
+        provider="synthetic", account="synthetic", auth_ref=bad_ref
+    )
+    result = safety.list_auth(ctx)
+    assert result.status == "partial"
+    assert {record["auth_ref"] for record in result.data["references"]} == {
+        record["auth_ref"] for record in valid
+    }
+    corrupt = result.data["unavailable"]
+    assert len(corrupt) == 1 and corrupt[0]["auth_ref"] == bad_ref
+    assert corrupt[0]["reason"] == "Secret record is unavailable or invalid"
+    assert corrupt[0]["next_action"] == f"metamuse auth revoke --auth-ref {bad_ref}"
+    assert (
+        marker not in result.model_dump_json() and str(secret.root) not in result.model_dump_json()
+    )
+    assert safety.revoke_auth(ctx, bad_ref).data["config_bound"]
+    assert safety.list_auth(ctx).status == "ok"

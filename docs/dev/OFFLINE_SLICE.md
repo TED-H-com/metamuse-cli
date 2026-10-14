@@ -110,3 +110,9 @@ check, then preview/grant checks/persistence/work. Replay preserves accepted req
 after a rule upgrade. The worker checks frozen text again before issuing a token or
 opening a gateway. Refused frozen bodies have proven `not_submitted` delivery; sends
 close as `abandoned`, cannot block the discussion, and require preparing a new send.
+
+B16a `auth list` returns `partial` when records are corrupt: valid metadata stays in
+`references`, corrupt opaque refs/fixed reasons/exact revoke commands in `unavailable`,
+and `next_action` lists those commands. Neither file contents nor paths are exposed.
+Human-only auth/permit commands refuse noninteractive calls before opening a workspace;
+scripted `permit approve --exact-digest` needs no TTY.

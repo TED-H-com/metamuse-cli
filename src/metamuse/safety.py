@@ -834,7 +834,7 @@ class SecretStore:
         # JSONDecodeError.doc through __context__. Leave the handler before raising.
         _secret_error()
 
-    def list(self) -> list[dict[str, Any]]:
+    def list(self, *, corrupt: list[dict[str, str]] | None = None) -> list[dict[str, Any]]:
         """Return validated metadata only, never secret values or filesystem paths."""
         directory = None
         try:
@@ -846,22 +846,47 @@ class SecretStore:
             for name in sorted(os.listdir(directory)):
                 if not name.endswith(".json") or not _AUTH_REF.fullmatch(name[:-5]):
                     continue
-                value = json.loads(_read_secret_file(self.root / name, SECRET_MAX_BYTES * 2))
-                metadata = value["metadata"]
-                if metadata["auth_ref"] != name[:-5] or metadata["storage_kind"] != "private_file":
-                    _secret_error()
-                _label(metadata["provider"], optional=True)
-                _label(metadata["account"], optional=True)
-                created_at = _timestamp(metadata["created_at"]).isoformat()
-                records.append(
-                    {
-                        "provider": metadata["provider"],
-                        "account": metadata["account"],
-                        "auth_ref": name[:-5],
-                        "created_at": created_at,
-                        "storage_kind": "private_file",
-                    }
-                )
+                record = None
+                try:
+                    value = json.loads(_read_secret_file(self.root / name, SECRET_MAX_BYTES * 2))
+                    metadata = value["metadata"]
+                    if (
+                        metadata["auth_ref"] != name[:-5]
+                        or metadata["storage_kind"] != "private_file"
+                    ):
+                        _secret_error()
+                    _label(metadata["provider"], optional=True)
+                    _label(metadata["account"], optional=True)
+                    created_at = _timestamp(metadata["created_at"]).isoformat()
+                    if (
+                        not 0
+                        < len(base64.b64decode(value["secret_b64"], validate=True))
+                        <= SECRET_MAX_BYTES
+                    ):
+                        _secret_error()
+                    records.append(
+                        {
+                            "provider": metadata["provider"],
+                            "account": metadata["account"],
+                            "auth_ref": name[:-5],
+                            "created_at": created_at,
+                            "storage_kind": "private_file",
+                        }
+                    )
+                    record = records[-1]
+                except (m.CoreError, OSError, ValueError, KeyError, TypeError, RecursionError):
+                    pass
+                if record is None:
+                    if corrupt is None:
+                        _secret_error()
+                    corrupt.append(
+                        {
+                            "auth_ref": name[:-5],
+                            "reason": "Secret record is unavailable or invalid",
+                            "next_action": "metamuse auth revoke --auth-ref " + name[:-5],
+                        }
+                    )
+
             return records
         except (m.CoreError, OSError, ValueError, KeyError, TypeError, RecursionError):
             pass
@@ -895,10 +920,20 @@ class SecretStore:
 def list_auth(ctx: AppContext) -> m.Envelope:
     ctx.require_interactive()
     binding = ctx.policy.muse.binding
-    records = (ctx.secret_store or SecretStore()).list()
+    corrupt: list[dict[str, str]] = []
+    records = (ctx.secret_store or SecretStore()).list(corrupt=corrupt)
     for record in records:
         record["config_bound"] = binding is not None and binding.auth_ref == record["auth_ref"]
-    return m.Envelope(status="ok", data={"references": records})
+    return m.Envelope(
+        status="partial" if corrupt else "ok",
+        data={
+            "references": records,
+            "unavailable": corrupt,
+            "next_action": "; ".join(record["next_action"] for record in corrupt)
+            if corrupt
+            else None,
+        },
+    )
 
 
 def revoke_auth(ctx: AppContext, auth_ref: str) -> m.Envelope:

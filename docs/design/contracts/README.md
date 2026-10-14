@@ -38,7 +38,7 @@ contracts are unchanged. Installation is documented in
 
 B16a human CLI auth contracts (shared Envelope, no new MCP tool):
 
-- `auth list`: no arguments; `data.references` is a complete list of objects with
+- `auth list`: no arguments; `data.references` contains valid objects with
   `provider`/`account` (nullable non-secret labels), `auth_ref` (opaque auth ID),
   `created_at` (timezone-aware timestamp), `storage_kind="private_file"` and
   `config_bound` (boolean for the current Muse config). No secret values or paths.
@@ -47,9 +47,15 @@ B16a human CLI auth contracts (shared Envelope, no new MCP tool):
   rebind. Symlinks/non-regular files are refused. Resolving after revocation returns
   fixed `E_AUTH_REQUIRED` with an empty cause/context chain.
 - Both commands require human interaction; `--non-interactive` returns
-  `E_SCOPE_REQUIRED` before storage access. Unsafe or corrupt records return fixed
-  `E_AUTH_REQUIRED`. Missing storage lists zero refs; revoke requires an existing ref.
+  `E_SCOPE_REQUIRED` before storage access. Unsafe directories return fixed
+  `E_AUTH_REQUIRED`; corrupt records produce the partial listing below. Missing storage lists zero refs; revoke requires an existing ref.
 
-Muse send's unchanged input schema now enforces a question privacy check before
-approval previews and persistence: any change under the shared packet redactor returns
-`E_INPUT_INVALID` with credential-removal guidance. The question is never rewritten.
+Muse's unchanged input schemas enforce topic/question credential checks after read-only
+receipt replay and before previews/persistence. Only credential-class values return
+fixed `E_INPUT_INVALID`; accepted prose/paths stay exact in preview and wire.
+
+B16a auth-list partial contract: `status=partial`, `data.references` contains valid
+metadata; `data.unavailable` contains only opaque `auth_ref`, a fixed `reason`, and
+`next_action="metamuse auth revoke --auth-ref REF"`. `data.next_action` names the
+revoke commands. Corrupt values/content and directory paths are never returned.
+Strict backend SecretStore.list/resolve failures retain fixed detached E_AUTH_REQUIRED.

@@ -90,8 +90,10 @@ There is no browser-profile reader, secret-export command or secret-returning MC
 `data.references`: provider, account, auth_ref, created_at, storage_kind and config_bound.
 The binding flag checks the current workspace's Muse config, even if Muse is disabled.
 Only validated metadata is returned; neither secret values/base64 nor filesystem paths
-are exposed. A missing auth directory lists zero refs; unsafe/corrupt records fail with
-the fixed auth error, so a partial list cannot masquerade as complete.
+are exposed. A missing directory lists zero refs. Corrupt leaves produce `partial`,
+with valid `data.references`, opaque `data.unavailable` refs/fixed reasons and exact
+`metamuse auth revoke --auth-ref REF` next actions; no record content is returned.
+Unsafe directories still fail with the fixed auth error.
 
 `revoke_auth(ctx, auth_ref)` / `metamuse auth revoke --auth-ref REF` also require human
 interaction. Dirfd traversal rejects symlink directories, and lstat rejects symlink or
@@ -294,3 +296,9 @@ check, then preview/grant checks/persistence/work. Replay preserves accepted req
 after a rule upgrade. The worker checks frozen text again before issuing a token or
 opening a gateway. Refused frozen bodies have proven `not_submitted` delivery; sends
 close as `abandoned`, cannot block the discussion, and require preparing a new send.
+
+B16a `auth list` returns `partial` when records are corrupt: valid metadata stays in
+`references`, corrupt opaque refs/fixed reasons/exact revoke commands in `unavailable`,
+and `next_action` lists those commands. Neither file contents nor paths are exposed.
+Human-only auth/permit commands refuse noninteractive calls before opening a workspace;
+scripted `permit approve --exact-digest` needs no TTY.
