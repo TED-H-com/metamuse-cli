@@ -12,7 +12,15 @@ from datetime import datetime
 from metamuse import models as m
 from metamuse._muse_adapters import BoundMuseCredentials, MuseURLGuard, resolve_all
 from metamuse.config import load_config
-from metamuse.jobs import OPERATIONS, UNCERTAIN, StepSpec, register_operation, submit_job
+from metamuse.jobs import (
+    OPERATIONS,
+    TERMINAL,
+    UNCERTAIN,
+    StepSpec,
+    register_operation,
+    submit_job,
+    worker_available,
+)
 from metamuse.muse import (
     MUSE_ORIGIN,
     Association,
@@ -172,6 +180,9 @@ def _prepared(route, target, body, marker, node):
 
 def prepare_open(ctx, request: m.MuseOpenRequest):
     """Operator preview helper: full stable target/payload digest for an access grant."""
+    receipt = _receipt(ctx, "muse.open", request)
+    if receipt is not None:
+        return _receipt_payload(ctx, receipt)
     _check_question(request.topic)
     binding, backend = _binding(ctx)
     identity = _identity("dsc", request.project_id, request.request_key)
@@ -193,7 +204,10 @@ def _check_question(question: str) -> None:
 
 
 def prepare_send(ctx, request: m.MuseSendRequest):
-    # Also used by approval previews: refusal must precede any preview or grant request.
+    # Receipt lookup precedes the detector, including in the preview preparation path.
+    receipt = _receipt(ctx, "muse.send", request)
+    if receipt is not None:
+        return _receipt_payload(ctx, receipt)
     _check_question(request.question)
     discussion = ctx.store.get(m.Discussion, request.discussion_id)
     binding, backend = _binding(ctx, discussion)
@@ -478,7 +492,7 @@ def _share_target(permit, digest):
         )
 
 
-def _replay(ctx, operation, request):
+def _receipt(ctx, operation, request):
     with ctx.store.connection() as conn:
         row = conn.execute(
             "SELECT * FROM jobs WHERE operation=? AND request_key=?",
@@ -498,24 +512,53 @@ def _replay(ctx, operation, request):
             if operation == "muse.open"
             else ctx.store.get(m.Exchange, target["intent_id"], conn=conn).discussion_id
         )
-    result = submit_job(
-        ctx.store,
-        operation,
-        request.request_key,
-        job.payload,
-        project_id=job.project_id,
-        steps=[StepSpec(target=target)],
-    )
-    if result.data is not None:
-        result.data.update(
-            {
-                "discussion_id": discussion_id,
-                "exchange_id": target.get("intent_id") if operation == "muse.send" else None,
-                "backend": target["backend"],
-                "mock": target["backend"] == "fixture",
-            }
+    return job, target, discussion_id
+
+
+def _receipt_payload(ctx, receipt):
+    job, target, _ = receipt
+    if job.operation == "muse.open":
+        return ctx.store.get(m.Discussion, target["intent_id"]).open_payload
+    return ctx.store.get(m.Exchange, target["intent_id"]).outbound_payload
+
+
+def _replay(ctx, operation, request):
+    receipt = _receipt(ctx, operation, request)
+    if receipt is None:
+        return None
+    job, target, discussion_id = receipt
+    if job.state == "awaiting_user" or (job.error and job.error.get("retry_class") == "reconcile"):
+        detail = (
+            m.ErrorDetail.model_validate(job.error)
+            if job.error
+            else m.CoreError(m.ErrorCode.JOB_BUSY, "Job is awaiting user action").detail
         )
-    return result
+        return m.Envelope(
+            status="error",
+            error=detail.model_copy(
+                update={
+                    "next_action": f"Inspect job {job.id} with job_get; "
+                    + (detail.next_action or "resolve its pending action")
+                }
+            ),
+        )
+    return m.Envelope(
+        status="accepted"
+        if job.state not in TERMINAL
+        else "partial"
+        if job.state == "partial"
+        else "ok",
+        data={
+            "job_id": job.id,
+            "state": job.state,
+            "worker_available": worker_available(ctx.store),
+            "job": job.model_dump(mode="json"),
+            "discussion_id": discussion_id,
+            "exchange_id": target["intent_id"] if operation == "muse.send" else None,
+            "backend": target["backend"],
+            "mock": target["backend"] == "fixture",
+        },
+    )
 
 
 def _assert_available(conn, discussion_id, *, exclude=None):
@@ -624,11 +667,11 @@ def open_muse_discussion(ctx, request):
 
 
 def submit_muse_exchange(ctx, request):
-    _check_question(request.question)
     register_operations()
     replay = _replay(ctx, "muse.send", request)
     if replay is not None:
         return replay
+    _check_question(request.question)
     prepared = prepare_send(ctx, request)
     discussion = ctx.store.get(m.Discussion, request.discussion_id)
     packet = ctx.store.get(m.Packet, request.packet_id)
@@ -753,6 +796,46 @@ def _exchange_view(store, discussion, exchange, conn=None):
     )
 
 
+def _refuse_frozen(step, discussion, exchange, saved, refusal):
+    """Before a token or gateway exists: no external submission was possible."""
+    proof = m.MuseProof(
+        kind="not_submitted",
+        step_id=step.step.id,
+        outbound_digest=exchange.outbound_digest
+        if exchange
+        else hashlib.sha256(m.canonical_json(saved.body)).hexdigest(),
+    )
+
+    def save(writer):
+        if exchange is not None:
+            writer.execute(
+                "UPDATE exchanges SET state='closed',outcome='abandoned',bytes_handed_off=0,attempt_verdict='undecided',attempt_error_code=?,delivery_proof=? WHERE id=?",
+                (
+                    refusal.detail.code.value,
+                    m.canonical_json(proof.model_dump(mode="json")).decode(),
+                    exchange.id,
+                ),
+            )
+        else:
+            writer.execute(
+                "UPDATE discussions SET open_attempt_state='failed_before_send',open_bytes_handed_off=0,open_verdict='undecided',open_error_code=?,open_delivery_proof=? WHERE id=?",
+                (
+                    refusal.detail.code.value,
+                    m.canonical_json(proof.model_dump(mode="json")).decode(),
+                    discussion.id,
+                ),
+            )
+
+    step.commit_checkpoint({"not_submitted": True}, write_batch=save)
+    _error(
+        refusal.detail.code,
+        refusal.detail.message,
+        "Prepare a new send with credentials removed and a new exact grant"
+        if exchange
+        else "Prepare a new session with credentials removed",
+    )
+
+
 def _mutate(step):
     is_open = step.job.operation == "muse.open"
     if is_open:
@@ -771,7 +854,10 @@ def _mutate(step):
         or (exchange is not None and exchange.state != "prepared")
     ):
         _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Original attempt is not prepared")
-    wire = _wire(saved)
+    try:
+        wire = _wire(saved)
+    except m.CoreError as refusal:
+        _refuse_frozen(step, discussion, exchange, saved, refusal)
     use = _use(
         discussion,
         step.job.operation,

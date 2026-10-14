@@ -288,3 +288,9 @@ The fixed registration seam and B12/B13 adoption obligations are in [CORE_API.md
 B16a credential refusal uses redaction classes, excluding `local_path`. Code expressions,
 numeric session counters, pagination/model vocabulary and header prose without values
 are benign. Accepted Muse topics/questions remain exact in the wire and approval preview.
+
+B16a submit and prepare order is read-only exact-payload receipt replay, credential
+check, then preview/grant checks/persistence/work. Replay preserves accepted requests
+after a rule upgrade. The worker checks frozen text again before issuing a token or
+opening a gateway. Refused frozen bodies have proven `not_submitted` delivery; sends
+close as `abandoned`, cannot block the discussion, and require preparing a new send.

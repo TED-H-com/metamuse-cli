@@ -354,3 +354,9 @@ step ID, exact target/body digest, handed-off bytes and ack verdict, then settle
 original step. It does not require a newly created echo proof, increase attempts or send
 again. The same verifier still validates immutable observations for stored user-echo
 proofs. This checkpoint boundary is exercised by the real subprocess worker tests.
+
+B16a submit and prepare order is read-only exact-payload receipt replay, credential
+check, then preview/grant checks/persistence/work. Replay preserves accepted requests
+after a rule upgrade. The worker checks frozen text again before issuing a token or
+opening a gateway. Refused frozen bodies have proven `not_submitted` delivery; sends
+close as `abandoned`, cannot block the discussion, and require preparing a new send.

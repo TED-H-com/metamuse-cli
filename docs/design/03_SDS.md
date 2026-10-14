@@ -399,3 +399,9 @@ preview. No schema migration or separate approval store is needed.
 B16a refuses credential-class topic/question values before previews. Local paths and
 benign code/prose remain accepted; approved topic/question bytes are unchanged in the
 request, summary and wire. Credentials cannot produce a human approval request.
+
+B16a submit and prepare order is read-only exact-payload receipt replay, credential
+check, then preview/grant checks/persistence/work. Replay preserves accepted requests
+after a rule upgrade. The worker checks frozen text again before issuing a token or
+opening a gateway. Refused frozen bodies have proven `not_submitted` delivery; sends
+close as `abandoned`, cannot block the discussion, and require preparing a new send.
