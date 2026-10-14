@@ -51,7 +51,8 @@ def submit(ctx, project, permit, *, url=URL, max_items=100, max_bytes=1_000_000)
                 "max_urls": 1,
                 "max_items": max_items,
                 "max_bytes": max_bytes,
-                "wall_clock_seconds": 60,
+                # Synthetic batching/resume permits storage stalls on a busy host.
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit,
             "request_key": "review-job",

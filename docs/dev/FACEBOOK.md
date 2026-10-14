@@ -300,3 +300,7 @@ on exit. A hosted Actions result requires the orchestrator to publish this branc
 
 Structural JSON scripts require both data-fb-post-payload and application/json MIME
 type. Every other script is excluded from body text, even if it carries that marker.
+
+Synthetic review/share-resume jobs use a 300-second wall budget to allow host storage
+stalls while committing batches. This changes only test requests; their two-second
+browser deadlines and production limits remain unchanged.
