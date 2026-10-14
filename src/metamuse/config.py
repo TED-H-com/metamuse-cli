@@ -2,7 +2,7 @@
 
 import tomllib
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, ValidationError
 
@@ -50,6 +50,28 @@ class MuseConfig(EnabledConfig):
     binding: m.MuseBinding | None = None
 
 
+DEFAULT_FACEBOOK_ALLOWED_HOSTS: tuple[str, ...] = (
+    "www.facebook.com",
+    "facebook.com",
+    "m.facebook.com",
+    "web.facebook.com",
+    "static.xx.fbcdn.net",
+    "scontent.xx.fbcdn.net",
+    "external.xx.fbcdn.net",
+    "lookaside.fbsbx.com",
+)
+
+
+class FacebookConfig(m.Model):
+    enabled: bool = False
+    approved_page_types: list[Literal["post_permalink"]] = Field(default_factory=list)
+    auth_ref: Annotated[str, Field(min_length=1, max_length=128)] | None = None
+    account: Annotated[str, Field(min_length=1, max_length=128)] | None = None
+    max_expansions: Annotated[int, Field(ge=0, le=100)] = 10
+    pacing_ms: Annotated[int, Field(ge=0, le=60_000)] = 1500
+    allowed_hosts: list[str] = Field(default_factory=lambda: list(DEFAULT_FACEBOOK_ALLOWED_HOSTS))
+
+
 class Config(m.Model):
     app: AppPolicy = Field(default_factory=AppPolicy)
     worker: WorkerConfig = Field(default_factory=WorkerConfig)
@@ -57,6 +79,7 @@ class Config(m.Model):
     muse: MuseConfig = Field(default_factory=MuseConfig)
     publishing: EnabledConfig = Field(default_factory=EnabledConfig)
     remote_media: RemoteMediaConfig = Field(default_factory=RemoteMediaConfig)
+    facebook: FacebookConfig = Field(default_factory=FacebookConfig)
 
 
 DEFAULT_CONFIG = """[app]
@@ -84,6 +107,12 @@ enabled = false
 [publishing]
 enabled = false
 [remote_media]
+enabled = false
+[facebook]
+enabled = false
+approved_page_types = []
+max_expansions = 10
+pacing_ms = 1500
 """
 
 
