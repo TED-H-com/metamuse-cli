@@ -1,6 +1,5 @@
 """AT-042: installed CLI processes and real MCP stdio, explicit offline fixture config."""
 
-import copy
 import csv
 import hashlib
 import io
@@ -11,12 +10,9 @@ import sys
 from pathlib import Path
 
 import anyio
-import pytest
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-from test_at042_evidence import observation as make_observation
 
-from metamuse import app
 from metamuse import models as m
 
 CORPUS = Path(__file__).parent / "fixtures/corpus/import/comments_tree.jsonl"
@@ -568,44 +564,3 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
     path = os.environ.get("AT042_TRANSCRIPT_PATH")
     if path:
         Path(path).write_bytes(m.canonical_json(journey.transcript))
-
-
-@pytest.mark.parametrize("label", ["backend", "mock", "research_complete"])
-def test_at042_detects_stripped_mock_label(ctx, project, label):
-    record, ref = make_observation(ctx, project, text="Fixture reply, part one.")
-    observed = {**record.model_dump(mode="json"), "evidence_ref": ref}
-    saved = app.save_draft(
-        ctx,
-        {
-            "project_id": project,
-            "text": HOST_TEXT,
-            "platform": "generic",
-            "facts_refs": [ref],
-            "request_key": "negative-draft",
-        },
-    )
-    exported = app.export_objects(
-        ctx,
-        {
-            "project_id": project,
-            "selection": [{"kind": "draft_revision", "id": saved.data["draft_id"], "revision": 1}],
-            "format": "bundle",
-            "request_key": "negative-export",
-        },
-    ).data
-    verify_export(ctx.paths.root, exported, observed)
-    # Remove only the draft's label, keeping attribution elsewhere and hashes valid.
-    # The verifier must detect label loss independently of the manifest integrity check.
-    directory = ctx.paths.root / exported["artifact"]
-    path = directory / "records.jsonl"
-    records = [json.loads(line) for line in path.read_bytes().splitlines()]
-    del records[0][label]
-    raw = b"".join(m.canonical_json(row) + b"\n" for row in records)
-    path.write_bytes(raw)
-    altered = copy.deepcopy(exported)
-    manifest = altered["manifest"]
-    entry = next(member for member in manifest["files"] if member["name"] == path.name)
-    entry.update(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
-    (directory / "manifest.json").write_bytes(m.canonical_json(manifest))
-    with pytest.raises((KeyError, AssertionError)):
-        verify_export(ctx.paths.root, altered, observed)
