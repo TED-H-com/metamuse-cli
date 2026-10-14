@@ -905,3 +905,10 @@ A disconnected browser transport is not proof that a download or browser process
 is gone. Failed download cancellation and context/browser teardown therefore
 fail closed even when CDP is disconnected; a page close exception may be ignored
 only when the page's closed event proves that target has already disappeared.
+
+
+The byte-limit latch also interrupts bounded route/proxy policy and DNS waits
+within the existing 50 ms polling interval, without waiting for resolution or the
+read deadline. Abandoned resolver tasks cannot dial, remain slot-bounded, and
+release their slot when the underlying lookup returns. A sandboxed streaming
+regression trips the byte budget while another URL is waiting on DNS.

@@ -44,8 +44,12 @@ def browser_deadline(test):
         try:
             output, _ = process.communicate(timeout=90)
         except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
-            output, _ = process.communicate()
+            os.killpg(process.pid, signal.SIGTERM)
+            try:
+                output, _ = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                output, _ = process.communicate()
             pytest.fail("Browser test exceeded independent 90s deadline:\n" + output)
         assert process.returncode == 0, output
 

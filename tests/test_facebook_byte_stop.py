@@ -79,3 +79,55 @@ def test_r6_proxy_byte_cutoff_closes_registered_sockets():
         for pair in sockets:
             for sock in pair:
                 sock.close()
+
+
+@browser_deadline
+def test_r6_byte_limit_interrupts_policy_wait(tmp_path, monkeypatch):
+    import threading
+
+    from metamuse import safety
+
+    resolving, release = threading.Event(), threading.Event()
+    prefix = (
+        _synthetic_post_html()
+        .replace("</body>", '<img src="https://waiting.example/hold"></body>')
+        .encode()
+    )
+    suffix = b"X" * 100_000
+
+    def streaming(request):
+        request.send_response(200)
+        request.send_header("Content-Type", "text/html")
+        request.send_header("Content-Length", str(len(prefix) + len(suffix)))
+        request.end_headers()
+        request.wfile.write(prefix)
+        request.wfile.flush()
+        if resolving.wait(timeout=60):
+            try:
+                request.wfile.write(suffix)
+            except OSError:
+                pass
+
+    with browser_fixture(
+        tmp_path, monkeypatch, {POST_PATH: streaming}, unsandboxed=False, read_timeout=300
+    ) as (ctx, project, permit, _, _, guard, _):
+        guard.allowed_hosts = ("www.facebook.com", "waiting.example")
+
+        def resolver(host):
+            if host == "waiting.example":
+                resolving.set()
+                release.wait(timeout=600)
+            return ["127.0.0.1"]
+
+        guard.resolver = resolver
+        guard._fixture_url_checker = lambda url, purpose: safety.check_fixture_url(
+            url, purpose=purpose, resolver=resolver, allowed_hosts=guard.allowed_hosts
+        )
+        try:
+            job = finish(ctx, submit(ctx, project, permit, max_bytes=24_000))
+            error = job["result"]["data"]["steps"][0]["data"]["error"]
+            assert error and error["code"] == "E_LIMIT_REACHED", error
+            assert job["state"] == "partial"
+            assert resolving.is_set()
+        finally:
+            release.set()

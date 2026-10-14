@@ -2294,7 +2294,7 @@ def test_playwright_egress_proxy_byte_budget_stops_oversized_response(
             url=canonical_url,
             max_expansions=1,
             pacing_ms=0,
-            allow_unsandboxed_browser=True,  # Explicit synthetic test exception on this host.
+            allow_unsandboxed_browser=False,  # Required sandbox for this byte-cutoff regression.
         )
         config_path = ctx.paths.root / "metamuse.toml"
         config_path.write_text(

@@ -585,7 +585,16 @@ class BrowserEgressProxy:
             )
         )
 
+    def _raise_if_byte_limit(self) -> None:
+        if self.byte_limit_exceeded:
+            raise m.CoreError(
+                m.ErrorCode.LIMIT_REACHED,
+                "Facebook page response exceeded max_bytes budget",
+                next_action="Increase limits.max_bytes or narrow the requested resources",
+            )
+
     def _check_bounded(self, check: Callable[[], safety.CheckedURL]) -> safety.CheckedURL:
+        self._raise_if_byte_limit()
         if self._closed.is_set() or not _RESOLUTION_SLOTS.acquire(blocking=False):
             raise ProxyRequestError("resolution_unavailable")
         result: queue.Queue[object] = queue.Queue(maxsize=1)
@@ -606,6 +615,7 @@ class BrowserEgressProxy:
             raise ProxyRequestError("resolution_unavailable") from None
         deadline = time.monotonic() + self.idle_timeout_s
         while not self._closed.is_set():
+            self._raise_if_byte_limit()
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise ProxyRequestError("resolution_timeout")
