@@ -102,7 +102,13 @@ def _muse_safe(fn):
         except m.CoreError as exc:
             if exc.detail.code != m.ErrorCode.STORAGE:
                 raise
-            failure = _muse_storage_error()
+            failure = (
+                m.CoreError(
+                    m.ErrorCode.STORAGE, exc.detail.message, next_action=exc.detail.next_action
+                )
+                if exc.detail.message == "Muse confidentiality could not be recorded"
+                else _muse_storage_error()
+            )
         raise failure
 
     return run
@@ -636,6 +642,11 @@ class Store:
             vm_ids.add(value.strip().lower())
         viewer_hash = hashlib.sha256(viewer_id.encode()).hexdigest()
         session_hash = hashlib.sha256(session_binding_id.encode()).hexdigest()
+        if confidential:
+            # This commit precedes label checks, which may refuse a different owner.
+            self._muse_record_observation(
+                provider, account, viewer_hash, vm_ids, source="authenticated_assignment"
+            )
         changed = False
         with self._muse_boundary(provider, account):
             with self.transaction() as conn:
@@ -698,6 +709,13 @@ class Store:
                     )
                     if result.rowcount != 1:
                         raise _muse_storage_error()
+                self._muse_observe(
+                    conn,
+                    viewer_hash,
+                    vm_ids,
+                    confidential=required,
+                    source="authenticated_assignment",
+                )
                 identities = ([vm_id] if vm_id is not None else []) + sorted(vm_ids - {vm_id})
                 for identity in identities:
                     _, existing = (
@@ -790,19 +808,13 @@ class Store:
                     (source, self.clock(), viewer_hash, identity),
                 )
 
-    def muse_record_confidential(self, snapshot: MuseTrustSnapshot) -> None:
+    def _muse_record_observation(self, provider, account, viewer_hash, vm_ids, *, source):
         failure = None
         try:
-            with self._muse_boundary(snapshot.provider, snapshot.account):
+            with self._muse_boundary(provider, account):
                 with self.transaction() as conn:
-                    self._muse_observe(
-                        conn,
-                        snapshot.viewer_hash,
-                        {snapshot.vm_id} if snapshot.vm_id is not None else set(),
-                        confidential=True,
-                        source="noise_message_2",
-                    )
-                self._muse_notify(snapshot.provider, snapshot.account)
+                    self._muse_observe(conn, viewer_hash, vm_ids, confidential=True, source=source)
+                self._muse_notify(provider, account)
         except m.CoreError:
             failure = m.CoreError(
                 m.ErrorCode.STORAGE,
@@ -811,6 +823,15 @@ class Store:
             )
         if failure is not None:
             raise failure
+
+    def muse_record_confidential(self, snapshot: MuseTrustSnapshot) -> None:
+        self._muse_record_observation(
+            snapshot.provider,
+            snapshot.account,
+            snapshot.viewer_hash,
+            {snapshot.vm_id} if snapshot.vm_id is not None else set(),
+            source="noise_message_2",
+        )
 
     @_muse_safe
     def muse_standard_handoff(

@@ -129,3 +129,62 @@ def test_r3_b_record_failure_stops_with_honest_error(ctx, monkeypatch):
     assert caught.value.detail.code == ErrorCode.STORAGE
     assert "confidentiality could not be recorded" in caught.value.detail.message
     assert connector.peers[0].msg3_payload is None
+
+
+@pytest.mark.parametrize("identity", ["owner", "vm"])
+def test_r3_c_hint_owner_mismatch_is_recorded_before_binding_refusal(ctx, identity):
+    freeze(ctx.store, viewer_id="old-owner")
+    with pytest.raises(CoreError) as caught:
+        freeze(
+            ctx.store,
+            viewer_id="observed-owner",
+            vm_id="cvm1",
+            confidential=True,
+            confidential_vm_ids=("cvm1", "cvm2", "cvm3"),
+        )
+    assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    later = freeze(
+        ctx.store,
+        provider="another",
+        account="new-label",
+        viewer_id="observed-owner" if identity == "owner" else "third-owner",
+        vm_id="new-vm" if identity == "owner" else "cvm2",
+    )
+    assert later.confidential_required
+    refused(ctx.store, later)
+
+
+@pytest.mark.parametrize("identity", ["owner", "vm"])
+def test_r3_c_transport_keeps_hint_under_mismatched_owner(ctx, identity):
+    from test_muse_standard import assignment, response
+    from test_muse_transport import FakeHttp
+
+    freeze(ctx.store, account="synthetic", viewer_id="old-owner")
+    http = FakeHttp(
+        {
+            "/api/session": response(
+                assignment(
+                    status="unassigned",
+                    vms=[{"vm_id": " CVM2 ", "vm_type": "hatch_cvm"}, {"vm_id": "cvm3"}],
+                )
+            )
+        }
+    )
+    connector = Connecting()
+    transport, _, _, _ = build(
+        handler=ok_frames([]), store=ctx.store, connector=connector, http=http
+    )
+    with pytest.raises(CoreError) as caught:
+        with transport:
+            transport.sessions_list()
+    assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    assert not connector.urls
+    later = freeze(
+        ctx.store,
+        provider="another",
+        account="later",
+        viewer_id="viewer-fixture" if identity == "owner" else "third-owner",
+        vm_id="vm-new" if identity == "owner" else "cvm2",
+    )
+    assert later.confidential_required
+    refused(ctx.store, later)

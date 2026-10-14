@@ -906,3 +906,5 @@ validation and have no implicit in-place upgrade/reset. Public schemas/contracts
 Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and account are local connection labels; neither partitions owner or VM expectations. The shared trust-domain lock serializes all labels.
 
 `muse_trust_observations` is keyed by authenticated `viewer_hash` and normalized VM id, without provider/account. An empty id means owner-only evidence. The RV record path commits monotonically without a generation CAS, even on a stale snapshot; a write failure blocks before msg3 and explicitly reports that confidentiality could not be recorded. Local rows retain binding/currentness, not trust-domain partitioning.
+
+Authenticated CVM hints commit label-independent owner/VM observations before binding, generation, status, uniqueness or selection refusals. Every usable VM id in the response is recorded, including non-selected rows. Owner mismatch never drops that observation; the existing local binding is still refused.

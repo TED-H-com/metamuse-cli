@@ -445,3 +445,5 @@ proofs. This checkpoint boundary is exercised by the real subprocess worker test
 Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and account are local connection labels; neither partitions owner or VM expectations. The shared trust-domain lock serializes all labels.
 
 HTTP 200 with missing, malformed or drifted credential/context fields is interface drift: E_PROTOCOL_MISMATCH / never. Explicit `ok: false` and HTTP 401/403 remain E_AUTH_REQUIRED. A twice-stale notary after one remint is E_RESOURCE_UNAVAILABLE with a retry-later action (REPORT-2 §6.2 specifies unavailable; neither the spike nor S1 proves session refresh repairs it).
+
+Authenticated CVM hints commit label-independent owner/VM observations before binding, generation, status, uniqueness or selection refusals. Every usable VM id in the response is recorded, including non-selected rows. Owner mismatch never drops that observation; the existing local binding is still refused.
