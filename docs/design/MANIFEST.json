@@ -119,8 +119,8 @@
     },
     {
       "path": "skills/metamuse/SKILL.md",
-      "bytes": 2878,
-      "sha256": "818605338b54c0f88dc7a90f42099e336421626f183983d3bea5b7df1c66c337"
+      "bytes": 3195,
+      "sha256": "6908b19f3617d338c1b52bbd8eef7b0c742ed3d95f291706480ebbd79653bdb0"
     },
     {
       "path": "validate_design_pack.py",

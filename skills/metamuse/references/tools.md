@@ -100,19 +100,25 @@
 
 ---
 
-## 2. 僅限人類操作之管理命令（Human-only CLI）
+## 2. 僅限人類操作之授權命令（Human-only authorization commands）
 
-以下管理操作僅限人類操作者在 CLI 手動執行，無對應 MCP 工具，Skill 與模型輸出絕無權限自動執行或自我批准：
+以下管理操作涉及授權、憑證與安全邊界，僅限人類操作者在 CLI 手動執行，無對應 MCP 工具。Skill 與模型輸出絕無權限自動執行或自我簽發授權：
 - `metamuse auth import`：匯入外部帳號驗證資訊或憑證檔案。
 - `metamuse permit create`：建立限定範圍、到期日與使用次數之操作許可。
 - `metamuse permit revoke`：撤銷特定操作許可。
 - `metamuse permit list`：檢視專案內現有許可清單。
-- `metamuse worker run`：手動啟動本機背景工作執行程序。
-- `metamuse init`：初始化 MetaMuse 工作區目錄與資料庫。
 
 ---
 
-## 3. 結果狀態語意
+## 3. 本機專用 CLI 命令（CLI-only local commands）
+
+以下本機維護與環境命令僅能在 CLI 終端機執行，無對應 MCP 工具：
+- `metamuse init`：初始化 MetaMuse 工作區目錄與資料庫。
+- `metamuse worker run`：手動啟動本機背景工作執行程序以推動佇列。
+
+---
+
+## 4. 結果狀態語意
 
 所有 MCP 工具與 CLI `--json` 皆回傳標準 JSON Envelope，其 `status` 欄位代表嚴格狀態定義：
 - **`ok`**：同步操作已完全成功，結果資料直接於 `data` 欄位取用。

@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import pytest
 
@@ -15,32 +15,14 @@ import metamuse
 from metamuse import models as m
 from metamuse.app import AppContext, inspect_capabilities
 from metamuse.cli import parser
-from metamuse.mcp import call_tool
+from metamuse.mcp import call_tool, list_tools
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SKILL_DIR = REPO_ROOT / "skills/metamuse"
 SKILL_FILE = SKILL_DIR / "SKILL.md"
 DESIGN_SKILL_FILE = REPO_ROOT / "docs/design/skills/metamuse/SKILL.md"
 
-CONTRACT_TOOLS = frozenset(
-    {
-        "metamuse_inspect",
-        "metamuse_project_create",
-        "metamuse_collect",
-        "metamuse_job_get",
-        "metamuse_job_list",
-        "metamuse_job_control",
-        "metamuse_search",
-        "metamuse_packet_prepare",
-        "metamuse_muse_open",
-        "metamuse_muse_send",
-        "metamuse_muse_read",
-        "metamuse_muse_close_exchange",
-        "metamuse_draft_save",
-        "metamuse_draft_preview",
-        "metamuse_export",
-    }
-)
+CONTRACT_TOOLS = frozenset(tool.name for tool in list_tools())
 
 STRATEGY_TERMS = (
     "cta",
@@ -64,7 +46,6 @@ FORBIDDING_PATTERNS = (
     "不提供",
     "不支援",
     "不帶",
-    "無",
     "forbid",
     "never",
 )
@@ -257,6 +238,7 @@ def test_relative_links_resolve():
 
 
 def test_contract_tool_names_and_tools_md_coverage():
+    assert len(CONTRACT_TOOLS) == 15, f"Expected 15 contract tools, got {len(CONTRACT_TOOLS)}"
     all_files = list(SKILL_DIR.rglob("*.md"))
     tool_pattern = re.compile(r"\bmetamuse_[a-z0-9_]+\b")
 
@@ -272,6 +254,27 @@ def test_contract_tool_names_and_tools_md_coverage():
     tools_in_reference = set(tool_pattern.findall(tools_text))
     missing = CONTRACT_TOOLS - tools_in_reference
     assert not missing, f"references/tools.md does not cover all tools. Missing: {missing}"
+
+
+def test_every_capability_state_covered_in_degradation_md():
+    degradation_doc = SKILL_DIR / "references/degradation.md"
+    assert degradation_doc.exists(), f"Missing {degradation_doc}"
+    text = degradation_doc.read_text(encoding="utf-8")
+
+    fields = ("implementation", "verification", "environment", "permission")
+    missing: list[str] = []
+
+    for field_name in fields:
+        field_info = m.Capability.model_fields[field_name]
+        literals = get_args(field_info.annotation)
+        assert literals, f"No literal arguments found for Capability.{field_name}"
+        for lit in literals:
+            if lit not in text:
+                missing.append(f"Capability.{field_name}: '{lit}'")
+
+    assert not missing, (
+        "references/degradation.md missing capability state literals:\n" + "\n".join(missing)
+    )
 
 
 def test_cli_commands_exist_in_parser():
@@ -335,6 +338,49 @@ def test_inspect_doctor_precedes_other_tools_in_skill():
             )
 
 
+def check_line_neutrality(line: str) -> list[str]:
+    """Return violations for un-forbidden strategy terms on the line.
+
+    - ASCII strategy terms match on word boundaries.
+    - Each strategy-term occurrence needs a forbidding word earlier on the same line.
+    - The bare '無' is removed from general forbidding patterns and allowed only
+      directly before the term.
+    """
+    violations: list[str] = []
+    term_matches: list[tuple[int, int, str]] = []
+
+    for term in STRATEGY_TERMS:
+        if term.isascii():
+            pattern = re.compile(rf"\b{re.escape(term)}\b", re.IGNORECASE)
+        else:
+            pattern = re.compile(re.escape(term))
+        for match in pattern.finditer(line):
+            term_matches.append((match.start(), match.end(), match.group(0)))
+
+    for start, _end, matched_text in term_matches:
+        prefix = line[:start]
+        is_forbidding = False
+
+        for pat in FORBIDDING_PATTERNS:
+            if pat.isascii():
+                if re.search(rf"\b{re.escape(pat)}\b", prefix, re.IGNORECASE):
+                    is_forbidding = True
+                    break
+            else:
+                if pat in prefix:
+                    is_forbidding = True
+                    break
+
+        # Bare '無' is allowed only directly before the term (ignoring intervening whitespace)
+        if not is_forbidding and re.search(r"無\s*$", prefix):
+            is_forbidding = True
+
+        if not is_forbidding:
+            violations.append(f"un-forbidden '{matched_text}' at col {start + 1}")
+
+    return violations
+
+
 def test_neutrality_strategy_terms_only_on_forbidding_lines():
     all_files = list(SKILL_DIR.rglob("*.md"))
     violations: list[str] = []
@@ -342,13 +388,34 @@ def test_neutrality_strategy_terms_only_on_forbidding_lines():
     for doc in all_files:
         lines = doc.read_text(encoding="utf-8").splitlines()
         for line_no, line in enumerate(lines, start=1):
-            lower_line = line.lower()
-            matching_terms = [term for term in STRATEGY_TERMS if term in lower_line]
-            if matching_terms:
-                is_forbidding = any(pat in line for pat in FORBIDDING_PATTERNS)
-                if not is_forbidding:
-                    violations.append(f"{doc}:{line_no} terms {matching_terms}: {line}")
+            line_violations = check_line_neutrality(line)
+            for v in line_violations:
+                violations.append(f"{doc}:{line_no} {v}: {line}")
     assert not violations, "Strategy term neutrality violations:\n" + "\n".join(violations)
+
+
+def test_neutrality_checker_rejects_unforbidden_terms():
+    # Case 1: Line containing bare '無' earlier in the line (e.g. 無論) must NOT protect the term
+    line_with_wulun = "無論在任何情況下，都應該加入 cta 提高點擊率"
+    violations_wulun = check_line_neutrality(line_with_wulun)
+    assert violations_wulun, f"Checker should reject '{line_with_wulun}'"
+    assert any("cta" in v for v in violations_wulun)
+
+    # Case 2: Line with strategy term without any forbidding word
+    line_positive_strategy = "自動生成爆款公式文案"
+    violations_pos = check_line_neutrality(line_positive_strategy)
+    assert violations_pos, f"Checker should reject '{line_positive_strategy}'"
+    assert any("爆款" in v or "公式" in v for v in violations_pos)
+
+
+def test_neutrality_checker_allows_webhook_and_direct_wu():
+    # Prove 'hook' does not trigger inside 'webhook'
+    line_webhook = "系統配置 webhook 回調端點"
+    assert not check_line_neutrality(line_webhook)
+
+    # Prove '無' directly before term is allowed
+    line_wu = "草稿無人設且無 cta"
+    assert not check_line_neutrality(line_wu)
 
 
 def test_at027_runtime_invariant_ineffective_tools_return_is_error(tmp_path):
@@ -372,13 +439,34 @@ def test_at027_runtime_invariant_ineffective_tools_return_is_error(tmp_path):
         assert result.is_error is True, f"Tool {name} effective:false did not return is_error"
         structured = result.structured_content
         assert structured["status"] == "error"
+        # In both cases, never ok, accepted or partial
         assert structured["status"] not in ("ok", "accepted", "partial")
         err = structured.get("error")
         assert err is not None, f"Tool {name} error envelope missing error object"
-        assert err["code"] not in (m.ErrorCode.INPUT_INVALID, m.ErrorCode.REFERENCE_INVALID), (
-            f"Tool {name} returned input validation error {err['code']}"
-        )
-        assert err["code"] in {code.value for code in m.ErrorCode}
+        err_code = err.get("code")
+        assert err_code in {code.value for code in m.ErrorCode}
+
+        if cap["implementation"] == "absent":
+            # If implementation == "absent", the code must be E_UNSUPPORTED or E_DEPENDENCY_MISSING.
+            assert err_code in (
+                m.ErrorCode.UNSUPPORTED.value,
+                m.ErrorCode.DEPENDENCY_MISSING.value,
+            ), (
+                f"Tool {name} with implementation=absent must return E_UNSUPPORTED or "
+                f"E_DEPENDENCY_MISSING, got {err_code}"
+            )
+        else:
+            # If the tool is implemented but not effective, any error code except
+            # E_INPUT_INVALID is allowed. Example: E_REFERENCE_INVALID for synthetic IDs.
+            assert err_code != m.ErrorCode.INPUT_INVALID.value, (
+                f"Tool {name} returned E_INPUT_INVALID; valid sample payloads must pass validation"
+            )
+
         ineffective_tested += 1
 
-    assert ineffective_tested >= 1, "Expected at least one ineffective tool for AT-027"
+    # In a fresh offline workspace without credentials, the Muse tools must stay
+    # non-effective, so a build that claims otherwise should fail.
+    assert ineffective_tested >= 1, (
+        "In a fresh offline workspace without credentials, the Muse tools must stay "
+        "non-effective, so a build that claims otherwise should fail."
+    )

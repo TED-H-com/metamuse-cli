@@ -6,22 +6,32 @@
 
 ---
 
-## 1. 能力狀態（Inspect States）處置流程
+## 1. 能力狀態（Inspect States）維度與處置流程
 
-透過 MCP `metamuse_inspect` 或 CLI `metamuse doctor` 檢驗所得之 capability 欄位，若 `effective` 為 `false`，應依各項狀態分別處置：
+`Capability` 模型由四個正交維度判定是否就緒（僅當 `implementation == "implemented"`、`verification in ("fixture_passed", "live_verified")`、`environment == "ready"` 且 `permission == "granted_scope"` 時，`effective` 方為 `true`）。
 
-- **`absent`（未實作）**：
-  - 現象：工具在當前軟體版本中未包含實作代碼（`implementation: "absent"`）。呼叫該工具將回傳 `E_UNSUPPORTED`。
-  - 處置：立即中止該操作步驟，明確告知使用者該工具功能在此版本尚未實作。嚴禁編造或模擬執行結果。
-- **`unavailable`（環境未就緒）**：
-  - 現象：執行環境缺少必要條件（`environment: "unavailable"` 或 `environment: "missing_dependency"`），如離線網路模式阻擋外部存取，或系統缺少執行依賴。
-  - 處置：告知使用者缺少之環境配置，中止外部請求，引導使用者檢查環境或改用本機離線流程。
-- **`not_configured`（未配置授權）**：
-  - 現象：缺少存取憑證或許可（`permission: "not_configured"` 或 `permission: "denied"`）。呼叫將回傳 `E_AUTH_REQUIRED` 或 `E_SCOPE_REQUIRED`。
-  - 處置：告知使用者需由人類操作者於 CLI 執行 `metamuse auth import` 或 `metamuse permit create` 進行授權。Skill 與 Agent 絕不可自行偽造或假定已獲得授權。
-- **`unverified`（未通過驗證）**：
-  - 現象：功能實作尚未通過單元 fixture 或 live 驗證（`verification: "unverified"` 或 `verification: "regressed"`）。
-  - 處置：不得宣稱該功能已經過驗證就緒，視同無效工具，遵循降級路徑。
+透過 MCP `metamuse_inspect` 或 CLI `metamuse doctor` 檢驗所得之 capability 欄位，若 `effective` 為 `false`，應依各維度狀態分別處置：
+
+### 1.1 實作狀態（`implementation`）
+- **`absent`（未實作）**：工具在當前軟體版本中未包含實作代碼（`implementation: "absent"`）。呼叫該工具將回傳 `E_UNSUPPORTED`。立即中止該操作步驟，明確告知使用者該工具功能在此版本尚未實作，嚴禁編造或模擬執行結果。
+- **`implemented`（已實作）**：工具代碼已具備（`implementation: "implemented"`），但若其他驗證、環境或授權條件未滿足，`effective` 仍為 `false`。
+
+### 1.2 驗證狀態（`verification`）
+- **`unverified`（未驗證）**：功能實作尚未通過基準測試驗證（`verification: "unverified"`）。不得宣稱該功能就緒。
+- **`regressed`（退化）**：功能實作曾通過驗證但發生退化（`verification: "regressed"`）。視同無效工具，遵循降級路徑。
+- **`fixture_passed`（單元/Fixture 驗證通過）**：已通過離線合成資料與單元測試驗證（`verification: "fixture_passed"`），可在離線或本機模式運作。
+- **`live_verified`（LIVE 驗證通過）**：已通過操作者授權之真實外部後端驗證（`verification: "live_verified"`）。
+
+### 1.3 環境狀態（`environment`）
+- **`ready`（環境就緒）**：執行環境與系統依賴皆已滿足（`environment: "ready"`）。
+- **`missing_dependency`（缺少依賴）**：缺少必要的外部工具、函式庫或執行檔（`environment: "missing_dependency"`）。呼叫將回傳 `E_DEPENDENCY_MISSING`，引導使用者安裝必要依賴。
+- **`needs_auth`（需要憑證）**：環境需要帳號或憑證才能連線外部服務（`environment: "needs_auth"`）。呼叫將回傳 `E_AUTH_REQUIRED`，提示操作者手動匯入憑證。
+- **`unavailable`（環境不可用）**：執行環境阻擋（`environment: "unavailable"`，例如離線網路模式阻擋外部網路存取）。中止外部請求，引導使用者改用本機離線流程。
+
+### 1.4 權限狀態（`permission`）
+- **`granted_scope`（範圍已授權）**：人類操作者已建立有效之範圍許可（`permission: "granted_scope"`）。
+- **`not_configured`（未配置授權）**：尚未建立存取許可或金鑰（`permission: "not_configured"`）。呼叫將回傳 `E_SCOPE_REQUIRED` 或 `E_AUTH_REQUIRED`。提示操作者以 CLI 執行 `metamuse permit create` 或 `metamuse auth import`。
+- **`denied`（授權遭拒）**：許可已被撤銷或範圍受限（`permission: "denied"`）。呼叫將回傳 `E_SCOPE_DENIED`。Skill 與 Agent 絕不可自行偽造或假定已獲得授權。
 
 ---
 
