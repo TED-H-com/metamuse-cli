@@ -22,6 +22,7 @@ GUARDED = {
     "exports": {"artifact": "exports/tampered", "format": "csv"},
     "muse_trust_accounts": {"viewer_hash": "b" * 64},
     "muse_trust_vms": {"observed_at": "rewritten"},
+    "muse_trust_observations": {"observed_at": "rewritten"},
 }
 PRIMARY = {
     "item_revisions": ["item_id", "revision"],
@@ -29,6 +30,7 @@ PRIMARY = {
     "workspace_keys": ["name", "version"],
     "muse_trust_accounts": ["provider", "account"],
     "muse_trust_vms": ["provider", "account", "vm_id"],
+    "muse_trust_observations": ["viewer_hash", "vm_id"],
 }
 
 
@@ -45,6 +47,7 @@ MESSAGES = {
     "exports": "export replacement is forbidden",
     "muse_trust_accounts": "muse trust account replacement",
     "muse_trust_vms": "muse trust VM replacement",
+    "muse_trust_observations": "muse trust observation replacement",
 }
 
 
@@ -60,7 +63,11 @@ def unreferenced_row(ctx, records, table):
         )
         with ctx.store.connection() as conn:
             row = dict(
-                conn.execute(f"SELECT * FROM {table} WHERE account='unreferenced'").fetchone()
+                conn.execute(
+                    f"SELECT * FROM {table}"
+                    if table == "muse_trust_observations"
+                    else f"SELECT * FROM {table} WHERE account='unreferenced'"
+                ).fetchone()
             )
             if os.environ.get("METAMUSE_TEST_DROP_GUARDS") == "1":
                 for trigger in conn.execute(
@@ -277,7 +284,9 @@ def test_r2_f1_auto_assigned_rowid_before_insert_is_minus_one():
         assert conn.execute("SELECT value FROM observed").fetchall() == [(-1,), (42,)]
 
 
-@pytest.mark.parametrize("table", ["muse_trust_accounts", "muse_trust_vms"])
+@pytest.mark.parametrize(
+    "table", ["muse_trust_accounts", "muse_trust_vms", "muse_trust_observations"]
+)
 def test_r2_f8_trust_rows_cannot_be_deleted(ctx, records, table):
     unreferenced_row(ctx, records, table)
     with ctx.store.connection() as conn:

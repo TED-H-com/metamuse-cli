@@ -237,3 +237,170 @@ def test_r3_g_component_above_sqlite_recursion_limit_records_atomically(ctx, sha
         assert conn.execute("SELECT max(generation) FROM muse_trust_accounts").fetchone()[0] == 2
         assert not conn.execute("SELECT * FROM muse_trust_propagating").fetchall()
     refused(ctx.store, snapshot)
+
+
+@pytest.mark.parametrize("shape", ["owner_then_vm", "vm_then_owner"])
+@pytest.mark.parametrize("record", ["freeze", "rv"])
+def test_r3_m_two_hop_components_raise_stored_rows_and_refuse(ctx, shape, record):
+    if shape == "owner_then_vm":
+        freeze(ctx.store, provider="Synthetic", account="B", viewer_id="V", vm_id="y")
+        freeze(ctx.store, provider="synthetic ", account="C", viewer_id="W", vm_id="y")
+        viewer, vm = "V", "z"
+    else:
+        freeze(ctx.store, provider="Synthetic", account="B", viewer_id="W", vm_id="x")
+        freeze(ctx.store, provider="synthetic ", account="C", viewer_id="W", vm_id="y")
+        viewer, vm = "V", "x"
+    first = freeze(
+        ctx.store,
+        provider="synthetic.alias",
+        account="A",
+        viewer_id=viewer,
+        vm_id=vm,
+        confidential=record == "freeze",
+    )
+    if record == "rv":
+        ctx.store.muse_record_confidential(first)
+    with ctx.store.connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT confidential_required FROM muse_trust_accounts WHERE account='C'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT confidential_required FROM muse_trust_vms WHERE account='C'"
+            ).fetchone()[0]
+            == 1
+        )
+    later = freeze(ctx.store, provider="synthetic ", account="C", viewer_id="W", vm_id="y")
+    refused(ctx.store, later)
+
+
+def test_r3_m_hint_records_every_vm_for_another_owner(ctx):
+    freeze(ctx.store, confidential=True, confidential_vm_ids=("vm1", " CVM2 ", "cvm3"))
+    later = freeze(
+        ctx.store, provider="another", account="other", viewer_id="other-owner", vm_id="cvm2"
+    )
+    assert later.confidential_required
+    refused(ctx.store, later)
+
+
+TRUST_TRIGGERS = {
+    "muse_trust_account_no_replace",
+    "muse_trust_account_guard",
+    "muse_trust_account_retention",
+    "muse_trust_vm_no_replace",
+    "muse_trust_vm_guard",
+    "muse_trust_vm_retention",
+    "muse_trust_accounts_inherit_insert",
+    "muse_trust_accounts_inherit_update",
+    "muse_trust_accounts_propagate_insert",
+    "muse_trust_accounts_propagate_update",
+    "muse_trust_vms_inherit_insert",
+    "muse_trust_vms_inherit_update",
+    "muse_trust_vms_propagate_insert",
+    "muse_trust_vms_propagate_update",
+    "muse_trust_observation_no_replace",
+    "muse_trust_observation_guard",
+    "muse_trust_observation_retention",
+    "muse_trust_observations_inherit_insert",
+    "muse_trust_observations_inherit_update",
+    "muse_trust_observations_propagate_insert",
+    "muse_trust_observations_propagate_update",
+}
+TRUST_INDEXES = {
+    "muse_trust_owner_expectation",
+    "muse_trust_vm_expectation",
+    "muse_trust_observation_vm",
+}
+
+
+def test_r3_m_every_005_trigger_and_index_is_pinned(ctx):
+    with ctx.store.connection() as conn:
+        assert {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_schema WHERE type='trigger' AND name LIKE 'muse_trust_%'"
+            )
+        } == TRUST_TRIGGERS
+        assert {
+            r[0]
+            for r in conn.execute(
+                "SELECT name FROM sqlite_schema WHERE type='index' AND name LIKE 'muse_trust_%'"
+            )
+        } == TRUST_INDEXES
+
+
+@pytest.mark.parametrize("guard", ["active", "normalized", "null_generation", "vm_update"])
+def test_r3_m_raw_sql_defence_in_depth(ctx, guard):
+    from metamuse import store as core
+
+    freeze(ctx.store, account="A", viewer_id="V", vm_id="x", confidential=True)
+    freeze(ctx.store, account="C", viewer_id="W", vm_id="y")
+    freeze(ctx.store, account="O", viewer_id="Z", vm_id=None, confidential=True)
+    statements = {
+        "active": "UPDATE muse_trust_accounts SET active_vm_id='x',generation=generation+1 WHERE account='C'",
+        "normalized": "INSERT INTO muse_trust_vms VALUES ('synthetic','A','VM9 ',1,1,'noise_message_2','t')",
+        "null_generation": "UPDATE muse_trust_accounts SET active_vm_id='vm9' WHERE account='O'",
+        "vm_update": "UPDATE muse_trust_vms SET source='noise_message_2' WHERE account='C'",
+    }
+    if guard == "vm_update":
+        # Establish an inconsistent row without its propagation triggers, then restore
+        # every trigger from the migration under test. The UPDATE guard is independent.
+        definitions = [
+            sql
+            for sql in core._statements(core.MIGRATIONS[5].read_text())
+            if sql.startswith("CREATE TRIGGER") and "_propagate_" in sql
+        ]
+        with ctx.store.transaction() as conn:
+            for sql in definitions:
+                conn.execute("DROP TRIGGER " + sql.split()[2])
+            conn.execute(
+                "UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE account='C'"
+            )
+            for sql in definitions:
+                conn.execute(sql)
+    with pytest.raises(CoreError) as caught:
+        with ctx.store.transaction() as conn:
+            conn.execute(statements[guard])
+    assert caught.value.detail.code == ErrorCode.REFERENCE_INVALID
+
+
+@pytest.mark.parametrize("upgrade", [False, True])
+def test_r3_m_amended_005_fresh_upgrade_and_restore_remote_observations(tmp_path, upgrade):
+    from metamuse import store as core
+    from metamuse.paths import WorkspacePaths
+    from metamuse.store import Store
+
+    paths = WorkspacePaths.resolve(tmp_path / "workspace")
+    if upgrade:
+        Store(paths, schema_version=4, migrations={n: core.MIGRATIONS[n] for n in range(1, 5)})
+    store = Store(paths)
+    freeze(store, viewer_id="original-owner")
+    with pytest.raises(CoreError):
+        freeze(
+            store,
+            viewer_id="observed-owner",
+            vm_id="cvm1",
+            confidential=True,
+            confidential_vm_ids=("cvm1", "cvm2"),
+        )
+    backup = tmp_path / "backup"
+    store.backup(backup)
+    restored_paths = WorkspacePaths.resolve(tmp_path / "restored")
+    Store.restore(backup, restored_paths)
+    restored = Store(restored_paths)
+    with restored.connection() as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert not conn.execute("PRAGMA foreign_key_check").fetchall()
+        assert (
+            conn.execute(
+                "SELECT min(confidential_required) FROM muse_trust_observations WHERE vm_id IN ('cvm1','cvm2')"
+            ).fetchone()[0]
+            == 1
+        )
+    later = freeze(restored, provider="new", account="later", viewer_id="other", vm_id="cvm2")
+    assert later.confidential_required
+    refused(restored, later)
