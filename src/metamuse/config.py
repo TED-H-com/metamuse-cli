@@ -107,7 +107,6 @@ enabled = false
 [publishing]
 enabled = false
 [remote_media]
-enabled = false
 [facebook]
 enabled = false
 approved_page_types = []
