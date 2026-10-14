@@ -1712,6 +1712,18 @@ class _PlaywrightSession:
                 self._worker_cdp.send("Target.closeTarget", {"targetId": info["targetId"]})
 
         self._worker_cdp.on("Target.attachedToTarget", _on_worker_attached)
+        # Shared workers have no page opener relation. Watch browser-level targets too.
+        self._shared_worker_cdp = browser.new_browser_cdp_session()
+        self._shared_worker_cdp.on("Target.attachedToTarget", _on_worker_attached)
+        self._shared_worker_cdp.send(
+            "Target.setAutoAttach",
+            {
+                "autoAttach": True,
+                "waitForDebuggerOnStart": True,
+                "flatten": True,
+                "filter": [{"type": "shared_worker"}, {"exclude": True}],
+            },
+        )
         self._worker_cdp.send(
             "Target.autoAttachRelated",
             {
