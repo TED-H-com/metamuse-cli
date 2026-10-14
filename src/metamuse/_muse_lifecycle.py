@@ -506,7 +506,8 @@ def _receipt(ctx, operation, request):
         ).fetchone()
         if row is None and operation == "muse.open" and request.discussion_id is not None:
             row = conn.execute(
-                "SELECT * FROM jobs WHERE operation IN ('muse.history','muse.sessions') AND request_key=? ORDER BY rowid LIMIT 1",
+                "SELECT * FROM jobs WHERE operation IN ('muse.history','muse.sessions') "
+                "AND request_key=? ORDER BY rowid LIMIT 1",
                 (request.request_key,),
             ).fetchone()
             if row is not None:
@@ -851,7 +852,8 @@ def _refuse_frozen(step, discussion, exchange, saved, refusal):
     def save(writer):
         if exchange is not None:
             writer.execute(
-                "UPDATE exchanges SET state='closed',outcome='abandoned',bytes_handed_off=0,attempt_verdict='undecided',attempt_error_code=?,delivery_proof=? WHERE id=?",
+                "UPDATE exchanges SET state='closed',outcome='abandoned',bytes_handed_off=0,"
+                "attempt_verdict='undecided',attempt_error_code=?,delivery_proof=? WHERE id=?",
                 (
                     refusal.detail.code.value,
                     m.canonical_json(proof.model_dump(mode="json")).decode(),
@@ -860,7 +862,9 @@ def _refuse_frozen(step, discussion, exchange, saved, refusal):
             )
         else:
             writer.execute(
-                "UPDATE discussions SET open_attempt_state='failed_before_send',open_bytes_handed_off=0,open_verdict='undecided',open_error_code=?,open_delivery_proof=? WHERE id=?",
+                "UPDATE discussions SET open_attempt_state='failed_before_send',"
+                "open_bytes_handed_off=0,open_verdict='undecided',open_error_code=?,"
+                "open_delivery_proof=? WHERE id=?",
                 (
                     refusal.detail.code.value,
                     m.canonical_json(proof.model_dump(mode="json")).decode(),

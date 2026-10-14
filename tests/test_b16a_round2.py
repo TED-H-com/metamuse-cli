@@ -1,8 +1,8 @@
 """Independent B16a review regressions; synthetic OFFLINE evidence only."""
 
+import json
 import signal
 import sqlite3
-import json
 import subprocess
 import sys
 import time
@@ -14,8 +14,8 @@ import pytest
 from test_muse_lifecycle import fixture_ctx as fixture_ctx
 from test_muse_lifecycle import invoke
 
-from metamuse import safety
 from metamuse import models as m
+from metamuse import safety
 
 BENIGN = (
     '"?token="+t',
@@ -54,6 +54,7 @@ def test_f3_benign_credential_corpus(text):
 
 def test_f3_path_preview_approves_exact_outbound_text(fixture_ctx, project):
     from test_muse_lifecycle import opened, packet
+
     from metamuse._muse_lifecycle import prepare_open, prepare_send
 
     ctx = fixture_ctx
@@ -139,8 +140,9 @@ def test_f5_topic_refusal_before_preview_or_state(fixture_ctx, monkeypatch):
 
 def test_f4_replay_after_upgrade_and_frozen_refusal(fixture_ctx, project, monkeypatch):
     from test_muse_lifecycle import grant, opened, packet, run
-    from metamuse import app
+
     from metamuse import _muse_lifecycle as lifecycle
+    from metamuse import app
 
     ctx = fixture_ctx
     opening, _ = opened(ctx, project)
@@ -187,6 +189,7 @@ def test_f4_replay_after_upgrade_and_frozen_refusal(fixture_ctx, project, monkey
 
 def test_f4_open_replay_and_frozen_topic_refusal(fixture_ctx, project, monkeypatch):
     from test_muse_lifecycle import grant, run
+
     from metamuse import _muse_lifecycle as lifecycle
 
     ctx = fixture_ctx
@@ -374,6 +377,7 @@ def test_f13_linear_redaction_complexity(case, budget):
 @pytest.mark.parametrize("operation", ["packet", "bundle"])
 def test_f13_redaction_does_not_hold_sqlite_write_lock(ctx, project, monkeypatch, operation):
     from test_b16a_privacy import evidence
+
     from metamuse import app, content
 
     ref = evidence(ctx, project, "Synthetic evidence")
@@ -441,6 +445,7 @@ def test_f6_redaction_reaches_fixpoint_before_digest(template):
 @pytest.mark.parametrize("layers", [0, 1, 2, 3])
 def test_handoff_sensitive_colon_names(name, layers):
     from urllib.parse import quote
+
     from metamuse._muse_lifecycle import _check_question
 
     marker = f"{name}_{layers}_MARKER_SYNTHETIC_ONLY"
@@ -504,6 +509,7 @@ def test_f12_submit_has_its_own_guard(fixture_ctx, monkeypatch):
 
 def test_f12_wire_binds_checked_text_to_actual_body(fixture_ctx, project):
     from test_muse_lifecycle import opened, packet
+
     from metamuse._muse_lifecycle import _wire, prepare_send
 
     opening, _ = opened(fixture_ctx, project)
