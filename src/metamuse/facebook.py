@@ -2921,6 +2921,22 @@ class _FixtureSession:
         self._driver.closed = True
 
 
+def _inline_visibility_property(style: str, name: str) -> str | None:
+    # Fixtures cover inline display/visibility, with CSS declaration order and
+    # !important precedence. Chromium snapshots supply computed values instead.
+    values = (
+        "visible|hidden|collapse|inherit|initial|unset"
+        if name == "visibility"
+        else "none|block|inline|inline-block|flex|inline-flex|grid|inline-grid|contents|"
+        "flow-root|list-item|table|table-row|table-cell|inherit|initial|unset"
+    )
+    declarations = re.findall(
+        rf"(?:^|;)\s*{name}\s*:\s*({values})\s*(!important)?\s*(?=;|$)", style
+    )
+    important = [entry for entry in declarations if entry[1]]
+    return (important or declarations)[-1][0] if declarations else None
+
+
 class _DOMExtractor(HTMLParser):
     """Lightweight stdlib HTML parser for synthetic and Facebook post permalink DOMs."""
 
@@ -3007,7 +3023,10 @@ class _DOMExtractor(HTMLParser):
             or tag in {"head", "meta"}
             or (tag == "input" and attr_map.get("type", "").lower() == "hidden")
             or attr_map.get("aria-hidden", "").lower() == "true"
-            or re.search(r"(?:^|;)\s*display\s*:\s*none(?:\s*!important)?\s*(?:;|$)", style)
+            or (
+                not self._snapshot_visibility
+                and _inline_visibility_property(style, "display") == "none"
+            )
         )
         if hidden or tag in {"script", "style", "template"}:
             if tag not in self._VOID_TAGS:
@@ -3021,16 +3040,9 @@ class _DOMExtractor(HTMLParser):
             if computed is not None:
                 visibility = computed == "visible"
         else:
-            declarations = re.findall(
-                r"(?:^|;)\s*visibility\s*:\s*(visible|hidden|collapse|inherit|initial|unset)"
-                r"\s*(!important)?\s*(?=;|$)",
-                style,
-            )
-            if declarations:
-                important = [entry for entry in declarations if entry[1]]
-                value = (important or declarations)[-1][0]
-                if value not in {"inherit", "unset"}:
-                    visibility = value in {"visible", "initial"}
+            value = _inline_visibility_property(style, "visibility")
+            if value is not None and value not in {"inherit", "unset"}:
+                visibility = value in {"visible", "initial"}
         if tag not in self._VOID_TAGS:
             self._visibility_stack.append(visibility)
         # Void elements still carry barrier and source metadata; only body depth
@@ -3053,8 +3065,11 @@ class _DOMExtractor(HTMLParser):
                 return
             if tag == "img" and "alt" in attr_map:
                 if self._in_post_body:
+                    self.post_body_present = True
                     self.post_text_parts.append(attr_map["alt"])
                 if self._in_comment_body and self._current_comment is not None:
+                    self._current_comment["visible"] = True
+                    self._current_comment["body_present"] = True
                     self._current_comment["text_parts"].append(attr_map["alt"])
             if tag == "br":
                 if self._in_post_body:
@@ -3122,6 +3137,7 @@ class _DOMExtractor(HTMLParser):
         if self._current_comment is not None and (
             fb_role == "comment-body" or attr_map.get("data-comment-body") is not None
         ):
+            self._current_comment["visible"] |= visibility
             self._current_comment["body_present"] |= visibility
             self._in_comment_body += 1
         elif self._in_comment_body > 0:

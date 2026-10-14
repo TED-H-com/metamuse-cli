@@ -845,7 +845,9 @@ Only trusted Chromium observations honour those markers; raw HTML and the fixtur
 driver ignore them. Snapshots preserve the page's own `hidden` attribute and never
 mutate the live DOM. `display:none` and `hidden` exclude the whole subtree;
 `visibility:hidden`/`collapse` inherit but descendants can restore `visibility:visible`.
-Fixtures apply the same semantics to inline CSS. `aria-hidden=true` deliberately
+Fixtures apply the same semantics to inline CSS, including declaration order and
+`!important` precedence. Chromium uses computed styles instead of re-reading inline
+CSS, so a stylesheet override cannot be undone by the parser. `aria-hidden=true` deliberately
 excludes the whole subtree in both drivers: accessibility-hidden duplicates are not
 collection evidence even when painted. It cannot be overridden by CSS visibility.
 Barrier markers are always inspected, while hidden completeness evidence never counts. Head/meta and hidden inputs are invisible in both
