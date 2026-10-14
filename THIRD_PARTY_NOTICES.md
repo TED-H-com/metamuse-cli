@@ -75,10 +75,10 @@ SOFTWARE.
 | Hao0321/claude-skill-social-post | `e0720ed234085d9d41074735b409f2c17aaa3888` (2026-10-03) | MIT. `Copyright (c) 2026 Hao0321 contributors`. File `LICENSE`. | Not adopted. Revision, explicit approval, and snapshot patterns are recorded. Voice, formulas, and governance files are out of scope. |
 | castle_fb_crawl | not available | private | Not adopted. Experience only, nothing imported. |
 | CPython | 3.12 baseline (uv has 3.12.13) | PSF-2.0 | Planned runtime. |
-| pydantic | 2.14.1 | MIT | Planned. Not imported here. |
-| platformdirs | 4.13.0 | MIT | Planned. Not imported here. |
-| mcp (official Python SDK) | 2.3.0 | MIT | Planned. Not imported here. Speaks protocol revisions `2024-11-05` through `2026-07-28`. |
-| pydantic, as required by mcp | `>=2.12` (satisfied by 2.14.1) | MIT | Planned, same pin as pydantic. |
+| pydantic | 2.14.1 | MIT | Adopted as a runtime dependency. See the Python package dependencies table below. |
+| platformdirs | 4.13.0 | MIT | Adopted as a runtime dependency. See the Python package dependencies table below. |
+| mcp (official Python SDK) | 2.3.0 | MIT | Adopted as a runtime dependency. See the Python package dependencies table below. Speaks protocol revisions `2024-11-05` through `2026-07-28`. |
+| pydantic, as required by mcp | `>=2.12` (satisfied by 2.14.1) | MIT | Satisfied by the pydantic pin above. |
 | yt-dlp | 2026.8.19 | Unlicense | Planned. Not imported here. |
 | playwright | 1.63.0 | Apache-2.0 | Planned. Browser binaries are an operator install, not part of this repo. |
 | ffmpeg | external binary; this machine has 8.0.1-3ubuntu2, configured `--enable-gpl` and `--enable-libx264` | LGPL-2.1-or-later, or GPL-2.0-or-later when GPL parts are enabled (this binary) | Not bundled. Operator-installed executable only. |
