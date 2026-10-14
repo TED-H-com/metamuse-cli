@@ -181,7 +181,10 @@ def test_mcp_stdio_calls_state_handles_and_errors(tmp_path: Path) -> None:
                     assert inspect_env["data"]["network_mode"] == "offline"
                     assert inspect_env["data"]["worker_available"] is True
                     assert inspect_env["data"]["attached_worker"] == "running"
-                    assert len(inspect_env["data"]["capabilities"]) == 15
+                    tool_rows = [
+                        row for row in inspect_env["data"]["capabilities"] if "." not in row["name"]
+                    ]
+                    assert len(tool_rows) == 15
 
                     # 2. project_create followed by calls omitting project_id must NOT reuse it.
                     proj_res = await session.call_tool(
