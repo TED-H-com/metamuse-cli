@@ -101,3 +101,35 @@ def test_r6_missing_popup_control_refuses_before_navigation(tmp_path, monkeypatc
         assert job["error"]["code"] == "E_DEPENDENCY_MISSING"
         assert job["error"]["message"] == "Facebook browser popup creation control is unavailable"
         assert not hits
+
+
+def test_r7_iframe_only_popup_control_failure(tmp_path, monkeypatch):
+    # Real sandboxed blank Chromium; expose only the pristine iframe escape.
+    # The top-level native open remains refused and no navigation is performed.
+    with browser_fixture(
+        tmp_path, monkeypatch, {POST_PATH: _synthetic_post_html()}, unsandboxed=False
+    ) as (ctx, project, permit, _, hits, *_):
+        verify = facebook._verify_popup_control
+
+        def iframe_escape(browser, context, page):
+            page.evaluate("""() => {
+              const create = document.createElement.bind(document);
+              document.createElement = (...args) => {
+                const node = create(...args);
+                if (args[0] === 'iframe') {
+                  const append = document.body.append.bind(document.body);
+                  document.body.append = (...nodes) => {
+                    append(...nodes);
+                    node.contentWindow.open = () => ({close() {}});
+                  };
+                }
+                return node;
+              };
+            }""")
+            return verify(browser, context, page)
+
+        monkeypatch.setattr(facebook, "_verify_popup_control", iframe_escape)
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["error"] and job["error"]["code"] == "E_DEPENDENCY_MISSING", job
+        assert job["error"]["message"] == "Facebook browser popup creation control is unavailable"
+        assert not hits
