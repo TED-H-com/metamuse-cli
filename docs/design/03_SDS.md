@@ -395,3 +395,7 @@ recomputed digest is required before the existing create_permit API. MCP cannot 
 permits. Model text cannot select provider/account or expand the action. Packet preview
 reads its immutable text; MCP packet_prepare replay returns the same fixed pre-share
 preview. No schema migration or separate approval store is needed.
+
+B16a refuses credential-class topic/question values before previews. Local paths and
+benign code/prose remain accepted; approved topic/question bytes are unchanged in the
+request, summary and wire. Credentials cannot produce a human approval request.

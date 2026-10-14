@@ -184,11 +184,11 @@ def prepare_open(ctx, request: m.MuseOpenRequest):
 
 
 def _check_question(question: str) -> None:
-    if redact_text(question)[0] != question:
+    if any(record["kind"] != "local_path" for record in redact_text(question)[1]):
         _error(
             m.ErrorCode.INPUT_INVALID,
-            "Muse question contains credential-like or private text",
-            "Remove credentials and private paths from the question before sending",
+            "Muse text contains credential values",
+            "Remove credentials from the topic or question before sending",
         )
 
 
@@ -275,7 +275,11 @@ def _approval_preview(ctx, request):
     request_file = str(ctx.paths.root / ("approval-" + digest + ".json"))
     # Redact raw fields before JSON encoding can hide nested credential syntax.
     safe_request = {
-        key: redact_text(value)[0] if isinstance(value, str) else value
+        key: value
+        if key in {"topic", "question"}
+        else redact_text(value)[0]
+        if isinstance(value, str)
+        else value
         for key, value in request.model_dump(mode="json").items()
     }
     safe_request.pop("access_grant_id", None)
@@ -297,9 +301,7 @@ def _approval_preview(ctx, request):
         else "List sessions to reconcile the original creation intent"
     )
     safe_topic = (
-        (safe_request["topic"] if "topic" in safe_request else redact_text(topic)[0])
-        if topic is not None
-        else None
+        (safe_request["topic"] if "topic" in safe_request else topic) if topic is not None else None
     )
     safe_question = safe_request.get("question") if question is not None else None
     details = [
@@ -312,9 +314,7 @@ def _approval_preview(ctx, request):
     if safe_topic is not None:
         details.append("Topic: " + safe_topic)
     if safe_question is not None:
-        details.append(
-            "Question (exact text, with credential-like values redacted): " + safe_question
-        )
+        details.append("Question (exact text): " + safe_question)
     if packet is not None:
         details.extend(
             [

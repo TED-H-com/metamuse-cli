@@ -284,3 +284,7 @@ replay validates stored receipts through the core duplicate-key-rejecting decode
 never extends the original grant. Binding labels come from configuration only.
 Changed request text or packet fails digest equality; preview data cannot mint permissions.
 The fixed registration seam and B12/B13 adoption obligations are in [CORE_API.md](CORE_API.md).
+
+B16a credential refusal uses redaction classes, excluding `local_path`. Code expressions,
+numeric session counters, pagination/model vocabulary and header prose without values
+are benign. Accepted Muse topics/questions remain exact in the wire and approval preview.

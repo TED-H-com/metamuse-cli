@@ -10,6 +10,61 @@ from test_muse_lifecycle import invoke
 from metamuse import safety
 from metamuse import models as m
 
+BENIGN = (
+    '"?token="+t',
+    "https://example.invalid/?session=",
+    "the session ended",
+    "token economy",
+    "cookie recipe",
+    "def refresh(token): ...",
+    "max_tokens=256",
+    "max_token=256",
+    "password_min_length = 12",
+    "session=requests.Session()",
+    "password=getpass()",
+    "the Authorization header carries a bearer token",
+    "Authorization: Bearer preferred over Basic",
+    "Cookie: header prose",
+    "Set-Cookie: SameSite=Lax",
+    "x=1; y=2",
+    "width=100; height=200",
+    "/docs/plan.md",
+    "/etc/hosts",
+    '{"nextPageToken":"CAUQAA", "eos_token":"end", "bos_token":"start"}',
+    '{"session":"Morning keynote"}',
+    "active_session=42",
+)
+
+
+@pytest.mark.parametrize("text", BENIGN)
+def test_f3_benign_credential_corpus(text):
+    from metamuse._muse_lifecycle import _check_question
+
+    assert safety.redact_text(text) == (text, [])
+    _check_question(text)
+
+
+def test_f3_path_preview_approves_exact_outbound_text(fixture_ctx, project):
+    from test_muse_lifecycle import opened, packet
+    from metamuse._muse_lifecycle import prepare_open, prepare_send
+
+    ctx = fixture_ctx
+    text = "Compare with /docs/plan.md and /tmp/synthetic.txt please"
+    opening = m.MuseOpenRequest(project_id=project, topic=text, request_key="path-topic")
+    preview = invoke(ctx, "open", opening).approval
+    assert preview.topic == preview.request["topic"] == text and text in preview.summary
+    assert prepare_open(ctx, opening).body["title"] == text
+    accepted, _ = opened(ctx, project)
+    request = m.MuseSendRequest(
+        discussion_id=accepted.data["discussion_id"],
+        packet_id=packet(ctx, project).id,
+        question=text,
+        request_key="path-question",
+    )
+    preview = invoke(ctx, "send", request).approval
+    assert preview.question == preview.request["question"] == text and text in preview.summary
+    assert prepare_send(ctx, request).body["text"].startswith(text + "\n\n")
+
 
 def bounded_redaction(text, budget):
     def expired(*args):
@@ -29,7 +84,7 @@ def bounded_redaction(text, budget):
 
 @pytest.mark.parametrize("case", ["unicode", "quotes"])
 def test_f1_json_key_complexity(case):
-    text = '"' + (r"\u0061" * 26 if case == "unicode" else r'\"' * 24575)
+    text = '"' + (r"\u0061" * 26 if case == "unicode" else r"\"" * 24575)
     assert bounded_redaction(text, 0.4) == (text, [])
 
 

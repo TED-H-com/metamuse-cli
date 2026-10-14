@@ -124,12 +124,15 @@ separators `?`, `&`, `#`, `=` are located through up to three percent-encoding l
 the value is replaced in its original encoded span. Sensitive JSON string fields are
 redacted even within an incomplete document. Counts expose only class and count.
 Packet rendering is redacted before its UTF-8 digest; bundle members use the same rules.
-The host question is checked first with this detector: any change means `E_INPUT_INVALID`
-and a next action to remove credentials. No value is echoed or question silently rewritten,
-and no approval preview may be created for a refused question. Muse body text is the
-checked question, two newlines, and redacted packet text. Private original exports retain
-`text_policy=original_private`. Ordinary prose such as "the session ended", "token economy",
-"cookie recipe", and public URLs without credential parameters survives unchanged.
+Topics and questions are refused with fixed `E_INPUT_INVALID` only for credential-class
+values (`sensitive_field`, `cookie`, `session_cookie`, `authorization`, `url_token`,
+`api_key`, including bare bearer tokens, userinfo passwords and colon assignments).
+Local paths, header prose without credentials, code expressions, numeric session counters,
+pagination `nextPageToken` and eos/bos/pad/unk/max token vocabulary are accepted.
+The known public paths `/docs/plan.md` and `/etc/hosts` survive redaction unchanged.
+Accepted topics/questions are sent byte-for-byte and displayed exactly in the approval
+preview, public request and summary. Refusal never echoes values, silently rewrites text
+or creates an approval preview. Packets retain their independent privacy redaction.
 
 Draft save只保存host提供文字；更新必須expected_revision，不默默覆蓋。預設language=und、emoji=unspecified、plain_text、this_draft；使用者明示才改。沒有作者人設或策略。
 
@@ -215,9 +218,10 @@ It creates no grant, discussion, exchange or job. Preview includes operation/per
 kind, project, configured provider/account, exact action digest, destination, topic/question,
 and for shares packet ID/digest/UTF-8 bytes plus the exact `packet preview` command.
 `request` is a non-secret copy to save at `request_file`; `next_action` is the exact human
-CLI command. Each text field is redacted separately before JSON encoding, using the same
-strings in the summary and request. The digest still binds original bytes, so a redacted
-or otherwise changed request cannot reuse that digest. Expired, revoked, exhausted,
+CLI command. Topics and questions pass the credential check before preview creation and
+are displayed exactly as sent, using the same strings in the summary and request.
+Other metadata is redacted per field before JSON encoding. The digest binds the original
+bytes; a changed request cannot reuse it. Expired, revoked, exhausted,
 mismatched or non-exact share grants retain E_SCOPE_DENIED and their actual message,
 without a preview; repeat the call without a grant for a fresh review. Stale packets
 return E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in submit and preview.

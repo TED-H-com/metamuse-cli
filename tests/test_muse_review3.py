@@ -307,7 +307,9 @@ def test_zero_handoff_races_do_not_wedge_worker(fixture_ctx, project, monkeypatc
 
 
 @pytest.mark.parametrize("mode", ["normal", "send_timeout"])
-@pytest.mark.parametrize("question", ["Mail me at alice@example.com"])
+@pytest.mark.parametrize(
+    "question", ["Mail me at alice@example.com", "Compare with /docs/plan.md please"]
+)
 def test_markerless_echo_uses_the_same_redaction_as_outbound_text(
     fixture_ctx, project, mode, question
 ):
@@ -331,37 +333,6 @@ def test_markerless_echo_uses_the_same_redaction_as_outbound_text(
     exchange = ctx.store.get(m.Exchange, identity)
     assert ctx.store.get(m.JobStep, exchange.submission_step_id).state == "succeeded"
     assert exchange.delivery_proof.kind == ("user_echo" if mode == "send_timeout" else "ack")
-
-
-@pytest.mark.parametrize("mode", ["normal", "send_timeout"])
-def test_private_path_question_is_refused_before_send_or_approval(fixture_ctx, project, mode):
-    # B16a requires any question changed by the packet detector to be refused.
-    # This former echo case now pins that contract instead of granting the unsafe send.
-    ctx = fixture_ctx
-    opening, _ = opened(ctx, project)
-    ctx.muse_gateway.mode = mode
-    pkt = packet(ctx, project)
-    question = "Compare with /docs/plan.md please"
-    request = m.MuseSendRequest(
-        discussion_id=opening.data["discussion_id"],
-        packet_id=pkt.id,
-        question=question,
-        share_grant_id="placeholder",
-        request_key="send",
-    )
-    with pytest.raises(m.CoreError) as caught:
-        prepare_send(ctx, request)
-    assert caught.value.detail.code == m.ErrorCode.INPUT_INVALID
-    result = invoke(ctx, "send", request)
-    assert result.status == "error" and result.error.code == m.ErrorCode.INPUT_INVALID
-    assert "/docs/plan.md" not in result.model_dump_json()
-    assert "Remove credentials" in result.error.next_action
-    assert [route for route, _ in ctx.muse_gateway.calls] == ["session.start"]
-    with ctx.store.connection() as conn:
-        assert conn.execute("SELECT count(*) FROM exchanges").fetchone()[0] == 0
-        assert (
-            conn.execute("SELECT count(*) FROM jobs WHERE operation='muse.send'").fetchone()[0] == 0
-        )
 
 
 def test_disabled_fixture_capabilities_keep_ready_dependencies_and_no_permission(fixture_ctx):
