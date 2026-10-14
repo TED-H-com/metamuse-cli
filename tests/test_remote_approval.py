@@ -80,6 +80,12 @@ def dial(method, url, headers, body, checked, timeout, limit):
     payload = {'id': urlsplit(url).path.strip('/'), 'title': 'Synthetic media',
         'webpage_url': url, 'formats': [{'format_id': 'fixture', 'ext': 'mp4',
         'url': 'https://media.fixture.test/media.mp4'}]}
+    if os.environ.get('REMOTE_TEST_OUTER_IDENTITY'):
+        payload[os.environ['REMOTE_TEST_OUTER_IDENTITY']] = 'inner-real-scope'
+        if urlsplit(url).path == '/outer':
+            payload = {'_type': 'url_transparent', 'url': 'https://media.fixture.test/one',
+                'ie_key': 'MetamuseFixture',
+                os.environ['REMOTE_TEST_OUTER_IDENTITY']: 'outer-chosen-scope'}
     if os.environ.get('REMOTE_TEST_MEDIA'):
         payload['formats'] = [{'format_id': 'fixture', 'ext': 'wav',
             'url': 'https://media.fixture.test/media.wav'}]
