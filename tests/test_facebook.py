@@ -1707,6 +1707,9 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
         def route(self, pattern: str, handler: Any) -> None:
             del pattern, handler
 
+        def route_web_socket(self, pattern: str, handler: Any) -> None:
+            del pattern, handler
+
         def new_page(self) -> _FakePage:
             return _FakePage()
 

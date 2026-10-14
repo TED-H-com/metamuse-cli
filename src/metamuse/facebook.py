@@ -1675,10 +1675,15 @@ class _PlaywrightSession:
                 except m.CoreError as exc:
                     self._egress.navigation_error = exc
 
+        def _on_web_socket(route: Any) -> None:
+            self._egress.record_proxy_protocol_refusal(hostname="proxy", reason="websocket")
+            route.close(code=1008, reason="WebSockets are disabled")
+
         self._context.on("page", _on_popup)
         self._page.on("popup", _on_popup)
         self._page.on("download", _on_download)
         self._context.route("**/*", _on_route)
+        self._context.route_web_socket("**/*", _on_web_socket)
         self._page.on("response", _on_response)
         self._page.on("framenavigated", _on_frame_navigated)
 

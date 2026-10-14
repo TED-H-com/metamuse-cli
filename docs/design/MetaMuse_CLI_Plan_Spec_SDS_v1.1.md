@@ -1298,6 +1298,10 @@ fixture proxy) exposes them. HTTPS 302 paths inside CONNECT can already have bee
 requested before Playwright observes the final navigation; no data, source or item
 from that document is stored or reported. Script/meta navigation is route-blocked.
 
+All WebSockets, including worker WebSockets and WSS to approved hosts, are closed
+by context.route_web_socket before the first navigation. No upstream WebSocket
+connection is established; CONNECT host/IP checks remain a separate boundary.
+
 ---
 
 # 來源與恢復說明

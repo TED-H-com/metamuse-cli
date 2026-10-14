@@ -1,5 +1,7 @@
 """Round-4 review regressions. Synthetic data; browsers connect only to loopback."""
 
+import base64
+import hashlib
 import http.server
 import json
 import ssl
@@ -109,6 +111,21 @@ def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             hits.append((self.path, self.headers.get("Upgrade")))
+            if self.headers.get("Upgrade", "").lower() == "websocket":
+                accept = base64.b64encode(
+                    hashlib.sha1(
+                        (
+                            self.headers["Sec-WebSocket-Key"]
+                            + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
+                        ).encode()
+                    ).digest()
+                ).decode()
+                self.send_response(101)
+                self.send_header("Upgrade", "websocket")
+                self.send_header("Connection", "Upgrade")
+                self.send_header("Sec-WebSocket-Accept", accept)
+                self.end_headers()
+                return
             value = pages.get(self.path, "<html>Unclassified fixture</html>")
             if isinstance(value, tuple):
                 self.send_response(value[0])
@@ -128,10 +145,16 @@ def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
         def log_message(self, *args):
             pass
 
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     tls.load_cert_chain(cert, key)
-    server.socket = tls.wrap_socket(server.socket, server_side=True)
+
+    class TLSFixtureServer(http.server.ThreadingHTTPServer):
+        def get_request(self):
+            sock, address = super().get_request()
+            sock.settimeout(2)
+            return tls.wrap_socket(sock, server_side=True), address
+
+    server = TLSFixtureServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     guard = facebook.EgressGuard.for_fixture_test(
@@ -317,3 +340,34 @@ def test_finding_03_browser_navigation_identity_stops_before_import(tmp_path, mo
             assert any(request == other for request, _ in hits)
         else:
             assert all(request != other for request, _ in hits)
+
+
+def test_finding_04_approved_wss_and_worker_wss_closed_before_handshake(tmp_path, monkeypatch):
+    script = """<script>
+    window.states = [];
+    const socket = new WebSocket('wss://' + location.host + '/ws');
+    socket.onopen = () => states.push('open');
+    socket.onclose = () => states.push('closed');
+    const source = `const s = new WebSocket('wss://${location.host}/ws-worker');
+      s.onopen = () => postMessage('open'); s.onclose = () => postMessage('closed');`;
+    const worker = new Worker(URL.createObjectURL(new Blob([source], {type: 'text/javascript'})));
+    worker.onmessage = (event) => states.push(event.data);
+    </script>"""
+    markup = _synthetic_post_html().replace("</body>", script + "</body>")
+    with browser_fixture(tmp_path, monkeypatch, {"/synth.lab/posts/pfbid0101synth": markup}) as env:
+        ctx, _, _, _, hits, guard, driver = env
+        state = facebook.load_storage_state(ctx.policy.facebook.auth_ref, account="acct_synth")
+        options = (
+            {"allow_unsandboxed_browser": True}
+            if "allow_unsandboxed_browser" in config.FacebookConfig.model_fields
+            else {}
+        )
+        session = driver.open_session(state, guard, timeout_ms=2000, **options)
+        try:
+            session.goto_post(URL)
+            session._page.wait_for_function("window.states.length === 2", timeout=2000)
+            assert session._page.evaluate("window.states") == ["closed", "closed"]
+            assert not any(upgrade for _, upgrade in hits)
+            assert guard.summary()["aborted"] >= 2
+        finally:
+            session.close()
