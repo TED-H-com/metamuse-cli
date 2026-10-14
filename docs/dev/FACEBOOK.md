@@ -376,9 +376,15 @@ them before waiting for the dial barrier, so pending connects are included. A
 50 ms browser-loop watcher reacts to byte cutoff and latched socket/guard
 failures, closing the affected page to interrupt in-flight
 navigation, click and expansion operations, instead of waiting for the full
-`read_timeout_seconds`. All browser operation exceptions recheck the byte latch
-and return `E_LIMIT_REACHED` with partial coverage; already observed data remains
-available. The watcher uses the pinned Playwright implementation loop, as does
+`read_timeout_seconds`. Only navigation/socket/wait interruptions caused by the
+cutoff become `E_LIMIT_REACHED` with partial coverage. Existing fatal errors are
+never rewritten merely because the byte latch is set. Error precedence is guard
+failure or unverified target shutdown, denied destination (`E_SCOPE_DENIED`),
+login/checkpoint/challenge/rate-limit barrier, off-post navigation, then the byte
+budget. When HTML has been observed, barrier classification runs before the byte
+budget decision. Fatal stops preserve their normal job state, error, records and
+next action. Every operation checks guard state first, and close always verifies
+pending target destruction before tearing down CDP, including after a cutoff. The watcher uses the pinned Playwright implementation loop, as does
 the existing async WebSocket close adapter. Tests bound hangs at an independent
 90-second subprocess deadline, with 300-second read and job budgets.
 
