@@ -798,15 +798,15 @@
         "zh": "<strong>遠端影音（B12）</strong><br><code>implemented with offline tests</code><br>精確操作的核准預覽與人類執行的 <code>permit approve</code>。已有 OFFLINE 與 FIXTURE 證據；尚未執行 AT-040 LIVE。"
       },
       {
-        "en": "<strong>CI</strong><br><code>implemented with offline tests</code><br>GitHub Actions check runs offline gates and wheel smoke on PRs and main pushes; required on main since 2026-10-14.",
-        "zh": "<strong>CI</strong><br><code>implemented with offline tests</code><br>GitHub Actions check 在 PR 與 main push 執行離線檢查與 wheel smoke；自 2026-10-14 起為 main 的必要檢查。"
+        "en": "<strong>Facebook posts (B13)</strong><br><code>implemented with offline tests</code><br>One operator-approved post per job, rendered in sandboxed Chromium through a policy-checked local proxy. Tested only on synthetic loopback pages; requires the <code>facebook</code> extra and Playwright Chromium. Human approval uses <code>metamuse permit create</code>; Facebook approval preview is not wired yet. No real-account run.",
+        "zh": "<strong>Facebook 貼文（B13）</strong><br><code>implemented with offline tests</code><br>每個工作限一則操作者核准的貼文，以沙盒 Chromium 經過本地政策檢查代理呈現。僅以合成的本機回環頁面測試；需要 <code>facebook</code> 選用依賴與 Playwright Chromium。由人類執行 <code>metamuse permit create</code> 核准；Facebook 核准預覽流程尚未接上。未曾使用真實帳號執行。"
+      },
+      {
+        "en": "<strong>CI</strong><br><code>implemented with offline tests</code><br>GitHub Actions <code>check</code> runs the offline gates, sandboxed loopback Chromium browser tests (browser skips fail CI), and wheel smoke on every PR and <code>main</code> push; required status check on <code>main</code> since 2026-10-14.",
+        "zh": "<strong>CI</strong><br><code>implemented with offline tests</code><br>GitHub Actions <code>check</code> 在每個 PR 與 <code>main</code> push 執行離線檢查、沙盒 Chromium 本機回環瀏覽器測試（跳過瀏覽器測試即失敗）及 wheel smoke；自 2026-10-14 起為 <code>main</code> 的必要狀態檢查。"
       }
     ],
     "limits": [
-      {
-        "en": "<strong>Facebook posts (B13)</strong><br><code>not done</code><br>Not implemented on <code>main</code> yet.",
-        "zh": "<strong>Facebook 貼文（B13）</strong><br><code>not done</code><br><code>main</code> 尚未實作。"
-      },
       {
         "en": "<strong>Publishing</strong><br><code>not done</code><br>Not implemented.",
         "zh": "<strong>發布</strong><br><code>not done</code><br>尚未實作。"
