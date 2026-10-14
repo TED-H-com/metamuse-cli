@@ -237,8 +237,13 @@ class Store:
             Path(str(self.paths.database) + "-wal"),
             Path(str(self.paths.database) + "-shm"),
         ):
-            if path.is_symlink() or path.exists():
-                _regular_file(path)
+            try:
+                if path.is_symlink() or path.exists():
+                    _regular_file(path)
+            except FileNotFoundError:
+                # SQLite removes -wal/-shm when another connection closes. A file that
+                # vanished after the existence check is absent, as if never seen.
+                continue
         # Check version before applying writable pragmas; older builds must not write newer DBs.
         if self.paths.database.exists():
             with closing(
