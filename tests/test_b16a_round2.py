@@ -2,6 +2,7 @@
 
 import signal
 import time
+import uuid
 
 import pytest
 from test_muse_lifecycle import fixture_ctx as fixture_ctx
@@ -224,3 +225,22 @@ def test_f7_original_url_value_boundaries(separator, sentinel):
     assert marker not in safety.redact_text(prefix_value)[0]
     exact = "https://example.invalid/?token=[REDACTED]&view=1"
     assert safety.redact_text(exact) == (exact, [])
+
+
+@pytest.mark.parametrize("operation", ["resolve", "list"])
+def test_f8_deep_secret_has_fixed_detached_error(tmp_path, operation):
+    secret = safety.SecretStore(tmp_path / "auth")
+    secret.root.mkdir(mode=0o700)
+    auth_ref = "auth_" + uuid.uuid4().hex
+    marker = f"{operation}_MARKER_SYNTHETIC_ONLY"
+    path = secret.root / (auth_ref + ".json")
+    path.write_text("[" * 20000 + '"' + marker + '"' + "]" * 20000)
+    path.chmod(0o600)
+    with pytest.raises(m.CoreError) as error:
+        if operation == "resolve":
+            secret.resolve(auth_ref, provider="synthetic", account="synthetic")
+        else:
+            secret.list()
+    assert error.value.detail.code == m.ErrorCode.AUTH_REQUIRED
+    assert error.value.__context__ is None and error.value.__cause__ is None
+    assert marker not in str(error.value)

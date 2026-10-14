@@ -820,7 +820,15 @@ class SecretStore:
             if not 0 < len(secret) <= SECRET_MAX_BYTES:
                 _secret_error()
             return secret
-        except (m.CoreError, OSError, ValueError, KeyError, TypeError, binascii.Error):
+        except (
+            m.CoreError,
+            OSError,
+            ValueError,
+            KeyError,
+            TypeError,
+            RecursionError,
+            binascii.Error,
+        ):
             pass
         # Suppressing display with `from None` inside the handler still retains
         # JSONDecodeError.doc through __context__. Leave the handler before raising.
@@ -855,7 +863,7 @@ class SecretStore:
                     }
                 )
             return records
-        except (m.CoreError, OSError, ValueError, KeyError, TypeError):
+        except (m.CoreError, OSError, ValueError, KeyError, TypeError, RecursionError):
             pass
         finally:
             if directory is not None:
