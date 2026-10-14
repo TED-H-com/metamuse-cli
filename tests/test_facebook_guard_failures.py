@@ -99,6 +99,15 @@ def test_r6_popup_close_exception_checks_liveness(tmp_path, monkeypatch, gone):
                 raise RuntimeError("synthetic popup close failure")
 
             monkeypatch.setattr(Page, "close", broken)
+            if hasattr(session, "_page_target_cdp"):
+                session._page_target_cdp.send(
+                    "Target.setAutoAttach",
+                    {
+                        "autoAttach": False,
+                        "waitForDebuggerOnStart": False,
+                        "flatten": True,
+                    },
+                )
             # Browser-protocol creation bypasses the renderer switch and exercises
             # the independent context page handler against a real foreign target.
             session._context.new_page()

@@ -1831,6 +1831,7 @@ class EgressGuard:
                 "max_bytes_exceeded",
                 "websocket_blocked",
                 "blocked_subframe",
+                "popup_blocked",
             }:
                 reason = next(
                     (
@@ -1871,6 +1872,48 @@ def refuse_proxies(env: Mapping[str, str] | None = None) -> None:
                 ),
                 next_action=f"Unset {key} before running Facebook collection",
             )
+
+
+WEBSOCKET_BLOCK_SCRIPT = """(() => {
+  // Ordinary WebSocket is intercepted by the pinned Playwright context route.
+  for (const name of ['WebSocketStream']) {
+    const original = window[name];
+    if (typeof original !== 'function') continue;
+    const blocked = function() {
+      console.error('__METAMUSE_WS_BLOCKED__');
+      throw new DOMException('WebSockets are disabled', 'SecurityError');
+    };
+    // Playwright's shim escape remains covered by the Chromium network rules.
+    if (original._apiPassThrough) blocked._apiPassThrough = original._apiPassThrough.bind(original);
+    Object.defineProperty(window, name, {value: blocked, configurable: true, writable: true});
+  }
+})()"""
+
+
+def _verify_popup_control(browser: Any, context: Any, page: Any) -> None:
+    """Use pristine blank realms, before init scripts and before opening the proxy."""
+    try:
+        refused = page.evaluate("""() => {
+          const direct = window.open('');
+          if (direct) direct.close();
+          const frame = document.createElement('iframe'); document.body.append(frame);
+          const fresh = frame.contentWindow.open('');
+          if (fresh) fresh.close();
+          frame.remove();
+          return direct === null && fresh === null;
+        }""")
+        cdp = browser.new_browser_cdp_session()
+        targets = cdp.send("Target.getTargets")["targetInfos"]
+        pages = [target for target in targets if target["type"] == "page"]
+        if refused and len(context.pages) == 1 and len(pages) == 1:
+            return
+    except Exception:
+        pass  # Any inconclusive verification refuses the entire browser below.
+    raise m.CoreError(
+        m.ErrorCode.DEPENDENCY_MISSING,
+        "Facebook browser popup creation control is unavailable",
+        next_action="Install a Chromium headless build with working new-web-contents blocking",
+    )
 
 
 class _PlaywrightSession:
@@ -1957,6 +2000,7 @@ class _PlaywrightSession:
                 self._expansion_requests.add(request)
 
         self._context.expose_binding("__metamuseExpansionRequest", note_expansion)
+        self._context.add_init_script(WEBSOCKET_BLOCK_SCRIPT)
         self._context.add_init_script("""(() => {
           const note = url => {
             const event = window.event;
@@ -2038,8 +2082,20 @@ class _PlaywrightSession:
             self._egress.record_browser_refusal("websocket_blocked")
             # Playwright 1.63 invokes WebSocket handlers directly on its asyncio loop.
             # Await the pinned implementation; a nested sync close deadlocks that loop.
-            await route._impl_obj.close(code=1008, reason="WebSockets are disabled")
+            try:
+                await route._impl_obj.close(code=1008, reason="WebSockets are disabled")
+            except Exception:
+                if not self._page.is_closed():
+                    self._guard_failed()
 
+        self._context.on(
+            "console",
+            lambda message: (
+                self._egress.record_browser_refusal("websocket_blocked")
+                if message.text == "__METAMUSE_WS_BLOCKED__"
+                else None
+            ),
+        )
         self._context.on("page", self._on_popup)
         self._page.on("popup", self._on_popup)
         self._page.on("download", self._on_download)
@@ -2065,19 +2121,11 @@ class _PlaywrightSession:
             for scheme in ("ws", "wss")
         ]
         page_cdp.send("Network.emulateNetworkConditionsByRule", {"matchedNetworkConditions": rules})
-        page_cdp.on(
-            "Network.webSocketCreated",
-            lambda _: self._egress.record_browser_refusal("websocket_blocked"),
-        )
+        page_cdp.send("Page.enable")
+        page_cdp.on("Page.windowOpen", lambda _: self._note_popup_attempt())
+        page_cdp.on("Network.webSocketCreated", self._unexpected_websocket)
 
-        def unexpected_handshake(_: Any) -> None:
-            self._transport_error = m.CoreError(
-                m.ErrorCode.PROTOCOL_MISMATCH,
-                "Facebook WebSocket handshake bypassed browser blocking",
-                next_action="Stop collection and inspect the installed Chromium network controls",
-            )
-
-        page_cdp.on("Network.webSocketHandshakeResponseReceived", unexpected_handshake)
+        page_cdp.on("Network.webSocketHandshakeResponseReceived", self._unexpected_websocket)
         page_target = page_cdp.send("Target.getTargetInfo")["targetInfo"]["targetId"]
 
         self._worker_cdp.on("Target.attachedToTarget", self._on_worker_attached)
@@ -2101,6 +2149,82 @@ class _PlaywrightSession:
                 "filter": [{"type": kind} for kind in ("worker", "shared_worker", "service_worker")]
                 + [{"exclude": True}],
             },
+        )
+
+        # Browser-wide page attachment pauses foreign targets before their first
+        # script. The headless switch normally prevents their creation entirely.
+        self._page_target_cdp = browser.new_browser_cdp_session()
+
+        self._target_network_channels: list[Any] = []
+
+        def page_attached(event: dict[str, Any]) -> None:
+            info = event["targetInfo"]
+            try:
+                channel = browser.new_browser_cdp_session()
+                self._target_network_channels.append(channel)
+                attached = channel.send(
+                    "Target.attachToTarget",
+                    {
+                        "targetId": info["targetId"],
+                        "flatten": False,
+                    },
+                )
+                channel.on("Target.receivedMessageFromTarget", target_message)
+                channel.send(
+                    "Target.sendMessageToTarget",
+                    {
+                        "sessionId": attached["sessionId"],
+                        "message": json.dumps({"id": 1, "method": "Network.enable"}),
+                    },
+                )
+            except Exception:
+                if not self._target_gone(info["targetId"]):
+                    self._guard_failed()
+            if info["targetId"] != page_target:
+                if info["type"] == "page":
+                    self._note_popup_attempt()
+                else:
+                    self._egress.record_browser_refusal("blocked_subframe")
+                if event.get("waitingForDebugger") is not True:
+                    self._guard_failed()
+                self._close_target(info["targetId"])
+
+        def target_message(event: dict[str, Any]) -> None:
+            try:
+                message = json.loads(event["message"])
+                if "error" in message:
+                    self._guard_failed()
+                method = message.get("method")
+            except (ValueError, KeyError, TypeError):
+                self._guard_failed()
+                return
+            if method in ("Network.webSocketCreated", "Network.webSocketHandshakeResponseReceived"):
+                self._unexpected_websocket(event)
+            elif method == "Page.windowOpen":
+                self._note_popup_attempt()
+
+        self._page_target_cdp.on("Target.attachedToTarget", page_attached)
+        self._page_target_cdp.on("Target.receivedMessageFromTarget", target_message)
+        self._page_target_cdp.send(
+            "Target.setAutoAttach",
+            {
+                "autoAttach": True,
+                "waitForDebuggerOnStart": True,
+                "flatten": True,
+                "filter": [{"type": "page"}, {"type": "iframe"}, {"exclude": True}],
+            },
+        )
+
+    def _note_popup_attempt(self) -> None:
+        self.popups_blocked += 1
+        self._egress.record_browser_refusal("popup_blocked")
+
+    def _unexpected_websocket(self, _: Any) -> None:
+        self._egress.record_browser_refusal("websocket_blocked")
+        self._transport_error = m.CoreError(
+            m.ErrorCode.PROTOCOL_MISMATCH,
+            "Facebook WebSocket handshake bypassed browser blocking",
+            next_action="Stop collection and inspect the installed Chromium network controls",
         )
 
     def _finish_route(self, route: Any, *, abort: bool) -> None:
@@ -2200,8 +2324,7 @@ class _PlaywrightSession:
         self._close_target(info["targetId"])
 
     def _on_popup(self, popup: Any) -> None:
-        self.popups_blocked += 1
-        self._egress.record_browser_refusal("popup_blocked")
+        self._note_popup_attempt()
         try:
             popup.close()
         except Exception:
@@ -2446,6 +2569,7 @@ class PlaywrightBrowserDriver:
             egress,
             max_bytes=max_bytes,
             idle_timeout_s=idle_timeout_s,
+            start_closed=True,
         )
         clean_env = {k: v for k, v in os.environ.items() if k not in PROXY_ENV_VARS}
         pw: Any = None
@@ -2482,6 +2606,7 @@ class PlaywrightBrowserDriver:
                         "before retrying"
                     ),
                 )
+            _verify_popup_control(browser, context, page)
             stage = "controls"
             session = _PlaywrightSession(
                 pw,
@@ -2493,7 +2618,9 @@ class PlaywrightBrowserDriver:
                 timeout_ms=timeout_ms,
                 _test_origin=self._test_origin,
             )
+            session._raise_if_byte_limit()
             session.browser_sandbox = mode
+            proxy.start()
             return session
         except Exception as exc:
             proxy.close()

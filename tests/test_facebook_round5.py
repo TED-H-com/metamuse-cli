@@ -218,6 +218,7 @@ def test_r5_n8_resume_without_committed_batch_keeps_weak_records(tmp_path):
 
 @pytest.mark.parametrize("kind", ["stream", "passthrough"])
 def test_r5_04_network_blocks_page_websocket_bypasses(tmp_path, monkeypatch, kind):
+    monkeypatch.setattr(facebook, "WEBSOCKET_BLOCK_SCRIPT", "")
     script = (
         "new WebSocketStream('wss://' + location.host + '/socket');"
         if kind == "stream"
@@ -229,18 +230,25 @@ def test_r5_04_network_blocks_page_websocket_bypasses(tmp_path, monkeypatch, kin
         state = facebook.load_storage_state(ctx.policy.facebook.auth_ref, account="acct_synth")
         session = driver.open_session(state, guard, timeout_ms=5000)
         try:
-            session.goto_post(URL)
+            try:
+                session.goto_post(URL)
+            except m.CoreError as error:
+                assert error.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
             session._page.wait_for_timeout(500)
             assert not any(upgrade for _, upgrade in hits)
             assert any(
                 row["reason"] == "websocket_blocked" for row in guard.summary()["aborted_reasons"]
             )
         finally:
-            session.close()
+            try:
+                session.close()
+            except m.CoreError as error:
+                assert error.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
 
 
 def test_r5_04_unexpected_handshake_fails_job_closed(tmp_path, monkeypatch):
-    # Deliberately sabotage the network block in this test only, to exercise detection.
+    # Deliberately sabotage both defenses to exercise browser-wide detection.
+    monkeypatch.setattr(facebook, "WEBSOCKET_BLOCK_SCRIPT", "")
     script = "new WebSocketStream('wss://' + location.host + '/socket');"
     markup = _synthetic_post_html().replace("</body>", "<script>" + script + "</script></body>")
     with browser_fixture(
