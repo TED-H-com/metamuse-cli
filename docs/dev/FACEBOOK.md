@@ -144,13 +144,15 @@ returns a fixed 403. Concurrency is limited to 16 transport slots.
 Chromium uses proxy-bypass-list `<-loopback>`, DNS `MAP * ~NOTFOUND` (excluding the
 proxy's loopback IP), QUIC disabled and nonproxied WebRTC UDP disabled. Ambient proxy
 variables are refused. Downloads, popups and service workers are blocked.
-`context.route_web_socket` closes page WebSockets before navigation. The pinned
-Playwright 1.63 callback runs on its asyncio loop, so the handler awaits its underlying
-close implementation instead of making a nested synchronous API call. The pinned
-browser omits worker WebSockets from that hook: dedicated and shared workers are
-paused before their first script using CDP target attachment and terminated. Shared
-workers require a browser-level attachment because they lack a page opener relation.
-Worker-dependent page content is consequently unverified and may be unavailable.
+Chromium CDP installs per-URL offline rules for `ws://*:*/*` and `wss://*:*/*`
+before navigation. This network-layer refusal covers WebSocketStream and the
+Playwright shim’s _apiPassThrough; setBlockedURLs alone does not stop WSS.
+The context WebSocket route additionally closes ordinary page sockets. Its callback
+awaits the pinned underlying implementation. Dedicated/shared workers are paused,
+receive the network rules and are terminated before their first script; shared
+workers use browser-level attachment. Worker-dependent content may be unavailable.
+Network WebSocket creation counts websocket_blocked; any handshake response stops
+with fixed E_PROTOCOL_MISMATCH before import, including events dispatched at close.
 
 Resolution/policy waits are bounded by the read deadline and interrupted by close.
 Shutdown fences dialing/registration; after close returns no later upstream target
@@ -257,3 +259,6 @@ Facebook comment identifiers use the same stripped nonempty ASCII token validati
 
 
 Facebook weak-identity resume suppression begins only after an accepted batch has committed. A usage-only checkpoint from a login wall does not suppress a first import of weak comments; cumulative byte/expansion usage still survives.
+
+
+Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetworkConditionsByRule offline rules matching both schemes and all ports. setBlockedURLs alone is insufficient. Page WebSocket routing is supplemental. Workers receive the rules while paused and are terminated before code. Each observed attempt has the fixed websocket_blocked reason; any observed handshake response fails E_PROTOCOL_MISMATCH before import, including events drained at close.

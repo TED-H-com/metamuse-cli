@@ -8,6 +8,7 @@ import socket
 import ssl
 import subprocess
 import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -67,8 +68,8 @@ def finish(ctx, job_id):
 
 
 @contextmanager
-def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
-    """Explicit synthetic unsandboxed config; TLS exemption exists only in this test."""
+def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL, delays=None, unsandboxed=True):
+    """Synthetic config with explicit sandbox choice; test-only TLS exemption."""
     if facebook.find_playwright_browser() is None:
         pytest.skip("Playwright or Chromium is not installed")
     _allow_loopback_sockets(monkeypatch)
@@ -80,7 +81,9 @@ def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
         if "allow_unsandboxed_browser" in config.FacebookConfig.model_fields
         else []
     )
-    _write_facebook_config(ctx.paths.root, auth_ref=auth_ref, allow_unsandboxed_browser=bool(extra))
+    _write_facebook_config(
+        ctx.paths.root, auth_ref=auth_ref, allow_unsandboxed_browser=unsandboxed and bool(extra)
+    )
     config_path = ctx.paths.root / "metamuse.toml"
     config_path.write_text(
         config_path.read_text().replace("read_timeout_seconds = 30", "read_timeout_seconds = 2")
@@ -108,6 +111,7 @@ def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
         capture_output=True,
     )
     hits = []
+    delays = delays or {}
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
@@ -127,10 +131,17 @@ def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
                 self.send_header("Sec-WebSocket-Accept", accept)
                 self.end_headers()
                 return
-            value = pages.get(self.path, "<html>Unclassified fixture</html>")
+            path = self.path.split("?")[0]
+            if path in delays:
+                time.sleep(delays[path])
+            value = pages.get(self.path, pages.get(path, "<html>Unclassified fixture</html>"))
+            if callable(value):
+                value = value(self)
             if isinstance(value, tuple):
                 self.send_response(value[0])
-                self.send_header("Location", value[1])
+                if value[1] is not None:
+                    self.send_header("Location", value[1])
+                self.send_header("Content-Length", "0")
                 self.end_headers()
                 return
             body = value.encode()
@@ -150,6 +161,8 @@ def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
     tls.load_cert_chain(cert, key)
 
     class TLSFixtureServer(http.server.ThreadingHTTPServer):
+        daemon_threads = True
+
         def get_request(self):
             sock, address = super().get_request()
             sock.settimeout(2)

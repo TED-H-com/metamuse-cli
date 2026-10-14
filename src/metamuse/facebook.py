@@ -1272,6 +1272,19 @@ class EgressGuard:
                     )
                 raise
 
+    def record_browser_refusal(self, reason: str) -> None:
+        assert reason in {"websocket_blocked", "blocked_subframe"}
+        with self._lock:
+            self.decisions.append(
+                EgressDecision(
+                    hostname="browser",
+                    purpose="subresource",
+                    resource_type="browser",
+                    allowed=False,
+                    reason=reason,
+                )
+            )
+
     def record_proxy_protocol_refusal(self, *, hostname: str, reason: str) -> None:
         exc = m.CoreError(
             m.ErrorCode.SCOPE_DENIED,
@@ -1683,7 +1696,11 @@ class EgressGuard:
                 else "request"
             )
             reason = decision.reason
-            if reason not in {code.value for code in m.ErrorCode} | {"max_bytes_exceeded"}:
+            if reason not in {code.value for code in m.ErrorCode} | {
+                "max_bytes_exceeded",
+                "websocket_blocked",
+                "blocked_subframe",
+            }:
                 reason = next(
                     (
                         prefix
@@ -1749,6 +1766,7 @@ class _PlaywrightSession:
         self.popups_blocked = 0
         self.downloads_blocked = 0
         self.workers_blocked = 0
+        self._transport_error: m.CoreError | None = None
         self._peer_error: m.CoreError | None = None
         self._document_status = 200
         self._expansion_response_status: int | None = None
@@ -1832,7 +1850,7 @@ class _PlaywrightSession:
                     self._egress.navigation_error = exc
 
         async def _on_web_socket(route: Any) -> None:
-            self._egress.record_proxy_protocol_refusal(hostname="proxy", reason="websocket")
+            self._egress.record_browser_refusal("websocket_blocked")
             # Playwright 1.63 invokes WebSocket handlers directly on its asyncio loop.
             # Await the pinned implementation; a nested sync close deadlocks that loop.
             await route._impl_obj.close(code=1008, reason="WebSockets are disabled")
@@ -1848,14 +1866,71 @@ class _PlaywrightSession:
         # Pause every related worker before its script starts, then terminate it.
         self._worker_cdp = browser.new_browser_cdp_session()
         page_cdp = context.new_cdp_session(page)
+        self._network_cdp = page_cdp
+        page_cdp.send("Network.enable")
+        page_cdp.send("Network.setBlockedURLs", {"urls": ["ws://*", "wss://*"]})
+        rules = [
+            {
+                "urlPattern": scheme + "://*:*/*",
+                "offline": True,
+                "latency": 0,
+                "downloadThroughput": -1,
+                "uploadThroughput": -1,
+            }
+            for scheme in ("ws", "wss")
+        ]
+        page_cdp.send("Network.emulateNetworkConditionsByRule", {"matchedNetworkConditions": rules})
+        page_cdp.on(
+            "Network.webSocketCreated",
+            lambda _: self._egress.record_browser_refusal("websocket_blocked"),
+        )
+
+        def unexpected_handshake(_: Any) -> None:
+            self._transport_error = m.CoreError(
+                m.ErrorCode.PROTOCOL_MISMATCH,
+                "Facebook WebSocket handshake bypassed browser blocking",
+                next_action="Stop collection and inspect the installed Chromium network controls",
+            )
+
+        page_cdp.on("Network.webSocketHandshakeResponseReceived", unexpected_handshake)
         page_target = page_cdp.send("Target.getTargetInfo")["targetInfo"]["targetId"]
 
         def _on_worker_attached(event: dict[str, Any]) -> None:
             info = event["targetInfo"]
             if info["type"] in ("worker", "shared_worker", "service_worker"):
                 self.workers_blocked += 1
+                try:
+                    # Apply network rules while paused; termination denies all worker code.
+                    channel = browser.new_browser_cdp_session()
+                    attached = channel.send(
+                        "Target.attachToTarget", {"targetId": info["targetId"], "flatten": False}
+                    )
+                    for command_id, (method, params) in enumerate(
+                        [
+                            ("Network.enable", {}),
+                            (
+                                "Network.emulateNetworkConditionsByRule",
+                                {"matchedNetworkConditions": rules},
+                            ),
+                        ],
+                        1,
+                    ):
+                        channel.send(
+                            "Target.sendMessageToTarget",
+                            {
+                                "sessionId": attached["sessionId"],
+                                "message": json.dumps(
+                                    {"id": command_id, "method": method, "params": params}
+                                ),
+                            },
+                        )
+                except Exception:
+                    pass  # A parent may have already terminated this still-paused target.
                 self._egress.record_proxy_protocol_refusal(hostname="proxy", reason="worker")
-                self._worker_cdp.send("Target.closeTarget", {"targetId": info["targetId"]})
+                try:
+                    self._worker_cdp.send("Target.closeTarget", {"targetId": info["targetId"]})
+                except Exception:
+                    pass  # Disappeared targets cannot execute or open a socket.
 
         self._worker_cdp.on("Target.attachedToTarget", _on_worker_attached)
         # Shared workers have no page opener relation. Watch browser-level targets too.
@@ -1881,6 +1956,8 @@ class _PlaywrightSession:
         )
 
     def _raise_if_byte_limit(self) -> None:
+        if self._transport_error is not None:
+            raise self._transport_error
         if self._egress.byte_limit_exceeded or (
             self._proxy is not None and self._proxy.byte_limit_exceeded
         ):
@@ -2005,6 +2082,8 @@ class _PlaywrightSession:
                 self._proxy.close()
             except Exception:
                 pass
+        if self._transport_error is not None:
+            raise self._transport_error
 
 
 class PlaywrightBrowserDriver:
@@ -3274,12 +3353,13 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 retry_after=exc.retry_after,
             ) from None
     finally:
-        if session is not None:
-            session.close()
-        # A barrier can stop navigation before an observation is returned. Settle
-        # the final wire counter after closing and retain it for operator resume.
-        bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
-        checkpoint_usage()
+        try:
+            if session is not None:
+                session.close()
+        finally:
+            # Settle bytes even if late WebSocket detection stops close/import.
+            bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
+            checkpoint_usage()
 
     final_html = obs.html if obs is not None else ""
     egress_summary = egress.summary()

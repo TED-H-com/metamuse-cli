@@ -732,10 +732,12 @@ fixture proxy) exposes them. HTTPS 302 paths inside CONNECT can already have bee
 requested before Playwright observes the final navigation; no data, source or item
 from that document is stored or reported. Script/meta navigation is route-blocked.
 
-Page WebSockets, including WSS to approved hosts, are closed by
-context.route_web_socket installed before the first navigation. Worker WebSockets
-are blocked by the pre-script CDP controls described below. No upstream WebSocket
-connection is established; CONNECT host/IP checks remain a separate boundary.
+Page WebSockets and WebSocketStream are refused by Chromium per-URL offline
+network rules for ws/wss and all ports. Network.setBlockedURLs alone is insufficient;
+context.route_web_socket is supplemental. Any observed handshake response yields a
+fixed E_PROTOCOL_MISMATCH before import; creation attempts count websocket_blocked.
+Workers receive the rules while paused, then are terminated before executing code.
+CONNECT host/IP checks remain a separate boundary.
 
 Proxy policy/resolution waits are bounded by the read timeout and interruptible on
 close. Closure fences dialing and socket registration; once close returns, no
@@ -749,8 +751,8 @@ Facebook checkpoints final wire-byte consumption after transport shutdown, even
 when navigation stops at a barrier before returning a DOM observation. Resume
 allocates only the original budget minus all recorded session consumption.
 
-B13 closes page WSS with Playwright routing and terminates related dedicated/shared
-workers at CDP's pre-script pause because the pinned WebSocket hook omits workers.
+B13 also closes ordinary page sockets with Playwright routing; the network rules
+cover native bypasses. Dedicated/shared workers are terminated at CDP’s pre-script pause.
 The protocol/worker controls are installed before navigation; worker-dependent
 Facebook rendering remains unverified until AT-039.
 
@@ -800,3 +802,6 @@ Facebook comment identifiers use the same stripped nonempty ASCII token validati
 
 
 Facebook weak-identity resume suppression begins only after an accepted batch has committed. A usage-only checkpoint from a login wall does not suppress a first import of weak comments; cumulative byte/expansion usage still survives.
+
+
+Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetworkConditionsByRule offline rules matching both schemes and all ports. setBlockedURLs alone is insufficient. Page WebSocket routing is supplemental. Workers receive the rules while paused and are terminated before code. Each observed attempt has the fixed websocket_blocked reason; any observed handshake response fails E_PROTOCOL_MISMATCH before import, including events drained at close.

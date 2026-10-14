@@ -4,7 +4,7 @@ import json
 
 import pytest
 from test_facebook import _setup_fb_env, _synthetic_post_html
-from test_facebook_review import URL, finish, observation
+from test_facebook_review import URL, browser_fixture, finish, observation
 
 from metamuse import app, facebook
 
@@ -213,3 +213,55 @@ def test_r5_n8_resume_without_committed_batch_keeps_weak_records(tmp_path):
     job = finish(ctx, job_id)
     assert len(rows(ctx)) == 3
     assert "weak_identity_resume" not in job["missing_fields"]
+
+
+@pytest.mark.parametrize("kind", ["stream", "passthrough"])
+def test_r5_04_network_blocks_page_websocket_bypasses(tmp_path, monkeypatch, kind):
+    script = (
+        "new WebSocketStream('wss://' + location.host + '/socket');"
+        if kind == "stream"
+        else "const s = new WebSocket('wss://' + location.host + '/socket'); s._apiPassThrough();"
+    )
+    markup = _synthetic_post_html().replace("</body>", "<script>" + script + "</script></body>")
+    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False) as env:
+        ctx, _, _, _, hits, guard, driver = env
+        state = facebook.load_storage_state(ctx.policy.facebook.auth_ref, account="acct_synth")
+        session = driver.open_session(state, guard, timeout_ms=5000)
+        try:
+            session.goto_post(URL)
+            session._page.wait_for_timeout(500)
+            assert not any(upgrade for _, upgrade in hits)
+            assert any(
+                row["reason"] == "websocket_blocked" for row in guard.summary()["aborted_reasons"]
+            )
+        finally:
+            session.close()
+
+
+def test_r5_04_unexpected_handshake_fails_job_closed(tmp_path, monkeypatch):
+    # Deliberately sabotage the network block in this test only, to exercise detection.
+    script = "new WebSocketStream('wss://' + location.host + '/socket');"
+    markup = _synthetic_post_html().replace("</body>", "<script>" + script + "</script></body>")
+    with browser_fixture(
+        tmp_path,
+        monkeypatch,
+        {POST_PATH: markup.replace("</body>", '<img src="/hold"></body>'), "/hold": ""},
+        unsandboxed=False,
+        delays={"/hold": 0.5},
+    ) as env:
+        ctx, project, permit, _, hits, _, driver = env
+        original = driver.open_session
+
+        def sabotaged(*args, **kwargs):
+            session = original(*args, **kwargs)
+            cdp = session._network_cdp
+            cdp.send("Network.setBlockedURLs", {"urls": []})
+            cdp.send("Network.emulateNetworkConditionsByRule", {"matchedNetworkConditions": []})
+            return session
+
+        monkeypatch.setattr(driver, "open_session", sabotaged)
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["error"]["code"] == "E_PROTOCOL_MISMATCH"
+        assert job["error"]["message"] == "Facebook WebSocket handshake bypassed browser blocking"
+        assert any(upgrade for _, upgrade in hits)
+        assert not rows(ctx)
