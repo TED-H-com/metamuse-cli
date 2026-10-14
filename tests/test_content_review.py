@@ -81,6 +81,7 @@ def asset_segment(ctx, project):
     ctx.store.insert(
         m.TranscriptSegment(
             id="seg_private",
+            project_id=project,
             asset_id=asset.id,
             revision=1,
             start_ms=0,
@@ -92,7 +93,7 @@ def asset_segment(ctx, project):
     return asset, {"kind": "transcript_segment", "id": "seg_private", "revision": 1}
 
 
-def test_review_01_shared_asset_hides_transcript(ctx, project):
+def test_review_01_shared_asset_is_visible_only_to_the_owning_project(ctx, project):
     asset, ref = asset_segment(ctx, project)
     original = draft(ctx, project, facts_refs=[ref]).data
     other = app.create_project(ctx, {"name": "Other synthetic", "request_key": "other"}).data["id"]
@@ -102,16 +103,23 @@ def test_review_01_shared_asset_hides_transcript(ctx, project):
     ctx.store.insert(
         m.ItemAsset(item_id=other_ref["id"], revision=1, asset_id=asset.id, relation="media")
     )
-    for owner in (project, other):
-        result = app.search_evidence(
-            ctx, {"project_id": owner, "query": "SYNTHETIC_PRIVATE_TRANSCRIPT"}
-        )
-        assert result.data["results"] == []
-        error(packet(ctx, owner, ref, "packet-" + owner), m.ErrorCode.REFERENCE_INVALID)
-        error(draft(ctx, owner, "draft-" + owner, facts_refs=[ref]), m.ErrorCode.REFERENCE_INVALID)
-        error(export(ctx, owner, ref, "export-" + owner), m.ErrorCode.REFERENCE_INVALID)
+    owned = app.search_evidence(
+        ctx, {"project_id": project, "query": "SYNTHETIC_PRIVATE_TRANSCRIPT"}
+    )
+    assert owned.data["results"][0]["ref"] == ref
+    owned_packet = packet(ctx, project, ref, "packet-" + project)
+    assert "SYNTHETIC_PRIVATE_TRANSCRIPT" in owned_packet.data["rendered_text"]
+    assert export(ctx, project, ref, "export-" + project).status == "ok"
+    hidden = app.search_evidence(
+        ctx, {"project_id": other, "query": "SYNTHETIC_PRIVATE_TRANSCRIPT"}
+    )
+    assert hidden.data["results"] == []
+    error(packet(ctx, other, ref, "packet-" + other), m.ErrorCode.REFERENCE_INVALID)
+    error(draft(ctx, other, "draft-" + other, facts_refs=[ref]), m.ErrorCode.REFERENCE_INVALID)
+    error(export(ctx, other, ref, "export-" + other), m.ErrorCode.REFERENCE_INVALID)
     preview = app.preview_draft(ctx, {"draft_id": original["draft_id"], "revision": 1})
-    assert preview.data["reference_issues"][0]["code"] == "E_REFERENCE_INVALID"
+    assert preview.status == "ok"
+    assert preview.data["reference_issues"] == []
 
 
 def test_review_02_redaction_bypasses():
@@ -229,14 +237,15 @@ def test_review_06_stateless_cursor_and_restored_export(ctx, project, tmp_path):
     assert export(restored, project, refs[0], key="new-after-restore").status == "ok"
 
 
-def test_review_07_removed_current_attachment_hides_segment(ctx, project):
+def test_review_07_transcript_stays_visible_without_current_attachment(ctx, project):
     _, ref = asset_segment(ctx, project)
     item(ctx, project, text="current without asset", revision=2)
     search = app.search_evidence(
         ctx, {"project_id": project, "query": "SYNTHETIC_PRIVATE_TRANSCRIPT"}
     )
-    assert search.data["results"] == []
-    error(packet(ctx, project, ref), m.ErrorCode.REFERENCE_INVALID)
+    assert search.data["results"][0]["ref"] == ref
+    rendered = packet(ctx, project, ref).data["rendered_text"]
+    assert "SYNTHETIC_PRIVATE_TRANSCRIPT" in rendered
 
 
 def test_review_08_receipts_prioritize_conflict_and_revalidate(ctx, project):
@@ -441,6 +450,7 @@ def test_transcript_new_revision_stale_in_packet_draft_and_preview(ctx, project)
     ctx.store.insert(
         m.TranscriptSegment(
             id=ref["id"],
+            project_id=project,
             asset_id=asset.id,
             revision=2,
             start_ms=0,

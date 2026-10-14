@@ -79,19 +79,17 @@ def _event(
     )
 
 
-def _transcript_scope_sql(alias: str = "ts") -> str:
-    """Fail closed until migration 002 provides authoritative project_id ownership.
+_MISSING_TEXT = "[missing text]"
 
-    Require a current item attachment in P and no surviving attachment in another
-    project, even historical. Shared bytes cannot establish transcript ownership.
-    """
-    return (
-        f"EXISTS (SELECT 1 FROM item_assets ia JOIN items i ON i.id=ia.item_id "
-        f"WHERE ia.asset_id={alias}.asset_id AND i.project_id=? "
-        "AND ia.revision=(SELECT max(r.revision) FROM item_revisions r WHERE r.item_id=i.id)) "
-        f"AND NOT EXISTS (SELECT 1 FROM item_assets ia JOIN items i ON i.id=ia.item_id "
-        f"WHERE ia.asset_id={alias}.asset_id AND i.project_id<>?)"
-    )
+
+def _transcript_scope_sql(alias: str = "ts") -> str:
+    """A transcript of shared bytes is visible only to the project that owns it."""
+    return f"{alias}.project_id=?"
+
+
+def _flat_text(value: str | None) -> str:
+    """Render absent item text without collapsing it into an empty string."""
+    return _MISSING_TEXT if value is None else value
 
 
 def _identity(ref: m.EvidenceRef) -> tuple[str, str, int]:
@@ -207,14 +205,15 @@ class _Resolver:
             visible = conn.execute(
                 "SELECT 1 FROM transcript_segments ts WHERE ts.id=? AND ts.revision=? AND "
                 + _transcript_scope_sql(),
-                (ref.id, ref.revision, self.project_id, self.project_id),
+                (ref.id, ref.revision, self.project_id),
             ).fetchone()
             if visible is None:
                 raise m.CoreError(
                     m.ErrorCode.REFERENCE_INVALID, "Transcript is missing or ambiguous"
                 )
             revision = store.get(m.TranscriptSegment, ref.id, revision=ref.revision, conn=conn)
-            self.asset(revision.asset_id, ref)
+            if revision.asset_id is not None:
+                self.asset(revision.asset_id, ref)
             latest = conn.execute(
                 "SELECT max(revision) FROM transcript_segments WHERE id=?", (ref.id,)
             ).fetchone()[0]
@@ -428,7 +427,7 @@ def _search_rows(
         + _transcript_scope_sql()
         + " AND ts.rowid<=? AND instr(ts.text,?)>0 AND ts.revision=(SELECT max(t2.revision) "
         "FROM transcript_segments t2 WHERE t2.id=ts.id AND t2.rowid<=?) ORDER BY ts.id,ts.revision",
-        (project, project, wm["transcript_watermark"], query, wm["transcript_watermark"]),
+        (project, wm["transcript_watermark"], query, wm["transcript_watermark"]),
     ).fetchall()
     result.extend(
         {
@@ -479,11 +478,14 @@ def search_evidence(ctx: AppContext, request: m.SearchRequest) -> m.Envelope:
             ref = m.EvidenceRef(kind=value["kind"], id=value["id"], revision=value["revision"])
             record = resolver.resolve(ref, source_only=True)
             text = record.pop("text")
-            match = text.find(request.query)
-            lead = min(80, max(0, (240 - len(request.query)) // 2))
-            start = max(0, match - lead)
-            end = min(len(text), start + max(240, len(request.query)))
-            record.update(snippet=text[start:end], snippet_start_code_points=start)
+            if text is None:
+                record.update(snippet="", snippet_start_code_points=0)
+            else:
+                match = text.find(request.query)
+                lead = min(80, max(0, (240 - len(request.query)) // 2))
+                start = max(0, match - lead)
+                end = min(len(text), start + max(240, len(request.query)))
+                record.update(snippet=text[start:end], snippet_start_code_points=start)
             results.append(record)
     next_cursor = None
     if len(page) > request.limit:
@@ -537,7 +539,7 @@ def prepare_packet(ctx: AppContext, request: m.PacketPrepareRequest) -> m.Envelo
                     f"\n[{ref['kind']} {ref['id']} revision {ref['revision']}]\nSource and limits: "
                     + m.canonical_json({k: v for k, v in source.items() if k != "ref"}).decode()
                     + "\n"
-                    + record["text"]
+                    + _flat_text(record["text"])
                     + "\n"
                 )
             rendered, text_redactions = redact_text("".join(chunks))
@@ -644,7 +646,10 @@ def _conflict_candidates(text: str, facts: list[dict[str, Any]]) -> list[dict[st
         target = _DATE.sub(" ", text) if kind == "number" else text
         draft_values = set(pattern.findall(target))
         for fact in facts:
-            target = _DATE.sub(" ", fact["text"]) if kind == "number" else fact["text"]
+            fact_text = fact.get("text")
+            if not isinstance(fact_text, str):
+                continue
+            target = _DATE.sub(" ", fact_text) if kind == "number" else fact_text
             source_values = set(pattern.findall(target))
             differences = sorted(draft_values - source_values)
             if source_values and differences:
@@ -714,6 +719,18 @@ def preview_draft(ctx: AppContext, request: m.DraftPreviewRequest) -> m.Envelope
     )
 
 
+def _plain_text_bytes(record: dict[str, Any]) -> bytes:
+    """A text file has no source column, so absence is written beside the marker."""
+    text = record.get("text")
+    if text is None:
+        missing = record.get("source", {}).get("missing_fields")
+        if not isinstance(missing, list):
+            missing = ["text"]
+        body = _MISSING_TEXT + "\nmissing_fields: " + json.dumps(missing, ensure_ascii=False) + "\n"
+        return body.encode("utf-8")
+    return text.encode("utf-8")
+
+
 def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
     def cell(value: str) -> str:
         candidate = value.lstrip()
@@ -738,7 +755,7 @@ def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
                     ref["kind"],
                     ref["id"],
                     ref["revision"],
-                    record["text"],
+                    _flat_text(record["text"]),
                     m.canonical_json(record["source"]).decode(),
                 )
             ]
@@ -754,7 +771,7 @@ def _export_files(
     if format_name == "csv":
         return {"records.csv": _csv_bytes(records)}
     if format_name == "text":
-        return {f"object-{i:04d}.txt": r["text"].encode("utf-8") for i, r in enumerate(records, 1)}
+        return {f"object-{i:04d}.txt": _plain_text_bytes(r) for i, r in enumerate(records, 1)}
     if format_name == "markdown":
         notice = (
             "" if redacted else "Notice: Private unredacted export; not a public share bundle.\n\n"
@@ -767,7 +784,7 @@ def _export_files(
                 + "\n\nSource: "
                 + m.canonical_json(r["source"]).decode()
                 + "\n\n"
-                + r["text"]
+                + _flat_text(r["text"])
             ).encode("utf-8")
             for i, r in enumerate(records, 1)
         }

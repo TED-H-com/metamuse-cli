@@ -544,6 +544,7 @@ def test_transcript_evidence_current_scope_and_exact_revision(ctx, project):
         ctx.store.insert(
             m.TranscriptSegment(
                 id="seg_one",
+                project_id=project,
                 asset_id=asset.id,
                 revision=rev,
                 start_ms=0,
@@ -772,3 +773,188 @@ def test_packet_replay_deleted_reference_fails(ctx, project):
     with ctx.store.transaction() as conn:
         conn.execute("DELETE FROM item_revisions WHERE item_id=?", (ref["id"],))
     assert_error(app.prepare_packet(ctx, request), m.ErrorCode.REFERENCE_INVALID)
+
+
+def _member(ctx, response, name):
+    return (ctx.paths.root / response.data["artifact"] / name).read_bytes()
+
+
+def _revision(ctx, project, iid, text, missing):
+    with ctx.store.transaction() as conn:
+        ctx.store.insert(
+            m.Source(
+                id="src_" + iid,
+                project_id=project,
+                platform="generic",
+                collection_method="file_import",
+                fetched_at=ctx.clock(),
+            ),
+            conn=conn,
+        )
+        ctx.store.insert(
+            m.Item(id=iid, project_id=project, source_id="src_" + iid, kind="post"),
+            conn=conn,
+        )
+        ctx.store.insert(
+            m.ItemRevision(
+                item_id=iid,
+                revision=1,
+                text=text,
+                text_hash=m.payload_digest({"text": text}),
+                fetched_at=ctx.clock(),
+                missing_fields=missing,
+            ),
+            conn=conn,
+        )
+    assert ctx.store.get(m.ItemRevision, iid).text == text
+    return {"kind": "item_revision", "id": iid, "revision": 1}
+
+
+def test_shared_byte_transcript_is_visible_only_to_its_project(ctx, project):
+    other = other_project(ctx)
+    asset = ctx.store.put_object(io.BytesIO(b"shared-transcript-bytes"), mime="video/mp4")
+    for owner, iid in ((project, "itm_owner"), (other, "itm_other")):
+        ref = add_item(ctx, owner, iid, text=f"post {iid}")
+        ctx.store.insert(
+            m.ItemAsset(item_id=ref["id"], revision=1, asset_id=asset.id, relation="media")
+        )
+    ctx.store.insert(
+        m.TranscriptSegment(
+            id="seg_owned",
+            project_id=project,
+            asset_id=asset.id,
+            revision=1,
+            start_ms=0,
+            end_ms=100,
+            text="OWNER_ONLY_CUE",
+            method="provided",
+        )
+    )
+    ref = {"kind": "transcript_segment", "id": "seg_owned", "revision": 1}
+    found = app.search_evidence(ctx, {"project_id": project, "query": "OWNER_ONLY_CUE"})
+    assert found.data["results"][0]["ref"] == ref
+    packet = app.prepare_packet(
+        ctx, {"project_id": project, "selection": [ref], "request_key": "owner-packet"}
+    )
+    assert "OWNER_ONLY_CUE" in packet.data["rendered_text"]
+    hidden = app.search_evidence(ctx, {"project_id": other, "query": "OWNER_ONLY_CUE"})
+    assert hidden.data["results"] == []
+    assert_error(
+        app.prepare_packet(
+            ctx, {"project_id": other, "selection": [ref], "request_key": "other-packet"}
+        ),
+        m.ErrorCode.REFERENCE_INVALID,
+    )
+
+
+def test_null_asset_transcript_evidence_resolves(ctx, project):
+    with ctx.store.transaction() as conn:
+        ctx.store.insert(
+            m.Source(
+                id="src_loose",
+                project_id=project,
+                platform="generic",
+                collection_method="file_import",
+                fetched_at=ctx.clock(),
+            ),
+            conn=conn,
+        )
+        ctx.store.insert(
+            m.TranscriptSegment(
+                id="seg_loose",
+                project_id=project,
+                source_id="src_loose",
+                revision=1,
+                start_ms=0,
+                end_ms=500,
+                text="沒有 asset 的字幕",
+                method="provided",
+            ),
+            conn=conn,
+        )
+    ref = {"kind": "transcript_segment", "id": "seg_loose", "revision": 1}
+    found = app.search_evidence(ctx, {"project_id": project, "query": "沒有 asset"})
+    assert found.data["results"][0]["ref"] == ref
+    packet = app.prepare_packet(
+        ctx, {"project_id": project, "selection": [ref], "request_key": "loose-packet"}
+    )
+    assert packet.status == "ok"
+    assert "沒有 asset 的字幕" in packet.data["rendered_text"]
+    assert ctx.store.get(m.TranscriptSegment, "seg_loose").asset_id is None
+
+
+def test_null_item_text_stays_null_in_search_packet_preview_and_export(ctx, project):
+    absent = _revision(ctx, project, "itm_absent", None, ["text"])
+    empty = _revision(ctx, project, "itm_empty", "", [])
+    dated = add_item(ctx, project, "itm_dated", text="2026-10-01 數量8")
+    add_item(ctx, project, "itm_needle", text="visible-needle")
+    found = app.search_evidence(ctx, {"project_id": project, "query": "visible-needle"})
+    assert [row["ref"]["id"] for row in found.data["results"]] == ["itm_needle"]
+    for query in ("None", "null", "[missing text]"):
+        missed = app.search_evidence(ctx, {"project_id": project, "query": query})
+        assert [row["ref"]["id"] for row in missed.data["results"]] == []
+    with ctx.store.connection() as conn:
+        absent_text = conn.execute(
+            "SELECT text FROM item_revisions WHERE item_id='itm_absent'"
+        ).fetchone()[0]
+        empty_text = conn.execute(
+            "SELECT text FROM item_revisions WHERE item_id='itm_empty'"
+        ).fetchone()[0]
+    assert absent_text is None and empty_text == ""
+    packet = app.prepare_packet(
+        ctx, {"project_id": project, "selection": [absent, empty], "request_key": "null-packet"}
+    )
+    rendered = packet.data["rendered_text"]
+    assert rendered.count("[missing text]") == 1
+    assert '"missing_fields":["text"]' in rendered
+    saved = save(
+        ctx,
+        project,
+        text="2026-10-02 數量9",
+        facts_refs=[absent, empty, dated],
+        request_key="null-draft",
+    )
+    preview = app.preview_draft(ctx, {"draft_id": saved.data["draft_id"], "revision": 1})
+    assert preview.status == "ok"
+    assert preview.data["conflict_candidates"]
+
+    def exported(fmt, key):
+        return app.export_objects(
+            ctx,
+            {
+                "project_id": project,
+                "selection": [absent, empty],
+                "format": fmt,
+                "request_key": key,
+            },
+        )
+
+    rows = [
+        json.loads(line)
+        for line in _member(ctx, exported("jsonl", "null-jsonl"), "records.jsonl").splitlines()
+    ]
+    by_id = {row["ref"]["id"]: row for row in rows}
+    assert by_id["itm_absent"]["text"] is None
+    assert by_id["itm_absent"]["source"]["missing_fields"] == ["text"]
+    assert by_id["itm_empty"]["text"] == ""
+    assert by_id["itm_empty"]["source"]["missing_fields"] == []
+    table = list(
+        csv.DictReader(
+            io.StringIO(
+                _member(ctx, exported("csv", "null-csv"), "records.csv").decode(), newline=""
+            )
+        )
+    )
+    csv_by = {row["id"]: row for row in table}
+    assert csv_by["itm_absent"]["text"] == "[missing text]"
+    assert '"missing_fields":["text"]' in csv_by["itm_absent"]["source"]
+    assert csv_by["itm_empty"]["text"] == ""
+    text_export = exported("text", "null-text")
+    assert (
+        _member(ctx, text_export, "object-0001.txt")
+        == b'[missing text]\nmissing_fields: ["text"]\n'
+    )
+    assert _member(ctx, text_export, "object-0002.txt") == b""
+    markdown = _member(ctx, exported("markdown", "null-md"), "object-0001.md")
+    assert b"[missing text]" in markdown and b'"missing_fields":["text"]' in markdown
+    assert b"[missing text]" not in _member(ctx, exported("markdown", "empty-md"), "object-0002.md")
