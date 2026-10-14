@@ -2238,6 +2238,29 @@ class _DOMExtractor(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = {k.lower(): (v or "") for k, v in attrs}
         tag = tag.lower()
+        # Void elements still carry barrier and source metadata; only body depth
+        # and stack tracking must exclude them.
+        if attr_map.get("data-comments-exhausted") == "true":
+            self.comments_exhausted = True
+        fb_state = attr_map.get("data-fb-state") or attr_map.get("data-page-state")
+        if fb_state:
+            self.meta_state = fb_state.strip().lower()
+        if tag == "form" and (
+            attr_map.get("id") == "login_form" or attr_map.get("data-testid") == "royal_login_form"
+        ):
+            self.meta_state = self.meta_state or "login_wall"
+        if attr_map.get("data-checkpoint") == "true" or attr_map.get("id") == "checkpoint_Form":
+            self.meta_state = self.meta_state or "checkpoint"
+        if (
+            attr_map.get("data-fb-role", "").lower() == "attachment"
+            and "data-attachment-url" in attr_map
+        ):
+            self.attachments.append(
+                {
+                    "url": attr_map["data-attachment-url"],
+                    "kind": attr_map.get("data-attachment-kind", "image"),
+                }
+            )
         if tag in {
             "area",
             "base",
@@ -2264,18 +2287,6 @@ class _DOMExtractor(HTMLParser):
             self._block_boundary()
         self._stack.append((tag.lower(), attr_map))
 
-        if attr_map.get("data-comments-exhausted") == "true":
-            self.comments_exhausted = True
-        fb_state = attr_map.get("data-fb-state") or attr_map.get("data-page-state")
-        if fb_state:
-            self.meta_state = fb_state.strip().lower()
-        if tag.lower() == "form" and (
-            attr_map.get("id") == "login_form" or attr_map.get("data-testid") == "royal_login_form"
-        ):
-            self.meta_state = self.meta_state or "login_wall"
-        if attr_map.get("data-checkpoint") == "true" or attr_map.get("id") == "checkpoint_Form":
-            self.meta_state = self.meta_state or "checkpoint"
-
         if (
             tag.lower() == "script"
             and attr_map.get("type", "").lower() == "application/json"
@@ -2296,14 +2307,6 @@ class _DOMExtractor(HTMLParser):
             self._in_post_body += 1
         elif self._in_post_body > 0:
             self._in_post_body += 1
-
-        if fb_role == "attachment" and "data-attachment-url" in attr_map:
-            self.attachments.append(
-                {
-                    "url": attr_map["data-attachment-url"],
-                    "kind": attr_map.get("data-attachment-kind", "image"),
-                }
-            )
 
         if fb_role == "comments-section" or attr_map.get("data-comments-section") is not None:
             self.comments_section_present = True
