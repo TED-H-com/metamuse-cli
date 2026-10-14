@@ -120,7 +120,7 @@ def test_r7_iframe_only_popup_control_failure(tmp_path, monkeypatch):
                   const append = document.body.append.bind(document.body);
                   document.body.append = (...nodes) => {
                     append(...nodes);
-                    node.contentWindow.open = () => ({close() {}});
+                    node.contentWindow.open = () => node.contentWindow;
                   };
                 }
                 return node;
