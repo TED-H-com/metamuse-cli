@@ -46,3 +46,7 @@ B13 revision evidence additionally carries requested_locator, resolved_permalink
 permit_id, account and input_sha256 for the contributing snapshot. Source.use_basis
 input_sha256 refers to its first contributing snapshot. These are additive entries
 in existing free-form dictionaries; core schemas are unchanged.
+
+B13 browser_sandbox is an observed value: enabled, disabled_by_operator or unverified.
+Requested scope initially says unverified and carries browser_sandbox_requested
+(required or operator_exception) separately. No core schema field is added.

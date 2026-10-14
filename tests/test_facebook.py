@@ -1697,7 +1697,7 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
     fake_bin = tmp_path / "fake-chrome"
     fake_bin.write_text("#!/bin/sh\n", encoding="utf-8")
     fake_bin.chmod(0o755)
-    monkeypatch.setenv("METAMUSE_CHROMIUM_EXECUTABLE", str(fake_bin))
+    monkeypatch.setattr(facebook, "_observed_sandbox_mode", lambda _: "enabled")
 
     launched: dict[str, Any] = {}
 
@@ -1776,7 +1776,7 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
         allowed_hosts=config.DEFAULT_FACEBOOK_ALLOWED_HOSTS,
         resolver=lambda _host: ["93.184.216.34"],
     )
-    driver = facebook.PlaywrightBrowserDriver()
+    driver = facebook.PlaywrightBrowserDriver(_test_executable=fake_bin)
     session = driver.open_session(state, guard, timeout_ms=15000, max_bytes=123456)
     try:
         assert guard.proxy_port is not None and guard.proxy_port > 0

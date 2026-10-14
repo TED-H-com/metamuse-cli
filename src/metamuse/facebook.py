@@ -375,12 +375,6 @@ def find_playwright_browser() -> Path | None:
     pkg_file = getattr(playwright, "__file__", None)
     if not pkg_file:
         return None
-    override = os.environ.get("METAMUSE_CHROMIUM_EXECUTABLE")
-    if override:
-        candidate = Path(override)
-        if candidate.is_file() and os.access(candidate, os.X_OK):
-            return candidate
-        return None
     pkg_dir = Path(pkg_file).resolve().parent
     browsers_json = pkg_dir / "driver" / "package" / "browsers.json"
     if not browsers_json.is_file():
@@ -463,6 +457,30 @@ def _has_valid_storage_state(fb_cfg: Any) -> bool:
     return True
 
 
+def _observed_sandbox_mode(browser: Any) -> str:
+    """Observe running Chromium, not the requested launch options."""
+    try:
+        cdp = browser.new_browser_cdp_session()
+        args = cdp.send("Browser.getBrowserCommandLine")["arguments"]
+        if any(arg == "--no-sandbox" or arg.startswith("--no-sandbox=") for arg in args):
+            return "disabled_by_operator"
+        if sys.platform.startswith("linux"):
+            renderers = [
+                entry
+                for entry in cdp.send("SystemInfo.getProcessInfo")["processInfo"]
+                if entry["type"] == "renderer"
+            ]
+            if not renderers:
+                return "unverified"
+            for entry in renderers:
+                status = Path(f"/proc/{int(entry['id'])}/status").read_text()
+                if not re.search(r"^Seccomp:\s*2\s*$", status, re.MULTILINE):
+                    return "unverified"
+        return "enabled"
+    except Exception:
+        return "unverified"
+
+
 @lru_cache(maxsize=8)
 def _sandbox_launch_check(executable: str, modified_ns: int, minute: int) -> bool:
     """Bounded, cached local launch only; no navigation or credentials."""
@@ -473,11 +491,16 @@ def _sandbox_launch_check(executable: str, modified_ns: int, minute: int) -> boo
     script = """import sys
 from playwright.sync_api import sync_playwright
 from metamuse._browser_egress import build_chromium_launch_args
+from metamuse.facebook import _observed_sandbox_mode
 with sync_playwright() as pw:
     browser = pw.chromium.launch(executable_path=sys.argv[1], headless=True,
         chromium_sandbox=True, timeout=8000,
         args=build_chromium_launch_args(int(sys.argv[2])))
+    page = browser.new_context(service_workers="block").new_page()
+    page.evaluate("0")
+    verified = _observed_sandbox_mode(browser) == "enabled"
     browser.close()
+    sys.exit(0 if verified else 1)
 """
     env = {key: value for key, value in os.environ.items() if key not in PROXY_ENV_VARS}
     process = subprocess.Popen(
@@ -2219,14 +2242,17 @@ class _PlaywrightSession:
 class PlaywrightBrowserDriver:
     """Thin Playwright Chromium implementation behind BrowserDriver."""
 
-    def __init__(self, *, _test_origin: str | None = None) -> None:
+    def __init__(
+        self, *, _test_origin: str | None = None, _test_executable: Path | None = None
+    ) -> None:
         self._test_origin = _test_origin
+        self._test_executable = _test_executable
 
     def is_available(self) -> bool:
         return find_playwright_browser() is not None
 
     def sandbox_available(self) -> bool:
-        executable = find_playwright_browser()
+        executable = self._test_executable or find_playwright_browser()
         if executable is None:
             return False
         try:
@@ -2246,7 +2272,7 @@ class PlaywrightBrowserDriver:
         allow_unsandboxed_browser: bool = False,
     ) -> BrowserSession:
         refuse_proxies()
-        executable = find_playwright_browser()
+        executable = self._test_executable or find_playwright_browser()
         if executable is None:
             ensure_browser_available()
         from playwright.sync_api import sync_playwright
@@ -2259,8 +2285,11 @@ class PlaywrightBrowserDriver:
         )
         clean_env = {k: v for k, v in os.environ.items() if k not in PROXY_ENV_VARS}
         pw: Any = None
+        browser: Any = None
+        stage = "startup"
         try:
             pw = sync_playwright().start()
+            stage = "launch"
             browser = pw.chromium.launch(
                 executable_path=str(executable) if executable else None,
                 headless=True,
@@ -2269,14 +2298,28 @@ class PlaywrightBrowserDriver:
                 env=clean_env,
                 args=build_chromium_launch_args(proxy.port),
             )
+            stage = "context"
             context = browser.new_context(
                 storage_state=storage_state.as_playwright_dict(),  # type: ignore[arg-type]
                 service_workers="block",
                 accept_downloads=False,
                 java_script_enabled=True,
             )
+            stage = "page"
             page = context.new_page()
-            return _PlaywrightSession(
+            stage = "verification"
+            mode = _observed_sandbox_mode(browser)
+            if mode != "enabled" and not allow_unsandboxed_browser:
+                raise m.CoreError(
+                    m.ErrorCode.DEPENDENCY_MISSING,
+                    "Facebook browser sandbox could not be verified",
+                    next_action=(
+                        "Check Chromium command-line and Linux renderer Seccomp state "
+                        "before retrying"
+                    ),
+                )
+            stage = "controls"
+            session = _PlaywrightSession(
                 pw,
                 browser,
                 context,
@@ -2286,17 +2329,31 @@ class PlaywrightBrowserDriver:
                 timeout_ms=timeout_ms,
                 _test_origin=self._test_origin,
             )
-        except Exception:
+            session.browser_sandbox = mode
+            return session
+        except Exception as exc:
             proxy.close()
+            if browser is not None:
+                try:
+                    browser.close()
+                except Exception:
+                    pass
             if pw is not None:
                 try:
                     pw.stop()
                 except Exception:
                     pass
+            if isinstance(exc, m.CoreError):
+                raise exc from None
             raise m.CoreError(
                 m.ErrorCode.DEPENDENCY_MISSING,
                 "Facebook browser could not start with the required browser controls",
-                next_action=SANDBOX_NEXT_ACTION,
+                next_action=SANDBOX_NEXT_ACTION
+                if stage == "launch" and not allow_unsandboxed_browser
+                else (
+                    "Check the installed Playwright/Chromium versions and browser controls "
+                    "before retrying"
+                ),
             ) from None
 
 
@@ -2343,7 +2400,9 @@ class FixtureBrowserDriver:
         if not self.available:
             ensure_browser_available()
         self.last_cookie_hosts = storage_state.cookie_hosts
-        return _FixtureSession(self, egress)
+        session = _FixtureSession(self, egress)
+        session.browser_sandbox = "disabled_by_operator" if allow_unsandboxed_browser else "enabled"
+        return session
 
 
 class _FixtureSession:
@@ -3129,9 +3188,10 @@ def submit_facebook_collect(ctx: Any, request: m.CollectRequest) -> m.Envelope:
             "url": permalink.canonical_url,
             "resources": list(request.resources),
             "max_expansions": fb_cfg.max_expansions,
-            "browser_sandbox": "disabled_by_operator"
+            "browser_sandbox": "unverified",
+            "browser_sandbox_requested": "operator_exception"
             if fb_cfg.allow_unsandboxed_browser
-            else "enabled",
+            else "required",
         },
         limits=limits_dict,
     )
@@ -3322,7 +3382,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         else None
     )
     egress.authorize_permalink(permalink, expected if permalink.is_share else None)
-    browser_sandbox = "disabled_by_operator" if fb_cfg.allow_unsandboxed_browser else "enabled"
+    browser_sandbox = "unverified"
     resources = set(request.resources)
     require_comments = "comments" in resources
     max_expansions = int(fb_cfg.max_expansions)
@@ -3401,6 +3461,8 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             max_bytes=max_bytes - previous_bytes,
             allow_unsandboxed_browser=fb_cfg.allow_unsandboxed_browser,
         )
+        browser_sandbox = getattr(session, "browser_sandbox", "unverified")
+        checkpoint_usage()
         obs = session.goto_post(permalink.fetch_url)
         egress.check_browser_route(obs.url, is_navigation=True)
         if permalink.is_share:

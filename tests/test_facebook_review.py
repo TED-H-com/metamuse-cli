@@ -934,7 +934,9 @@ def test_sandbox_capability_and_job_record_operator_mode(tmp_path, opt_in, verif
     else:
         assert job["result"]["data"]["steps"][0]["data"]["browser_sandbox"] == mode
     step = app.get_job(ctx, {"job_id": job_id}).data["steps"][0]
-    assert step["checkpoint"]["browser_sandbox"] == mode
+    assert step["checkpoint"]["browser_sandbox"] == (
+        "unverified" if environment == "unavailable" else mode
+    )
     request = {
         "project_id": project,
         "inputs": [{"kind": "url", "url": URL}],
@@ -970,6 +972,7 @@ def test_real_sandboxed_launch_or_explicit_skip(tmp_path, monkeypatch):
     try:
         args = session._browser.new_browser_cdp_session().send("Browser.getBrowserCommandLine")
         assert "--no-sandbox" not in args["arguments"]
+        assert session.browser_sandbox == "enabled"
         assert session._page.url == "about:blank"
     finally:
         session.close()
