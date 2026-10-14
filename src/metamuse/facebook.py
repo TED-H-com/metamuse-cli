@@ -1106,7 +1106,7 @@ class EgressGuard:
     def record_proxy_protocol_refusal(self, *, hostname: str, reason: str) -> None:
         exc = m.CoreError(
             m.ErrorCode.SCOPE_DENIED,
-            f"Proxy refused request ({reason})",
+            "Proxy refused request",
         )
         with self._lock:
             self.last_proxy_error = exc
@@ -1500,15 +1500,39 @@ class EgressGuard:
     def summary(self) -> dict[str, Any]:
         with self._lock:
             decisions_snapshot = list(self.decisions)
+        counts: dict[tuple[str, str], int] = {}
+        for decision in decisions_snapshot:
+            if decision.allowed:
+                continue
+            purpose = (
+                decision.purpose
+                if decision.purpose in ("seed", "request", "redirect", "subresource", "media")
+                else "request"
+            )
+            reason = decision.reason
+            if reason not in {code.value for code in m.ErrorCode} | {"max_bytes_exceeded"}:
+                reason = next(
+                    (
+                        prefix
+                        for prefix in (
+                            "proxy_refused",
+                            "navigation_barrier",
+                            "navigation_unapproved",
+                            "blocked_resource_type",
+                        )
+                        if reason.startswith(prefix + ":")
+                    ),
+                    "policy_refused",
+                )
+            counts[(purpose, reason)] = counts.get((purpose, reason), 0) + 1
         return {
             "total_checks": len(decisions_snapshot),
             "allowed": sum(1 for d in decisions_snapshot if d.allowed and d.reason == "allowed"),
             "aborted": sum(1 for d in decisions_snapshot if not d.allowed),
             "peer_verified": sum(1 for d in decisions_snapshot if d.peer_verified),
             "aborted_reasons": [
-                {"hostname": d.hostname, "purpose": d.purpose, "reason": d.reason}
-                for d in decisions_snapshot
-                if not d.allowed
+                {"purpose": purpose, "reason": reason, "count": count}
+                for (purpose, reason), count in sorted(counts.items())
             ],
         }
 
