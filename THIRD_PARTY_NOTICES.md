@@ -30,12 +30,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-| Spike file | Upstream paths at that commit | What changed |
+| File | Upstream paths at that commit | What changed |
 |---|---|---|
-| `spikes/muse/framing.py` | `docs/PROTOCOL.md`; field numbers in `src/muse_cli/desc0.bin` and `desc1.bin` | New protobuf codec. `gateway.py` was not copied. The descriptor binaries are not in this repo. Plaintext frames are capped at 65519 bytes. |
-| `spikes/muse/associate.py` | `src/muse_cli/cli.py` `is_reply` and `fmt_event`; `src/muse_cli/chat.py` `Chat.new_replies`; `src/muse_cli/gateway.py` `call_json` (`ok is False`) | Tied to this exchange’s user turn. A conflicting marker wins over identical text. Ambiguity is cumulative and clears only for a competing candidate. Only a calibrated status completes. `ok: false` and a non-2xx status are attempt evidence `app_error`; the exchange stays `send_uncertain` until this exchange’s user echo promotes it to `sent`. Nothing is resent. The truthy status check is not adopted. |
-| `spikes/muse/loop.py` | `src/muse_cli/gateway.py` `_read_frame` and `Gateway.request` | New receive loop. Ownership is on the link. The deadline uses `time.monotonic`. A frame budget was added. |
-| `spikes/muse/handshake.py` | `docs/PROTOCOL.md` Noise_XX pattern and empty payloads | Uses the `noiseprotocol` library. Does not copy the gateway handshake code. |
+| `spikes/muse/framing.py` | `docs/PROTOCOL.md`; field numbers in `src/muse_cli/desc0.bin` and `desc1.bin` | Historical codec. `gateway.py` was not copied. The descriptor binaries are not in this repo. Plaintext frames are capped at 65519 bytes. |
+| `spikes/muse/associate.py` | `src/muse_cli/cli.py` `is_reply` and `fmt_event`; `src/muse_cli/chat.py` `Chat.new_replies`; `src/muse_cli/gateway.py` `call_json` (`ok is False`) | Historical association rules. Tied to this exchange’s user turn. A conflicting marker wins over identical text. Ambiguity is cumulative and clears only for a competing candidate. Only a calibrated status completes. `ok: false` and a non-2xx status are attempt evidence `app_error`; the exchange stays `send_uncertain` until this exchange’s user echo promotes it to `sent`. Nothing is resent. The truthy status check is not adopted. |
+| `spikes/muse/loop.py` | `src/muse_cli/gateway.py` `_read_frame` and `Gateway.request` | Historical receive loop. Ownership is on the link. The deadline uses `time.monotonic`. A frame budget was added. |
+| `spikes/muse/handshake.py` | `docs/PROTOCOL.md` Noise_XX pattern and empty payloads | Historical in-process handshake. Uses the `noiseprotocol` library. Does not copy the gateway handshake code. |
+| `src/metamuse/_muse_codec.py` | Same descriptor field numbers as `spikes/muse/framing.py` | Production codec. Unknown field, multi-chunk, and oversize frames are `E_PROTOCOL_MISMATCH`. |
+| `src/metamuse/_muse_associate.py` | Same muse-cli behaviors as `spikes/muse/associate.py` | Production pure functions. The spike rules are unchanged. |
+| `src/metamuse/_muse_link.py` | `src/muse_cli/gateway.py` `_read_frame` and `Gateway.request` | Production receive loop. One owner. Injected monotonic deadline. 64-frame collect budget. |
+| `src/metamuse/_muse_noise.py` | `docs/PROTOCOL.md` and `src/muse_cli/gateway.py` initiator, empty payloads, pattern name | Uses `noiseprotocol`. Does not copy the client handshake. |
+| `src/metamuse/_muse_http.py` | `src/muse_cli/gateway.py` HTTPS helpers and `WebSocket.connect(..., verify=True)` | New `curl_cffi` adapter. `impersonate="chrome"`, `verify=True`, redirects off, env proxies disabled. Not a copy of `gateway.py`. |
+| `src/metamuse/muse.py` | `src/muse_cli/gateway.py` auth chain and the four routes in `routes.json` | Allowlisted transport and attempt evidence. No discussion lifecycle. `gateway.py` was not copied. |
 
 ## noiseprotocol
 
@@ -82,11 +88,21 @@ SOFTWARE.
 | yt-dlp | 2026.8.19 | Unlicense | Planned. Not imported here. |
 | playwright | 1.63.0 | Apache-2.0 | Planned. Browser binaries are an operator install, not part of this repo. |
 | ffmpeg | external binary; this machine has 8.0.1-3ubuntu2, configured `--enable-gpl` and `--enable-libx264` | LGPL-2.1-or-later, or GPL-2.0-or-later when GPL parts are enabled (this binary) | Not bundled. Operator-installed executable only. |
-| noiseprotocol | 0.3.1 | MIT. `Copyright (c) 2017 Piotr Lizończyk`. Full notice above. | Adopted in spikes/ as an import (`spikes/muse/handshake.py`). Not vendored. |
-| cryptography | 50.0.2, resolved as the dependency of noiseprotocol on 2026-10-13 | Apache-2.0 OR BSD-3-Clause | Adopted in spikes/ only as that transitive dependency. |
-| protobuf | 7.36.2 | BSD-3-Clause | Not adopted in the spike. Used on 2026-10-13 to read upstream descriptors and compare bytes. Planned if B09 loads the descriptors instead of the spike codec. |
-| curl_cffi | 0.16.3 | MIT | Planned for the B09 live socket. Not used by the spike. |
-| websockets | 17.2 looked up, not selected | BSD-3-Clause | Not adopted. The documented gateway client is `curl_cffi` with a Chrome TLS fingerprint. |
+| noiseprotocol | 0.3.1 | MIT. `Copyright (c) 2017 Piotr Lizończyk`. Full notice above. | Adopted. Imported by `src/metamuse/_muse_noise.py` and `spikes/muse/handshake.py`. Not vendored. |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause. Wheel `LICENSE` offers either `LICENSE.APACHE` or `LICENSE.BSD`. | Runtime transitive of `noiseprotocol` and `curl_cffi`. The installed wheel reports `OpenSSL 4.0.3 29 Sep 2026` (OpenSSL 3+ is Apache-2.0). Not vendored. |
+| cffi | 2.1.1 | MIT-0 (MIT No Attribution). Wheel `LICENSE`. | Runtime transitive of `cryptography` and `curl_cffi`. |
+| pycparser | 3.11 | BSD-3-Clause. `Copyright (c) 2008-2027, Eli Bendersky`. Wheel `LICENSE`. | Runtime transitive of `cffi`. |
+| certifi | 2026.7.22 | MPL-2.0. Wheel `LICENSE` (Mozilla CA bundle). | Runtime transitive of `curl_cffi`. |
+| protobuf | 7.36.2 | BSD-3-Clause | Not adopted. Used on 2026-10-13 to read upstream descriptors. B09 kept the hand-written codec and does not depend on this package. |
+| curl_cffi | 0.16.3 | MIT. `Copyright (c) 2018 multippt`. `Copyright (c) 2022 curl_cffi developers`. Wheel `LICENSE`. Home: https://github.com/lexiforest/curl_cffi | Adopted. Imported lazily by `src/metamuse/_muse_http.py`. Not vendored. |
+| libcurl | 8.21.0-IMPERSONATE | curl license (MIT-style). Version string `libcurl/8.21.0-IMPERSONATE` inside the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. Not a separate Python package. |
+| BoringSSL | version string not exposed | Google BoringSSL (OpenSSL license and ISC). Error strings in the same wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| nghttp2 | version string not exposed | MIT. Header path `nghttp2/nghttp2.h` and `nghttp2/%s` in the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| nghttp3 | version string not exposed | MIT. Header path `nghttp3/nghttp3.h` in the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| zlib | version string not exposed | zlib license. `zlibVersion` symbol in the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| brotli | version string not exposed | MIT. Header path `brotli/decode.h` and `brotli/%u.%u.%u` in the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| zstd | version string not exposed | BSD-3-Clause for the bundled build. Name appears beside zlib and brotli in the wheel. | Statically linked in `curl_cffi/_wrapper.abi3.so`. |
+| websockets | 17.2 looked up, not selected | BSD-3-Clause | Not adopted. The gateway client is `curl_cffi` with a Chrome TLS fingerprint. |
 
 SQLite is used through the Python standard library when the store lands (B03). No separate notice pin.
 
@@ -108,19 +124,22 @@ Runtime dependencies:
 | annotated-types | 0.8.0 | MIT | Pydantic annotation support. |
 | typing-inspection | 0.4.4 | MIT | Pydantic typing support. |
 | typing_extensions | 4.16.0 | PSF-2.0 | Pydantic typing compatibility. |
-| mcp | 2.3.0 | MIT | Official MCP Python SDK for stdio transport and JSON-RPC wire framing; avoid hand-rolled protocol machinery. |
-| mcp-types | 2.3.0 | MIT | MCP protocol type models and version constants (`mcp` dependency). |
 | anyio | 4.15.1 | MIT | Structured async concurrency and stream wrappers (`mcp` dependency). |
 | attrs | 26.1.0 | MIT | Class and attribute helpers (`jsonschema` dependency). |
-| cffi | 2.1.1 | MIT-0 | C foreign function interface (`cryptography` dependency). |
+| certifi | 2026.7.22 | MPL-2.0 | CA bundle used by curl_cffi. |
+| cffi | 2.1.1 | MIT-0 | C foreign function interface (`cryptography` and `curl_cffi` dependency). |
 | click | 8.5.0 | BSD-3-Clause | Command-line interface toolkit (`uvicorn` dependency). |
-| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Cryptographic primitives (`pyjwt[crypto]` dependency required by `mcp`). |
+| cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Cryptographic primitives (`pyjwt[crypto]` dependency required by `mcp`; also the cryptographic backend of noiseprotocol). OpenSSL 4.0.3 inside the wheel. |
+| curl_cffi | 0.16.3 | MIT | HTTPS and WSS with `impersonate="chrome"` and `verify=True`. Imported only when the adapter runs. |
 | h11 | 0.16.0 | MIT | HTTP/1.1 protocol state machine (`httpcore2` and `uvicorn` dependency). |
 | httpcore2 | 2.13.1 | BSD-3-Clause | Low-level HTTP transport core (`httpx2` dependency). |
 | httpx2 | 2.13.1 | BSD-3-Clause | HTTP client library (`mcp` dependency). |
 | idna | 3.20 | BSD-3-Clause | Internationalized domain names in applications (`anyio` and `httpx2` dependency). |
 | jsonschema | 4.26.0 | MIT | JSON Schema Draft 2020-12 validation (`mcp` dependency). |
 | jsonschema-specifications | 2025.9.1 | MIT | JSON Schema meta-schemas and vocabularies (`jsonschema` dependency). |
+| mcp | 2.3.0 | MIT | Official MCP Python SDK for stdio transport and JSON-RPC wire framing; avoid hand-rolled protocol machinery. |
+| mcp-types | 2.3.0 | MIT | MCP protocol type models and version constants (`mcp` dependency). |
+| noiseprotocol | 0.3.1 | MIT | Noise_XX_25519_AESGCM_SHA256. Imported only when a gateway handshake starts. |
 | opentelemetry-api | 1.45.1 | Apache-2.0 | Telemetry tracing API (`mcp` dependency; no exporter enabled). |
 | pycparser | 3.11 | BSD-3-Clause | C parser in Python (`cffi` dependency). |
 | pyjwt | 2.15.1 | MIT | JSON Web Token implementation (`PyJWT`; `mcp` dependency). |
