@@ -326,26 +326,27 @@ def test_r5_n1_resolver_capacity_is_transient_dns_failure(tmp_path, monkeypatch)
 @pytest.mark.parametrize("status", [401, 403, 404])
 def test_r5_n2_background_fetch_does_not_classify_expansion(tmp_path, monkeypatch, status):
     script = """<script>
-      setInterval(() => fetch('/telemetry').catch(() => {}), 50);
       document.querySelector('button').addEventListener('click', e => {
         e.target.remove(); setTimeout(() => {
-          const n = document.createElement('article'); n.dataset.fbRole='comment';
-          n.dataset.commentId='c_2'; n.innerHTML='<div data-fb-role="comment-body">Second</div>';
-          document.querySelector('section').appendChild(n);
+          fetch('/telemetry').catch(() => {}).finally(() => {
+            const n = document.createElement('article'); n.dataset.fbRole='comment';
+            n.dataset.commentId='c_2'; n.innerHTML='<div data-fb-role="comment-body">Second</div>';
+            document.querySelector('section').appendChild(n);
+          });
         }, 300);
       });</script>"""
     markup = _synthetic_post_html(
         comments=[{"id": "c_1", "text": "First"}], expand_controls=[{"id": "more"}]
     ).replace("</body>", script + "</body>")
     with browser_fixture(
-        tmp_path, monkeypatch, {POST_PATH: markup, "/telemetry": (status, None)}
+        tmp_path, monkeypatch, {POST_PATH: markup, "/telemetry": (status, None)}, unsandboxed=False
     ) as env:
         ctx, project, permit, _, hits, _, _ = env
         job = finish(ctx, submit(ctx, project, permit))
         assert job["error"] is None
         assert len(rows(ctx)) == 3
         assert "expansion_failed" not in job["missing_fields"]
-        assert any(path == "/telemetry" for path, _ in hits)
+        assert sum(path == "/telemetry" for path, _ in hits) == 1
 
 
 @pytest.mark.parametrize("status", [401, 403, 500])
