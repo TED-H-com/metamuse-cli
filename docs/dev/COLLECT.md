@@ -305,13 +305,61 @@ key, never `manual`. A remote video item is stored as kind `post` until core
 adds a media kind.
 
 The checkpoint stores the phase, indexes, ids, revision, text hash, and counts.
-It does not store upstream media or subtitle URLs. A resume re-reads the page
-and adds that response to `bytes_used`.
+It does not store upstream media or subtitle URLs. A resume re-reads the page,
+counts that response in `bytes_used`, and compares native id, extractor,
+platform, and scope with the checkpoint. On a mismatch the input is
+`E_DATA_STALE`: committed metadata stays, no subtitle or media from the new
+page is attached to the old item, coverage is `partial`, stop reason is
+`data_stale`, and the permit use stays at the one already reserved. The job
+error stays empty. Other inputs continue.
 
-Cookies are not sent. `CollectRequest` has no `auth_ref`: model content must
-not choose credentials. A later cookie binding would be an operator field on
-`remote_media.approvals`, resolved with `resolve_secret(auth_ref, provider=,
-account=)` against the permit. That field is not implemented.
+Each input is checked only against the hosts approved for its own extractor.
+Approvals are not unioned across the job.
+
+Cookies, netrc, the yt-dlp cache, usernames, passwords, and client certificates
+are set off in the fixed parameters. `CollectRequest` has no `auth_ref`: model
+content must not choose credentials. A later cookie binding would be an
+operator field on `remote_media.approvals`, resolved with
+`resolve_secret(auth_ref, provider=, account=)` against the permit. That field
+is not implemented. A token left under `XDG_CACHE_HOME` is not read.
+
+A process-wide audit hook, installed once at import, refuses `subprocess.Popen`,
+`os.system`, `os.posix_spawn`, `os.exec*`, and `os.fork*` while extraction or
+the request handler is on the stack. The refusal is `E_UNSUPPORTED` with the
+message `extractor requires an external process`. There is no fallback. Local
+ffprobe runs with the flag clear. `ffmpeg_location` is a path the job does not
+create: yt-dlp treats a missing location as "no ffmpeg" and does not run
+`ffmpeg -bsfs` during extraction. `None` would search `PATH` and run that probe.
+
+Before every dial the handler checks the job wall clock and a pending cancel.
+The dial timeout is the smaller of the read timeout and the remaining wall
+clock. Every received body, including a redirect body and a non-2xx body, counts
+against `max_bytes`. `bytes_used` is the total received. An HTTPS to HTTP
+redirect is `E_SCOPE_DENIED`. `Authorization` is dropped when the scheme, host,
+or port changes. A 307 or 308 that would forward a body to another origin is
+`E_SCOPE_DENIED`.
+
+A result with more than one playlist entry is `E_UNSUPPORTED`. The next action
+is `submit the individual media URL`. Nothing from that result is stored. A
+one-entry playlist is unwrapped and stored as that entry.
+
+Subtitle bytes are one track, keyed by video, language, and method. The same
+bytes and a complete track take the completed-hash shortcut. Any malformed cue
+stores the valid cues with `complete` 0, adds `subtitles` to the missing
+fields, and leaves the job `partial`. An incomplete track does not take the
+shortcut. Changed bytes append a transcript revision for every cue in the new
+file, reusing the segment id at the same cue index. `use_basis.revisions`
+records each revision's own file hash. A packet or draft that cites an older
+cue revision is stale. A subtitle HTTP 403 is `E_ACCESS_DENIED` and
+`awaiting_user`, same as a page 403. No later subtitle or media request runs.
+
+An unchanged title does not append an item revision. A changed upstream
+timestamp is recorded on the source `use_basis` (`upstream_timestamp` and
+`fetched_at`) and the original `item_revisions.raw_time` stays. A finite
+fractional timestamp keeps its exact text, such as `1700000000.125`. A title
+yt-dlp fabricated (`fulltitle` empty, or the synthesized `<extractor> video
+#<id>` title) is stored as SQL NULL, `title` is missing, and coverage is
+`partial`.
 
 Login, a platform challenge, HTTP 403, geo restriction, and an unavailable item
 stop the job. HTTP 429 stops and reports `Retry-After` without using the
