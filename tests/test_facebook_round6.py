@@ -72,3 +72,49 @@ def test_r6_hidden_exhaustion_never_satisfies_scope(tmp_path, monkeypatch, hidde
     for job in (fixture, browser):
         assert job["error"] is None
         assert job["coverage_status"] == "partial"
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        "https://denied.example/nav",
+        "https://denied.example/login/",
+        "https://denied.example/checkpoint/123/",
+        "http://www.facebook.com/non_post_path",
+        "https://user:password@www.facebook.com/login/",
+        "https://www.facebook.com:444/checkpoint/",
+        "https://127.0.0.1/login/",
+    ],
+)
+def test_r6_destination_policy_precedes_classification(destination):
+    from test_facebook_review import URL
+
+    from metamuse import models as m
+
+    guard = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com",), resolver=lambda _: ["93.184.216.34"]
+    )
+    guard.authorize_permalink(facebook.parse_post_permalink(URL))
+    with pytest.raises(m.CoreError) as error:
+        guard.check_browser_route(destination, is_navigation=True, redirected_from=URL)
+    assert error.value.detail.code == m.ErrorCode.SCOPE_DENIED
+    assert error.value.detail.message == "Facebook browser destination is denied by egress policy"
+
+
+def test_r6_denied_navigation_in_chromium(tmp_path, monkeypatch):
+    markup = _synthetic_post_html().replace(
+        "</body>", "<script>location.replace('https://denied.example/login/')</script></body>"
+    )
+    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False) as (
+        ctx,
+        project,
+        permit,
+        _,
+        hits,
+        *_,
+    ):
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["error"]["code"] == "E_SCOPE_DENIED"
+        assert job["error"]["message"] == "Facebook browser destination is denied by egress policy"
+        assert job["state"] == "awaiting_user"
+        assert all(path == POST_PATH for path, _ in hits)
