@@ -98,7 +98,10 @@ class OwnedLink:
         return self.raw.recv(timeout)
 
     def close(self) -> None:
-        self.raw.close()
+        try:
+            self.raw.close()
+        except Exception:
+            pass
 
 
 class ScriptedLink:
@@ -309,6 +312,13 @@ class ReceiveLoop:
                     raise ProtocolMismatch("response frame missing body")
                 if status is not None:
                     raise ProtocolMismatch("duplicate application response")
+                encodings = [
+                    header.value.strip().lower()
+                    for header in service_frame.response.headers
+                    if header.key.lower() == "content-encoding"
+                ]
+                if len(encodings) > 1 or encodings and encodings != ["identity"]:
+                    raise ProtocolMismatch("unsupported response content encoding")
                 status = service_frame.response.status
                 total = _take(parts, total, service_frame.response.body, self.max_body_bytes)
                 complete = service_frame.response.end_body

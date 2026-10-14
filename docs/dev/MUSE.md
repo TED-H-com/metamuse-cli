@@ -8,15 +8,20 @@ only the four lifecycle tools. No background worker is started by a tool call.
 
 The spike under `spikes/muse/` is the historical record. Production code is `muse.py` plus `_muse_codec.py`, `_muse_associate.py`, `_muse_link.py`, `_muse_noise.py`, and `_muse_http.py`. `curl_cffi` and `noiseprotocol` are imported inside those helpers on first use. Importing `metamuse.muse` does not import them. A missing install raises `E_DEPENDENCY_MISSING`.
 
-LIVE is not run. There is no authorized account. Tests are offline and use an in-memory gateway.
+Historical B09 (2026-10-13) had no authorized account. On 2026-10-14 the orchestrator
+recorded one authorized LIVE standard msg1/msg2 observation: nested key equaled the
+responder static key and nested nonce equaled the fresh client nonce. This implementation
+and its tests are OFFLINE/FIXTURE only. Msg3/split/application readiness and AT-038/AT-043
+remain unproven pending the orchestrator's separately authorized LIVE run.
 
 ## Allowlist
 
 | Call | Wire | Mutation |
 |---|---|---|
 | `POST /api/auth/check` | HTTPS, cookie jar, empty body | no |
-| `GET /api/session` | HTTPS, cookie jar | no |
+| `GET /api/session?vm_state=live` | HTTPS, cookie jar | no |
 | `POST /api/hatch/token` | HTTPS, cookie jar plus `Authorization: Bearer` | no |
+| `POST /api/hatch/vm/wake` | HTTPS, cookie jar plus bearer | account-side power-state request |
 | `session.start` | daemon service 0, `POST /session/start` | yes |
 | `sessions.list` | daemon service 0, `GET /api/session/list` | no |
 | `chat.stream` | daemon service 0, `POST /chat/stream` | yes |
@@ -74,11 +79,11 @@ class OutboundGuard(Protocol):
     def verify_peer(self, checked: CheckedURL, peer_address: str) -> None: ...
 ```
 
-`check` never returns `None`. It returns the canonical URL, hostname, port, and at least one address. Empty addresses are refused. The transport dials `checked.url`, keeps Host and SNI on the hostname, and puts `{hostname}:{port}:{address}` in `CURLOPT_RESOLVE`. It refuses a pin whose host, port, or scheme does not match the URL it asked to check, and it refuses an IP-literal hostname.
+`check` never returns `None`. It returns the canonical URL, hostname, port, and at least one address. Empty addresses are refused. The transport dials `checked.url`, keeps Host and SNI on the hostname, and puts one `{hostname}:{port}:{addr1},{addr2},...` entry in `CURLOPT_RESOLVE`, with IPv6 bracketed and addresses in guard order. It refuses a pin whose host, port, or scheme does not match the URL it asked to check, and it refuses an IP-literal hostname.
 
 `verify_peer` runs after the adapter reads the actual peer (`primary_ip` on HTTPS, `CURLINFO_PRIMARY_IP` on WSS) and before the transport accepts a response or starts the Noise handshake. A mismatch raises `E_SCOPE_REQUIRED` and the body is not parsed.
 
-Transport purpose names stay `auth.check`, `session`, `hatch.token`, and `wss.noise`. They are not B08 `URLPurpose` values. B10 maps every one of them to B08 `purpose="request"`. B08 accepts only HTTP(S), so the WSS check is B10's adapter: validate the fixed hatch authority through an equivalent HTTPS URL, then restore only the scheme on the `CheckedURL` handed back here.
+Transport purpose names stay `auth.check`, `session`, `hatch.token`, `hatch.wake`, and `wss.noise`. They are not B08 `URLPurpose` values. B10 maps every one of them to B08 `purpose="request"`. B08 accepts only HTTP(S), so the WSS check is B10's adapter: validate the fixed hatch authority through an equivalent HTTPS URL, then restore only the scheme on the `CheckedURL` handed back here.
 
 `cookies` receives the opaque `auth_ref` and returns one cookie-header value. The transport does not read a browser profile or a cookie file. The guard sees the real WebSocket URL, including `auth_token`. That value must not be logged.
 
@@ -90,13 +95,60 @@ An optional `clock() -> float` is the monotonic deadline. The default is `time.m
 
 ## Connection
 
-Order: `POST /api/auth/check`, `GET /api/session`, `POST /api/hatch/token`, then `wss://hatch.metaaivm.com/v1/noise?vm_id=&auth_token=`. The hatch body is canonical JSON `{"vmAddress":"wss://{vm_id}.metaaivm.com/","vmName":"<vm_id>"}`. Tokens are quoted and must match a short printable alphabet. They are held only for the call, then cleared.
+The lifecycle must pass `store=step.store` to `MuseTransport`, along with its existing
+bound credentials, guard and network policy. Direct adapters may instead inject the typed
+`StoreMuseTrust`; absence of authoritative persistence blocks with `E_STORAGE`.
 
-Noise pattern `Noise_XX_25519_AESGCM_SHA256`. Handshake payloads are empty. A non-empty peer payload, including an attested payload, is `E_PROTOCOL_MISMATCH`. Noise handshake, authentication, and nonce failures are the same code. They are not `E_NETWORK_TIMEOUT`.
+1. POST `/api/auth/check`: require usable access token, authenticated `ok=true`, current
+   `viewer_id` and `session_binding_id`. Bind the viewer hash to configured provider/account.
+2. GET `/api/session?vm_state=live`: require `status=assigned`, exactly one matching row,
+   explicit `hatch_vm`, consistent VM ID/name/endpoint and known state. Reject replacement
+   context/provisioning pins. `hatch_cvm` or `CVM_*` records sticky confidentiality then stops, including authenticated selected CVM hints with contradictory metadata.
+   `DISABLED`, `DELETING`, `ERROR` stop before wake. Missing/contradictory metadata fails closed.
+3. Freeze owner/session/active-selection generation in the private Store. Both VM and active
+   account expectations must allow standard. A standard observation cannot clear either.
+   Connect/retry cannot reselect a different VM. Storage corruption, missing backing state,
+   unsupported provenance/version or failed CAS blocks with `E_STORAGE`, retry class `never`.
+4. Mint POST `/api/hatch/token` with exactly `{vmAddress: <row endpoint_url>, vmName: <row name>}`.
+   Access tokens retain the legacy bounded grammar. Hatch accepts a bounded legacy token or
+   `s0:<base64url>.<base64url>.<base64url>` verbatim. A present non-delegation notary must have
+   six nonempty base64url segments after trimming; pass it unchanged. Missing/blank omits it.
+   Delegation and unsupported present credentials stop, rather than being silently dropped.
+   No local signature/expiry verification is claimed. A first parseable positive finite
+   `timeout:` restriction is only a cache hint: mint at most twice if within 60 seconds.
+   Credentials are minted anew per connection, held only in memory for connection-lifetime redaction and never cached durably.
+5. POST `/api/hatch/vm/wake` `{vm_id, retry_count: 0}`, then guarded WSS dial with exactly
+   `vm_id`, `auth_token`, optional `notary_token`, `app_id=hatch-web`, `request_id=<fresh UUID4>`.
+   WSS sends fixed `Origin: https://muse.ai`; no notary header. Upgrade 502/503/504 causes
+   wake `{vm_id, retry_count: n, connect_attempt_id: <fresh UUID4>}`, followed by
+   `max(2s, min(0.2s × 1.5^(n−1), 8s))`. Stop after 20 redials or 240 seconds, whichever
+   comes first, with `E_RESOURCE_UNAVAILABLE` and an operator action to retry later because
+   the VM is not running yet. Each redial rechecks captured currentness and uses a fresh
+   request ID. Other failures do not enter this redial loop.
+6. Mature `Noise_XX_25519_AESGCM_SHA256`, empty prologue: fresh CSPRNG 32-byte challenge
+   in msg1 bytes field 1. Msg2 must classify strictly as outer bytes field 2 (optional
+   platform field 1/varint=0), containing exactly two nested bytes fields, key and nonce,
+   each 32 bytes. Require key == mature-library responder static and nonce == this attempt's
+   challenge. Duplicates, unknown fields/evidence, malformed/oversized input, bad AEAD,
+   low-order DH and mismatches stop with `E_PROTOCOL_MISMATCH`, `never`. Valid RV first
+   records confidential expectation and stops. CVM/unknown/delegation have no fallback.
+7. Commit standard-observation provenance with generation CAS immediately before empty msg3,
+   holding the per-account file lock across commit and msg3 handoff. Split only through the
+   mature library. Generation changes invalidate local sockets; each call rechecks durable
+   currentness. No standard enrollment-health or capability-registration gate is added.
 
-One `ReceiveLoop` owns the socket. A second loop, a collect without that ownership, or a second call that overlaps the first raises `E_PROTOCOL_MISMATCH`. `close` takes the same call lock. Calls are serial. Stream ids are positive int64 values starting at 1. The transport stops that connection before the id would exceed `2**63-1`. It does not wrap ids on the same connection. Each collect waits at most 30 seconds of the injected clock and reads at most 64 frames. A caller cannot raise those caps. Caps elsewhere: plaintext 65519 bytes, ciphertext 65535 bytes, body 1 MiB, 32 foreign frames. WebSocket reads also stop at 65535 bytes and 64 fragments, and they check the deadline on every fragment. Unknown field, multi-chunk frame, duplicate response, a body chunk before the response, and oversize are `E_PROTOCOL_MISMATCH`. The frame budget is `E_LIMIT_REACHED`. A read that hits the deadline is incomplete.
+Wake is an account-side power-state request, performed only inside a connection triggered
+by an already-granted Muse operation in live network mode. Offline mode and the separately
+selected fixture gateway perform no wake or network calls. The in-process connector tests
+exercise live-mode code through injected adapters only. There are no lease-vm, reset-vm,
+cvm-chip-selection, enrollment, fallback notary, recovery-key or registration calls.
+Standard never claims SNP, TCB, confidential execution or notary-signature verification.
+These key/nonce and durable downgrade checks are stricter than the described web standard
+branch; they preserve its applicable mature Noise/TLS and context checks without changing tier.
 
-A protocol error, an authentication failure, or a failed encrypted write poisons the link and closes it. The Noise nonce is not rewound. The next call may handshake a new connection. That new connection does not authorize the submission whose token was already consumed.
+One `ReceiveLoop` owns the socket. A second loop, a collect without that ownership, or a second call that overlaps the first raises `E_PROTOCOL_MISMATCH`. `close` takes the same call lock. Calls are serial. Stream ids are positive int64 values starting at 1. The transport stops that connection before the id would exceed `2**63-1`. It does not wrap ids on the same connection. Each collect waits at most 30 seconds of the injected clock and reads at most 64 frames. A caller cannot raise those caps. Caps elsewhere: plaintext 65519 bytes, ciphertext 65535 bytes, body 1 MiB, 32 foreign frames. WebSocket reads also stop at 65535 bytes and 64 fragments, and they check the deadline on every fragment. Every request selects `Accept-Encoding: identity`; duplicate or non-identity response content encoding is refused before body interpretation. Unknown field, multi-chunk frame, duplicate response, a body chunk before the response, and oversize are `E_PROTOCOL_MISMATCH`. The frame budget is `E_LIMIT_REACHED`. A read that hits the deadline is incomplete.
+
+A protocol error, an authentication failure, or a failed encrypted write poisons the link and closes it. The Noise nonce is not rewound. Each direction stops at a conservative 2**32 transport frames. The next call may handshake a new connection. That new connection does not authorize the submission whose token was already consumed.
 
 ## HTTP status
 
@@ -105,10 +157,16 @@ A protocol error, an authentication failure, or a failed encrypted write poisons
 | 401, 403, other 4xx on the auth chain | `E_AUTH_REQUIRED` | `user_action` |
 | 429, integer `Retry-After` of 1 to 6 digits only | `E_RATE_LIMITED` | `safe_read` |
 | 3xx | `E_SCOPE_REQUIRED` | `user_action` |
-| 503 and other 5xx | `E_RESOURCE_UNAVAILABLE` | `user_action` |
+| HTTPS 5xx; WSS 5xx after its bounded redial (only 502/503/504 redial) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | 200 session JSON without `vm_id` | `E_RESOURCE_UNAVAILABLE` | `user_action` |
-| 200 that is not a JSON object, or a `vm_id` outside the alphabet | `E_PROTOCOL_MISMATCH` | `never` |
+| 200 with malformed JSON/assignment, unknown/CVM/delegation/crypto or key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
 
+Upgrade 401/403 is `E_AUTH_REQUIRED`, 429 is `E_RATE_LIMITED`; DNS/connect/TLS failure
+is `E_NETWORK_TIMEOUT`, with `E_SCOPE_REQUIRED` when the guard refuses. Corrupt/stale trust
+or failed commit/CAS is `E_STORAGE` (`never`). The upgrade URL, query, response body and raw
+curl exception are never copied into any exception, envelope or log. Redaction covers
+notary aliases, raw/encoded s0 and delegation envelopes, nonce/proof material, connection
+attempt IDs and wake bodies, including unknown nested JSON keys and ephemeral known values.
 The response body is not copied into these errors. Unavailable VM is not an auth failure. Provider and guard exceptions are replaced with a fixed message. The public error is raised outside the handler, so its chain does not carry the original text.
 
 ## Attempt evidence
@@ -135,6 +193,12 @@ After a mutation handoff, a read failure does not use safe-read retry guidance. 
 `delivery_state`, `attempt_evidence`, `associate_reply`, `observe`, `Exchange.earlier_unresolved`, and `ObservationMemory` are re-exported from `metamuse.muse`. `CALIBRATED_COMPLETE_STATUSES` is empty. `ambiguous` is an association result, not an exchange state. `closed` does not reopen. The transport never resends.
 
 ## Schema
+
+B09 migration `005_muse_trust.sql` adds private account/VM trust tables and six monotonic,
+identity and retention guards. Owner/session hashes, version, source/time, active VM and
+generation are private internal rows, with no public model/schema change. It uses the core
+pre-upgrade backup and atomic migration. Restore a verified schema-4 backup into a fresh
+workspace for rollback; never erase security state in place to make standard connect.
 
 B10 registers forward migration `003_muse_lifecycle.sql` and regenerated schemas,
 as detailed below. Do not edit `001_initial.sql`. NULL `bytes_handed_off` means unknown:
@@ -328,8 +392,7 @@ Normal fixture history can reconstruct its deterministic response after CLI rest
 custom/scripted remote world is in-process and is not a production remote database.
 AT-042's host must carry the mock attribution into its resulting draft/bundle. B16 should
 exercise real process kill at every boundary, restore and key rotation, epoch takeover
-refusal, hydration limits, and repeated uncertain settlement. LIVE/AT-038 remains blocked:
-no operator-authorized account; fixture success is not service verification.
+refusal, hydration limits, and repeated uncertain settlement. AT-038 and AT-043 remain unproven: the orchestrator's msg1/msg2 evidence is not a full lifecycle/journey; fixture success is not service verification.
 
 
 ## AT-042 read evidence

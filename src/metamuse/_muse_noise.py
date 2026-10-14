@@ -1,7 +1,8 @@
 """Noise_XX initiator for one Muse gateway connection.
 
 Uses noiseprotocol (MIT, Copyright (c) 2017 Piotr Lizończyk). The pattern and
-the empty handshake payloads are the ones documented for muse-cli. This file
+legacy empty payloads are retained only in explicit offline helpers. The primary
+standard path uses the independently documented challenge and strict bundle. This file
 does not copy that client's handshake. The library is imported inside
 ``load_noise`` so commands that never open a gateway do not import it.
 
@@ -13,6 +14,7 @@ The MIT notice is in ``THIRD_PARTY_NOTICES.md``.
 
 from __future__ import annotations
 
+import hmac
 import os
 from collections.abc import Callable
 from typing import Any
@@ -24,20 +26,15 @@ from metamuse._muse_codec import (
     IncompleteBody,
     ProtocolMismatch,
 )
+from metamuse._muse_handshake_payloads import (
+    HANDSHAKE_PAYLOAD_MAX_BYTES,
+    ConfidentialChallenge,
+    classify_payload,
+    client_challenge,
+)
 from metamuse.models import CoreError, ErrorCode
 
 PATTERN = b"Noise_XX_25519_AESGCM_SHA256"
-_NOISE_FAILURES = frozenset(
-    {
-        "NoiseInvalidMessage",
-        "NoiseHandshakeError",
-        "NoiseValueError",
-        "NoiseMaxNonceError",
-        "NoiseValidationError",
-        "NoiseProtocolNameError",
-        "InvalidTag",
-    }
-)
 
 
 def load_noise() -> tuple[Any, Any, type[Exception]]:
@@ -55,44 +52,63 @@ def load_noise() -> tuple[Any, Any, type[Exception]]:
 
 
 class NoiseParty:
-    """One Noise_XX role. Handshake payloads are empty. No socket."""
+    """One mature Noise_XX role, bounded payloads and conservative frame counters. No socket."""
 
     def __init__(self, role: str) -> None:
         noise_connection, keypair, _invalid = load_noise()
-        self.conn = noise_connection.from_name(PATTERN)
-        if role == "initiator":
-            self.conn.set_as_initiator()
-        elif role == "responder":
-            self.conn.set_as_responder()
-        else:
+        if role not in ("initiator", "responder"):
             raise ProtocolMismatch("unknown noise role")
-        self.conn.set_keypair_from_private_bytes(keypair.STATIC, os.urandom(32))
-        self.conn.start_handshake()
+
+        def configure() -> bytes:
+            self.conn = noise_connection.from_name(PATTERN)
+            if role == "initiator":
+                self.conn.set_as_initiator()
+            else:
+                self.conn.set_as_responder()
+            self.conn.set_keypair_from_private_bytes(keypair.STATIC, os.urandom(32))
+            self.conn.start_handshake()
+            return b""
+
+        self._crypto(configure, "noise initialization failed")
+        self._sent_frames = 0
+        self._received_frames = 0
 
     def _crypto(self, fn: Callable[[], bytes], message: str) -> bytes:
         try:
             return fn()
         except Exception as exc:
-            if type(exc).__name__ not in _NOISE_FAILURES:
-                raise
-            failure = ProtocolMismatch(message)
+            if isinstance(exc, (AttributeError, TypeError)):
+                failure = CoreError(
+                    ErrorCode.DEPENDENCY_MISSING,
+                    "Noise API is not the pinned shape",
+                    next_action=(
+                        "Install the pinned noiseprotocol package; do not bypass verification"
+                    ),
+                )
+            else:
+                failure = ProtocolMismatch(message)
         raise failure
 
     def write(self, payload: bytes = b"") -> bytes:
-        if payload != b"":
-            raise ProtocolMismatch("handshake payload must be empty")
+        if len(payload) > HANDSHAKE_PAYLOAD_MAX_BYTES:
+            raise ProtocolMismatch("handshake payload exceeds cap")
         return self._crypto(
             lambda: bytes(self.conn.write_message(payload)),
             "noise handshake failed",
         )
 
     def read(self, message: bytes) -> bytes:
+        if len(message) > HANDSHAKE_PAYLOAD_MAX_BYTES + 96:
+            raise ProtocolMismatch("handshake message exceeds cap")
         return self._crypto(
             lambda: bytes(self.conn.read_message(message)),
             "handshake message was rejected",
         )
 
     def encrypt(self, plaintext: bytes) -> bytes:
+        if self._sent_frames >= 2**32:
+            raise ProtocolMismatch("noise outbound frame budget exhausted")
+        self._sent_frames += 1
         if len(plaintext) > MAX_FRAME_BYTES:
             raise FrameTooLarge(f"frame is {len(plaintext)} bytes")
         ciphertext = self._crypto(
@@ -104,9 +120,31 @@ class NoiseParty:
         return ciphertext
 
     def decrypt(self, ciphertext: bytes) -> bytes:
+        if self._received_frames >= 2**32:
+            raise ProtocolMismatch("noise inbound frame budget exhausted")
+        self._received_frames += 1
         if len(ciphertext) > NOISE_MAX_CIPHERTEXT_BYTES:
             raise FrameTooLarge(f"ciphertext is {len(ciphertext)} bytes")
         return self._crypto(lambda: bytes(self.conn.decrypt(ciphertext)), "noise decrypt failed")
+
+    def responder_static(self) -> bytes:
+        try:
+            key = self.conn.noise_protocol.handshake_state.rs.public_bytes
+            if not isinstance(key, bytes) or len(key) != 32:
+                raise AttributeError
+        except AttributeError:
+            failure = CoreError(
+                ErrorCode.DEPENDENCY_MISSING,
+                "Noise responder-key API is unavailable",
+                next_action=(
+                    "Install the pinned noiseprotocol package; do not bypass verification"
+                ),
+            )
+        else:
+            failure = None
+        if failure is not None:
+            raise failure
+        return key
 
     @property
     def finished(self) -> bool:
@@ -140,6 +178,44 @@ def handshake_initiator(
     link.send(party.write(b""))
     if not party.finished:
         raise ProtocolMismatch("handshake did not finish")
+
+
+def handshake_standard(
+    party: NoiseParty,
+    link: Any,
+    *,
+    timeout: float,
+    clock: Callable[[], float],
+    confidential: Callable[[], None],
+    standard_handoff: Callable[[Callable[[], None]], None],
+) -> None:
+    """Strict standard subset: fresh msg1, classified/equal msg2, committed context, empty msg3."""
+    deadline = clock() + timeout
+    nonce = os.urandom(32)
+    link.send(party.write(client_challenge(nonce)))
+    if clock() >= deadline:
+        raise IncompleteBody("receive deadline exhausted")
+    data = link.recv(max(0.0, deadline - clock()))
+    if not data or clock() >= deadline:
+        raise IncompleteBody("receive deadline exhausted")
+    reply = party.read(data)
+    result = classify_payload(reply)
+    if isinstance(result, ConfidentialChallenge):
+        confidential()
+        raise ProtocolMismatch("confidential handshake requires a supported verifier")
+    if not hmac.compare_digest(result.key, party.responder_static()) or not hmac.compare_digest(
+        result.nonce, nonce
+    ):
+        raise ProtocolMismatch("standard key or nonce did not match")
+
+    def handoff():
+        if clock() >= deadline:
+            raise IncompleteBody("handshake deadline exhausted")
+        link.send(party.write(b""))
+        if not party.finished:
+            raise ProtocolMismatch("handshake did not finish")
+
+    standard_handoff(handoff)
 
 
 def finished_pair() -> tuple[NoiseParty, NoiseParty]:

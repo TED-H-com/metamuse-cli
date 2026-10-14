@@ -5,7 +5,7 @@ import re
 import socket
 from dataclasses import dataclass, field, replace
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import parse_qsl, urlsplit, urlunsplit
 
 from metamuse import models as m
 from metamuse.safety import CheckedURL, OutboundURLPolicy, resolve_secret
@@ -80,12 +80,47 @@ class MuseURLGuard:
     resolver: Any = resolve_all
 
     def check(self, url: str, *, purpose: str) -> CheckedURL:
-        if purpose not in ("auth.check", "session", "hatch.token", "wss.noise"):
+        if purpose not in ("auth.check", "session", "hatch.token", "hatch.wake", "wss.noise"):
             raise m.CoreError(m.ErrorCode.SCOPE_DENIED, "Unknown Muse URL purpose")
         parsed = urlsplit(url)
         is_wss = parsed.scheme == "wss"
         if is_wss and (parsed.hostname != "hatch.metaaivm.com" or parsed.path != "/v1/noise"):
             raise m.CoreError(m.ErrorCode.SCOPE_DENIED, "Unknown Muse gateway")
+        paths = {
+            "auth.check": "/api/auth/check",
+            "session": "/api/session",
+            "hatch.token": "/api/hatch/token",
+            "hatch.wake": "/api/hatch/vm/wake",
+            "wss.noise": "/v1/noise",
+        }
+        query = parse_qsl(parsed.query, keep_blank_values=True)
+        keys = [key for key, _value in query]
+        valid = (
+            parsed.path == paths[purpose]
+            and not parsed.fragment
+            and not parsed.username
+            and not parsed.password
+            and (parsed.port or 443) == 443
+        )
+        if is_wss:
+            valid = (
+                valid
+                and purpose == "wss.noise"
+                and set(keys)
+                in (
+                    {"vm_id", "auth_token", "app_id", "request_id"},
+                    {"vm_id", "auth_token", "notary_token", "app_id", "request_id"},
+                )
+                and len(keys) == len(set(keys))
+                and dict(query).get("app_id") == "hatch-web"
+            )
+        else:
+            valid = valid and parsed.scheme == "https" and parsed.hostname == "muse.ai"
+            valid = valid and (
+                query == [("vm_state", "live")] if purpose == "session" else not query
+            )
+        if not valid:
+            raise m.CoreError(m.ErrorCode.SCOPE_REQUIRED, "Muse URL purpose was refused")
         mapped = urlunsplit(
             (
                 "https" if is_wss else parsed.scheme,

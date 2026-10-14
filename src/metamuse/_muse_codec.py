@@ -91,9 +91,11 @@ def json_depth(body: bytes, *, limit: int = 32) -> int:
 
 def redact(text: str) -> str:
     """Strip credential-shaped substrings before they reach an error or a log."""
+    from metamuse._muse_redact import sanitize_text
+
     text = _COOKIE.sub("cookie: [redacted]", text)
     text = _BEARER.sub(lambda match: match.group(1) + "[redacted]", text)
-    return _PAIR.sub(lambda match: match.group(1) + "=[redacted]", text)
+    return sanitize_text(_PAIR.sub(lambda match: match.group(1) + "=[redacted]", text))
 
 
 class ProtocolMismatch(CoreError):

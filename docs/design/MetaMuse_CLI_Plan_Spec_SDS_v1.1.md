@@ -77,7 +77,7 @@ README 清楚寫非官方，不宣稱官方 API、TOS 合規或免封號。程�
 
 ## 8. 風險與停止條件
 
-Muse 介面漂移先標不相容，不改密碼學或關閉驗證。未知送達查原對話，找不到也不代表沒送達。存取拒絕／驗證／平台限制暫停，不換帳號、代理或 Muse 繞過。授權不明的程式不直接進公開包。
+Muse 介面漂移先標不相容，不改密碼學或關閉驗證。獨立記錄且明確支援的application handshake payload可沿用同一成熟Noise/TLS及所有適用檢查；unknown、RV/CVM fail closed，不放寬cryptography或tier。未知送達查原對話，找不到也不代表沒送達。存取拒絕／驗證／平台限制暫停，不換帳號、代理或 Muse 繞過。授權不明的程式不直接進公開包。
 
 產品價值不能完全依賴 Facebook 當天可否收集：無遠端 backend 時，本地匯入、素材、搜尋和草稿仍有完整用途。這不是降低整合 beta 驗收，而是保留可用的離線 alpha。
 
@@ -553,6 +553,27 @@ Browser context一個控制者，原生登入／2FA由人類處理。人接手�
 同Gateway一個receive consumer；以stream ID管理response，限制buffer／frame／body大小。P0 serial requests，不做多consumer subscriptions。完整reassembly未支援的frame回不相容，不能把半包當成功。不得關閉TLS驗證或自造握手來「相容」。token可能出現在WSS query，diagnostic不得外洩。
 
 
+
+2026-10-14 primary standard transport：authenticated session以GET /api/session?vm_state=live
+選唯一一致hatch_vm row，mint body用row endpoint_url及name；WSS query固定vm_id/auth_token/
+optional non-delegation notary_token/app_id=hatch-web/fresh request UUID4，Origin固定Muse。
+access/hatch token grammar分開；s0 opaque不改寫、不冒稱驗signature；delegation不支援。
+msg1帶fresh 32-byte challenge；bounded msg2先辨識valid RV並record confidential後拒絕。
+只有strict NON_TEE subset（outer field 2，optional explicit platform=0，nested key/nonce各32 bytes）
+且key等於成熟Noise responder static、nonce等於本attempt challenge才可empty msg3/split。
+unknown/malformed/evidence/CVM、bad AEAD/low-order DH或不等式回E_PROTOCOL_MISMATCH（never）。
+不關tier、不略過適用pins/context checks；standard不做SNP/TCB/notary-signature claim。
+
+wake是account-side power-state request，只在已grant Muse operation觸發的live-mode connect內：
+DISABLED/DELETING/ERROR在wake前停止，CVM_*或hatch_cvm先record sticky再停止；其餘activation
+POST /api/hatch/vm/wake {vm_id,retry_count:0}後dial。upgrade 502/503/504在每次redial前wake
+{vm_id,retry_count:n,connect_attempt_id:UUID4}，delay=max(2s,min(0.2s×1.5^(n−1),8s))，最多20
+redials或240s，超界E_RESOURCE_UNAVAILABLE並請操作者VM尚未running、稍後再試。
+401/403→E_AUTH_REQUIRED；429→E_RATE_LIMITED；connect/DNS/TLS→E_NETWORK_TIMEOUT，guard refusal
+→E_SCOPE_REQUIRED。offline/fixture gateway不wake、不network；不call lease/reset/chip-selection/
+enrollment/recovery/fallback-notary/capability registration。upgrade URL/query/body不入exception/log。
+request選identity encoding；duplicate/unsupported response encoding拒絕，single consumer和完整性caps
+不變。握手／token失敗不改B10先前handoff的不明送達、不重送、不false failed_before_send。
 
 2026-10-14 B09 authoritative trust補充：migration 005在同一private Store保存
 per-provider/account/VM的version、source/time、sticky confidential_required，及account

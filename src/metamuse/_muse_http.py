@@ -144,7 +144,7 @@ def resolve_entries(checked: CheckedURL) -> list[str]:
             "Pinned addresses were empty",
             next_action="Return at least one address from the outbound guard",
         )
-    entries: list[str] = []
+    addresses: list[str] = []
     for address in checked.addresses:
         if not isinstance(address, str) or not address or "/" in address:
             raise CoreError(
@@ -152,9 +152,15 @@ def resolve_entries(checked: CheckedURL) -> list[str]:
                 "Pinned addresses were empty",
                 next_action="Return IP addresses from the outbound guard",
             )
-        rendered = f"[{address}]" if ":" in address and not address.startswith("[") else address
-        entries.append(f"{host}:{checked.port}:{rendered}")
-    return entries
+        try:
+            parsed = ipaddress.ip_address(address)
+        except ValueError:
+            failure = CoreError(ErrorCode.SCOPE_REQUIRED, "Pinned addresses were empty")
+        else:
+            failure = None
+        _raise_if(failure)
+        addresses.append(f"[{address}]" if parsed.version == 6 else address)
+    return [f"{host}:{checked.port}:{','.join(addresses)}"]
 
 
 def _options(curl_opt: Any, checked: CheckedURL) -> dict[Any, Any]:
@@ -186,6 +192,54 @@ def _https_failed() -> CoreError:
         ErrorCode.NETWORK_TIMEOUT,
         "Muse HTTPS request failed",
         next_action="Retry the auth request. No gateway frame was handed off.",
+    )
+
+
+class UpgradeFailure(CoreError):
+    """Only an integer status escapes curl; no URL, body, query or raw exception."""
+
+    def __init__(self, status: int):
+        self.status = status
+        if status in (401, 403):
+            code, message, action = (
+                ErrorCode.AUTH_REQUIRED,
+                "Muse upgrade authentication failed",
+                "Refresh the operator credentials",
+            )
+        elif status == 429:
+            code, message, action = (
+                ErrorCode.RATE_LIMITED,
+                "Muse upgrade rate limited",
+                "Wait before reconnecting; do not resend a handed-off chat",
+            )
+        elif 500 <= status <= 599:
+            code, message, action = (
+                ErrorCode.RESOURCE_UNAVAILABLE,
+                "Muse VM is not running yet",
+                "The VM is not running yet; retry later",
+            )
+        else:
+            code, message, action = (
+                ErrorCode.PROTOCOL_MISMATCH,
+                "Muse upgrade was refused",
+                "Stop for protocol review",
+            )
+        super().__init__(code, message, next_action=action)
+
+
+def _upgrade_failed(ws: Any) -> CoreError:
+    from curl_cffi.const import CurlInfo
+
+    try:
+        status = int(ws.curl.getinfo(CurlInfo.RESPONSE_CODE))
+    except Exception:
+        status = 0
+    if status >= 300:
+        return UpgradeFailure(status)
+    return CoreError(
+        ErrorCode.NETWORK_TIMEOUT,
+        "Muse connection failed",
+        next_action="Retry the connection; no application frame was sent",
     )
 
 
@@ -455,14 +509,15 @@ class CurlConnector:
                 allow_redirects=False,
                 timeout=timeout,
                 quote=False,
+                headers={"Origin": "https://muse.ai"},
                 curl_options=options,
             )
         except (TypeError, AttributeError):
             failure = _api_mismatch()
         except CoreError:
-            failure = _https_failed()
+            failure = _upgrade_failed(ws)
         except Exception:
-            failure = _https_failed()
+            failure = _upgrade_failed(ws)
         else:
             failure = None
         if failure is not None:

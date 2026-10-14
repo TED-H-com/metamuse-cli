@@ -611,7 +611,9 @@ def test_bound_cookie_format_and_peer_snapshot_are_strict(tmp_path):
     calls = []
     guard = MuseURLGuard(lambda host: calls.append(host) or ("8.8.8.8",))
     checked = guard.check(
-        "wss://hatch.metaaivm.com/v1/noise?auth_token=SYNTHETIC", purpose="wss.noise"
+        "wss://hatch.metaaivm.com/v1/noise?vm_id=vm1&auth_token=SYNTHETIC"
+        "&app_id=hatch-web&request_id=00000000-0000-4000-8000-000000000001",
+        purpose="wss.noise",
     )
     assert checked.url.startswith("wss:")
     guard.verify_peer(checked, "8.8.8.8")

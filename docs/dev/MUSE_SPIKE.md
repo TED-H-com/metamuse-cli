@@ -1,6 +1,6 @@
 # M0 Muse spike — protocol notes and offline client
 
-LIVE status: **blocked: no authorized test account**. Nothing in this pass opened a socket to muse.ai, `hatch.metaaivm.com`, or any other Muse host. There was no login and no cookie. The spike’s tests fail if the spike modules name those hosts or import a network client.
+Historical spike status (2026-10-13): **blocked: no authorized test account**. The 2026-10-14 update is in §9.1. Nothing in this pass opened a socket to muse.ai, `hatch.metaaivm.com`, or any other Muse host. There was no login and no cookie. The spike’s tests fail if the spike modules name those hosts or import a network client.
 
 Pinned source: [nikships/muse-cli](https://github.com/nikships/muse-cli) commit `ebcb6310432ad2d39927bcb59e686330b0538310` (2026-10-03T11:59:33-04:00), package version 0.3.2. Protocol write-up: `docs/PROTOCOL.md` at that commit. Implementation read beside it: `src/muse_cli/gateway.py`, `cli.py`, `chat.py`, `routes.json`, `desc0.bin`, `desc1.bin`. MIT, `Copyright (c) 2026 Nik Ships`. The spike reimplements the framing. It does not copy `gateway.py` and it does not vendor the descriptor binaries.
 
@@ -254,11 +254,59 @@ The fake gateway is `FakeGateway` on `InProcessLink`. It never listens on a port
 6. Server limits on frame size, body size, and `limit`.
 7. Hatch-token lifetime and what a mid-socket expiry looks like (close, reset code, HTTP status).
 8. Whether two sessions with the same title are always distinguished by `session_id` in `sessions.list`, and whether `session.start` returns `session_id` or `id` in current responses.
-9. Whether any account still negotiates the attested Noise mode. If it does, B09 stops with `E_PROTOCOL_MISMATCH` rather than implementing attestation.
+9. Historical question (2026-10-13): whether nonempty msg2 always means attested mode. Superseded for the documented standard subset by §9.1; RV/CVM still stops with `E_PROTOCOL_MISMATCH`.
 10. Whether the Chrome TLS fingerprint is still required, and which `curl_cffi` impersonation string the edge accepts.
 11. Rate-limit responses and `Retry-After` on auth and on `chat.stream`. Safe-read retries must not resend a chat.
 
-## 10. Concrete inputs for B09
+
+### 9.1 Standard transport update, 2026-10-14
+
+The original spike above remains a historical record. One orchestrator-authorized LIVE
+S1 observation confirmed msg1 nonce field 1 (32 bytes), msg2 outer bytes field 2 (68 bytes),
+and exactly nested fields 1/2 (32 bytes each): key equals responder Noise static and nonce
+equals this attempt's fresh challenge. Msg3 and application frames were not sent. This is
+one observation, not LIVE lifecycle acceptance. The independently documented protocol facts
+come from the round-2 interoperability review; no proprietary schema/parser/code is adopted.
+
+B09 now supports only that strict standard subset using the same pinned mature Noise/TLS.
+Optional explicit platform=0 is the proto3 default. Duplicate/wrong-wire/unknown/evidence,
+missing nonce, wrong key/nonce, malformed RV/chip binding and oversize fail closed. Valid RV
+records sticky confidential expectation then stops. CVM assignment and CVM_* state also
+persist confidentiality before refusal, including contradictory selected CVM metadata. No CVM/delegation verification is invented. Empty
+msg3 follows committed owner/session/selection-generation validation and both equalities;
+standard has no enrollment-health or capabilities registration gate. Identity encoding and
+existing serial frame/completeness budgets remain enforced.
+
+The browser standard branch does not validate nested key/nonce; these comparisons and
+persistent downgrade refusal are stricter local policy. Staging applicability is respected,
+not disabled. Standard does not claim attestation, SNP/TCB or notary signature verification.
+Private schema-5 Store trust is keyed by provider/account/VM, survives restart/auth_ref
+rotation, has a sticky active-account expectation and refuses stale CAS/corrupt state.
+Connect/retry does not reselect a VM or clear security state. An account file lock serializes
+committed observation and msg3 against context changes; generation changes invalidate sockets.
+
+S1 also exposed two adapter defects: curl RESOLVE now has one comma-joined host:port entry
+with bracketed IPv6, preserving checked-address order; upgrade errors now distinguish
+401/403, 429, 5xx and transport failures without leaking URL/query/body. Session reads use
+`?vm_state=live`. Connect performs one activation wake and at most 20 bounded redials/240s
+for 502/503/504, with a fresh UUID attempt ID and capped schedule documented in MUSE.md.
+Wake requests account power state only inside an already-granted live-mode operation.
+No lease/reset/chip-selection/enrollment/registration endpoint is called. Fixtures use
+injected HTTP, clock and an in-process mature-Noise responder; no test opens a network socket.
+
+WSS query is exactly VM ID, opaque route token (legacy or s0 envelope), optional six-segment
+non-delegation notary, `app_id=hatch-web` and fresh request UUID; fixed Muse Origin is sent.
+Hatch body takes validated row endpoint/name. New connection credentials are memory-only;
+known stale timeout hints allow one remint then stop. Redaction includes raw/encoded tokens,
+nonce/proof, connect attempt IDs and wake bodies. Original B10 application handoff,
+uncertainty, no-resend and no-refund rules remain binding. New connect failures cannot turn
+an earlier handed-off submission into `failed_before_send`.
+
+OFFLINE/FIXTURE results establish implementation behavior only. AT-038 and AT-043 stay
+unproven until the orchestrator's authorized full connect/read, exchange/echo/reply/follow-up
+and source-to-Muse-to-draft/export runs. Questions 1–8, 10–11 above remain LIVE questions.
+
+## 10. Historical inputs for B09 (2026-10-13; current handshake/wake in §9.1)
 
 - Pin `noiseprotocol==0.3.1` and use `cryptography` only through it. Pattern `Noise_XX_25519_AESGCM_SHA256`, empty handshake payloads, `verify=True`, Chrome impersonation via `curl_cffi==0.16.3`. Do not add the `websockets` package for this gateway.
 - One receive loop per gateway connection, owned by the connection. A second loop on the same link, `collect` without that ownership, and a second `collect` while one is running are protocol errors. P0 is serial unary calls. Do not subscribe while a unary read is in progress.
