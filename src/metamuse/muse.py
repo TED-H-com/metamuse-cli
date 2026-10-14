@@ -1449,7 +1449,7 @@ class MuseTransport:
                 node_id = identity(node)
                 if node_id is not None:
                     usable.add(node_id)
-                    if in_rows:
+                    if in_rows and row_id is None:
                         row_id = node_id
                 for key, value in node.items():
                     if confidential_marker(key, value):
@@ -1459,7 +1459,14 @@ class MuseTransport:
                         elif row_id is not None:
                             marked.add(row_id)
                     if isinstance(value, (dict, list)):
-                        stack.append((value, depth + 1, in_rows or compact(key) == "vms", row_id))
+                        stack.append(
+                            (
+                                value,
+                                depth + 1,
+                                in_rows or compact(key) == "vms",
+                                None if compact(key) == "vms" else row_id,
+                            )
+                        )
             elif isinstance(node, list):
                 stack.extend((child, depth + 1, in_rows, row_id) for child in node)
         if confidential:

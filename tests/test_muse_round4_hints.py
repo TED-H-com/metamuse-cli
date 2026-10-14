@@ -129,3 +129,34 @@ def test_r4_8_marker_inside_row_records_only_that_row(ctx):
             conn.execute("SELECT vm_id,confidential_required FROM muse_trust_observations")
         ) == {"vm2": 1}
     assert not connector.urls
+
+
+def test_r4_8_row_identity_cannot_be_redirected_by_metadata(ctx):
+    payload = assignment(vms=[{**selected_row(), "meta": {"vm_id": "vm2", "kind": "HATCH-CVM"}}])
+    connector = Connecting()
+    transport, *_ = build(
+        handler=ok_frames([]),
+        http=FakeHttp({"/api/session": response(payload)}),
+        connector=connector,
+        store=ctx.store,
+    )
+    with pytest.raises(CoreError):
+        transport.sessions_list()
+    with ctx.store.connection() as conn:
+        assert dict(
+            conn.execute("SELECT vm_id,confidential_required FROM muse_trust_observations")
+        ) == {"vm1": 1}
+    # A fresh label/owner must inherit the observed row's confidential expectation.
+    snapshot = ctx.store.muse_freeze(
+        provider="alias",
+        account="later",
+        viewer_id="other-owner",
+        session_binding_id="other-session",
+        vm_id="vm1",
+    )
+    assert snapshot.confidential_required
+    sent = []
+    with pytest.raises(CoreError) as caught:
+        ctx.store.muse_standard_handoff(snapshot, lambda: sent.append(True))
+    assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    assert not sent and not connector.urls
