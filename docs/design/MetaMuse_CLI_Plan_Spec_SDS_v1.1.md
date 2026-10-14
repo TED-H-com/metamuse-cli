@@ -389,6 +389,13 @@ redactor would change an older packet, submit/preview/wire refuse with
 `E_REFERENCE_INVALID`, "Packet is stale; prepare a new packet", without a preview.
 The send body is only the accepted original question, two newlines and that fixed text.
 
+B16a handoff shapes include bare `Bearer` credential values, HTTP(S) userinfo
+passwords, colon forms of every sensitive name, and JSON objects embedded in prose.
+Their meaningful percent-encoded forms through three layers are redacted in packets
+and bundles and refused in topics/questions. Original encoded value spans are replaced
+without rewriting the rest of the URL/text. Benign code, pagination, header prose and
+known public paths remain unchanged. Private original export labels remain unchanged.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -819,6 +826,13 @@ B16a packets reach a redaction fixpoint before hashing. Muse sends exactly store
 redactor would change an older packet, submit/preview/wire refuse with
 `E_REFERENCE_INVALID`, "Packet is stale; prepare a new packet", without a preview.
 The send body is only the accepted original question, two newlines and that fixed text.
+
+B16a handoff shapes include bare `Bearer` credential values, HTTP(S) userinfo
+passwords, colon forms of every sensitive name, and JSON objects embedded in prose.
+Their meaningful percent-encoded forms through three layers are redacted in packets
+and bundles and refused in topics/questions. Original encoded value spans are replaced
+without rewriting the rest of the URL/text. Benign code, pagination, header prose and
+known public paths remain unchanged. Private original export labels remain unchanged.
 
 ---
 

@@ -421,3 +421,50 @@ def test_f6_redaction_reaches_fixpoint_before_digest(template):
     with pytest.raises(m.CoreError) as refusal:
         _check_question(text)
     assert refusal.value.detail.code == m.ErrorCode.INPUT_INVALID
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "hatch_sess",
+        "mm_sess",
+        "cookie_header",
+        "notary_token",
+        "noiseNotaryToken",
+        "password",
+        "secret",
+        "api_key",
+        "sessionid",
+    ],
+)
+@pytest.mark.parametrize("layers", [0, 1, 2, 3])
+def test_handoff_sensitive_colon_names(name, layers):
+    from urllib.parse import quote
+    from metamuse._muse_lifecycle import _check_question
+
+    marker = f"{name}_{layers}_MARKER_SYNTHETIC_ONLY"
+    text = f"{name}: {marker}"
+    for _ in range(layers):
+        text = quote(text, safe="")
+    output, counts = safety.redact_text(text)
+    assert marker not in output and counts
+    assert safety.redact_text(output) == (output, [])
+    with pytest.raises(m.CoreError):
+        _check_question(text)
+
+
+def test_handoff_topics_refuse_all_shapes_before_preview(fixture_ctx):
+    from test_b16a_privacy import SHAPES, credential_shape
+
+    for shape in SHAPES:
+        text, marker, _ = credential_shape(shape)
+        result = invoke(
+            fixture_ctx,
+            "open",
+            {"project_id": "missing", "topic": text, "request_key": "topic-" + shape},
+        )
+        assert result.error.code == m.ErrorCode.INPUT_INVALID and result.approval is None
+        assert marker not in result.model_dump_json()
+    assert fixture_ctx.muse_gateway.calls == []
+
+

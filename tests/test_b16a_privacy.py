@@ -29,6 +29,22 @@ SHAPES = (
     "encoded_mixed",
     "encoded_nested",
     "encoded_value",
+    "bearer",
+    "userinfo",
+    "colon",
+    "json_prose",
+    "bearer_1",
+    "bearer_2",
+    "bearer_3",
+    "userinfo_1",
+    "userinfo_2",
+    "userinfo_3",
+    "colon_1",
+    "colon_2",
+    "colon_3",
+    "json_prose_1",
+    "json_prose_2",
+    "json_prose_3",
 )
 BENIGN = (
     "the session ended",
@@ -79,7 +95,24 @@ def credential_shape(prefix):
             text = f"https://example.invalid/?token%253Dstart%2520{marker}%2526view=1"
             kind = "url_token"
         case _:
-            raise AssertionError(prefix)
+            base, _, layer = prefix.partition("_")
+            match base:
+                case "bearer":
+                    text = f"Bearer {marker}"
+                    kind = "authorization"
+                case "userinfo":
+                    text = f"https://user:{marker}@example.invalid/a"
+                    kind = "url_token"
+                case "colon":
+                    text = f"notary_token: {marker}"
+                case "json":
+                    text = "note " + json.dumps({"password": marker}) + " end"
+                    kind = "sensitive_field"
+                    layer = prefix.removeprefix("json_prose").lstrip("_")
+                case _:
+                    raise AssertionError(prefix)
+            for _ in range(int(layer) if layer.isdecimal() else 0):
+                text = quote(text, safe="")
     return text, marker, kind
 
 
