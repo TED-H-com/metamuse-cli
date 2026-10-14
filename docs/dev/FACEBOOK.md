@@ -203,3 +203,8 @@ newline boundaries without adding a second boundary beside an existing newline.
 JSON text is retained as given. No normalization replaces the preserved text;
 revision hashes use canonical JSON {text: preserved_text}, with no Unicode or
 whitespace normalization. Reliable identity uses native tokens, never text hashes.
+
+Malformed storage-state origins (including invalid/out-of-range or non-HTTPS
+ports, credentials, path/query/fragment or malformed authority) fail with fixed
+E_AUTH_REQUIRED: Invalid Facebook storage-state origin. Capability inspection still
+returns the normal needs_auth row; no raw origin value enters diagnostics.

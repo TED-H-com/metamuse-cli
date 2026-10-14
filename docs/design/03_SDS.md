@@ -746,3 +746,8 @@ B13 closes page WSS with Playwright routing and terminates related dedicated/sha
 workers at CDP's pre-script pause because the pinned WebSocket hook omits workers.
 The protocol/worker controls are installed before navigation; worker-dependent
 Facebook rendering remains unverified until AT-039.
+
+Malformed storage-state origins (including invalid/out-of-range or non-HTTPS
+ports, credentials, path/query/fragment or malformed authority) fail with fixed
+E_AUTH_REQUIRED: Invalid Facebook storage-state origin. Capability inspection still
+returns the normal needs_auth row; no raw origin value enters diagnostics.

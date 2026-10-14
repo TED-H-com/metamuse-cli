@@ -687,3 +687,33 @@ def test_finding_13_text_and_hash_preserve_entities_breaks_and_edges(tmp_path, b
         assert len(rows) == 2
         assert all(row[0] == expected for row in rows)
         assert all(row[1] == m.payload_digest({"text": expected}) for row in rows)
+
+
+@pytest.mark.parametrize("suffix", [":NOT_A_PORT", ":70000", ":0", ":81", "/path", "?q=value"])
+def test_finding_14_invalid_origin_is_fixed_auth_error_and_inspection_row(tmp_path, suffix):
+    ctx, _, _, _, secrets = _setup_fb_env(tmp_path)
+    prefix = "SYNTH"
+    state = {
+        "cookies": [{"name": "fixture", "value": f"{prefix}_COOKIE", "domain": "www.facebook.com"}],
+        "origins": [{"origin": "https://www.facebook.com" + suffix, "localStorage": []}],
+    }
+    raw = json.dumps(state).encode()
+    with pytest.raises(m.CoreError) as error:
+        facebook.sanitize_storage_state(raw)
+    assert error.value.detail.code == m.ErrorCode.AUTH_REQUIRED
+    assert error.value.detail.message == "Invalid Facebook storage-state origin"
+    ref = secrets.put(raw, provider="facebook", account="acct_synth", created_at=ctx.clock())[
+        "auth_ref"
+    ]
+    _write_facebook_config(ctx.paths.root, auth_ref=ref)
+    ctx = app.AppContext.open(ctx.paths.root)
+    facebook.set_driver_factory(
+        lambda: facebook.FixtureBrowserDriver(observation(_synthetic_post_html()))
+    )
+    envelope = app.inspect_capabilities(ctx, {})
+    assert envelope.status == "ok"
+    row = next(
+        r for r in envelope.data["capabilities"] if r["name"] == "metamuse_collect.facebook_post"
+    )
+    assert row["environment"] == "needs_auth"
+    assert suffix not in envelope.model_dump_json()
