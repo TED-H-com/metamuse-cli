@@ -824,3 +824,4 @@ key can conflict; this round leaves that core approval-key design unchanged.
 For an accepted job, removing a first-hop host or the whole approval table also
 returns E_SCOPE_DENIED with the fresh-preview next_action before consumption and
 egress, even when the current selector cannot find an extractor.
+See [FACEBOOK.md](FACEBOOK.md) for bounded Facebook post collection (B13).
