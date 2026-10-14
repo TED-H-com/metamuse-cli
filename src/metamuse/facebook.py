@@ -2974,7 +2974,9 @@ def _insert_sources_before_flush(
             "permit_id": permit_id,
             "account": account,
             "page_type": PAGE_TYPE_POST_PERMALINK,
-            "input_sha256": page_sha,
+            "input_sha256": (item.revisions[0].evidence if item.revisions else item.evidence).get(
+                "input_sha256", page_sha
+            ),
             "requested_locator": requested_locator,
             "resolved_permalink": canonical_url,
         }
@@ -3091,13 +3093,15 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     parsed: ParsedPostPage | None = None
     byte_limit_error: m.ErrorDetail | None = None
     accumulated_records: list[collect.Record] = []
+    record_snapshots: dict[int, str] = {}
     observed_identities: set[str] = set()
-    observed_states: set[tuple[str, str]] = set()
+    observed_states: dict[str, str] = {}
     observation_gaps: set[str] = set()
     pages_seen = 0
 
-    def accumulate_page(page: ParsedPostPage) -> None:
+    def accumulate_page(page: ParsedPostPage, html: str) -> None:
         nonlocal pages_seen
+        snapshot_sha = hashlib.sha256(html.encode("utf-8")).hexdigest()
         records, _ = _records_from_page(page, permalink=permalink, resources=resources)
         for record in records:
             if record.native_id is None:
@@ -3108,14 +3112,15 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             else:
                 identity = m.payload_digest([record.platform, record.scope, record.native_id])
             state = m.payload_digest([record.kind, record.text, record.parent_native_id])
-            if (identity, state) in observed_states:
+            if observed_states.get(identity) == state:
                 continue
             if identity not in observed_identities and len(observed_identities) >= max_items + 1:
                 observation_gaps.add("uncollected_items_budget")
                 break
             observed_identities.add(identity)
-            observed_states.add((identity, state))
+            observed_states[identity] = state
             accumulated_records.append(record)
+            record_snapshots[id(record)] = snapshot_sha
         pages_seen += 1
 
     def checkpoint_usage() -> None:
@@ -3166,7 +3171,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             require_comments_section=require_comments,
         )
 
-        accumulate_page(parsed)
+        accumulate_page(parsed, obs.html)
         while require_comments and parsed.expand_controls:
             step.guard()
             elapsed = time.monotonic() - started
@@ -3201,7 +3206,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 permalink=permalink,
                 require_comments_section=require_comments,
             )
-            accumulate_page(parsed)
+            accumulate_page(parsed, obs.html)
             if not obs.progress_confirmed:
                 halt = "expansion_timeout"
                 break
@@ -3373,7 +3378,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             item, status = book.apply(
                 rec,
                 method=COLLECTION_METHOD,
-                sha=page_sha,
+                sha=record_snapshots[id(rec)],
                 evidence_media=ev_media,
             )
         except collect._Invalid as exc:
@@ -3394,6 +3399,15 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 }
             )
         else:
+            if item.revision_new:
+                item.evidence.update(
+                    {
+                        "requested_locator": requested_locator,
+                        "resolved_permalink": permalink.canonical_url,
+                        "permit_id": permit_id,
+                        "account": account,
+                    }
+                )
             if rec.kind == "reply" and (rec.parent_native_id is None or item.unresolved_parent):
                 missing.add("parent_comment")
                 if item.revision_new:

@@ -626,6 +626,11 @@ is the requested input and canonical_url is the resolved query-free post URL.
 Resume resolves the share again and requires the saved actor/token; a different
 identity is E_DATA_STALE, preserves committed data and imports no new target.
 
+B13 retains ordered text transitions by reliable native identity, including A → B → A.
+Only consecutive identical observations are discarded. Revision evidence carries the
+contributing HTML snapshot hash and verified requested/resolved locator, permit and
+account; a new Source identifies its first contributing snapshot.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -1409,6 +1414,12 @@ actor/token. A resumed session compares against the persisted resolved identity
 before import; no numeric-token/pfbid or actor-alias equivalence is inferred.
 requested_locator and resolved_permalink use existing freeform result/provenance
 fields; no core model, migration or schema extension is required.
+
+B13 associates each accumulated Record with its observation SHA-256, without using
+text/position for identity. It compares the latest state per reliable native key, so
+reversions remain revisions. The existing Book receives each contributing hash; its
+frozen revisions retain those hashes and verified observation provenance. New Source
+use_basis identifies the first contributing snapshot, not the attempt’s final DOM.
 
 ---
 

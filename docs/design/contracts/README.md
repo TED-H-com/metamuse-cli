@@ -41,3 +41,8 @@ B13 backend data uses existing open JSON result/provenance fields, documented in
 requested_locator and resolved_permalink; Source.use_basis includes both locators.
 Capability retains its existing three status fields. The unsandboxed-operator
 warning belongs to Envelope.warnings, never a new Capability schema field.
+
+B13 revision evidence additionally carries requested_locator, resolved_permalink,
+permit_id, account and input_sha256 for the contributing snapshot. Source.use_basis
+input_sha256 refers to its first contributing snapshot. These are additive entries
+in existing free-form dictionaries; core schemas are unchanged.
