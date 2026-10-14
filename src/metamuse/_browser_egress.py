@@ -92,6 +92,7 @@ def build_chromium_launch_args(proxy_port: int) -> list[str]:
         "--disable-translate",
         "--mute-audio",
         "--no-first-run",
+        "--enable-automation",
     ]
 
 
