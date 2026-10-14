@@ -534,3 +534,8 @@ Source.use_basis contain requested_locator/resolved_permalink; source original_u
 is the requested input and canonical_url is the resolved query-free post URL.
 Resume resolves the share again and requires the saved actor/token; a different
 identity is E_DATA_STALE, preserves committed data and imports no new target.
+
+B13 retains ordered text transitions by reliable native identity, including A → B → A.
+Only consecutive identical observations are discarded. Revision evidence carries the
+contributing HTML snapshot hash and verified requested/resolved locator, permit and
+account; a new Source identifies its first contributing snapshot.

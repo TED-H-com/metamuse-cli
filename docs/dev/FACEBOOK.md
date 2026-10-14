@@ -181,7 +181,10 @@ forwarded. Fixture accounting uses UTF-8 observations; real sessions use the gre
 of that accounting and relayed wire bytes for the attempt.
 
 Observations accumulate across pagination/virtualization by platform/scope/native ID,
-retaining ordered text revisions. At most max_items plus one lookahead identity is
+retaining ordered text transitions, including a return to an earlier text value.
+Each revision records its contributing snapshot's input_sha256 plus the requested
+locator, resolved permalink and verified permit/account. A new Source's input_sha256
+identifies its first contributing snapshot. At most max_items plus one lookahead identity is
 retained, with expansion-bounded revisions; the union consumes the budget. Weak records
 are retained only from the initial snapshot. Later weak records add
 `weak_identity_expansion`. On resume weak records are skipped entirely with

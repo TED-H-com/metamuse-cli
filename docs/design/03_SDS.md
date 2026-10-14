@@ -779,3 +779,9 @@ actor/token. A resumed session compares against the persisted resolved identity
 before import; no numeric-token/pfbid or actor-alias equivalence is inferred.
 requested_locator and resolved_permalink use existing freeform result/provenance
 fields; no core model, migration or schema extension is required.
+
+B13 associates each accumulated Record with its observation SHA-256, without using
+text/position for identity. It compares the latest state per reliable native key, so
+reversions remain revisions. The existing Book receives each contributing hash; its
+frozen revisions retain those hashes and verified observation provenance. New Source
+use_basis identifies the first contributing snapshot, not the attempt’s final DOM.

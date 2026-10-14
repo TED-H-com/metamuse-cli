@@ -625,6 +625,36 @@ def test_finding_10_paginated_observations_accumulate_by_identity(tmp_path, edit
     assert job["observed_scope"]["steps"][0]["comments_observed"] == 2
 
 
+def test_finding_10_reverted_text_retains_order_and_snapshot_provenance(tmp_path):
+    ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
+    snapshots = [
+        _synthetic_post_html(
+            comments=[{"id": "edited", "text": text}],
+            expand_controls=[{"id": f"more_{index}"}] if index < 2 else [],
+        )
+        for index, text in enumerate(["Original", "Edited", "Original"])
+    ]
+    driver = facebook.FixtureBrowserDriver(
+        observation(snapshots[0]), [observation(html) for html in snapshots[1:]]
+    )
+    facebook.set_driver_factory(lambda: driver)
+    finish(ctx, submit(ctx, project, permit))
+    with ctx.store.connection() as conn:
+        rows = conn.execute(
+            "SELECT r.text,r.evidence FROM item_revisions r JOIN items i ON i.id=r.item_id "
+            "WHERE i.native_id='edited' ORDER BY r.revision"
+        ).fetchall()
+        assert [row[0] for row in rows] == ["Original", "Edited", "Original"]
+        assert [json.loads(row[1])["input_sha256"] for row in rows] == [
+            hashlib.sha256(html.encode()).hexdigest() for html in snapshots
+        ]
+        source = conn.execute("SELECT use_basis FROM sources WHERE native_id='edited'").fetchone()
+        assert (
+            json.loads(source[0])["input_sha256"]
+            == hashlib.sha256(snapshots[0].encode()).hexdigest()
+        )
+
+
 @pytest.mark.parametrize("case", ["contradictory", "unknown", "affirmative", "missing_controls"])
 def test_finding_11_empty_requires_affirmative_evidence_and_counts_cannot_contradict(
     tmp_path, case
