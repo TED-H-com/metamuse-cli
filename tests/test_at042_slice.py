@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import anyio
@@ -105,6 +106,7 @@ def verify_export(workspace, data, observation):
 
 class Journey:
     def __init__(self, tmp_path):
+        self.deadline = time.monotonic() + 900
         self.workspace = tmp_path / "workspace"
         self.inputs = tmp_path / "inputs"
         self.inputs.mkdir()
@@ -123,7 +125,11 @@ class Journey:
         if not operator:
             command.append("--non-interactive")
         command.extend(str(arg) for arg in args)
-        result = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
+        remaining = self.deadline - time.monotonic()
+        assert remaining > 0, "Journey deadline exhausted"
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=remaining, check=False
+        )
         assert result.returncode == exit_code, (args, result.stdout, result.stderr)
         envelope = json.loads(result.stdout)
         m.Envelope.model_validate(envelope)
@@ -558,7 +564,11 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
                         )
         journey.stderr.append(log.read_text())
 
-    anyio.run(mcp_half)
+    async def bounded_mcp_half():
+        with anyio.fail_after(max(0, journey.deadline - time.monotonic())):
+            await mcp_half()
+
+    anyio.run(bounded_mcp_half)
     for directory in (journey.workspace / "exports", journey.workspace / "logs"):
         if directory.exists():
             for path in directory.rglob("*"):

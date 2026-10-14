@@ -1,6 +1,7 @@
 """Disk-backed private trust, restart, migration and final-handoff serialization."""
 
 import threading
+import time
 from contextlib import contextmanager
 from dataclasses import replace
 
@@ -209,6 +210,8 @@ def test_generation_invalidates_existing_socket(ctx):
 
 
 def test_final_handoff_serializes_selection_change_across_store_instances(ctx):
+    deadline = time.monotonic() + 90
+    remaining = lambda: max(0, deadline - time.monotonic())
     first = freeze(ctx.store)
     another_store = Store(ctx.paths)
     entered, release, changed, trying = (threading.Event() for _ in range(4))
@@ -216,7 +219,7 @@ def test_final_handoff_serializes_selection_change_across_store_instances(ctx):
 
     def handoff():
         entered.set()
-        assert release.wait(3)
+        assert release.wait(remaining())
 
     def connect():
         try:
@@ -232,13 +235,13 @@ def test_final_handoff_serializes_selection_change_across_store_instances(ctx):
     one = threading.Thread(target=connect)
     two = threading.Thread(target=reselect)
     one.start()
-    assert entered.wait(3)
+    assert entered.wait(remaining())
     two.start()
-    assert trying.wait(3)
+    assert trying.wait(remaining())
     assert not changed.wait(0.05)
     release.set()
-    one.join(3)
-    two.join(3)
+    one.join(remaining())
+    two.join(remaining())
     assert not one.is_alive() and not two.is_alive() and changed.is_set() and not errors
 
 

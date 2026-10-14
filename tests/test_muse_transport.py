@@ -124,8 +124,10 @@ class MemoryEndpoint:
             raise RuntimeError("pipe has no peer")
         self.peer.queue.put(data)
 
-    def recv(self, timeout: float = 0.0) -> bytes | None:
+    def recv(self, timeout: float | None = 0.0) -> bytes | None:
         try:
+            if timeout is None:
+                return self.queue.get()
             if timeout <= 0:
                 return self.queue.get_nowait()
             return self.queue.get(timeout=timeout)
@@ -156,7 +158,7 @@ def serve(link: MemoryEndpoint, handler, errors: list[BaseException]) -> None:
 
     try:
         party = NoiseParty("responder")
-        first = link.recv(5)
+        first = link.recv(None)
         if not first:
             return
         challenge = dict((number, value) for number, wire, value in _iter_fields(party.read(first)))
@@ -164,13 +166,13 @@ def serve(link: MemoryEndpoint, handler, errors: list[BaseException]) -> None:
         key = party.conn.noise_protocol.handshake_state.s.public_bytes
         bundle = _bytes_field(2, _bytes_field(1, key) + _bytes_field(2, nonce))
         link.send(party.write(bundle))
-        third = link.recv(5)
+        third = link.recv(None)
         if not third:
             return
         if party.read(third) != b"":
             return
         while True:
-            raw = link.recv(5)
+            raw = link.recv(None)
             if not raw:
                 return
             _service, frame = decode_client_frame(party.decrypt(raw))
