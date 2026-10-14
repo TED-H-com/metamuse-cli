@@ -308,6 +308,8 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
 
 
 def dispatch(args: argparse.Namespace) -> m.Envelope | None:
+    if args.non_interactive and args.command in {"auth", "permit"}:
+        raise m.CoreError(m.ErrorCode.SCOPE_REQUIRED, "Human interaction is disabled")
     if args.command == "skill":
         from metamuse.skill_export import export_skill
 
