@@ -31,10 +31,12 @@ browser session, while Chromium is launched with:
 from __future__ import annotations
 
 import ipaddress
+import queue
 import re
 import select
 import socket
 import threading
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
@@ -49,6 +51,7 @@ MAX_HEADER_BYTES = 16_384
 MAX_HEADER_LINES = 64
 MAX_CONCURRENT_TUNNELS = 16
 RELAY_CHUNK_BYTES = 16_384
+_RESOLUTION_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_TUNNELS)
 ALLOWED_PLAIN_HTTP_METHODS = frozenset({"GET", "HEAD"})
 
 _TOKEN_RE = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
@@ -339,6 +342,7 @@ class BrowserEgressProxy:
         self.max_concurrent_tunnels = max(1, int(max_concurrent_tunnels))
         self.idle_timeout_s = max(0.5, float(idle_timeout_s))
         self._lock = threading.Lock()
+        self._dial_lock = threading.Lock()
         self._closed = threading.Event()
         self._active_tunnels = 0
         self._active_sockets: set[socket.socket] = set()
@@ -360,9 +364,13 @@ class BrowserEgressProxy:
         )
         self._accept_thread.start()
 
-    def _register_socket(self, sock: socket.socket) -> None:
+    def _register_socket(self, sock: socket.socket) -> bool:
         with self._lock:
+            if self._closed.is_set():
+                sock.close()
+                return False
             self._active_sockets.add(sock)
+            return True
 
     def _unregister_socket(self, sock: socket.socket) -> None:
         with self._lock:
@@ -403,7 +411,8 @@ class BrowserEgressProxy:
             if self._closed.is_set():
                 self._close_socket(client_sock)
                 break
-            self._register_socket(client_sock)
+            if not self._register_socket(client_sock):
+                break
             t = threading.Thread(
                 target=self._handle_client,
                 args=(client_sock,),
@@ -477,20 +486,19 @@ class BrowserEgressProxy:
             head_bytes, leftover = read_res
             parsed = parse_proxy_request(head_bytes, proxy_port=self.port)
 
-            checked = self.egress.check_proxy_target(
-                parsed.check_url,
-                method=parsed.method,
-                is_connect=parsed.is_connect,
-                purpose=parsed.purpose,
-                is_navigation=parsed.is_navigation,
-            )
+            checked = self._check_target_bounded(parsed)
 
             dial_ip = checked.addresses[0]
-            upstream_sock = socket.create_connection(
-                (dial_ip, checked.port),
-                timeout=self.idle_timeout_s,
-            )
-            self._register_socket(upstream_sock)
+            # Serialize the closed-state check and dial with shutdown completion.
+            with self._dial_lock:
+                if self._closed.is_set():
+                    return
+                upstream_sock = socket.create_connection(
+                    (dial_ip, checked.port),
+                    timeout=self.idle_timeout_s,
+                )
+                if not self._register_socket(upstream_sock):
+                    return
             upstream_sock.settimeout(self.idle_timeout_s)
 
             peer_raw = upstream_sock.getpeername()
@@ -531,6 +539,52 @@ class BrowserEgressProxy:
             if slot_acquired:
                 with self._lock:
                     self._active_tunnels = max(0, self._active_tunnels - 1)
+
+    def _check_target_bounded(self, parsed: ParsedProxyRequest) -> safety.CheckedURL:
+        if self._closed.is_set() or not _RESOLUTION_SLOTS.acquire(blocking=False):
+            raise ProxyRequestError("resolution_unavailable")
+        result: queue.Queue[object] = queue.Queue(maxsize=1)
+
+        def resolve() -> None:
+            try:
+                result.put(
+                    self.egress.check_proxy_target(
+                        parsed.check_url,
+                        method=parsed.method,
+                        is_connect=parsed.is_connect,
+                        purpose=parsed.purpose,
+                        is_navigation=parsed.is_navigation,
+                    )
+                )
+            except Exception as exc:
+                result.put(exc)
+            finally:
+                _RESOLUTION_SLOTS.release()
+
+        worker = threading.Thread(target=resolve, daemon=True, name="metamuse-egress-resolution")
+        try:
+            worker.start()
+        except Exception:
+            _RESOLUTION_SLOTS.release()
+            raise ProxyRequestError("resolution_unavailable") from None
+        deadline = time.monotonic() + self.idle_timeout_s
+        while not self._closed.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ProxyRequestError("resolution_timeout")
+            try:
+                checked = result.get(timeout=min(remaining, 0.05))
+            except queue.Empty:
+                continue
+            if self._closed.is_set():
+                break
+            if isinstance(checked, m.CoreError):
+                raise checked
+            if isinstance(checked, Exception):
+                raise ProxyRequestError("resolution_failed")
+            assert isinstance(checked, safety.CheckedURL)
+            return checked
+        raise ProxyRequestError("proxy_closed")
 
     def _forward_plain_http(
         self,
@@ -605,6 +659,8 @@ class BrowserEgressProxy:
         if self._closed.is_set():
             return
         self._closed.set()
+        with self._dial_lock:
+            pass  # Any dial that entered before closure has finished and cannot recur.
         self._close_socket(self._server_sock)
         with self._lock:
             active = list(self._active_sockets)
