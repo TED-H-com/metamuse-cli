@@ -199,7 +199,7 @@ def _check_question(question: str) -> None:
         _error(
             m.ErrorCode.INPUT_INVALID,
             "Muse text contains credential values",
-            "Remove credentials from the topic or question before sending",
+            "Remove credentials from the topic or question; prepare a new send or session request",
         )
 
 
@@ -219,8 +219,8 @@ def prepare_send(ctx, request: m.MuseSendRequest):
     if not discussion.remote_session:
         _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Session mapping requires reconciliation")
     for value, cap in (
-        (request.question, ctx.limits.question_max_utf8_bytes),
-        (packet.rendered_text, ctx.limits.packet_max_utf8_bytes),
+        (request.question, min(8192, ctx.limits.question_max_utf8_bytes)),
+        (packet.rendered_text, min(49152, ctx.limits.packet_max_utf8_bytes)),
     ):
         if len(value.encode("utf-8")) > cap:
             _error(m.ErrorCode.LIMIT_REACHED, "Muse text exceeds its UTF-8 limit")
@@ -276,7 +276,6 @@ def _approval_preview(ctx, request):
     else:
         if isinstance(request, m.MuseOpenRequest):
             _receipt(ctx, "muse.open", request)
-            _check_question(request.topic)
             discussion = ctx.store.get(m.Discussion, request.discussion_id)
             if discussion.project_id != request.project_id or discussion.topic != request.topic:
                 _error(m.ErrorCode.REFERENCE_INVALID, "Reconciliation must name the discussion")
@@ -289,14 +288,13 @@ def _approval_preview(ctx, request):
         target, payload = read_action(discussion, sessions=discussion.remote_session is None)
         topic = discussion.topic
         operation = "muse.open" if isinstance(request, m.MuseOpenRequest) else "muse.read"
-    if topic is not None:
-        _check_question(topic)
+    stored_topic = not (isinstance(request, m.MuseOpenRequest) and request.discussion_id is None)
     digest = action_digest(target, payload)
     request_file = str(ctx.paths.root / ("approval-" + digest + ".json"))
     # Redact raw fields before JSON encoding can hide nested credential syntax.
     safe_request = {
         key: value
-        if key in {"topic", "question"}
+        if key == "question" or (key == "topic" and not stored_topic)
         else redact_text(value)[0]
         if isinstance(value, str)
         else value
@@ -320,9 +318,7 @@ def _approval_preview(ctx, request):
         if target.get("session_id")
         else "List sessions to reconcile the original creation intent"
     )
-    safe_topic = (
-        (safe_request["topic"] if "topic" in safe_request else topic) if topic is not None else None
-    )
+    safe_topic = redact_text(topic)[0] if stored_topic and topic is not None else topic
     safe_question = safe_request.get("question") if question is not None else None
     details = [
         "Would: " + summary,
@@ -332,7 +328,7 @@ def _approval_preview(ctx, request):
         "Action digest: " + digest,
     ]
     if safe_topic is not None:
-        details.append("Topic: " + safe_topic)
+        details.append(("Stored discussion title: " if stored_topic else "Topic: ") + safe_topic)
     if safe_question is not None:
         details.append("Question (exact text): " + safe_question)
     if packet is not None:
@@ -454,12 +450,16 @@ def _wire(payload):
         _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared wire bytes differ from verified payload")
     if payload.route == "session.start":
         _check_question(payload.body["title"])
+        if len(payload.body["title"].encode("utf-8")) > 8192:
+            _error(m.ErrorCode.LIMIT_REACHED, "Muse text exceeds its UTF-8 limit")
     if payload.route == "chat.stream":
         question = payload.payload.get("question")
         packet_text = payload.payload.get("packet_text")
         if not isinstance(question, str) or not isinstance(packet_text, str):
             _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared send text inputs are unavailable")
         _check_question(question)
+        if len(question.encode("utf-8")) > 8192 or len(packet_text.encode("utf-8")) > 49152:
+            _error(m.ErrorCode.LIMIT_REACHED, "Muse text exceeds its UTF-8 limit")
         if redact_text(packet_text)[0] != packet_text:
             _error(
                 m.ErrorCode.REFERENCE_INVALID,
@@ -647,7 +647,6 @@ def open_muse_discussion(ctx, request):
     replay = _replay(ctx, "muse.open", request)
     if replay is not None:
         return replay
-    _check_question(request.topic)
     if request.discussion_id is not None:
         discussion = ctx.store.get(m.Discussion, request.discussion_id)
         _binding(ctx, discussion)
@@ -662,6 +661,7 @@ def open_muse_discussion(ctx, request):
             sessions=discussion.remote_session is None,
             request_key=request.request_key,
         )
+    _check_question(request.topic)
     prepared = prepare_open(ctx, request)
     binding, backend = _binding(ctx)
     discussion = m.Discussion(
@@ -829,10 +829,17 @@ def _exchange_view(store, discussion, exchange, conn=None):
             earlier = unresolved(db)
     else:
         earlier = unresolved(conn)
+    outbound_text = exchange.outbound_payload.body["text"]
+    if len(outbound_text.encode("utf-8")) > 49152 + 8192 + 2:
+        _error(
+            m.ErrorCode.LIMIT_REACHED,
+            "Stored Muse text exceeds the local verification budget",
+            "Reconcile the original submission with bounded evidence; do not resend",
+        )
     return Exchange(
         discussion.remote_session,
         exchange.baseline.get("seq", 0),
-        sanitize_document(exchange.outbound_payload.body["text"]),
+        sanitize_document(outbound_text),
         exchange.request_marker,
         exchange.submitted_at_ms,
         earlier,
@@ -876,9 +883,7 @@ def _refuse_frozen(step, discussion, exchange, saved, refusal):
     _error(
         refusal.detail.code,
         refusal.detail.message,
-        "Prepare a new send with credentials removed and a new exact grant"
-        if exchange
-        else "Prepare a new session with credentials removed",
+        refusal.detail.next_action,
     )
 
 
@@ -1089,6 +1094,8 @@ def _save_send(step, discussion, exchange, result, failure):
         else None
     )
 
+    safe_detail = redact_text(attempt.evidence.detail)[0][:512]
+
     def save(writer):
         current = writer.get(m.Exchange, exchange.id)
         state = (
@@ -1111,7 +1118,7 @@ def _save_send(step, discussion, exchange, result, failure):
                 attempt.stream_id,
                 int(attempt.bytes_handed_off),
                 attempt.evidence.verdict,
-                redact_text(attempt.evidence.detail)[0][:512],
+                safe_detail,
                 attempt.error_code,
                 m.canonical_json(proof.model_dump(mode="json")).decode() if proof else None,
                 exchange.id,

@@ -99,7 +99,7 @@ def credential_shape(prefix):
             match base:
                 case "bearer":
                     text = f"Bearer {marker}"
-                    kind = "authorization"
+                    kind = "bearer_token"
                 case "userinfo":
                     text = f"https://user:{marker}@example.invalid/a"
                     kind = "url_token"

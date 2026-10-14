@@ -608,8 +608,22 @@ def prepare_packet(ctx: AppContext, request: m.PacketPrepareRequest) -> m.Envelo
         raw = "".join(chunks)
         if len(raw.encode("utf-8")) > ctx.limits.text_max_bytes:
             raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Raw packet byte budget exceeded")
-        rendered, text_redactions = redact_text(raw)
-        redactions.extend(text_redactions)
+        rendered = raw
+        for _ in range(3):
+            candidate, text_redactions = redact_text(rendered)
+            redactions.extend(text_redactions)
+            if candidate == rendered:
+                break
+            rendered = candidate
+        else:
+            # No digest or receipt may describe text that is still changing.
+            raise m.CoreError(
+                m.ErrorCode.INPUT_INVALID,
+                "Packet redaction did not stabilize",
+                next_action=(
+                    "Remove credential-bearing syntax from the source and prepare a new packet"
+                ),
+            )
         if len(rendered.encode("utf-8")) > min(48 * 1024, ctx.limits.packet_max_utf8_bytes):
             raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Rendered packet exceeds UTF-8 byte limit")
     with ctx.store.transaction() as conn:
@@ -654,6 +668,12 @@ def preview_packet(ctx: AppContext, packet_id: str) -> m.Envelope:
     """Read the fixed packet text without creating a packet or granting permission."""
     with ctx.store.connection() as conn:
         packet = ctx.store.get(m.Packet, packet_id, conn=conn)
+        if redact_text(packet.rendered_text)[0] != packet.rendered_text:
+            raise m.CoreError(
+                m.ErrorCode.REFERENCE_INVALID,
+                "Packet is stale; prepare a new packet",
+                next_action="Prepare a new packet before reviewing or sending it",
+            )
         resolver = _Resolver(ctx, packet.project_id, conn)
         records = [resolver.resolve(ref, source_only=True) for ref in packet.selection]
         sources = _safe_value([{"ref": r["ref"], **r["source"]} for r in records], [])

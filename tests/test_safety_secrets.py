@@ -298,6 +298,7 @@ def test_corrupt_secret_has_no_reachable_exception_chain(ctx, tmp_path, corrupti
 
 def test_human_cli_import_twice_list_revoke_and_binding(ctx, tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(cli.app.AppContext, "open", lambda *a, **kw: ctx)
+    monkeypatch.setattr(safety, "auth_context", lambda *a: ctx)
     prefix = "lifecycle"
     marker = f"{prefix}_MARKER_SYNTHETIC_ONLY"
     path = secret_file(tmp_path, marker.encode())
@@ -364,11 +365,16 @@ def test_revoke_refuses_nonregular_records_and_preserves_target(ctx, tmp_path, u
         path.mkdir()
     else:
         os.mkfifo(path, mode=0o600)
-    with pytest.raises(m.CoreError) as caught:
+    if "symlink" in unsafe:
         store.revoke(imported["auth_ref"])
-    assert caught.value.detail.code == m.ErrorCode.AUTH_REQUIRED
-    assert caught.value.__context__ is None and caught.value.__cause__ is None
-    assert path.exists() or path.is_symlink()
+        assert not path.is_symlink()
+    else:
+        with pytest.raises(m.CoreError) as caught:
+            store.revoke(imported["auth_ref"])
+        assert caught.value.detail.code == m.ErrorCode.AUTH_REQUIRED
+        assert caught.value.__context__ is None and caught.value.__cause__ is None
+        assert "Manually remove" in caught.value.detail.next_action
+        assert path.exists()
     assert target.read_bytes() == FAKE
 
 

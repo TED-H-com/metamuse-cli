@@ -82,8 +82,8 @@ def approval_failure(ctx: AppContext, request: m.Model, error: m.CoreError) -> m
         if isinstance(request, model):
             try:
                 preview = approval_preview(ctx, operation, request.model_dump(mode="python"))
-            except m.CoreError:
-                return m.failure(error)
+            except m.CoreError as refusal:
+                return m.failure(refusal)
             return m.Envelope(
                 status="error",
                 error=error.detail.model_copy(update={"next_action": preview.next_action}),
@@ -718,6 +718,9 @@ def _read_secret_file(path: Path, max_bytes: int) -> bytes:
         _secret_error()
 
 
+_AUTH_MANUAL_CLEANUP = "Manually remove the non-regular entry from the private auth directory"
+
+
 class SecretStore:
     """POSIX private-file fallback. No keyring dependency and no encryption claim."""
 
@@ -879,11 +882,20 @@ class SecretStore:
                 if record is None:
                     if corrupt is None:
                         _secret_error()
+                    info = os.stat(name, dir_fd=directory, follow_symlinks=False)
+                    removable = info.st_uid == os.getuid() and (
+                        stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode)
+                    )
                     corrupt.append(
                         {
                             "auth_ref": name[:-5],
                             "reason": "Secret record is unavailable or invalid",
-                            "next_action": "metamuse auth revoke --auth-ref " + name[:-5],
+                            "next_action": "metamuse auth revoke --auth-ref " + name[:-5]
+                            if removable
+                            else (
+                                "Manually remove the non-regular entry "
+                                "from the private auth directory"
+                            ),
                         }
                     )
 
@@ -896,15 +908,20 @@ class SecretStore:
         _secret_error()
 
     def revoke(self, auth_ref: str) -> None:
-        """Unlink exactly one owned regular record without opening its contents."""
+        """Unlink the record itself, including a symlink, without opening its target."""
         directory = None
+        manual = False
         try:
             if not isinstance(auth_ref, str) or not _AUTH_REF.fullmatch(auth_ref):
                 _secret_error()
             directory = self._directory(create=False)
             name = auth_ref + ".json"
             info = os.stat(name, dir_fd=directory, follow_symlinks=False)
-            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+            if (
+                not (stat.S_ISREG(info.st_mode) or stat.S_ISLNK(info.st_mode))
+                or info.st_uid != os.getuid()
+            ):
+                manual = True
                 _secret_error()
             os.unlink(name, dir_fd=directory)
             os.fsync(directory)
@@ -914,7 +931,24 @@ class SecretStore:
         finally:
             if directory is not None:
                 os.close(directory)
+        if manual:
+            raise m.CoreError(
+                m.ErrorCode.AUTH_REQUIRED,
+                "Secret file or reference is unavailable or unsafe",
+                next_action=_AUTH_MANUAL_CLEANUP,
+            )
         _secret_error()
+
+
+def auth_context(workspace: str | Path | None):
+    """Read config only: listing/revoking auth must not initialize a workspace/Store."""
+    from metamuse.app import AppContext
+    from metamuse.config import load_config
+
+    paths = WorkspacePaths.resolve(workspace)
+    # These commands only use policy, secret_store and require_interactive.
+    # No Store constructor or AppContext.open is invoked.
+    return AppContext(paths, None, policy=load_config(paths.root))
 
 
 def list_auth(ctx: AppContext) -> m.Envelope:
@@ -1315,40 +1349,70 @@ def external_action_verifier(
     return verify
 
 
-# --- Redaction (B07/B11) ---
+# --- Redaction (B07/B11/B16a) ---
+
+_REDACTED = "[REDACTED]"
+_NAME = r"[A-Za-z_][A-Za-z0-9_.-]{0,127}+"
+
+
+@lru_cache(maxsize=2048)
+def _credential_name(key: str) -> str:
+    for _ in range(3):
+        key = unquote(key)
+    return key.lower().replace("_", "").replace("-", "")
 
 
 @lru_cache(maxsize=2048)
 def redaction_sensitive_key(key: str) -> bool:
-    """ASCII credential names only; normalize percent encoding and -/_ spelling."""
-    import re
-    from urllib.parse import unquote_plus
-
-    decoded = key
-    for _ in range(3):
-        decoded = unquote_plus(decoded)
-    if re.fullmatch(r"[A-Za-z0-9_.-]+", decoded, flags=re.ASCII) is None:
+    """Credential names, with closed pagination/tokenizer exclusions by name."""
+    name = _credential_name(key)
+    if re.fullmatch(r"[a-z0-9.]+", name, re.ASCII) is None:
         return False
-    name = decoded.lower().replace("-", "").replace("_", "")
-    if name in {"nextpagetoken", "eostoken", "bostoken", "padtoken", "unktoken", "maxtoken"}:
+    leaf = name.rsplit(".", 1)[-1]
+    if (
+        leaf == "cursor"
+        or ("page" in leaf and leaf.endswith("token"))
+        or (leaf.startswith(("next", "continuation", "sync")) and leaf.endswith("token"))
+        or leaf
+        in {
+            "padtoken",
+            "eostoken",
+            "bostoken",
+            "unktoken",
+            "septoken",
+            "clstoken",
+            "masktoken",
+            "maxtokens",
+            "maxnewtokens",
+            "numtokens",
+        }
+        or leaf.endswith("tokenid")
+    ):
         return False
     return (
-        name
+        leaf
         in {
             "headers",
             "authorization",
+            "proxyauthorization",
+            "auth",
+            "credentials",
             "cookie",
             "cookieheader",
             "setcookie",
             "accesstoken",
             "authtoken",
             "apikey",
+            "xapikey",
             "token",
             "refreshtoken",
             "idtoken",
             "clientsecret",
             "secret",
             "password",
+            "passwd",
+            "pwd",
+            "pass",
             "privatekey",
             "session",
             "sessionid",
@@ -1372,83 +1436,464 @@ def redaction_sensitive_key(key: str) -> bool:
             "awsaccesskeyid",
             "googleaccessid",
         }
-        or name.endswith(("sess", "sessid", "session", "token", "secret", "cookie", "password"))
-        or decoded.lower().startswith(("x-amz-", "x-goog-", "__secure-", "__host-"))
+        or name in {"connect.sid", "asp.netsessionid", "nextauth.sessiontoken"}
+        or leaf.endswith(
+            (
+                "sess",
+                "sessid",
+                "session",
+                "token",
+                "secret",
+                "cookie",
+                "password",
+                "passwd",
+                "pwd",
+                "pass",
+            )
+        )
+        or key.lower().startswith(("x-amz-", "x-goog-", "__secure-", "__host-"))
+    )
+
+
+_TYPES = frozenset({"str", "string", "bytes", "int", "bool", "Any", "None", "SecretStr"})
+
+
+def _type_reference(value: str) -> bool:
+    # Bounded depth, closed vocabulary; no arbitrary function calls.
+    if len(value) > 256:
+        return False
+    while value.startswith("Optional[") and value.endswith("]"):
+        value = value[9:-1].strip()
+    return value in _TYPES or (
+        "|" in value
+        and all(_type_reference(part.strip()) for part in value.split("|"))
+        and "None" in (part.strip() for part in value.split("|"))
     )
 
 
 def redaction_sensitive_value(key: str, value: Any) -> bool:
-    """A credential name needs a value, rather than vocabulary or code prose."""
+    """After a sensitive name, every value is private except the closed exemptions."""
     if not redaction_sensitive_key(key):
         return False
-    if not isinstance(value, str):
-        return key.lower() in {"headers", "authorization", "cookie", "cookie_header"}
-    if len(value) <= 4096 and "%" in value:
-        for _ in range(3):
-            value = unquote(value)
-    if "\\" in value:
-        escaped = value.strip()
-        if len(escaped) >= 2 and escaped[0] in {'"', "'"} and escaped[-1] == escaped[0]:
-            escaped = escaped[1:-1]
-        try:
-            value = json.loads('"' + escaped + '"')
-        except ValueError:
-            pass
-    value = value.strip().strip("\"'")
-    if not value or value == "[REDACTED]" or value.endswith("()"):
-        return False
-    if value.startswith("[REDACTED]"):
-        value = value[len("[REDACTED]") :]
-    if value.lower() in {"none", "null", "true", "false"}:
-        return False
-    if re.fullmatch(
-        r"[+-]?(?:[0-9]++(?:\.[0-9]*+)?|\.[0-9]++)(?:[eE][+-]?[0-9]++)?", value, re.ASCII
-    ):
-        normalized = key
-        for _ in range(3):
-            normalized = unquote(normalized)
-        return not normalized.lower().replace("_", "").replace("-", "").endswith("session")
-    if re.fullmatch(r"[A-Za-z0-9._~+/%=@:|?\-]+", value, re.ASCII):
+    return not _credential_value_exempt(key, value)
+
+
+def _credential_value_exempt(key: str, value: Any) -> bool:
+    if value is None or isinstance(value, bool):
         return True
-    return (
-        re.search(
-            r"(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]{1,128}+=[^\s;]++|[A-Z0-9_]{8,}+",
-            value,
-            re.ASCII,
-        )
-        is not None
-    )
-
-
-def _cookie_values(text: str) -> bool:
-    attributes = {"path", "domain", "expires", "max-age", "samesite"}
-    header = text.lower().startswith(("cookie:", "set-cookie:"))
-    for match in re.finditer(
-        r"(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]{1,128}+)=([^;\r\n]++)", text, re.ASCII
+    leaf = _credential_name(key).rsplit(".", 1)[-1]
+    if not isinstance(value, str):
+        return isinstance(value, (int, float)) and leaf.endswith("session")
+    for _ in range(3):
+        value = unquote(value)
+    value = value.strip()
+    if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+        value = value[1:-1].strip()
+    if not value or value.lower() in {"null", "none", "nil", "true", "false"}:
+        return True
+    if value in {_REDACTED, "REDACTED", "...", "…", "%s", "{}"}:
+        return True
+    if re.fullmatch(
+        r"(?:\*{3,}+|[xX]{3,}+|<[^<>]*+>|\$\{[^{}]*+\}|\$[A-Za-z_][A-Za-z0-9_]*+|%[A-Za-z_][A-Za-z0-9_]*+%|\{\{[^{}]*+\}\}|\{[A-Za-z_][A-Za-z0-9_]*+\})",
+        value,
     ):
-        key, value = match.groups()
-        if key.lower() not in attributes and (
-            header
-            or redaction_sensitive_value(key, value)
-            or (not value.strip().isdecimal() and (len(value.strip()) >= 8 or " " in value))
+        return True
+    if value.startswith("${") and value.endswith("}"):
+        return True
+    if _type_reference(value):
+        return True
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*+", value):
+        if value.rsplit(".", 1)[-1].lower().replace("_", "") == leaf or value.startswith(
+            "process.env."
         ):
             return True
+    if re.fullmatch(r"os\.(?:environ\[[^\r\n\]]*+\]|getenv\([^\r\n)]*+\))", value):
+        return True
+    if leaf.endswith("session") and re.fullmatch(
+        r"[+-]?(?:[0-9]++(?:\.[0-9]*+)?|\.[0-9]++)(?:[eE][+-]?[0-9]++)?%?", value, re.ASCII
+    ):
+        return True
     return False
 
 
-def _encoded_separator(char: str, *, literal: bool = True) -> str:
-    encoded = rf"%(?:25){{0,2}}{ord(char):02x}"
-    return "(?:" + (re.escape(char) + "|" if literal else "") + encoded + ")"
+@dataclass(frozen=True, slots=True)
+class _TextEdit:
+    start: int
+    end: int
+    original_start: int
+    original_end: int
 
 
-def _url_redaction_spans(text: str) -> list[tuple[int, int]]:
-    """Locate bounded names and separators in original bytes, without a dense map."""
-    parameters = re.compile(
-        r"(?:[?&#]|%(?:25){0,2}(?:3f|26|23))(?P<key>[A-Za-z0-9_.%\-]{1,384}?)"
-        + _encoded_separator("="),
-        re.ASCII | re.IGNORECASE,
+def _decode_view(text: str, *, json_escapes: bool = False, form: bool = False):
+    """One canonicalization pass; allocate offsets only where bytes actually change."""
+    pattern = re.compile(
+        r"\+|\\{1,8}u002[bB]"
+        if form
+        else r'\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])'
+        if json_escapes
+        else r"(?:%[0-9a-fA-F]{2})++"
     )
-    ending = re.compile(r"%(?:25){0,2}(?:3f|26|23)|[\s&#\"'<>{}\]]", re.ASCII | re.IGNORECASE)
+    edits = []
+    parts = []
+    position = offset = 0
+    for match in pattern.finditer(text):
+        raw = match.group()
+        if form:
+            units = [(" ", len(raw))]
+        elif json_escapes:
+            try:
+                decoded = json.loads('"' + raw + '"')
+            except ValueError:
+                continue
+            if 0xD800 <= ord(decoded) <= 0xDFFF:
+                continue
+            units = [(decoded, len(raw))]
+        else:
+            data = bytes.fromhex(raw.replace("%", ""))
+            units = [(data.decode("ascii"), len(raw))] if data.isascii() else []
+            index = len(data) if units else 0
+            while index < len(data):
+                width = 1
+                byte = data[index]
+                if 0xC2 <= byte <= 0xF4:
+                    width = 2 if byte < 0xE0 else 3 if byte < 0xF0 else 4
+                try:
+                    char = data[index : index + width].decode("utf-8")
+                except UnicodeDecodeError:
+                    width, char = 1, raw[index * 3 : index * 3 + 3]
+                units.append((char, width * 3))
+                index += width
+        parts.append(text[position : match.start()])
+        cursor = match.start()
+        for char, width in units:
+            if char != text[cursor : cursor + width]:
+                start = cursor - offset
+                edit = _TextEdit(start, start + len(char), cursor, cursor + width)
+                if (
+                    edits
+                    and edits[-1].end == edit.start
+                    and edits[-1].original_end == edit.original_start
+                    and (edits[-1].original_end - edits[-1].original_start)
+                    * (edit.end - edit.start)
+                    == (edit.original_end - edit.original_start) * (edits[-1].end - edits[-1].start)
+                ):
+                    previous = edits[-1]
+                    edits[-1] = _TextEdit(
+                        previous.start, edit.end, previous.original_start, edit.original_end
+                    )
+                else:
+                    edits.append(edit)
+                offset += width - len(char)
+            parts.append(char)
+            cursor += width
+        position = match.end()
+    if not edits:
+        return text, []
+    parts.append(text[position:])
+    return "".join(parts), edits
+
+
+def _original_spans(spans, edits):
+    """Map an ordered, disjoint stream backwards in one walk over sparse edits."""
+    index = 0
+    shift = 0
+    for start, end, kind, replacement in spans:
+        while index < len(edits) and edits[index].end <= start:
+            shift = edits[index].original_end - edits[index].end
+            index += 1
+        original_start = start + shift
+        if index < len(edits) and edits[index].start <= start < edits[index].end:
+            edit = edits[index]
+            scale = (edit.original_end - edit.original_start) // (edit.end - edit.start)
+            original_start = edit.original_start + (start - edit.start) * scale
+        original_end = end + shift
+        while index < len(edits) and edits[index].start < end:
+            edit = edits[index]
+            scale = (edit.original_end - edit.original_start) // (edit.end - edit.start)
+            original_end = (
+                edit.original_start + (end - edit.start) * scale
+                if end <= edit.end
+                else end + edit.original_end - edit.end
+            )
+            if end < edit.end:
+                break
+            shift = edit.original_end - edit.end
+            index += 1
+        yield original_start, original_end, kind, replacement
+
+
+class _Syntax:
+    """Compute quote and balanced-value terminators once, never from every key."""
+
+    def __init__(self, text):
+        self.ends = {}
+        self.closings = {}
+        self.quotes = []
+        quote_ends = {}
+        previous_quotes = {}
+        stack = []
+        quote = None
+        opening = None
+        for match in re.finditer(r"\\[\s\S]|[\"'()\[\]{}]", text):
+            char = match.group()
+            pos = match.start()
+            if char.startswith("\\"):
+                continue
+            if char in "\"'":
+                previous = previous_quotes.get(char)
+                if previous is not None:
+                    quote_ends[previous] = pos + 1
+                previous_quotes[char] = pos
+            if quote:
+                if char == quote:
+                    self.ends[opening] = pos + 1
+                    self.quotes.append((opening, pos))
+                    quote = opening = None
+                continue
+            if char in "\"'":
+                quote, opening = char, pos
+            elif char in "([{":
+                stack.append((char, pos))
+            elif stack and char == {"(": ")", "[": "]", "{": "}"}[stack[-1][0]]:
+                _, begin = stack.pop()
+                self.ends[begin] = pos + 1
+                self.closings[pos] = begin
+        if opening is not None:
+            self.ends[opening] = len(text)
+            self.quotes.append((opening, len(text)))
+        for _, begin in stack:
+            self.ends[begin] = len(text)
+        for previous in previous_quotes.values():
+            quote_ends[previous] = len(text)
+        self.ends.update(quote_ends)
+        # Indented YAML containers/scalars end at the next dedent. Close every
+        # pending block once, using the previous content end computed once/line.
+        self.yaml_ends = {}
+        blocks = []
+        content_end = 0
+        header = re.compile(r"(?:[\"']?" + _NAME + r"[\"']?)\s*+:[^\S\r\n]*+(?:[|>][-+]?)?")
+        for line in re.finditer(r"[^\r\n]++|[\r\n]", text):
+            body = line[0]
+            stripped = body.lstrip()
+            if not stripped:
+                continue
+            indent = len(body) - len(stripped)
+            while blocks and indent <= blocks[-1][0]:
+                _, colon = blocks.pop()
+                self.yaml_ends[colon] = content_end
+            if header.fullmatch(stripped):
+                colon = line.start() + body.index(":")
+                blocks.append((indent, colon))
+            content_end = line.start() + len(body.rstrip())
+        for _, colon in blocks:
+            self.yaml_ends[colon] = content_end
+
+    def value(self, text, start, *, list_separators=False):
+        if start >= len(text):
+            return start
+        if text[start] in "\"'":
+            return self.ends.get(start, len(text))
+        if text[start] == "<":
+            close = text.find(">", start + 1)
+            return close + 1 if close >= 0 else len(text)
+        end = (
+            start + len(_REDACTED)
+            if text.startswith(_REDACTED, start)
+            else self.ends.get(start, len(text))
+            if text[start] in "[{"
+            else start
+        )
+        chunk = re.compile(r"[^\s,;&\"'{}\[\]()]++")
+        separator = re.compile(r"[^\S\r\n]*+" + _NAME + r"[^\S\r\n]*+=")
+        while end < len(text):
+            found = chunk.match(text, end)
+            if found:
+                end = found.end()
+            if end >= len(text) or text[end].isspace() or text[end] in "\"'":
+                break
+            if text[end] in ",;&":
+                if text[end] in ",;" or separator.match(text, end + 1):
+                    break
+                end += 1
+            elif text[end] in "([{":
+                end = self.ends.get(end, len(text))
+            elif self.closings.get(end, end) < start or text[end] in "}]":
+                break
+            else:
+                end += 1
+        return end
+
+
+def _merge_spans(streams):
+    """Fixed number of ordered rule streams: O(n), including overlapping rules."""
+    from heapq import merge
+
+    current = None
+    for start, end, kind, replacement in merge(*streams):
+        if start >= end:
+            continue
+        if current and start <= current[1]:
+            begin, finish, old_kind, old_replacement = current
+            # Credential kinds dominate display-only paths; outer structured values
+            # retain their JSON replacement when an inner rule overlaps them.
+            chosen = old_kind if old_kind != "local_path" else kind
+            current = (begin, max(finish, end), chosen, old_replacement)
+        else:
+            if current:
+                yield current
+            current = (start, end, kind, replacement)
+    if current:
+        yield current
+
+
+def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
+    pattern = re.compile(
+        r"(?:(?P<q>[\"'])(?P<quotedkey>" + _NAME + r")(?P=q)|"
+        r"(?<![A-Za-z0-9_.%?&#-])(?P<flag>--|-D)?(?P<key>" + _NAME + r"))"
+        r"(?:\s*+(?P<sep>=>|[=:])\s*+|(?P<flagspace>\s++))",
+    )
+    position = 0
+    while match := pattern.search(text, position):
+        position = match.end()
+        key = match["key"] or match["quotedkey"]
+        # Space alone is assignment syntax only on a command-line flag.
+        if match["flagspace"] and not match["flag"]:
+            continue
+        if not redaction_sensitive_key(key):
+            continue
+        if skip_paths and _credential_name(key) == "localpath":
+            continue
+        start = match.end()
+        if not match["q"] and _credential_name(key) in {
+            "authorization",
+            "proxyauthorization",
+            "cookie",
+            "setcookie",
+        }:
+            continue  # Header pass consumes its complete line, including punctuation.
+        yaml_end = syntax.yaml_ends.get(match.start("sep")) if match["sep"] == ":" else None
+        if match["q"] and yaml_end is not None and yaml_end <= start:
+            yaml_end = None  # A JSON-style key may introduce a raw newline scalar.
+        end = max(start, yaml_end) if yaml_end is not None else syntax.value(text, start)
+        quoted = yaml_end is None and text[start : start + 1] in {'"', "'"}
+        value = text[start:end]
+        closed_quote = quoted and len(value) > 1 and value[-1] == value[0]
+        position = max(position, end - int(closed_quote))
+        if include_exempt or redaction_sensitive_value(key, value):
+            kind = (
+                "local_path"
+                if _credential_name(key) == "localpath"
+                else "sensitive_field"
+                if match["q"]
+                else "session_cookie"
+            )
+            replacement = _REDACTED
+            if quoted:
+                closed = len(value) > 1 and value[-1] == value[0]
+                start += 1
+                end -= int(closed)
+            elif match["q"]:
+                replacement = '"' + _REDACTED + '"'
+            yield start, end, kind, replacement
+            if kind == "local_path" and not include_exempt:
+                # A local_path label must not hide credential syntax in its value.
+                nested = _assignment_spans(value, _Syntax(value), skip_paths=True)
+                offset = match.end()
+                for inner_start, inner_end, inner_kind, inner_replacement in nested:
+                    yield offset + inner_start, offset + inner_end, inner_kind, inner_replacement
+
+
+def _header_spans(text, syntax):
+    pattern = re.compile(r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*[:=]\s*+")
+    line_end = re.compile(r"[\r\n]")
+    fold = re.compile(r"\r?\n\s+")
+    position = quote_index = 0
+    while match := pattern.search(text, position):
+        position = match.end()
+        name = _credential_name(match["key"])
+        if name not in {
+            "authorization",
+            "proxyauthorization",
+            "cookieheader",
+            "headers",
+        } and not name.endswith("cookie"):
+            continue
+        start = match.end()
+        while quote_index < len(syntax.quotes) and syntax.quotes[quote_index][1] < match.start():
+            quote_index += 1
+        limit = len(text)
+        if quote_index < len(syntax.quotes):
+            begin, finish = syntax.quotes[quote_index]
+            if begin < match.start() < finish:
+                limit = finish
+        boundary = line_end.search(text, start, limit)
+        end = boundary.start() if boundary else limit
+        while folded := fold.match(text, end, limit):
+            boundary = line_end.search(text, folded.end(), limit)
+            end = boundary.start() if boundary else limit
+        if text.startswith(_REDACTED, start) and text[
+            start + len(_REDACTED) : start + len(_REDACTED) + 1
+        ] in {'"', "'"}:
+            end = start + len(_REDACTED)
+        position = max(end, match.end())
+        value = text[start:end].strip()
+        cookie = name not in {"authorization", "proxyauthorization"}
+        authorized = cookie or value.lower() not in {
+            "bearer",
+            "basic",
+            "digest",
+            "token",
+            "negotiate",
+            "ntlm",
+            "aws4-hmac-sha256",
+        }
+        if authorized and redaction_sensitive_value(match["key"], value):
+            yield start, end, "cookie" if cookie else "authorization", _REDACTED
+
+
+class _EncodedPositions:
+    """Monotone origin lookups through a fixed number of sparse decoding layers."""
+
+    def __init__(self, text, layers, *, form=False):
+        self.text = text
+        self.layers = list(reversed(layers))
+        self.indices = [0] * len(layers)
+        self.shifts = [0] * len(layers)
+        self.form = form
+
+    def copy(self):
+        return _EncodedPositions(self.text, list(reversed(self.layers)), form=self.form)
+
+    def contains(self, position):
+        for level, edits in enumerate(self.layers):
+            index = self.indices[level]
+            while index < len(edits) and edits[index].end <= position:
+                self.shifts[level] = edits[index].original_end - edits[index].end
+                index += 1
+            self.indices[level] = index
+            if index < len(edits) and edits[index].start <= position < edits[index].end:
+                edit = edits[index]
+                scale = (edit.original_end - edit.original_start) // (edit.end - edit.start)
+                position = edit.original_start + (position - edit.start) * scale
+            else:
+                position += self.shifts[level]
+        return self.text[position : position + 1] == "%" or (
+            self.form
+            and (
+                self.text[position : position + 1] == "+"
+                or re.match(r"\\{1,8}u002b", self.text[position : position + 13], re.I)
+            )
+        )
+
+
+def _query_spans(text, syntax, encoded_positions):
+    pattern = re.compile(
+        (r"(?:[?&#]|^)" if encoded_positions.form else r"[?&#]")
+        + r"(?P<key>"
+        + _NAME
+        + r")[^\S\r\n]*+=[^\S\r\n]*+",
+    )
+    ending = re.compile(r"%(?:25){0,2}(?:3f|26|23)|[\s&#\"'<>{}\]]|\?", re.I)
     signed = {
         "oh",
         "oe",
@@ -1464,247 +1909,385 @@ def _url_redaction_spans(text: str) -> list[tuple[int, int]]:
         "sks",
         "skv",
     }
-    spans = []
     position = 0
-    while match := parameters.search(text, position):
+    while match := pattern.search(text, position):
         position = match.end()
-        name = match["key"]
-        decoded_name = name
-        for _ in range(3):
-            decoded_name = unquote(decoded_name)
-        if not (redaction_sensitive_key(name) or decoded_name.lower() in signed):
+        key = match["key"]
+        if not (redaction_sensitive_key(key) or key.lower() in signed):
             continue
-        end_match = ending.search(text, match.end())
-        if (
-            end_match
-            and text.startswith("[REDACTED]", match.end())
-            and end_match.start() == match.end() + len("[REDACTED]") - 1
-        ):
-            end_match = ending.search(text, end_match.end())
-        end = end_match.start() if end_match else len(text)
-        value = text[match.end() : end]
-        if value and redaction_sensitive_value(
-            "token" if decoded_name.lower() in signed else name, value
-        ):
-            spans.append((match.end(), end))
-            position = end
-    return spans
-
-
-def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
-    """Collect intervals on original text, merge overlaps, and join exactly once."""
-    spans: list[tuple[int, int, str]] = []
-
-    def add(start: int, end: int, kind: str) -> None:
-        if start < end and not (
-            end - start == len("[REDACTED]") and text.startswith("[REDACTED]", start)
-        ):
-            spans.append((start, end, kind))
-
-    quoted = r"""(?:"[^"\r\n]*+"|'[^'\r\n]*+')"""
-    if '"' in text or "'" in text:
-        fields = re.compile(
-            r"""(?<!\\)(?P<q>["'])(?P<key>(?:[A-Za-z0-9_.%\-]|\\u[0-9a-fA-F]{4}|\\[^u\r\n]){1,128}+)"""
-            r"""(?P=q)\s*:\s*(?P<vq>["'])(?P<value>(?:\\[^\r\n]|(?!(?P=vq))[^\\\r\n])*+)(?P=vq)""",
-            re.ASCII,
-        )
-        for match in fields.finditer(text):
-            key = match["key"]
-            if "\\" in key:
-                try:
-                    key = json.loads('"' + key + '"')
-                except ValueError:
-                    continue
-            if redaction_sensitive_value(key, match["value"]):
-                kind = (
-                    "local_path"
-                    if key.lower().replace("_", "").replace("-", "") == "localpath"
-                    else "sensitive_field"
-                )
-                add(*match.span("value"), kind)
-
-    space = r"(?:[ \t]|%(?:25){0,2}(?:20|09))"
-    if "%" in text:
-        encoded_fields = re.compile(
-            r"(?P<q>%(?:25){0,2}22)(?P<key>[A-Za-z0-9_.%\-]{1,384}?)(?P=q)"
-            + space
-            + "*+"
-            + _encoded_separator(":")
-            + space
-            + "*+"
-            + r"(?P<vq>%(?:25){0,2}22)(?P<value>(?:(?!(?P=vq))[^\r\n])*+)(?P=vq)",
-            re.ASCII | re.IGNORECASE,
-        )
-        for match in encoded_fields.finditer(text):
-            if redaction_sensitive_value(match["key"], match["value"]):
-                add(*match.span("value"), "sensitive_field")
-
-    bearer = re.compile(
-        r"(?i)(?<![A-Za-z0-9_.-])bearer" + space + r"++(?P<token>[A-Za-z0-9._~+/%=\-]{8,}+)",
-        re.ASCII,
-    )
-    for match in bearer.finditer(text):
-        if match["token"].lower() not in {"preferred", "token", "tokens", "header"}:
-            add(*match.span("token"), "authorization")
-
-    userinfo = re.compile(
-        r"https?"
-        + _encoded_separator(":")
-        + _encoded_separator("/") * 2
-        + r"[A-Za-z0-9._~%+\-]{1,384}?"
-        + _encoded_separator(":"),
-        re.ASCII | re.IGNORECASE,
-    )
-    authority_end = re.compile(r"[\s/\"'<>{}]", re.ASCII)
-    at = re.compile(_encoded_separator("@"), re.ASCII | re.IGNORECASE)
-    position = 0
-    while match := userinfo.search(text, position):
-        boundary = authority_end.search(text, match.end())
-        finish = boundary.start() if boundary else len(text)
-        separator = at.search(text, match.end(), finish)
-        position = separator.end() if separator else finish
-        if separator and redaction_sensitive_value(
-            "password", text[match.end() : separator.start()]
-        ):
-            add(match.end(), separator.start(), "url_token")
-
-    # Atomic bodies preserve quoted cookie pairs and JSON closing delimiters.
-    header_body = (
-        r"(?:(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]{1,128}+=" + quoted + r"""|[^\r\n"'}\]])*+"""
-    )
-    headers = re.compile(
-        r"(?im)(?<![A-Za-z0-9_.-])(?P<key>set-cookie|cookie|authorization)[ \t]*:[ \t]*"
-        + header_body
-        + r"(?:\r?\n[ \t]+"
-        + header_body
-        + r")*+",
-        re.ASCII,
-    )
-    # Avoid scanning large plain text for absent header labels.
-    if ":" in text:
-        for match in headers.finditer(text):
-            key = match["key"].lower()
-            sensitive = (
-                _cookie_values(match.group())
-                if key != "authorization"
-                else redaction_sensitive_value(key, match.group().split(":", 1)[1])
-            )
-            if sensitive:
-                add(*match.span(), "authorization" if key == "authorization" else "cookie")
-
-    value = quoted + r"""|(?:\[REDACTED\]|[^\s;,"'{}<>\[\]()`|])++"""
-    # '=' cannot restart a chain. Failed a=a=a... scans its value only once.
-    chain = re.compile(
-        r"(?<![A-Za-z0-9_.%=/:-])[A-Za-z0-9_.-]{1,128}+=(?:" + value + r")"
-        r"(?:;[ \t]*[A-Za-z0-9_.-]{1,128}+=(?:" + value + r"))++",
-        re.ASCII,
-    )
-    if ";" in text:
-        for match in chain.finditer(text):
-            if _cookie_values(match.group()):
-                add(*match.span(), "cookie")
-
-    for start, end in _url_redaction_spans(text):
-        add(start, end, "url_token")
-
-    assignments = re.compile(
-        r"(?i)(?<![A-Za-z0-9_.%?&#-])(?P<key>[A-Za-z_][A-Za-z0-9_.%\-]{0,383}?)"
-        + space
-        + "*+"
-        + r"(?P<sep>"
-        + _encoded_separator("=")
-        + "|"
-        + _encoded_separator(":")
-        + ")"
-        + space
-        + "*+",
-        re.ASCII,
-    )
-    values = re.compile("(?:" + value + ")", re.ASCII)
-    # Credential spans already cover their contents. Scan assignments only outside
-    # them, while still examining local-path spans for embedded credentials.
-    ranges = []
-    position = 0
-    for start, end, kind in sorted(spans):
-        if kind == "local_path":
-            continue
-        if start > position:
-            ranges.append((position, start))
+        start = match.end()
+        cursor = start + len(_REDACTED) if text.startswith(_REDACTED, start) else start
+        end = len(text)
+        while boundary := ending.search(text, cursor):
+            encoded = encoded_positions.contains(boundary.start())
+            if (boundary.group() == "?" and not encoded) or (
+                boundary.group() not in {"?", "&", "#"} and encoded
+            ):
+                cursor = boundary.end()
+                continue
+            end = boundary.start()
+            break
         position = max(position, end)
-    if position < len(text):
-        ranges.append((position, len(text)))
-    if "=" in text or ":" in text or "%" in text:
-        for begin, finish in ranges:
-            for match in assignments.finditer(text, begin, finish):
-                key = match["key"]
-                if not redaction_sensitive_key(key):
-                    continue
-                if match["sep"] != "=" and key.lower() in {"authorization", "cookie", "set-cookie"}:
-                    continue
-                found = values.match(text, match.end(), finish)
-                if (
-                    found
-                    and text[found.end() : found.end() + 1] != "("
-                    and redaction_sensitive_value(key, found.group())
-                ):
-                    add(
-                        match.start(),
-                        found.end(),
-                        "local_path"
-                        if key.lower().replace("_", "") == "localpath"
-                        else "session_cookie",
-                    )
+        if redaction_sensitive_value("token" if key.lower() in signed else key, text[start:end]):
+            yield start, end, "url_token", _REDACTED
 
-    if "sk-" in text:
-        for match in re.finditer(
-            r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{8,}+(?![A-Za-z0-9_-])", text, re.ASCII
+
+def _userinfo_spans(text, encoded):
+    scheme = re.compile(r"(?i)(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://")
+
+    class Positions:
+        def __init__(self, values):
+            self.values = iter(values)
+            self.current = next(self.values, len(text))
+
+        def first(self, position):
+            while self.current < position:
+                self.current = next(self.values, len(text))
+            return self.current
+
+    def boundaries(pattern, origins):
+        opaque_end = 0
+        for match in re.finditer(pattern, text):
+            start = match.start()
+            if start < opaque_end:
+                continue
+            if text.startswith(_REDACTED, start):
+                opaque_end = start + len(_REDACTED)
+                continue
+            if not origins.contains(start):
+                yield start
+
+    ends = Positions(boundaries(r"[\s\"'<>{}\[\]]", encoded))
+    early = Positions(m.start() for m in re.finditer(r"[/\?#]", text))
+    authority = Positions(boundaries(r"[/\?#]", encoded.copy()))
+    ats = Positions(m.start() for m in re.finditer("@", text))
+    position = 0
+    while match := scheme.search(text, position):
+        position = match.end()
+        end = ends.first(position)
+        first_at = ats.first(position)
+        if first_at >= end:
+            position = end
+            continue
+        colon = text.find(":", position, first_at)
+        if colon < 0 or early.first(position) < colon:
+            continue  # No userinfo; allow an embedded URL in its query/path.
+        # Raw punctuation before '@' belongs to the password, including /?#.
+        # Each terminator and '@' is visited once, also in nested URL values.
+        authority_end = min(end, authority.first(first_at + 1))
+        at = first_at
+        while ats.first(at + 1) < authority_end:
+            at = ats.current
+        position = authority_end
+        if redaction_sensitive_value("password", text[colon + 1 : at]):
+            yield colon + 1, at, "url_token", _REDACTED
+
+
+def _cookie_spans(text, syntax):
+    pair = re.compile(r"(?<![A-Za-z0-9_.%=/?:&#-])(?P<key>" + _NAME + r")=[^\S\r\n]*+")
+    position = 0
+    while match := pair.search(text, position):
+        begin = match.start()
+        end = syntax.value(text, match.end(), list_separators=True)
+        sensitive = redaction_sensitive_value(match["key"], text[match.end() : end])
+        generic = (
+            not _credential_value_exempt(match["key"], text[match.end() : end])
+            and bool(text[match.end() : end].strip("\"'"))
+            and not text[match.end() : end].strip("\"'").isnumeric()
+        )
+        members = 1
+        position = max(end, match.end())
+        while separator := re.compile(r"[;, &][^\S\r\n]*+(?=" + _NAME + r"=)").match(
+            text, position
         ):
-            add(*match.span(), "api_key")
+            next_pair = re.compile(r"(?P<key>" + _NAME + r")=[^\S\r\n]*+").match(
+                text, separator.end()
+            )
+            if not next_pair:
+                break
+            finish = syntax.value(text, next_pair.end(), list_separators=True)
+            sensitive |= redaction_sensitive_value(next_pair["key"], text[next_pair.end() : finish])
+            generic |= (
+                not _credential_value_exempt(next_pair["key"], text[next_pair.end() : finish])
+                and bool(text[next_pair.end() : finish].strip("\"'"))
+                and not text[next_pair.end() : finish].strip("\"'").isnumeric()
+            )
+            end = position = max(finish, next_pair.end())
+            members += 1
+        if members > 1 and (sensitive or generic):
+            yield begin, end, "cookie", _REDACTED
 
+
+def _jar_spans(text):
+    pattern = re.compile(
+        r"(?m)^(?:#HttpOnly_)?[^\t\r\n]++\t(?:TRUE|FALSE)\t[^\t\r\n]*+\t(?:TRUE|FALSE)\t[0-9]++\t[^\t\r\n]++\t(?P<value>[^\r\n]*+)$"
+    )
+    for match in pattern.finditer(text):
+        if redaction_sensitive_value("cookie", match["value"]):
+            yield *match.span("value"), "cookie", _REDACTED
+
+
+def _bearer_spans(text):
+    pattern = re.compile(
+        r"(?i)bearer[\s+\u00a0]++(?P<token>(?:\[REDACTED\])?[A-Za-z0-9._~+/-]++=*+)"
+    )
+    for match in pattern.finditer(text):
+        token = match["token"]
+        if token == _REDACTED:
+            continue
+        if (
+            token.startswith(_REDACTED)
+            and len(token) > len(_REDACTED)
+            or (
+                len(token) >= 16
+                and (
+                    any(c.isdigit() for c in token)
+                    or (any(c.isupper() for c in token) and any(c.islower() for c in token))
+                )
+            )
+        ):
+            yield *match.span("token"), "bearer_token", _REDACTED
+
+
+# Independently written prefix rules. No third-party scanner patterns are copied.
+_PREFIXES = re.compile(
+    r"(?<![A-Za-z0-9_-])(?:gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}|"
+    r"glpat-[A-Za-z0-9_-]{20}|xox[bpa]-(?:[0-9]{10,13}-){1,3}[A-Za-z0-9]{24,64}|xoxa-2-(?:[0-9]{10,13}-){1,3}[A-Za-z0-9]{24,64}|(?:AKIA|ASIA)[A-Z0-9]{16}|"
+    r"AIza[A-Za-z0-9_-]{35}|(?:sk|rk)_live_[A-Za-z0-9]{24,200}+|npm_[A-Za-z0-9]{36}|"
+    r"hf_[A-Za-z0-9]{34}|sk-(?:ant-)?[A-Za-z0-9_-]{8,200}+)(?![A-Za-z0-9_-])",
+    re.ASCII,
+)
+
+
+def _prefix_spans(text):
+    for match in _PREFIXES.finditer(text):
+        yield *match.span(), "api_key", _REDACTED
+
+
+def _jwt_spans(text):
+    for match in re.finditer(
+        r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]++\.[A-Za-z0-9_-]++\.[A-Za-z0-9_-]++(?![A-Za-z0-9_-])",
+        text,
+        re.ASCII,
+    ):
+        yield *match.span(), "api_key", _REDACTED
+
+
+def _pem_spans(text):
+    begin = re.compile(r"-----BEGIN (?P<label>(?:[A-Z0-9]+ ){0,6}PRIVATE KEY)-----")
+    end_lines = {}
+    for match in re.finditer(r"-----END (?P<label>(?:[A-Z0-9]+ ){0,6}PRIVATE KEY)-----", text):
+        end_lines.setdefault(match["label"], []).append(match)
+    cursors = {}
+    position = 0
+    while match := begin.search(text, position):
+        label = match["label"]
+        ends = end_lines.get(label, [])
+        index = cursors.get(label, 0)
+        while index < len(ends) and ends[index].start() < match.end():
+            index += 1
+        end = ends[index].end() if index < len(ends) else len(text)
+        cursors[label] = index + 1
+        yield match.start(), end, "private_key", _REDACTED
+        position = end
+
+
+def _xml_spans(text):
+    # Index closing tags once; repeated unterminated starts cannot rescan a suffix.
+    closings = {}
+    for match in re.finditer(r"</(?P<key>" + _NAME + r")[^\S\r\n]*+>", text):
+        closings.setdefault(match["key"].lower(), []).append(match)
+    cursors = {}
+    position = 0
+    pattern = re.compile(r"<(?P<key>" + _NAME + r")[^\S\r\n]*+>")
+    while match := pattern.search(text, position):
+        position = match.end()
+        key = match["key"]
+        if not redaction_sensitive_key(key):
+            continue
+        ends = closings.get(key.lower(), [])
+        index = cursors.get(key.lower(), 0)
+        while index < len(ends) and ends[index].start() < match.end():
+            index += 1
+        end = ends[index].start() if index < len(ends) else len(text)
+        cursors[key.lower()] = index + 1
+        position = ends[index].end() if index < len(ends) else end
+        if redaction_sensitive_value(key, text[match.end() : end]):
+            yield match.end(), end, "sensitive_field", _REDACTED
+
+
+def _curl_spans(text, syntax):
+    position = 0
+    pattern = re.compile(r"(?<![A-Za-z0-9_])(?:-u|--user)[^\S\r\n]++")
+    while match := pattern.search(text, position):
+        start = match.end()
+        end = syntax.value(text, start)
+        position = max(end, match.end())
+        colon = text.find(":", start, end)
+        if colon >= 0 and redaction_sensitive_value("password", text[colon + 1 : end]):
+            if text[start : start + 1] in "\"'" and text[end - 1 : end] == text[start]:
+                end -= 1
+            yield colon + 1, end, "sensitive_field", _REDACTED
+
+
+def _path_spans(text):
     roots = (
         r"/(?:tmp|var|etc|home|Users|opt|usr|proc|sys|dev|run|srv|mnt|media|root|private|"
         r"Library|Volumes|app|workspace)(?:/|\b)"
     )
-    plausible = r"(?:" + roots + r"|/[A-Za-z0-9._-]++/|[A-Za-z]:[\\/]|\\\\)"
-    if "/" in text or "\\" in text:
-        public_paths = {"/docs/plan.md", "/etc/hosts"}
-        if '"' in text or "'" in text:
-            paths = re.compile(
-                r"""(?P<q>["'])(?P<path>(?:/[^"'\r\n/]*+/|"""
-                + plausible
-                + r""")[^"'\r\n]*+)(?P=q)""",
-                re.ASCII,
-            )
-            for match in paths.finditer(text):
-                if match["path"] not in public_paths:
-                    add(*match.span("path"), "local_path")
-        paths = re.compile(
-            r"(?<![A-Za-z0-9:/])" + plausible + r"""[^\s<>"'`,;{}\]\[)]*+""", re.ASCII
-        )
-        for match in paths.finditer(text):
-            if match.group() not in public_paths:
-                add(*match.span(), "local_path")
+    plausible = r"(?:" + roots + r"|/[A-Za-z0-9._-]++/|[A-Za-z]:[\\/]|\\(?:\\)?[A-Za-z])"
+    public_paths = {"/docs/plan.md", "/etc/hosts"}
+    quoted = re.compile(
+        r"""(?P<q>["'])(?P<path>(?:/[^"'\r\n/]*+/|""" + plausible + r""")[^"'\r\n]*+)(?P=q)"""
+    )
+    bare = re.compile(r"(?<![A-Za-z0-9:/\]])" + plausible + r"""[^\s<>"'`,;{}\]\[)]*+""")
 
+    def matches(pattern, group):
+        for match in pattern.finditer(text):
+            value = match[group] if group else match.group()
+            if (
+                value not in public_paths
+                and _REDACTED not in value
+                and not any(char in value for char in "?&=")
+                and not text.startswith(_REDACTED, match.end())
+            ):
+                yield *(match.span(group) if group else match.span()), "local_path", _REDACTED
+
+    yield from _merge_spans([matches(quoted, "path"), matches(bare, None)])
+
+
+def _view_spans(text, encoded_positions, syntax):
+    return _merge_spans(
+        [
+            _assignment_spans(text, syntax),
+            _header_spans(text, syntax),
+            _query_spans(text, syntax, encoded_positions),
+            _userinfo_spans(text, encoded_positions.copy()),
+            _cookie_spans(text, syntax),
+            _jar_spans(text),
+            _bearer_spans(text),
+            _prefix_spans(text),
+            _jwt_spans(text),
+            _pem_spans(text),
+            _xml_spans(text),
+            _curl_spans(text, syntax),
+            _path_spans(text),
+        ]
+    )
+
+
+def _close_assignment_spans(text, spans, syntax):
+    contexts = iter(_assignment_spans(text, syntax, include_exempt=True))
+    context = next(contexts, None)
+    for start, end, kind, replacement in spans:
+        while context and context[1] <= start:
+            context = next(contexts, None)
+        while context and context[0] < end:
+            start = min(start, context[0])
+            if context[1] > end:
+                end = context[1]
+                replacement = context[3]
+            context = next(contexts, None)
+        yield start, end, kind, replacement
+
+
+def _close_bearer_spans(text, spans):
+    """A mask inside a bearer value covers its whole context, never creates a suffix."""
+    contexts = iter(
+        re.finditer(r"(?i)bearer[\s+\u00a0]++(?P<value>(?:\[REDACTED\])?[^\s\"'<>{}\[\]]++)", text)
+    )
+    context = next(contexts, None)
+    for start, end, kind, replacement in spans:
+        while context and context.end("value") <= start:
+            context = next(contexts, None)
+        if context and context.start("value") < end:
+            start = min(start, context.start("value"))
+            end = max(end, context.end("value"))
+        yield start, end, kind, replacement
+
+
+def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
+    """Canonical decoded views, forward scans, sparse offsets, one output join."""
+    layers = []
+    view = text
+    form = False
+    if "+" in text or re.search(r"\\{1,8}u002b", text, re.I):
+        query = re.search(r"\?|%(?:25){0,2}3f|\\{1,8}u003f", text, re.I)
+        form = (
+            query is not None or re.search(r"%(?:25){0,2}3d|\\{1,8}u003d", text, re.I) is not None
+        )
+        if form:
+            # Decode literal '+' before percent encoding: %2B remains a literal plus.
+            begin = query.end() if query else 0
+            tail, edits = _decode_view(text[begin:], form=True)
+            view = text[:begin] + tail
+            layers.append(
+                [
+                    _TextEdit(
+                        e.start + begin,
+                        e.end + begin,
+                        e.original_start + begin,
+                        e.original_end + begin,
+                    )
+                    for e in edits
+                ]
+            )
+    # Escaped documents can reveal percent escapes, and conversely. Each
+    # successful layer consumes its own budget; failed probes do not consume it.
+    budgets = {False: 3, True: 3}
+    while True:
+        changed = False
+        for decoding in (False, True):
+            if not budgets[decoding]:
+                continue
+            decoded, edits = _decode_view(view, json_escapes=decoding)
+            if edits:
+                budgets[decoding] -= 1
+                view = decoded
+                layers.append(edits)
+                changed = True
+        if not changed:
+            break
+    encoded = _EncodedPositions(text, layers, form=form)
+    syntax = _Syntax(view)
+    spans = list(
+        _merge_spans(
+            [
+                _close_bearer_spans(
+                    view, _close_assignment_spans(view, _view_spans(view, encoded, syntax), syntax)
+                )
+            ]
+        )
+    )
+    for edits in reversed(layers):
+        spans = list(_original_spans(spans, edits))
+    # Original quoted/structured values have their original quote terminators,
+    # even when JSON unescaping reveals quotes inside the credential itself.
+    original_syntax = _Syntax(text) if layers else None
+    original_fields = (
+        (
+            span
+            for span in _assignment_spans(text, original_syntax)
+            if span[2] == "sensitive_field"
+            or (span[0] > 0 and text[span[0] - 1] in "\"'")
+            or ("+" in text[span[0] : span[1]] and "%" not in text[span[0] : span[1]])
+        )
+        if layers
+        else ()
+    )
+    spans = list(_merge_spans([spans, original_fields]))
     if not spans:
         return text, []
-    counts: dict[str, int] = {}
-    merged: list[tuple[int, int]] = []
-    covered_kind = None
-    for start, end, kind in sorted(spans, key=lambda span: (span[0], -span[1])):
-        if merged and start <= merged[-1][1]:
-            if end > merged[-1][1] or (covered_kind == "local_path" and kind != "local_path"):
-                counts[kind] = counts.get(kind, 0) + 1
-            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
-            if kind != "local_path":
-                covered_kind = kind
-        else:
-            merged.append((start, end))
-            covered_kind = kind
-            counts[kind] = counts.get(kind, 0) + 1
     parts = []
+    counts = {}
     position = 0
-    for start, end in merged:
-        parts.extend((text[position:start], "[REDACTED]"))
+    for start, end, kind, replacement in spans:
+        if text[start:end] == _REDACTED:
+            continue
+        parts.extend((text[position:start], replacement))
         position = end
+        counts[kind] = counts.get(kind, 0) + 1
     parts.append(text[position:])
-    return "".join(parts), [{"kind": kind, "count": n} for kind, n in sorted(counts.items())]
+    return "".join(parts), [
+        {"kind": kind, "count": count} for kind, count in sorted(counts.items())
+    ]
