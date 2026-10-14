@@ -1,0 +1,28 @@
+$ printf "%s\n" "活動紀錄（host 撰寫）" "本地留言仍在。壞列沒有被算成完整匯入。" | tee /tmp/metamuse-demo/inputs/draft.txt
+活動紀錄（host 撰寫）
+本地留言仍在。壞列沒有被算成完整匯入。
+
+$ jq '[.results[0].ref]' /tmp/metamuse-demo/out/search.json | tee /tmp/metamuse-demo/inputs/facts.json
+[
+  {
+    "kind": "item_revision",
+    "id": "itm_582e7ac7d2104dd2802232b527c3fc2b",
+    "revision": 1
+  }
+]
+
+$ metamuse --workspace /tmp/metamuse-demo/workspace draft save --project prj_530af4f805154da0bd11be86c3f2faef --text-file /tmp/metamuse-demo/inputs/draft.txt --platform generic --facts-file /tmp/metamuse-demo/inputs/facts.json --request-key draft | tee /tmp/metamuse-demo/out/draft.json | jq -r '"draft_id=\(.draft_id)", "revision=\(.revision)", "digest=\(.digest)", "stale=\(.stale)", "platform=\(.platform)", "facts=\(.facts_refs)", "--- host text ---", .text'
+draft_id=drf_8a0860472d014e07a785b54d3b088f3f
+revision=1
+digest=5c5af49d3baeccd1758ae1e8fda41ab63833543a309374be149b6d385bf9c57d
+stale=false
+platform=generic
+facts=[{"kind":"item_revision","id":"itm_582e7ac7d2104dd2802232b527c3fc2b","revision":1}]
+--- host text ---
+活動紀錄（host 撰寫）
+本地留言仍在。壞列沒有被算成完整匯入。
+
+
+$ jq -r .draft_id /tmp/metamuse-demo/out/draft.json | tee /tmp/metamuse-demo/state/draft_id
+drf_8a0860472d014e07a785b54d3b088f3f
+

@@ -1,0 +1,25 @@
+$ jq -n --arg id "drf_8a0860472d014e07a785b54d3b088f3f" '[{kind:"draft_revision", id:$id, revision:1}]' | tee /tmp/metamuse-demo/inputs/export-refs.json
+[
+  {
+    "kind": "draft_revision",
+    "id": "drf_8a0860472d014e07a785b54d3b088f3f",
+    "revision": 1
+  }
+]
+
+$ metamuse --workspace /tmp/metamuse-demo/workspace export --project prj_530af4f805154da0bd11be86c3f2faef --refs-file /tmp/metamuse-demo/inputs/export-refs.json --format bundle --request-key export-bundle | tee /tmp/metamuse-demo/out/export.json | jq -r '"id=\(.id)", "state=\(.state)", "artifact=\(.artifact)", "format=\(.manifest.format)", "text_policy=\(.manifest.text_policy)", "asset_policy=\(.manifest.asset_policy)", "redaction_notice=\(.manifest.redaction_notice)", "redactions=\(.manifest.redactions)", (.manifest.files[] | "\(.name) sha256=\(.sha256) bytes=\(.bytes)"), "selection=\(.manifest.selection)"'
+Warning: Local export only; nothing was published or uploaded.
+Warning: Bundle redaction is a guard, not a guarantee; assets are metadata only.
+id=exp_38cf9c85569a49c7bbaf623e742d23f0
+state=ready
+artifact=exports/exp_38cf9c85569a49c7bbaf623e742d23f0
+format=bundle
+text_policy=redacted
+asset_policy=metadata_only; opaque media bytes are not included
+redaction_notice=Automatic redaction is a guard, not a guarantee.
+redactions=[]
+object-0001.md sha256=13833f896f3772e674baa67a84ad685831a8f8c014aa1ed1fb812b5c38751b06 bytes=250
+object-0002.md sha256=79ec2601d47b1aeea74fd446144301ee247d3d621d781b9bda6a0a65a7b16b65 bytes=340
+records.jsonl sha256=94e35e9361d75d7c1eb9eec971c41e130d720bf403697f42689e66e0be2fc3b8 bytes=930
+selection=[{"kind":"draft_revision","id":"drf_8a0860472d014e07a785b54d3b088f3f","revision":1}]
+

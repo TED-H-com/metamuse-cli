@@ -1,0 +1,82 @@
+{
+  "source_commit": "ace9ea10047591adb0b9cac00063366968b4d0c4",
+  "source_tree": "b79bd889eea0288457b0881a36c3504a02df9a32",
+  "captured_at": "2026-10-14T06:02:23-04:00",
+  "timezone": "EDT",
+  "timezone_name": "EDT",
+  "terminal": {
+    "emulator": "alacritty",
+    "version": "alacritty 0.16.1",
+    "font": "DejaVu Sans Mono 13, fallback Noto Sans CJK TC",
+    "geometry": "112x68",
+    "xvfb_screen": "1500x1800x24",
+    "colors": {
+      "background": "#14211c",
+      "foreground": "#e7f2ea"
+    }
+  },
+  "tools": {
+    "python": "3.12.13",
+    "pillow": "12.1.1",
+    "pillow_xcb": "True",
+    "jq": "jq-1.8.1",
+    "alacritty": "alacritty 0.16.1",
+    "xvfb": "xvfb 2:21.1.22-1ubuntu1.2",
+    "mcp": "2.3.0",
+    "metamuse": "0.1.0.dev0"
+  },
+  "synthetic_data": true,
+  "live_or_real_account": false,
+  "image_edited": false,
+  "crop_note": "Cropped to the Alacritty window rectangle from xdotool. Pixels inside that rectangle are the unedited framebuffer, saved as PNG.",
+  "images": [
+    {
+      "png": "01-health.png",
+      "transcript": "01-health.txt",
+      "sha256": "9fe1f44e95b23391b6a41c8494d441cd34838622122ef8eedd567cdf2001750b",
+      "transcript_sha256": "cb14440809311c4f6e9677df6126eca59b02c933a8394626043e38d4b507b341"
+    },
+    {
+      "png": "02-import.png",
+      "transcript": "02-import.txt",
+      "sha256": "944d2000ee106c723e6e3a1494967edfec43313c0facb4d5f53750bd5fac4dda",
+      "transcript_sha256": "ff1f8dcc014ea15b9d04a8d9ee3959ae012a44f81d7834f95808156590f6f27d"
+    },
+    {
+      "png": "03-rows.png",
+      "transcript": "03-rows.txt",
+      "sha256": "fc7b0a73ef8ffcfbb669507b84b03fdc0ed32499475c643e66d5109be351cd01",
+      "transcript_sha256": "7c9fe6f258860b060d39a8aceeb2dc4d871d02abfcb6c6df6c2d2d0951e5482d"
+    },
+    {
+      "png": "04-search.png",
+      "transcript": "04-search.txt",
+      "sha256": "86c817ab2534b0778cd37f2cf6cd34dfca66365f880f85e6aa0f4e2d0ba1015e",
+      "transcript_sha256": "bb45a3650785640c30666be5d4992801171afc478d73754cc8b18904087625c8"
+    },
+    {
+      "png": "05-packet.png",
+      "transcript": "05-packet.txt",
+      "sha256": "fb63f2ec4d0441c1a11c09596d2da0205bcc89aaba8b23ef5f36594545786abc",
+      "transcript_sha256": "16fe9b3611f8885a8922439f71ba8fbbbb66e48163a4bf53abe91e9ca7c0aa15"
+    },
+    {
+      "png": "06-draft.png",
+      "transcript": "06-draft.txt",
+      "sha256": "afa9781c46a96caabb78e54e31e638c2d1c2ba5ddf17d755e98cf11c0862db36",
+      "transcript_sha256": "ccc7edfb44d26ef4dde3296fde033461947dd18e99590e77bd2113ab5075ac71"
+    },
+    {
+      "png": "07-export.png",
+      "transcript": "07-export.txt",
+      "sha256": "bd5aae7615fdb0be646cad83e026249ffb5e078623f297983ff63e48447e07de",
+      "transcript_sha256": "017b9caabc1ff1fbe23ef63b4cec436f96f4fd56b8721f92d8ccccf8566a5e8a"
+    },
+    {
+      "png": "08-mcp.png",
+      "transcript": "08-mcp.txt",
+      "sha256": "b597f4a89a167ce2817c7bd02eea903bb22e464dbcedc4b2d03b6d385ab97326",
+      "transcript_sha256": "cf89a01fecda2c8ac19f128e99de04cff80eee5189c773028f4af57051acaafe"
+    }
+  ]
+}

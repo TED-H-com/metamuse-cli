@@ -1,0 +1,36 @@
+$ metamuse --workspace /tmp/metamuse-demo/workspace init
+{
+  "initialized": true,
+  "schema_version": 4
+}
+
+$ python3 /tmp/metamuse-demo/configure_demo_workspace.py
+
+$ sed -n '1,4p;/^\[muse\]/,/^\[publishing\]/p' /tmp/metamuse-demo/workspace/metamuse.toml
+[app]
+import_roots = ["/tmp/metamuse-demo/inputs"]
+network_mode = "offline"
+telemetry_enabled = false
+[muse]
+enabled = true
+backend = "fixture"
+[publishing]
+
+$ metamuse --workspace /tmp/metamuse-demo/workspace doctor | jq -r '"network_mode=\(.network_mode) worker_available=\(.worker_available)", (.capabilities[] | "\(.name) \(.verification) \(.environment) \(.permission) effective=\(.effective)")'
+network_mode=offline worker_available=false
+metamuse_inspect fixture_passed ready granted_scope effective=true
+metamuse_project_create fixture_passed ready granted_scope effective=true
+metamuse_collect fixture_passed ready granted_scope effective=true
+metamuse_job_get fixture_passed ready granted_scope effective=true
+metamuse_job_list fixture_passed ready granted_scope effective=true
+metamuse_job_control fixture_passed ready granted_scope effective=true
+metamuse_search fixture_passed ready granted_scope effective=true
+metamuse_packet_prepare fixture_passed ready granted_scope effective=true
+metamuse_muse_open fixture_passed ready not_configured effective=false
+metamuse_muse_send fixture_passed ready not_configured effective=false
+metamuse_muse_read fixture_passed ready granted_scope effective=true
+metamuse_muse_close_exchange fixture_passed ready granted_scope effective=true
+metamuse_draft_save fixture_passed ready granted_scope effective=true
+metamuse_draft_preview fixture_passed ready granted_scope effective=true
+metamuse_export fixture_passed ready granted_scope effective=true
+

@@ -1,0 +1,10 @@
+$ metamuse --workspace /tmp/metamuse-demo/workspace search --project prj_530af4f805154da0bd11be86c3f2faef --query '正常留言第一行' --limit 1 | tee /tmp/metamuse-demo/out/search.json | jq -r '"search_mode=\(.search_mode)", "ref=\(.results[0].ref.kind) \(.results[0].ref.id) revision=\(.results[0].ref.revision)", "stale=\(.results[0].stale)", "platform=\(.results[0].source.platform)", "collection_method=\(.results[0].source.collection_method)", "upstream=\(.results[0].source.upstream_collection_method)", "complete=\(.results[0].source.complete)", "snippet=\(.results[0].snippet)"'
+search_mode=exact_substring
+ref=item_revision itm_582e7ac7d2104dd2802232b527c3fc2b revision=1
+stale=false
+platform=generic
+collection_method=file_import
+upstream=synthetic_fixture
+complete=true
+snippet=正常留言第一行，測試逐項驗證。
+

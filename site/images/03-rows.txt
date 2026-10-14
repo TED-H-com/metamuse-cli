@@ -1,0 +1,18 @@
+$ metamuse --workspace /tmp/metamuse-demo/workspace jobs get job_ca906f8d8b1f4a459570d20bc1c59932 | jq -r '"state=\(.job.state) coverage=\(.job.coverage_status) stop=\(.job.stop_reason)", "committed=\(.steps[0].result.observed_scope.committed) rejected=\(.steps[0].result.observed_scope.rejected)", (.steps[0].result.data.rows[] | "line=\(.line) \(.status) code=\(.code // "-") field=\(.field // "-")")'
+state=partial coverage=partial stop=row_errors
+committed=7 rejected=7
+line=1 committed code=- field=-
+line=2 rejected code=E_INPUT_INVALID field=record
+line=3 committed code=- field=-
+line=4 rejected code=E_INPUT_INVALID field=kind
+line=5 committed code=- field=-
+line=6 rejected code=E_INPUT_INVALID field=kind
+line=7 committed code=- field=-
+line=8 rejected code=E_INPUT_INVALID field=platform
+line=9 committed code=- field=-
+line=10 rejected code=E_LIMIT_REACHED field=text
+line=11 committed code=- field=-
+line=12 rejected code=E_INPUT_INVALID field=record
+line=13 rejected code=E_INPUT_INVALID field=record
+line=14 committed code=- field=-
+

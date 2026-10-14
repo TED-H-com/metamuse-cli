@@ -1,0 +1,28 @@
+$ python3 /tmp/metamuse-demo/mcp_demo.py
+client=mcp 2.3.0 stdio_client
+server=metamuse version=0.1.0.dev0
+protocol=2025-11-25
+tools=15
+tool=metamuse_inspect readOnly=true
+tool=metamuse_project_create readOnly=false
+tool=metamuse_collect readOnly=false
+tool=metamuse_job_get readOnly=true
+tool=metamuse_job_list readOnly=true
+tool=metamuse_job_control readOnly=false
+tool=metamuse_search readOnly=true
+tool=metamuse_packet_prepare readOnly=false
+tool=metamuse_muse_open readOnly=false
+tool=metamuse_muse_send readOnly=false
+tool=metamuse_muse_read readOnly=false
+tool=metamuse_muse_close_exchange readOnly=false
+tool=metamuse_draft_save readOnly=false
+tool=metamuse_draft_preview readOnly=true
+tool=metamuse_export readOnly=false
+call=metamuse_search status=ok is_error=false
+search_mode=exact_substring
+ref=item_revision itm_582e7ac7d2104dd2802232b527c3fc2b revision=1
+upstream=synthetic_fixture
+collection=file_import
+complete=true
+snippet=正常留言第一行，測試逐項驗證。
+
