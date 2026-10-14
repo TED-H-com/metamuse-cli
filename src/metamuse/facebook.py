@@ -38,12 +38,16 @@ import ipaddress
 import json
 import os
 import re
+import signal
 import socket
+import subprocess
+import sys
 import threading
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import lru_cache
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Literal, Protocol
@@ -136,6 +140,12 @@ PROXY_ENV_VARS: tuple[str, ...] = (
 
 _ACTOR_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _POST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+SANDBOX_DISABLED_WARNING = "Facebook browser sandbox is disabled by operator configuration"
+SANDBOX_NEXT_ACTION = (
+    "Install an AppArmor profile granting userns to the Playwright Chromium binary "
+    "(see docs/dev/FACEBOOK.md), or explicitly set [facebook] allow_unsandboxed_browser = true "
+    "with OS isolation after reviewing the documented risk"
+)
 
 
 @dataclass(frozen=True)
@@ -288,6 +298,7 @@ class BrowserDriver(Protocol):
         *,
         timeout_ms: int,
         max_bytes: int | None = None,
+        allow_unsandboxed_browser: bool = False,
     ) -> BrowserSession: ...
 
 
@@ -449,9 +460,51 @@ def _has_valid_storage_state(fb_cfg: Any) -> bool:
     return True
 
 
+@lru_cache(maxsize=8)
+def _sandbox_launch_check(executable: str, modified_ns: int, minute: int) -> bool:
+    """Bounded, cached local launch only; no navigation or credentials."""
+    del modified_ns, minute
+    with socket.socket() as listener:
+        listener.bind(("127.0.0.1", 0))
+        port = listener.getsockname()[1]
+    script = """import sys
+from playwright.sync_api import sync_playwright
+from metamuse._browser_egress import build_chromium_launch_args
+with sync_playwright() as pw:
+    browser = pw.chromium.launch(executable_path=sys.argv[1], headless=True,
+        chromium_sandbox=True, timeout=8000,
+        args=build_chromium_launch_args(int(sys.argv[2])))
+    browser.close()
+"""
+    env = {key: value for key, value in os.environ.items() if key not in PROXY_ENV_VARS}
+    process = subprocess.Popen(
+        [sys.executable, "-c", script, executable, str(port)],
+        env=env,
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    try:
+        return process.wait(timeout=10) == 0
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait()
+        return False
+
+
 def capability_status(ctx: Any) -> dict[str, dict[str, str]]:
     """Report the metamuse_collect.facebook_post backend capability row."""
     fb_cfg = getattr(getattr(ctx, "policy", None), "facebook", None)
+    unsandboxed = bool(getattr(fb_cfg, "allow_unsandboxed_browser", False))
+    warnings = getattr(getattr(ctx, "store", None), "open_warnings", None)
+    if isinstance(warnings, list):
+        if unsandboxed and SANDBOX_DISABLED_WARNING not in warnings:
+            warnings.append(SANDBOX_DISABLED_WARNING)
+        elif not unsandboxed and SANDBOX_DISABLED_WARNING in warnings:
+            warnings.remove(SANDBOX_DISABLED_WARNING)
     net_mode = getattr(
         getattr(getattr(ctx, "policy", None), "app", None), "network_mode", "offline"
     )
@@ -469,6 +522,13 @@ def capability_status(ctx: Any) -> dict[str, dict[str, str]]:
         environment = "missing_dependency"
     elif not _has_valid_storage_state(fb_cfg):
         environment = "needs_auth"
+    elif (
+        not unsandboxed
+        and not (
+            _DRIVER_FACTORY() if _DRIVER_FACTORY else PlaywrightBrowserDriver()
+        ).sandbox_available()
+    ):
+        environment = "unavailable"
     else:
         environment = "ready"
 
@@ -1873,6 +1933,17 @@ class PlaywrightBrowserDriver:
     def is_available(self) -> bool:
         return find_playwright_browser() is not None
 
+    def sandbox_available(self) -> bool:
+        executable = find_playwright_browser()
+        if executable is None:
+            return False
+        try:
+            return _sandbox_launch_check(
+                str(executable), executable.stat().st_mtime_ns, int(time.monotonic() // 60)
+            )
+        except OSError:
+            return False
+
     def open_session(
         self,
         storage_state: SanitizedStorageState,
@@ -1880,6 +1951,7 @@ class PlaywrightBrowserDriver:
         *,
         timeout_ms: int,
         max_bytes: int | None = None,
+        allow_unsandboxed_browser: bool = False,
     ) -> BrowserSession:
         refuse_proxies()
         executable = find_playwright_browser()
@@ -1900,7 +1972,8 @@ class PlaywrightBrowserDriver:
             browser = pw.chromium.launch(
                 executable_path=str(executable) if executable else None,
                 headless=True,
-                chromium_sandbox=False,
+                chromium_sandbox=not allow_unsandboxed_browser,
+                timeout=min(timeout_ms, 10_000),
                 env=clean_env,
                 args=build_chromium_launch_args(proxy.port),
             )
@@ -1928,7 +2001,11 @@ class PlaywrightBrowserDriver:
                     pw.stop()
                 except Exception:
                     pass
-            raise
+            raise m.CoreError(
+                m.ErrorCode.DEPENDENCY_MISSING,
+                "Facebook browser could not start with the required browser controls",
+                next_action=SANDBOX_NEXT_ACTION,
+            ) from None
 
 
 class FixtureBrowserDriver:
@@ -1957,6 +2034,9 @@ class FixtureBrowserDriver:
     def is_available(self) -> bool:
         return self.available
 
+    def sandbox_available(self) -> bool:
+        return self.available  # Synthetic driver; no launch or LIVE verification.
+
     def open_session(
         self,
         storage_state: SanitizedStorageState,
@@ -1964,6 +2044,7 @@ class FixtureBrowserDriver:
         *,
         timeout_ms: int,
         max_bytes: int | None = None,
+        allow_unsandboxed_browser: bool = False,
     ) -> BrowserSession:
         del timeout_ms, max_bytes
         refuse_proxies()
@@ -2709,6 +2790,9 @@ def submit_facebook_collect(ctx: Any, request: m.CollectRequest) -> m.Envelope:
             "url": permalink.canonical_url,
             "resources": list(request.resources),
             "max_expansions": fb_cfg.max_expansions,
+            "browser_sandbox": "disabled_by_operator"
+            if fb_cfg.allow_unsandboxed_browser
+            else "enabled",
         },
         limits=limits_dict,
     )
@@ -2888,6 +2972,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     egress.authorize_permalink(permalink)
 
     saved = dict(step.checkpoint or {})
+    browser_sandbox = "disabled_by_operator" if fb_cfg.allow_unsandboxed_browser else "enabled"
     resources = set(request.resources)
     require_comments = "comments" in resources
     max_expansions = int(fb_cfg.max_expansions)
@@ -2941,6 +3026,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         step.commit_checkpoint(
             {
                 **saved,
+                "browser_sandbox": browser_sandbox,
                 "expansions_used": expansions_used,
                 "bytes_used": bytes_used,
                 "accepted": accepted,
@@ -2949,6 +3035,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         )
 
     session: BrowserSession | None = None
+    checkpoint_usage()
     try:
         step.guard()
         if previous_bytes >= max_bytes:
@@ -2958,6 +3045,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             egress,
             timeout_ms=timeout_ms,
             max_bytes=max_bytes - previous_bytes,
+            allow_unsandboxed_browser=fb_cfg.allow_unsandboxed_browser,
         )
         obs = session.goto_post(permalink.fetch_url)
         egress.check_browser_route(obs.url, is_navigation=True)
@@ -3106,6 +3194,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         nonlocal batch_count
         batch_count = 0
         cp_payload = {
+            "browser_sandbox": browser_sandbox,
             "expansions_used": expansions_used,
             "bytes_used": bytes_used,
             "halt": halt,
@@ -3309,6 +3398,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     result_data: dict[str, Any] = {
         "rows": rows,
         "egress": egress_summary,
+        "browser_sandbox": browser_sandbox,
     }
     if byte_limit_error is not None:
         result_data["error"] = byte_limit_error.model_dump(mode="json")

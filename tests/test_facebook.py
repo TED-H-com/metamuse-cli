@@ -62,6 +62,7 @@ def _write_facebook_config(
     workspace: Path,
     *,
     enabled: bool = True,
+    allow_unsandboxed_browser: bool = False,
     approved_page_types: list[str] | None = None,
     network_mode: str = "live",
     auth_ref: str | None = "auth_00000000000000000000000000000001",
@@ -105,6 +106,8 @@ def _write_facebook_config(
         f"max_expansions = {max_expansions}",
         f"pacing_ms = {pacing_ms}",
     ]
+    if "allow_unsandboxed_browser" in config.FacebookConfig.model_fields:
+        lines.append(f"allow_unsandboxed_browser = {str(allow_unsandboxed_browser).lower()}")
     if auth_ref is not None:
         lines.append(f'auth_ref = "{auth_ref}"')
     if account is not None:
@@ -198,6 +201,7 @@ def _setup_fb_env(
     resources: tuple[str, ...] = ("post", "comments"),
     max_expansions: int = 10,
     pacing_ms: int = 0,
+    allow_unsandboxed_browser: bool = False,
 ) -> tuple[app.AppContext, str, str, str, safety.SecretStore]:
     ws = tmp_path / "workspace"
     ws.mkdir(parents=True, exist_ok=True)
@@ -226,6 +230,7 @@ def _setup_fb_env(
         max_expansions=max_expansions,
         pacing_ms=pacing_ms,
         import_roots=[str(tmp_path)],
+        allow_unsandboxed_browser=allow_unsandboxed_browser,
     )
     ctx = app.AppContext.open(ws)
 
@@ -1688,7 +1693,7 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
         _browser_egress.build_chromium_launch_args(70000)
 
     # Also verify PlaywrightBrowserDriver.open_session passes these exact launch args and
-    # chromium_sandbox=False to pw.chromium.launch, and stops the proxy on close().
+    # chromium_sandbox=True to pw.chromium.launch, and stops the proxy on close().
     fake_bin = tmp_path / "fake-chrome"
     fake_bin.write_text("#!/bin/sh\n", encoding="utf-8")
     fake_bin.chmod(0o755)
@@ -1771,7 +1776,7 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
         assert guard.proxy_port is not None and guard.proxy_port > 0
         kw = launched["launch_kwargs"]
         assert kw["headless"] is True
-        assert kw["chromium_sandbox"] is False
+        assert kw["chromium_sandbox"] is True
         assert kw["args"] == _browser_egress.build_chromium_launch_args(guard.proxy_port)
         assert launched["context_kwargs"]["service_workers"] == "block"
         assert launched["context_kwargs"]["accept_downloads"] is False
@@ -1874,6 +1879,7 @@ def test_playwright_integration_against_local_synthetic_server(
             url=canonical_url,
             max_expansions=2,
             pacing_ms=0,
+            allow_unsandboxed_browser=True,  # Explicit synthetic test exception on this host.
         )
         # Use test-only seams (unreachable from config, CLI, MCP, or request data)
         # to wire B08 check_fixture_url and route Playwright through BrowserEgressProxy.
@@ -2022,6 +2028,7 @@ def test_playwright_egress_proxy_blocks_navigation_and_subresource_redirects_to_
             url=nav_url,
             max_expansions=1,
             pacing_ms=0,
+            allow_unsandboxed_browser=True,  # Explicit synthetic test exception on this host.
         )
         sub_nav = app.submit_collect(
             ctx_nav,
@@ -2056,6 +2063,7 @@ def test_playwright_egress_proxy_blocks_navigation_and_subresource_redirects_to_
             url=sub_url,
             max_expansions=1,
             pacing_ms=0,
+            allow_unsandboxed_browser=True,  # Explicit synthetic test exception on this host.
         )
         sub_req = app.submit_collect(
             ctx_sub,
@@ -2158,6 +2166,7 @@ def test_playwright_egress_proxy_dials_only_first_checked_resolver_address(
             resources=("post",),
             max_expansions=0,
             pacing_ms=0,
+            allow_unsandboxed_browser=True,  # Explicit synthetic test exception on this host.
         )
 
         lookup_count = {"synth-pin.example": 0}
@@ -2258,6 +2267,7 @@ def test_playwright_egress_proxy_byte_budget_stops_oversized_response(
             url=canonical_url,
             max_expansions=1,
             pacing_ms=0,
+            allow_unsandboxed_browser=True,  # Explicit synthetic test exception on this host.
         )
         facebook.set_egress_factory(
             lambda _hosts: facebook.EgressGuard.for_fixture_test(

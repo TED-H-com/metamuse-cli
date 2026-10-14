@@ -1375,6 +1375,15 @@ CONNECT port strings are bounded to five ASCII digits before integer conversion.
 Numeric and other parser failures produce a fixed 403 protocol refusal, recorded
 as classification/count only; malformed input never emits a worker traceback.
 
+B13 Chromium launches require chromium_sandbox=True. Failure is E_DEPENDENCY_MISSING
+with AppArmor userns and explicit operator opt-in remedies; no automatic downgrade.
+Only [facebook] allow_unsandboxed_browser=true changes the mode, recorded as
+disabled_by_operator in results/checkpoints and warned in inspect/doctor envelopes.
+A bounded cached headless launch without navigation/state verifies required sandbox
+readiness; an unavailable sandbox never yields environment=ready without the opt-in.
+The risk and generic AppArmor template are in docs/dev/FACEBOOK.md. Renderer compromise
+under the opt-in has operator UID access, so separate OS isolation is recommended.
+
 ---
 
 # 來源與恢復說明

@@ -100,6 +100,7 @@ def validate_facebook_hosts(values: object) -> list[str]:
 
 class FacebookConfig(m.Model):
     enabled: bool = False
+    allow_unsandboxed_browser: Annotated[bool, Field(strict=True)] = False
     approved_page_types: list[Literal["post_permalink"]] = Field(default_factory=list)
     auth_ref: Annotated[str, Field(min_length=1, max_length=128)] | None = None
     account: Annotated[str, Field(min_length=1, max_length=128)] | None = None
@@ -150,6 +151,7 @@ enabled = false
 [remote_media]
 [facebook]
 enabled = false
+allow_unsandboxed_browser = false
 approved_page_types = []
 max_expansions = 10
 pacing_ms = 1500
