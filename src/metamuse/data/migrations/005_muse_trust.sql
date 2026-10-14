@@ -142,6 +142,8 @@ DELETE FROM muse_trust_propagating;
 END;
 
 -- A transaction-local recursion barrier: propagation updates a whole closure once.
+-- Bulk authenticated hint binds insert this barrier before any observation/VM row,
+-- materialize the closure once, update all three tables, then delete it before commit.
 -- No committed row is permitted here; every Store boundary checks it is empty.
 CREATE TABLE muse_trust_propagating (id INTEGER PRIMARY KEY CHECK(id=1));
 CREATE VIEW muse_trust_confidential AS

@@ -914,3 +914,7 @@ checks cover the amended observations and guards. Older development-v5 schemas a
 noncanonical and have no implicit upgrade. Rollback restores a verified v4 backup into
 a fresh workspace. **Restoring an older backup, including v4 rollback, discards
 confidential expectations recorded after that backup.** No in-place reset tool exists.
+
+2026-10-14 round 4: an authenticated hint bind inserts its transaction-local barrier, bulk-inserts all observation and label VM rows, materializes the recursive closure once, updates the three tables set-wise, removes the barrier and commits. There is no per-id closure or recording cap. A separate small transaction checks the label after this independent evidence commit. Raw-SQL propagation and inherit guards remain active outside that batch.
+
+OFFLINE/FIXTURE measurement (2026-10-14, shared host): the exact 1 MiB session body carried 52,420 seven-character ids; all were committed confidential and no dial occurred. Bind CPU was 0.531 s, elapsed 14.284 s and bulk trust-domain lock hold 14.212 s (post-commit label check 0.006 s). CPU for 625/1,250/2,500/5,000 ids was 0.0217/0.0278/0.0377/0.0665 s; doubling ratios were 1.28/1.36/1.77. These are fixture measurements, not a wall-time guarantee.

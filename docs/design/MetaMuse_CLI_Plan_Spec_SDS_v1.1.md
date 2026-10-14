@@ -209,6 +209,9 @@ inspect只fixture_passed。read預設local；refresh排safe_read job＋current a
 unknown只排list job，不再create；已mapped discussion則排history baseline read。cursor由workspace key簽名，綁discussion/exchange與observation高水位。
 open在提交與boundary兩次檢查同project/account的未解create；已queued的第二次create也不得越過，grant未使用、step本地failed。
 
+B09安全狀態：authenticated CVM hint bind以單一bulk transaction保存全部usable identities，
+closure只計算一次；confidential evidence先獨立commit，才檢查local label。無recording cap。
+
 ## 7. 分享與草稿
 
 Packet固定版本；修正建立新packet。批准可以涵蓋已展示的project snapshot，允許host在其中自行選資料和有限追問；新增來源或帳號需新範圍。不需要每個讀取都打斷使用者，但每次實際外送內容要可回查。
@@ -592,7 +595,8 @@ label-independent muse_trust_observations以viewer_hash/normalized VM id保存au
 empty VM id只表示owner evidence，不是wire identity。owner↔VM associations形成graph；recursive SQL
 closure把confidential owner傳至全部VM、confidential VM傳至全部owner，transitive且monotonic。
 21 guards、3 indexes及transaction-local propagation barrier作set-wise更新；超過1000 rows不增加
-trigger depth、不因size丟record。committed barrier、changed schema/corruption阻擋connection。
+trigger depth、不因size丟record。hint bind在單一transaction先barrier、bulk observation/VM insert、
+materialize closure一次、三table set-wise update、remove barrier後commit；不逐id算closure。committed barrier、changed schema/corruption阻擋connection。
 CVM hints在owner binding/status/selection拒絕前獨立commit全部usable VM ids；RV msg2在stale或
 changed binding也以remote identity commit、不用generation CAS。write失敗停止msg3並明示無法record。
 standard handoff才做currentness/generation CAS；effective confidential先於generation檢查，回protocol/never。

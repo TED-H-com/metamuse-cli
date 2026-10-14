@@ -118,6 +118,9 @@ inspect只fixture_passed。read預設local；refresh排safe_read job＋current a
 unknown只排list job，不再create；已mapped discussion則排history baseline read。cursor由workspace key簽名，綁discussion/exchange與observation高水位。
 open在提交與boundary兩次檢查同project/account的未解create；已queued的第二次create也不得越過，grant未使用、step本地failed。
 
+B09安全狀態：authenticated CVM hint bind以單一bulk transaction保存全部usable identities，
+closure只計算一次；confidential evidence先獨立commit，才檢查local label。無recording cap。
+
 ## 7. 分享與草稿
 
 Packet固定版本；修正建立新packet。批准可以涵蓋已展示的project snapshot，允許host在其中自行選資料和有限追問；新增來源或帳號需新範圍。不需要每個讀取都打斷使用者，但每次實際外送內容要可回查。

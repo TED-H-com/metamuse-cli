@@ -683,12 +683,36 @@ class Store:
         if confidential:
             # This commit precedes label checks, which may refuse a different owner.
             self._muse_record_observation(
-                provider, account, viewer_hash, vm_ids, source="authenticated_assignment"
+                provider,
+                account,
+                viewer_hash,
+                vm_ids,
+                source="authenticated_assignment",
+                binding=(session_hash, vm_id),
             )
         changed = False
         with self._muse_boundary(provider, account):
             with self.transaction() as conn:
                 owner, vm = self._muse_rows(conn, provider, account, vm_id)
+                if confidential:
+                    # The one set-wise bind has committed before this label verification.
+                    if owner is not None and owner["viewer_hash"] != viewer_hash:
+                        raise m.CoreError(
+                            m.ErrorCode.PROTOCOL_MISMATCH,
+                            "Muse authenticated owner changed",
+                            next_action="Correct the operator account binding before reconnecting",
+                        )
+                    if owner is None or owner["session_hash"] != session_hash:
+                        raise _muse_storage_error(stale=True)
+                    return MuseTrustSnapshot(
+                        provider,
+                        account,
+                        vm_id,
+                        viewer_hash,
+                        session_hash,
+                        owner["generation"],
+                        True,
+                    )
                 required = confidential or self._muse_effective(
                     conn, provider, account, viewer_hash, vm_id
                 )
@@ -828,36 +852,128 @@ class Store:
         with self._muse_boundary(snapshot.provider, snapshot.account), self.transaction() as conn:
             self._muse_current(conn, snapshot, standard=True)
 
-    def _muse_observe(self, conn, viewer_hash, vm_ids, *, confidential, source):
-        """Commit remote evidence without consulting a label's currentness or generation."""
-        for identity in sorted(vm_ids) or [""]:
-            existing = conn.execute(
-                (
-                    "SELECT confidential_required FROM muse_trust_observations "
-                    "WHERE viewer_hash=? AND vm_id=?"
-                ),
-                (viewer_hash, identity),
-            ).fetchone()
-            if existing is None:
-                conn.execute(
-                    "INSERT INTO muse_trust_observations VALUES (?,?,1,?,?,?)",
-                    (viewer_hash, identity, int(confidential), source, self.clock()),
-                )
-            elif confidential:
-                conn.execute(
-                    (
-                        "UPDATE muse_trust_observations SET confidential_required=1, "
-                        "source=?,observed_at=? WHERE viewer_hash=? AND vm_id=?"
-                    ),
-                    (source, self.clock(), viewer_hash, identity),
-                )
+    @staticmethod
+    def _muse_close_bind(conn):
+        """Materialize the whole closure once; no per-row propagation inside a bind."""
+        conn.execute(
+            "CREATE TEMP TABLE muse_bind_required(kind, identity, "
+            "PRIMARY KEY(kind, identity)) WITHOUT ROWID"
+        )
+        conn.execute("INSERT INTO muse_bind_required SELECT * FROM muse_trust_confidential")
+        conn.execute(
+            "UPDATE muse_trust_accounts SET confidential_required=1, "
+            "generation=generation+1 WHERE confidential_required=0 AND viewer_hash IN "
+            "(SELECT identity FROM muse_bind_required WHERE kind='owner')"
+        )
+        conn.execute(
+            "UPDATE muse_trust_vms SET confidential_required=1 "
+            "WHERE confidential_required=0 AND vm_id IN "
+            "(SELECT identity FROM muse_bind_required WHERE kind='vm')"
+        )
+        conn.execute(
+            "UPDATE muse_trust_observations SET confidential_required=1 "
+            "WHERE confidential_required=0 AND viewer_hash IN "
+            "(SELECT identity FROM muse_bind_required WHERE kind='owner')"
+        )
+        conn.execute("DROP TABLE muse_bind_required")
+        conn.execute("DELETE FROM muse_trust_propagating")
 
-    def _muse_record_observation(self, provider, account, viewer_hash, vm_ids, *, source):
+    def _muse_observe(self, conn, viewer_hash, vm_ids, *, confidential, source):
+        """Bulk remote evidence without consulting label currentness or a generation CAS."""
+        existing = {
+            row["vm_id"]: row
+            for row in conn.execute(
+                "SELECT vm_id,confidential_required FROM muse_trust_observations WHERE viewer_hash=?",
+                (viewer_hash,),
+            )
+        }
+        identities = sorted(vm_ids) or [""]
+        observed = self.clock()
+        conn.executemany(
+            "INSERT INTO muse_trust_observations VALUES (?,?,1,?,?,?)",
+            (
+                (viewer_hash, identity, int(confidential), source, observed)
+                for identity in identities
+                if identity not in existing
+            ),
+        )
+        if confidential:
+            conn.executemany(
+                "UPDATE muse_trust_observations SET confidential_required=1, "
+                "source=?,observed_at=? WHERE viewer_hash=? AND vm_id=?",
+                (
+                    (source, observed, viewer_hash, identity)
+                    for identity in identities
+                    if identity in existing
+                ),
+            )
+
+    def _muse_bind_label(self, conn, provider, account, viewer_hash, vm_ids, binding):
+        session_hash, vm_id = binding
+        try:
+            owner, _vm = self._muse_rows(conn, provider, account, vm_id)
+        except m.CoreError:
+            # A corrupt/refused label must not roll back authenticated remote evidence.
+            return
+        if owner is not None and owner["viewer_hash"] != viewer_hash:
+            return
+        if owner is None:
+            conn.execute(
+                "INSERT INTO muse_trust_accounts VALUES (?,?,1,?,?,?,1,1,?)",
+                (provider, account, viewer_hash, session_hash, vm_id, self.clock()),
+            )
+        else:
+            selected = owner["active_vm_id"] or vm_id
+            changed = (
+                owner["session_hash"] != session_hash
+                or owner["active_vm_id"] != selected
+                or not owner["confidential_required"]
+            )
+            conn.execute(
+                "UPDATE muse_trust_accounts SET session_hash=?,active_vm_id=?, "
+                "generation=generation+?,confidential_required=1,updated_at=? "
+                "WHERE provider=? AND account=?",
+                (session_hash, selected, int(changed), self.clock(), provider, account),
+            )
+        existing = {
+            row["vm_id"]
+            for row in conn.execute(
+                "SELECT vm_id FROM muse_trust_vms WHERE provider=? AND account=?",
+                (provider, account),
+            )
+        }
+        observed = self.clock()
+        conn.executemany(
+            "INSERT INTO muse_trust_vms VALUES (?,?,?,1,1,?,?)",
+            (
+                (provider, account, identity, "authenticated_assignment", observed)
+                for identity in sorted(vm_ids)
+                if identity not in existing
+            ),
+        )
+        conn.executemany(
+            "UPDATE muse_trust_vms SET confidential_required=1, "
+            "source='authenticated_assignment',observed_at=? "
+            "WHERE provider=? AND account=? AND vm_id=?",
+            (
+                (observed, provider, account, identity)
+                for identity in sorted(vm_ids)
+                if identity in existing
+            ),
+        )
+
+    def _muse_record_observation(
+        self, provider, account, viewer_hash, vm_ids, *, source, binding=None
+    ):
         failure = None
         try:
             with self._muse_boundary(provider, account):
                 with self.transaction() as conn:
+                    conn.execute("INSERT INTO muse_trust_propagating VALUES (1)")
                     self._muse_observe(conn, viewer_hash, vm_ids, confidential=True, source=source)
+                    if binding is not None:
+                        self._muse_bind_label(conn, provider, account, viewer_hash, vm_ids, binding)
+                    self._muse_close_bind(conn)
                 self._muse_notify(provider, account)
         except m.CoreError:
             failure = m.CoreError(

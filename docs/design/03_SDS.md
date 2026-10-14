@@ -242,7 +242,8 @@ label-independent muse_trust_observations以viewer_hash/normalized VM id保存au
 empty VM id只表示owner evidence，不是wire identity。owner↔VM associations形成graph；recursive SQL
 closure把confidential owner傳至全部VM、confidential VM傳至全部owner，transitive且monotonic。
 21 guards、3 indexes及transaction-local propagation barrier作set-wise更新；超過1000 rows不增加
-trigger depth、不因size丟record。committed barrier、changed schema/corruption阻擋connection。
+trigger depth、不因size丟record。hint bind在單一transaction先barrier、bulk observation/VM insert、
+materialize closure一次、三table set-wise update、remove barrier後commit；不逐id算closure。committed barrier、changed schema/corruption阻擋connection。
 CVM hints在owner binding/status/selection拒絕前獨立commit全部usable VM ids；RV msg2在stale或
 changed binding也以remote identity commit、不用generation CAS。write失敗停止msg3並明示無法record。
 standard handoff才做currentness/generation CAS；effective confidential先於generation檢查，回protocol/never。
