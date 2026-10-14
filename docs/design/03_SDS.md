@@ -711,3 +711,8 @@ parsed for login forms over the full body, retaining original context across red
 E_AUTH_REQUIRED stops before later requests or resource writes. Page requests remain
 extractor-classified. Challenge/login block scans share a cheap deadline on every block
 and durable guard pacing: first, at most every 250 ms, and after last.
+### B13 browser boundary clarifications
+
+Facebook uses a nonempty exact host allowlist validated at configuration load.
+Wildcard, IP, local, invalid and empty entries fail with a fixed E_INPUT_INVALID
+without reflecting the operator value; B08's generic optional allowlist is unchanged.

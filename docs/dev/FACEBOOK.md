@@ -100,3 +100,11 @@ Distinct failure conditions stop immediately (`safe_read_retries = 0`) with expl
 
 1. **HTTPS URL paths inside `CONNECT` tunnels**: Because TLS remains end-to-end between Chromium and the remote server over `CONNECT host:port`, the local egress proxy observes the target hostname, port, resolved IP, connected peer IP/port, and total bytes transferred for every HTTPS hop, while path-level inspection of encrypted redirect targets inside an allowed Facebook host occurs in Chromium/Playwright (`_on_response` / DOM barrier classification). Any redirect to a disallowed host, private/loopback IP, or unapproved port is blocked at the `CONNECT` boundary before any TCP connection is opened.
 2. **Unsandboxed Chromium renderer on Ubuntu (`chromium_sandbox=False`)**: On Ubuntu 24.04+ systems where `kernel.apparmor_restrict_unprivileged_userns=1` is enabled, Chromium's unprivileged user-namespace sandbox fails to launch unless an operator-installed AppArmor profile grants `userns` to the Playwright Chromium binary. `PlaywrightBrowserDriver` therefore launches Chromium with `chromium_sandbox=False` so local integration tests and default operator setups work out of the box. In this mode the renderer process is unsandboxed at the OS user-namespace layer; containment relies on the session-local `BrowserEgressProxy`, disabled Chromium DNS/QUIC/WebRTC, blocked service workers/downloads/popups, and strict session bounds. Operators who require OS-level renderer sandboxing should install an AppArmor profile for the Chromium binary under `/etc/apparmor.d/`.
+
+## Round-4 safety and evidence rules
+
+The operator host allowlist is an exact, nonempty set. Config loading rejects every
+wildcard, IP literal, local hostname, invalid or empty entry with the fixed
+`E_INPUT_INVALID: Invalid Facebook host allowlist`. Invalid entries never silently
+disappear, and an empty effective set never grants unrestricted egress. The default
+explicit Facebook/CDN host list is retained.

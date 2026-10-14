@@ -1,12 +1,14 @@
 """One typed workspace policy, shared by app, store and executor."""
 
+import ipaddress
 import tomllib
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, ValidationError
+from pydantic import Field, ValidationError, field_validator
 
 from metamuse import models as m
+from metamuse import safety
 
 
 class AppPolicy(m.Model):
@@ -62,6 +64,40 @@ DEFAULT_FACEBOOK_ALLOWED_HOSTS: tuple[str, ...] = (
 )
 
 
+def validate_facebook_hosts(values: object) -> list[str]:
+    """Exact, nonempty operator host set; invalid entries never disappear silently."""
+
+    def invalid() -> m.CoreError:
+        return m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid Facebook host allowlist")
+
+    if not isinstance(values, (list, tuple)) or not values:
+        raise invalid()
+    hosts: list[str] = []
+    for value in values:
+        if not isinstance(value, str) or not value or any(c in value for c in "*:/@[]\\"):
+            raise invalid()
+        try:
+            checked = safety.check_url(
+                f"https://{value}/", purpose="seed", resolver=lambda _: ["93.184.216.34"]
+            )
+            host = checked.hostname
+            if "." not in host or host.endswith(
+                (".localhost", ".local", ".internal", ".localdomain")
+            ):
+                raise invalid()
+            try:
+                ipaddress.ip_address(host)
+            except ValueError:
+                pass
+            else:
+                raise invalid()
+        except (m.CoreError, ValueError, UnicodeError):
+            raise invalid() from None
+        if host not in hosts:
+            hosts.append(host)
+    return hosts
+
+
 class FacebookConfig(m.Model):
     enabled: bool = False
     approved_page_types: list[Literal["post_permalink"]] = Field(default_factory=list)
@@ -70,6 +106,11 @@ class FacebookConfig(m.Model):
     max_expansions: Annotated[int, Field(ge=0, le=100)] = 10
     pacing_ms: Annotated[int, Field(ge=0, le=60_000)] = 1500
     allowed_hosts: list[str] = Field(default_factory=lambda: list(DEFAULT_FACEBOOK_ALLOWED_HOSTS))
+
+    @field_validator("allowed_hosts", mode="before")
+    @classmethod
+    def valid_hosts(cls, value: object) -> list[str]:
+        return validate_facebook_hosts(value)
 
 
 class Config(m.Model):
