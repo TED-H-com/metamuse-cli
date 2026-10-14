@@ -77,7 +77,8 @@ def main() -> None:
             "matching_rows": 10000,
             "first_page_size": 50,
             "corpus_sha256": corpus_hash.hexdigest(),
-            "timing_scope": "Full application call including fresh snapshot and cursor disk writes",
+            "timing_scope": "Full application call: SQLite watermarks, membership fingerprint, "
+            "exact reference reads and HMAC cursor; first-call signing-key provisioning included",
             "p95_method": "nearest rank, sorted sample ceil(0.95 * 30) = 29",
             "min_ms": min(samples),
             "median_ms": statistics.median(samples),

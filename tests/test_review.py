@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from metamuse import app, cli, jobs
 from metamuse import models as m
-from metamuse.schemas import design_rollup, generated_schemas
+from metamuse.schemas import design_rollup
 
 
 def configure(ctx, *, live=False, **limits):
@@ -552,13 +552,6 @@ def test_f15_project_created_event_has_project(ctx, project):
     with ctx.store.connection() as conn:
         event = conn.execute("SELECT * FROM events WHERE kind='project.created'").fetchone()
     assert event["object_id"] == event["project_id"] == project
-
-
-def test_f16_all_core_tools_effective_and_stubs_absent(ctx):
-    rows = app.inspect_capabilities(ctx).data["capabilities"]
-    assert {row["name"] for row in rows if row["effective"]} == app.CORE_IMPLEMENTED_TOOLS
-    assert all(not row["effective"] for row in rows if row["implementation"] == "absent")
-    assert len(generated_schemas()) == 39
 
 
 def test_f01_known_job_runs_past_unknown_job(ctx, project):

@@ -1,27 +1,30 @@
-"""Local evidence, immutable packets, host drafts and staged exports (B07/B11)."""
+"""Project-isolated evidence and bounded, local content workflows (B07/B11)."""
 
 from __future__ import annotations
 
+import base64
 import csv
 import hashlib
+import hmac
 import io
 import json
 import os
 import re
+import secrets
 import shutil
 import sqlite3
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from uuid import uuid4
 
 from metamuse import models as m
 from metamuse.paths import private_dir
-from metamuse.safety import redact_text
+from metamuse.safety import redact_text, redaction_sensitive_key
+from metamuse.store import TransactionWriter
 
 if TYPE_CHECKING:
     from metamuse.app import AppContext
     from metamuse.jobs import Operation
-
 
 IMPLEMENTED_TOOLS = frozenset(
     {
@@ -32,10 +35,12 @@ IMPLEMENTED_TOOLS = frozenset(
         "metamuse_export",
     }
 )
+MAX_RESOLUTION_NODES = 2000
+MAX_RESOLUTION_EDGES = 10000
+MAX_RESOLUTION_DEPTH = 32
 
 
 def capability_status(ctx: AppContext) -> dict[str, dict[str, str]]:
-    """Local fixture evidence only; no remote verification or permission implied."""
     return {
         name: {
             "verification": "fixture_passed",
@@ -47,7 +52,11 @@ def capability_status(ctx: AppContext) -> dict[str, dict[str, str]]:
 
 
 def register_operations(registry: dict[str, Operation] | None = None) -> None:
-    """These bounded local functions execute synchronously; no jobs are submitted."""
+    """Synchronous local functions; no submitted jobs or external actions."""
+
+
+def _now(conn: sqlite3.Connection) -> str:
+    return conn.execute("SELECT metamuse_now()").fetchone()[0]
 
 
 def _event(
@@ -58,153 +67,224 @@ def _event(
     project_id: str,
     detail: dict[str, Any] | None = None,
 ) -> None:
-    ctx.store.insert(
+    TransactionWriter(ctx.store, conn).insert(
         m.Event(
             id=m.new_id("evt"),
             object_id=object_id,
             project_id=project_id,
             kind=kind,
             detail=detail or {},
-            created_at=ctx.clock(),
-        ),
-        conn=conn,
+            created_at=_now(conn),
+        )
     )
 
 
 def _transcript_scope_sql(alias: str = "ts") -> str:
-    """Single visibility seam for migration 002's forthcoming project-only transcripts.
+    """Fail closed until migration 002 provides authoritative project_id ownership.
 
-    Schema 1 grants visibility through an item/asset relation, matching Store's API.
-    Only internal constant aliases are used. Adapt this helper and the core validator
-    together when project-scoped segments with nullable assets are available.
+    Require a current item attachment in P and no surviving attachment in another
+    project, even historical. Shared bytes cannot establish transcript ownership.
     """
     return (
         f"EXISTS (SELECT 1 FROM item_assets ia JOIN items i ON i.id=ia.item_id "
-        f"WHERE ia.asset_id={alias}.asset_id AND i.project_id=?)"
+        f"WHERE ia.asset_id={alias}.asset_id AND i.project_id=? "
+        "AND ia.revision=(SELECT max(r.revision) FROM item_revisions r WHERE r.item_id=i.id)) "
+        f"AND NOT EXISTS (SELECT 1 FROM item_assets ia JOIN items i ON i.id=ia.item_id "
+        f"WHERE ia.asset_id={alias}.asset_id AND i.project_id<>?)"
     )
 
 
-def _check_ref(
-    ctx: AppContext,
-    project_id: str,
-    ref: m.EvidenceRef,
-    conn: sqlite3.Connection,
-    *,
-    source_only: bool = False,
-) -> None:
-    if ref.kind == "transcript_segment":
-        row = conn.execute(
-            "SELECT 1 FROM transcript_segments ts WHERE ts.id=? AND ts.revision=? AND "
-            + _transcript_scope_sql(),
-            (ref.id, ref.revision, project_id),
-        ).fetchone()
-        if row is None:
-            raise m.CoreError(
-                m.ErrorCode.REFERENCE_INVALID, "Transcript is missing or outside project"
-            )
-    ctx.store.validate_evidence(project_id, [ref], conn=conn, source_only=source_only)
+def _identity(ref: m.EvidenceRef) -> tuple[str, str, int]:
+    return ref.kind, ref.id, ref.revision
 
 
-def _resolve(
-    ctx: AppContext,
-    project_id: str,
-    ref: m.EvidenceRef,
-    conn: sqlite3.Connection,
-    *,
-    source_only: bool = False,
-    seen: frozenset[tuple[str, str, int]] = frozenset(),
-) -> dict[str, Any]:
-    _check_ref(ctx, project_id, ref, conn, source_only=source_only)
-    identity = (ref.kind, ref.id, ref.revision)
-    if identity in seen or len(seen) >= 32:
-        raise m.CoreError(
-            m.ErrorCode.REFERENCE_INVALID, "Cyclic or excessive draft reference depth"
-        )
-    if ref.kind == "item_revision":
-        revision = ctx.store.get(m.ItemRevision, ref.id, revision=ref.revision, conn=conn)
-        item = ctx.store.get(m.Item, ref.id, conn=conn)
-        source = ctx.store.get(m.Source, item.source_id, conn=conn)
-        return {
-            "ref": ref.model_dump(mode="json"),
-            "text": revision.text,
-            "source": {
-                "source_id": source.id,
-                "platform": source.platform,
-                "collection_method": source.collection_method,
-                "upstream_collection_method": source.upstream_collection_method,
-                "complete": revision.complete,
-                "missing_fields": revision.missing_fields,
-            },
-        }
-    if ref.kind == "transcript_segment":
-        segment = ctx.store.get(m.TranscriptSegment, ref.id, revision=ref.revision, conn=conn)
-        return {
-            "ref": ref.model_dump(mode="json"),
-            "text": segment.text,
-            "source": {
-                "collection_method": segment.method,
-                "review": segment.review,
-                "start_ms": segment.start_ms,
-                "end_ms": segment.end_ms,
-                "limitations": "Transcript text only; video frames were not analyzed.",
-            },
-        }
-    revision = ctx.store.get(m.DraftRevision, ref.id, revision=ref.revision, conn=conn)
-    facts = [
-        _resolve(ctx, project_id, fact, conn, seen=seen | {identity})
-        for fact in revision.facts_refs
-    ]
-    assets = []
-    for asset_id in revision.assets:
-        ctx.store.require_project_asset(project_id, asset_id, conn=conn)
-        asset = ctx.store.get(m.Asset, asset_id, conn=conn)
-        if asset.state != "ready":
-            raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Draft asset is unavailable")
-        assets.append(
-            {
+@dataclass
+class _Resolver:
+    """One bounded memo per operation; flattened records never expand a diamond DAG."""
+
+    ctx: AppContext
+    project_id: str
+    conn: sqlite3.Connection
+    tolerant: bool = False
+    cache: dict[tuple[str, str, int], dict[str, Any]] = field(default_factory=dict)
+    heights: dict[tuple[str, str, int], int] = field(default_factory=dict)
+    asset_cache: dict[str, dict[str, Any] | None] = field(default_factory=dict)
+    issues: list[dict[str, Any]] = field(default_factory=list)
+    edges: int = 0
+    bytes: int = 0
+
+    def asset(self, asset_id: str, ref: m.EvidenceRef) -> dict[str, Any] | None:
+        self.edges += 1
+        if self.edges > MAX_RESOLUTION_EDGES:
+            raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Reference edge budget exceeded")
+        if asset_id in self.asset_cache:
+            return self.asset_cache[asset_id]
+        try:
+            self.ctx.store.require_project_asset(self.project_id, asset_id, conn=self.conn)
+            asset = self.ctx.store.get(m.Asset, asset_id, conn=self.conn)
+            if asset.state != "ready":
+                raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Asset is unavailable")
+            result = {
                 "id": asset.id,
                 "sha256": asset.sha256,
                 "mime": asset.mime,
                 "actual_bytes": asset.actual_bytes,
             }
+            self.asset_cache[asset_id] = result
+            return result
+        except m.CoreError as exc:
+            if not self.tolerant or exc.detail.code not in (
+                m.ErrorCode.REFERENCE_INVALID,
+                m.ErrorCode.RESOURCE_UNAVAILABLE,
+                m.ErrorCode.STORAGE,
+            ):
+                raise
+            self.issues.append(
+                {
+                    "kind": "asset",
+                    "asset_id": asset_id,
+                    "ref": ref.model_dump(mode="json"),
+                    "code": exc.detail.code.value,
+                }
+            )
+            self.asset_cache[asset_id] = None
+            return None
+
+    def resolve(
+        self,
+        ref: m.EvidenceRef,
+        *,
+        source_only: bool = False,
+        seen: frozenset[tuple[str, str, int]] = frozenset(),
+    ) -> dict[str, Any] | None:
+        self.edges += 1
+        if self.edges > MAX_RESOLUTION_EDGES:
+            raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Reference edge budget exceeded")
+        identity = _identity(ref)
+        if identity in seen or len(seen) >= MAX_RESOLUTION_DEPTH:
+            raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Cyclic or excessive reference depth")
+        if source_only and ref.kind == "draft_revision":
+            raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Packet requires original evidence")
+        if identity in self.cache:
+            if len(seen) + self.heights[identity] > MAX_RESOLUTION_DEPTH:
+                raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Excessive reference depth")
+            return dict(self.cache[identity])
+        if len(self.cache) + len(seen) >= MAX_RESOLUTION_NODES:
+            raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Reference node budget exceeded")
+        try:
+            record = self._load(ref, seen)
+        except m.CoreError as exc:
+            if not self.tolerant or exc.detail.code != m.ErrorCode.REFERENCE_INVALID:
+                raise
+            self.issues.append(
+                {
+                    "kind": "reference",
+                    "ref": ref.model_dump(mode="json"),
+                    "code": exc.detail.code.value,
+                }
+            )
+            return None
+        height = 1 + max(
+            (
+                self.heights.get((child["kind"], child["id"], child["revision"]), 1)
+                for child in record.get("facts_refs", [])
+            ),
+            default=0,
         )
-    return {
-        "ref": ref.model_dump(mode="json"),
-        "text": revision.text,
-        "source": {"collection_method": "host_provided", "platform": revision.platform},
-        "variant": revision.variant,
-        "preferences": revision.preferences,
-        "facts": facts,
-        "assets": assets,
-        "digest": revision.digest,
-    }
+        if len(seen) + height > MAX_RESOLUTION_DEPTH:
+            raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Excessive reference depth")
+        self.bytes += len(m.canonical_json(record))
+        if self.bytes > self.ctx.limits.text_max_bytes:
+            raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Resolved evidence byte budget exceeded")
+        self.cache[identity] = record
+        self.heights[identity] = height
+        return dict(record)
+
+    def _load(self, ref: m.EvidenceRef, seen: frozenset) -> dict[str, Any]:
+        store, conn = self.ctx.store, self.conn
+        record: dict[str, Any] = {"ref": ref.model_dump(mode="json")}
+        if ref.kind == "transcript_segment":
+            visible = conn.execute(
+                "SELECT 1 FROM transcript_segments ts WHERE ts.id=? AND ts.revision=? AND "
+                + _transcript_scope_sql(),
+                (ref.id, ref.revision, self.project_id, self.project_id),
+            ).fetchone()
+            if visible is None:
+                raise m.CoreError(
+                    m.ErrorCode.REFERENCE_INVALID, "Transcript is missing or ambiguous"
+                )
+            revision = store.get(m.TranscriptSegment, ref.id, revision=ref.revision, conn=conn)
+            self.asset(revision.asset_id, ref)
+            latest = conn.execute(
+                "SELECT max(revision) FROM transcript_segments WHERE id=?", (ref.id,)
+            ).fetchone()[0]
+            record.update(
+                text=revision.text,
+                stale=latest > ref.revision,
+                source={
+                    "collection_method": revision.method,
+                    "review": revision.review,
+                    "start_ms": revision.start_ms,
+                    "end_ms": revision.end_ms,
+                    "limitations": "Transcript text only; video frames were not analyzed.",
+                },
+            )
+            return record
+        store.validate_evidence(self.project_id, [ref], conn=conn)
+        if ref.kind == "item_revision":
+            revision = store.get(m.ItemRevision, ref.id, revision=ref.revision, conn=conn)
+            item = store.get(m.Item, ref.id, conn=conn)
+            source = store.get(m.Source, item.source_id, conn=conn)
+            latest = conn.execute(
+                "SELECT max(revision) FROM item_revisions WHERE item_id=?", (ref.id,)
+            ).fetchone()[0]
+            record.update(
+                text=revision.text,
+                stale=latest > ref.revision,
+                source={
+                    "source_id": source.id,
+                    "platform": source.platform,
+                    "collection_method": source.collection_method,
+                    "upstream_collection_method": source.upstream_collection_method,
+                    "complete": revision.complete,
+                    "missing_fields": revision.missing_fields,
+                },
+            )
+            return record
+        revision = store.get(m.DraftRevision, ref.id, revision=ref.revision, conn=conn)
+        draft = store.get(m.Draft, ref.id, conn=conn)
+        stale = draft.current_revision > ref.revision
+        for fact in revision.facts_refs:
+            child = self.resolve(fact, seen=seen | {_identity(ref)})
+            stale = stale or child is None or child["stale"]
+        assets = [asset for aid in revision.assets if (asset := self.asset(aid, ref)) is not None]
+        record.update(
+            text=revision.text,
+            stale=stale,
+            source={"collection_method": "host_provided", "platform": revision.platform},
+            facts_refs=[r.model_dump(mode="json") for r in revision.facts_refs],
+            assets=assets,
+            variant=revision.variant,
+            preferences=revision.preferences.model_dump(mode="json"),
+            digest=revision.digest,
+        )
+        return record
+
+
+def _is_stale(resolver: _Resolver, refs: list[m.EvidenceRef]) -> bool:
+    return any(resolver.cache.get(_identity(ref), {"stale": True})["stale"] for ref in refs)
 
 
 def _safe_value(value: Any, records: list[dict[str, Any]]) -> Any:
-    """Redact whitelisted structured output without keeping matched values."""
     if isinstance(value, str):
         result, redactions = redact_text(value)
         records.extend(redactions)
         return result
     if isinstance(value, dict):
-        sensitive_keys = {
-            "headers",
-            "authorization",
-            "cookie",
-            "set-cookie",
-            "access_token",
-            "auth_token",
-            "api_key",
-            "session_cookie",
-            "sessionid",
-            "local_path",
-            "signature",
-            "sig",
-        }
         output = {}
         for key, child in value.items():
             safe_key = _safe_value(key, records)
-            if key.lower() in sensitive_keys or key.lower().startswith(("x-amz-", "x-goog-")):
+            if redaction_sensitive_key(key):
                 output[safe_key] = "[REDACTED]"
                 records.append({"kind": "sensitive_field", "count": 1})
             else:
@@ -218,8 +298,7 @@ def _safe_value(value: Any, records: list[dict[str, Any]]) -> Any:
 def _summarize_redactions(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     counts: dict[str, int] = {}
     for record in records:
-        kind = record["kind"]
-        counts[kind] = counts.get(kind, 0) + record["count"]
+        counts[record["kind"]] = counts.get(record["kind"], 0) + record["count"]
     return [{"kind": k, "count": v} for k, v in sorted(counts.items())]
 
 
@@ -246,93 +325,179 @@ def _sync_dir(path: Path) -> None:
         os.close(fd)
 
 
-def _load_marker(directory: Path, name: str) -> dict[str, Any]:
-    path = directory / name
+def _cursor_key(ctx: AppContext) -> bytes:
+    """One SQLite-backed workspace MAC key; no per-query state or extra files.
+
+    Uses existing mutation receipts, preserved by backup/restore. See core change
+    requests for formal key-lifecycle support. This bookkeeping grants no scope.
+    """
+    with ctx.store.transaction() as conn:
+        record = ctx.store.mutate_once(
+            conn,
+            "content.cursor_key",
+            "v1",
+            {"version": 1},
+            lambda: {"key": secrets.token_hex(32)},
+        )
     try:
-        if path.is_symlink():
-            raise ValueError("Symlink marker")
-        data = json.loads(path.read_bytes())
-        if not isinstance(data, dict):
-            raise ValueError("Invalid marker")
-        return data
-    except (FileNotFoundError, ValueError, UnicodeError) as exc:
-        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid or expired search cursor") from exc
+        key = bytes.fromhex(record["key"])
+        if len(key) != 32:
+            raise ValueError
+        return key
+    except (KeyError, ValueError, TypeError) as exc:
+        raise m.CoreError(m.ErrorCode.STORAGE, "Cursor signing key is unavailable") from exc
+
+
+def _encode_cursor(payload: dict[str, Any], key: bytes) -> str:
+    raw = m.canonical_json(payload)
+    return (
+        base64.urlsafe_b64encode(raw + hmac.digest(key, raw, "sha256")).decode("ascii").rstrip("=")
+    )
+
+
+def _decode_cursor(cursor: str, key: bytes, binding: dict[str, Any]) -> dict[str, Any]:
+    try:
+        if len(cursor) > 4096 or re.fullmatch(r"[A-Za-z0-9_-]+", cursor, flags=re.ASCII) is None:
+            raise ValueError
+        raw = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+        payload, signature = raw[:-32], raw[-32:]
+        if not hmac.compare_digest(signature, hmac.digest(key, payload, "sha256")):
+            raise ValueError
+        value = json.loads(payload)
+        if not isinstance(value, dict) or _encode_cursor(value, key) != cursor:
+            raise ValueError
+        if set(value) != {
+            *binding,
+            "item_watermark",
+            "transcript_watermark",
+            "count",
+            "snapshot_id",
+            "last",
+        }:
+            raise ValueError
+        if any(value[k] != v for k, v in binding.items()):
+            raise ValueError
+        for name in ("item_watermark", "transcript_watermark", "count"):
+            if type(value[name]) is not int or value[name] < 0:
+                raise ValueError
+        if re.fullmatch(r"[0-9a-f]{64}", value["snapshot_id"], flags=re.ASCII) is None:
+            raise ValueError
+        last = value["last"]
+        if (
+            not isinstance(last, list)
+            or len(last) != 3
+            or type(last[0]) is not int
+            or last[0] not in (0, 1)
+        ):
+            raise ValueError
+        m.EvidenceRef(
+            kind="item_revision" if last[0] == 0 else "transcript_segment",
+            id=last[1],
+            revision=last[2],
+        )
+        return value
+    except (ValueError, TypeError, KeyError, UnicodeError) as exc:
+        raise m.CoreError(
+            m.ErrorCode.INPUT_INVALID, "Tampered, foreign or invalid search cursor"
+        ) from exc
+
+
+def _search_rows(
+    conn: sqlite3.Connection, project: str, query: str, wm: dict[str, Any]
+) -> list[dict[str, Any]]:
+    rows = conn.execute(
+        "SELECT r.item_id AS id,r.revision,r.rowid,r.text_hash FROM item_revisions r "
+        "JOIN items i ON i.id=r.item_id WHERE i.project_id=? AND r.rowid<=? AND instr(r.text,?)>0 "
+        "AND r.revision=(SELECT max(r2.revision) FROM item_revisions r2 "
+        "WHERE r2.item_id=r.item_id AND r2.rowid<=?) ORDER BY r.item_id,r.revision",
+        (project, wm["item_watermark"], query, wm["item_watermark"]),
+    ).fetchall()
+    result = [
+        {
+            "kind": "item_revision",
+            "id": r["id"],
+            "revision": r["revision"],
+            "rank": 0,
+            "rowid": r["rowid"],
+            "content_digest": r["text_hash"],
+        }
+        for r in rows
+    ]
+    rows = conn.execute(
+        "SELECT ts.* ,ts.rowid FROM transcript_segments ts WHERE "
+        + _transcript_scope_sql()
+        + " AND ts.rowid<=? AND instr(ts.text,?)>0 AND ts.revision=(SELECT max(t2.revision) "
+        "FROM transcript_segments t2 WHERE t2.id=ts.id AND t2.rowid<=?) ORDER BY ts.id,ts.revision",
+        (project, project, wm["transcript_watermark"], query, wm["transcript_watermark"]),
+    ).fetchall()
+    result.extend(
+        {
+            "kind": "transcript_segment",
+            "id": r["id"],
+            "revision": r["revision"],
+            "rank": 1,
+            "rowid": r["rowid"],
+            "content_digest": m.payload_digest(dict(r)),
+        }
+        for r in rows
+    )
+    return result
 
 
 def search_evidence(ctx: AppContext, request: m.SearchRequest) -> m.Envelope:
-    if not request.query:
-        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Search query must not be empty")
-    directory = _internal_dir(ctx, "runtime", "search")
-    binding = {"project_id": request.project_id, "query_digest": m.payload_digest(request.query)}
+    key = _cursor_key(ctx)
+    binding = {
+        "version": 1,
+        "project_id": request.project_id,
+        "query_digest": m.payload_digest(request.query),
+    }
+    cursor = _decode_cursor(request.cursor, key, binding) if request.cursor is not None else None
     with ctx.store.connection() as conn:
-        conn.execute("BEGIN")  # One SQLite snapshot for both evidence kinds and this page.
-        if request.cursor is None:
-            ctx.store.get(m.Project, request.project_id, conn=conn)
-            rows = conn.execute(
-                "SELECT r.item_id AS id,r.revision FROM item_revisions r "
-                "JOIN items i ON i.id=r.item_id WHERE i.project_id=? AND instr(r.text,?)>0 "
-                "AND r.revision=(SELECT max(r2.revision) FROM item_revisions r2 "
-                "WHERE r2.item_id=r.item_id) ORDER BY r.item_id,r.revision",
-                (request.project_id, request.query),
-            ).fetchall()
-            refs = [
-                {"kind": "item_revision", "id": r["id"], "revision": r["revision"]} for r in rows
-            ]
-            rows = conn.execute(
-                "SELECT ts.id,ts.revision FROM transcript_segments ts WHERE "
-                + _transcript_scope_sql()
-                + " AND instr(ts.text,?)>0 AND ts.revision=(SELECT max(t2.revision) "
-                "FROM transcript_segments t2 WHERE t2.id=ts.id) ORDER BY ts.id,ts.revision",
-                (request.project_id, request.query),
-            ).fetchall()
-            refs.extend(
-                {"kind": "transcript_segment", "id": r["id"], "revision": r["revision"]}
-                for r in rows
+        conn.execute("BEGIN")
+        ctx.store.get(m.Project, request.project_id, conn=conn)
+        watermark = cursor or {
+            "item_watermark": conn.execute(
+                "SELECT coalesce(max(rowid),0) FROM item_revisions"
+            ).fetchone()[0],
+            "transcript_watermark": conn.execute(
+                "SELECT coalesce(max(rowid),0) FROM transcript_segments"
+            ).fetchone()[0],
+        }
+        rows = _search_rows(conn, request.project_id, request.query, watermark)
+        snapshot_id = m.payload_digest(rows)
+        if cursor and (cursor["count"] != len(rows) or cursor["snapshot_id"] != snapshot_id):
+            raise m.CoreError(
+                m.ErrorCode.REFERENCE_INVALID, "Search snapshot membership changed; restart search"
             )
-            snapshot_id, offset = uuid4().hex, 0
-            _write(
-                directory / f"snapshot_{snapshot_id}.json",
-                m.canonical_json({**binding, "refs": refs}),
-            )
-        else:
-            if re.fullmatch(r"[0-9a-f]{32}", request.cursor) is None:
-                raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid search cursor")
-            marker = _load_marker(directory, f"cursor_{request.cursor}.json")
-            snapshot_id, offset = marker.get("snapshot_id"), marker.get("offset")
-            if (
-                not isinstance(snapshot_id, str)
-                or re.fullmatch(r"[0-9a-f]{32}", snapshot_id) is None
-                or type(offset) is not int
-                or offset < 1
-                or any(marker.get(k) != v for k, v in binding.items())
-            ):
-                raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Foreign or invalid search cursor")
-            snapshot = _load_marker(directory, f"snapshot_{snapshot_id}.json")
-            refs = snapshot.get("refs")
-            if (
-                any(snapshot.get(k) != v for k, v in binding.items())
-                or not isinstance(refs, list)
-                or offset >= len(refs)
-            ):
-                raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Foreign or invalid search snapshot")
-            ctx.store.get(m.Project, request.project_id, conn=conn)
+        last = tuple(cursor["last"]) if cursor else (-1, "", 0)
+        if cursor and not any((r["rank"], r["id"], r["revision"]) == last for r in rows):
+            raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid search sort key")
+        page = [r for r in rows if (r["rank"], r["id"], r["revision"]) > last][: request.limit + 1]
+        resolver = _Resolver(ctx, request.project_id, conn)
         results = []
-        for value in refs[offset : offset + request.limit]:
-            ref = m.EvidenceRef.model_validate(value)
-            record = _resolve(ctx, request.project_id, ref, conn, source_only=True)
+        for value in page[: request.limit]:
+            ref = m.EvidenceRef(kind=value["kind"], id=value["id"], revision=value["revision"])
+            record = resolver.resolve(ref, source_only=True)
             text = record.pop("text")
             match = text.find(request.query)
-            start = max(0, match - 80)
-            end = min(len(text), start + 240)
-            record.update({"snippet": text[start:end], "snippet_start_code_points": start})
+            lead = min(80, max(0, (240 - len(request.query)) // 2))
+            start = max(0, match - lead)
+            end = min(len(text), start + max(240, len(request.query)))
+            record.update(snippet=text[start:end], snippet_start_code_points=start)
             results.append(record)
-    next_offset = offset + len(results)
     next_cursor = None
-    if next_offset < len(refs):
-        next_cursor = uuid4().hex
-        _write(
-            directory / f"cursor_{next_cursor}.json",
-            m.canonical_json({**binding, "snapshot_id": snapshot_id, "offset": next_offset}),
+    if len(page) > request.limit:
+        last_row = page[request.limit - 1]
+        next_cursor = _encode_cursor(
+            {
+                **binding,
+                "item_watermark": watermark["item_watermark"],
+                "transcript_watermark": watermark["transcript_watermark"],
+                "count": len(rows),
+                "snapshot_id": snapshot_id,
+                "last": [last_row["rank"], last_row["id"], last_row["revision"]],
+            },
+            key,
         )
     return m.Envelope(
         status="ok",
@@ -352,13 +517,14 @@ def _packet_preview(packet: m.Packet, sources: list[dict[str, Any]]) -> dict[str
 
 def prepare_packet(ctx: AppContext, request: m.PacketPrepareRequest) -> m.Envelope:
     with ctx.store.transaction() as conn:
-        ctx.store.get(m.Project, request.project_id, conn=conn)
-        records = [
-            _resolve(ctx, request.project_id, ref, conn, source_only=True)
-            for ref in request.selection
-        ]
+        resolver = _Resolver(ctx, request.project_id, conn)
+
+        def validate() -> list[dict[str, Any]]:
+            ctx.store.get(m.Project, request.project_id, conn=conn)
+            return [resolver.resolve(ref, source_only=True) for ref in request.selection]
 
         def create() -> dict[str, Any]:
+            records = validate()
             redactions: list[dict[str, Any]] = []
             sources = _safe_value([{"ref": r["ref"], **r["source"]} for r in records], redactions)
             chunks = [
@@ -368,19 +534,15 @@ def prepare_packet(ctx: AppContext, request: m.PacketPrepareRequest) -> m.Envelo
             for record, source in zip(records, sources, strict=True):
                 ref = record["ref"]
                 chunks.append(
-                    f"\n[{ref['kind']} {ref['id']} revision {ref['revision']}]\n"
-                    + "Source and limits: "
-                    + m.canonical_json({k: v for k, v in source.items() if k != "ref"}).decode(
-                        "utf-8"
-                    )
+                    f"\n[{ref['kind']} {ref['id']} revision {ref['revision']}]\nSource and limits: "
+                    + m.canonical_json({k: v for k, v in source.items() if k != "ref"}).decode()
                     + "\n"
                     + record["text"]
                     + "\n"
                 )
             rendered, text_redactions = redact_text("".join(chunks))
             redactions.extend(text_redactions)
-            byte_count = len(rendered.encode("utf-8"))
-            if byte_count > min(48 * 1024, ctx.limits.packet_max_utf8_bytes):
+            if len(rendered.encode("utf-8")) > min(48 * 1024, ctx.limits.packet_max_utf8_bytes):
                 raise m.CoreError(
                     m.ErrorCode.LIMIT_REACHED, "Rendered packet exceeds UTF-8 byte limit"
                 )
@@ -392,49 +554,54 @@ def prepare_packet(ctx: AppContext, request: m.PacketPrepareRequest) -> m.Envelo
                 redactions=_summarize_redactions(redactions),
                 coverage_status="bounded",
                 digest=hashlib.sha256(rendered.encode("utf-8")).hexdigest(),
-                created_at=ctx.clock(),
+                created_at=_now(conn),
+                stale=_is_stale(resolver, request.selection),
             )
-            ctx.store.insert(packet, conn=conn)
+            TransactionWriter(ctx.store, conn).insert(packet)
             _event(ctx, conn, "packet.prepared", packet.id, request.project_id)
             return _packet_preview(packet, sources)
 
         data = ctx.store.mutate_once(conn, "packet.prepare", request.request_key, request, create)
+        validate()  # Replays still check scope/existence, after receipt conflict detection.
+        packet = ctx.store.get(m.Packet, data["id"], conn=conn)
+        stale = _is_stale(resolver, request.selection)
+        conn.execute("UPDATE packets SET stale=? WHERE id=?", (int(stale), packet.id))
+        data = {**data, "stale": stale}
     return m.Envelope(status="ok", data=data)
 
 
 def save_draft(ctx: AppContext, request: m.DraftSaveRequest) -> m.Envelope:
-    if len(request.text.encode("utf-8")) > ctx.limits.text_max_bytes:
-        raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Draft exceeds configured UTF-8 byte limit")
-    if request.draft_id is None and request.expected_revision is not None:
-        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "New drafts must omit expected_revision")
-    if request.draft_id is not None and request.expected_revision is None:
-        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Draft updates require expected_revision")
     with ctx.store.transaction() as conn:
-        ctx.store.get(m.Project, request.project_id, conn=conn)
+        resolver = _Resolver(ctx, request.project_id, conn)
+
+        def validate() -> None:
+            ctx.store.get(m.Project, request.project_id, conn=conn)
+            for ref in request.facts_refs:
+                resolver.resolve(ref)
+            for asset_id in request.assets:
+                resolver.asset(
+                    asset_id,
+                    m.EvidenceRef(
+                        kind="draft_revision", id=request.draft_id or "drf_new", revision=1
+                    ),
+                )
 
         def save() -> dict[str, Any]:
-            for ref in request.facts_refs:
-                _resolve(ctx, request.project_id, ref, conn)
-            for asset_id in request.assets:
-                ctx.store.require_project_asset(request.project_id, asset_id, conn=conn)
-                if ctx.store.get(m.Asset, asset_id, conn=conn).state != "ready":
-                    raise m.CoreError(
-                        m.ErrorCode.RESOURCE_UNAVAILABLE, "Draft asset is unavailable"
-                    )
+            if (request.draft_id is None) != (request.expected_revision is None):
+                raise m.CoreError(
+                    m.ErrorCode.INPUT_INVALID,
+                    "Draft updates require expected_revision; creation omits it",
+                )
+            validate()
+            writer = TransactionWriter(ctx.store, conn)
             if request.draft_id is None:
-                draft = m.Draft(id=m.new_id("drf"), project_id=request.project_id)
-                ctx.store.insert(draft, conn=conn)
+                draft = writer.insert(m.Draft(id=m.new_id("drf"), project_id=request.project_id))
                 number = 1
             else:
-                draft = ctx.store.get(m.Draft, request.draft_id, conn=conn)
+                draft = writer.get(m.Draft, request.draft_id)
                 if draft.project_id != request.project_id:
                     raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Draft is outside project")
-                if draft.current_revision != request.expected_revision:
-                    raise m.CoreError(m.ErrorCode.DATA_STALE, "Draft revision has changed")
                 number = draft.current_revision + 1
-                conn.execute(
-                    "UPDATE drafts SET current_revision=?,stale=0 WHERE id=?", (number, draft.id)
-                )
             payload = {
                 "text": request.text,
                 "platform": request.platform,
@@ -446,11 +613,24 @@ def save_draft(ctx: AppContext, request: m.DraftSaveRequest) -> m.Envelope:
             revision = m.DraftRevision(
                 draft_id=draft.id, revision=number, **payload, digest=m.payload_digest(payload)
             )
-            ctx.store.insert(revision, conn=conn)
+            writer.append_draft_revision(revision, expected_revision=request.expected_revision)
+            writer.execute(
+                "UPDATE drafts SET stale=? WHERE id=?",
+                (int(_is_stale(resolver, request.facts_refs)), draft.id),
+            )
             _event(ctx, conn, "draft.saved", draft.id, request.project_id, {"revision": number})
-            return {"draft_id": draft.id, **revision.model_dump(mode="json")}
+            return revision.model_dump(mode="json")
 
         data = ctx.store.mutate_once(conn, "draft.save", request.request_key, request, save)
+        validate()
+        owner = ctx.store.get(m.Draft, data["draft_id"], conn=conn)
+        if owner.project_id != request.project_id:
+            raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Draft is outside project")
+        ctx.store.get(m.DraftRevision, data["draft_id"], revision=data["revision"], conn=conn)
+        stale = _is_stale(resolver, request.facts_refs)
+        if owner.current_revision == data["revision"]:
+            conn.execute("UPDATE drafts SET stale=? WHERE id=?", (int(stale), owner.id))
+        data = {**data, "stale": stale}
     return m.Envelope(status="ok", data=data)
 
 
@@ -461,11 +641,11 @@ _NUMBER = re.compile(r"(?<![0-9A-Za-z_])[-+]?\d+(?:[.,]\d+)*(?:%|％)?")
 def _conflict_candidates(text: str, facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
     candidates = []
     for kind, pattern in (("date", _DATE), ("number", _NUMBER)):
-        draft_values = set(pattern.findall(text))
-        if not draft_values:
-            continue
+        target = _DATE.sub(" ", text) if kind == "number" else text
+        draft_values = set(pattern.findall(target))
         for fact in facts:
-            source_values = set(pattern.findall(fact["text"]))
+            target = _DATE.sub(" ", fact["text"]) if kind == "number" else fact["text"]
+            source_values = set(pattern.findall(target))
             differences = sorted(draft_values - source_values)
             if source_values and differences:
                 candidates.append(
@@ -487,70 +667,46 @@ def preview_draft(ctx: AppContext, request: m.DraftPreviewRequest) -> m.Envelope
         revision = ctx.store.get(
             m.DraftRevision, request.draft_id, revision=request.revision, conn=conn
         )
-        issues = []
-        facts = []
+        resolver = _Resolver(ctx, draft.project_id, conn, tolerant=True)
         for ref in revision.facts_refs:
-            try:
-                facts.append(_resolve(ctx, draft.project_id, ref, conn))
-            except m.CoreError as exc:
-                if exc.detail.code not in (
-                    m.ErrorCode.REFERENCE_INVALID,
-                    m.ErrorCode.RESOURCE_UNAVAILABLE,
-                ):
-                    raise
-                issues.append(
-                    {
-                        "kind": "reference",
-                        "ref": ref.model_dump(mode="json"),
-                        "code": exc.detail.code.value,
-                    }
-                )
+            resolver.resolve(ref)
+        root = m.EvidenceRef(kind="draft_revision", id=draft.id, revision=revision.revision)
         for asset_id in revision.assets:
-            try:
-                ctx.store.require_project_asset(draft.project_id, asset_id, conn=conn)
-                if ctx.store.get(m.Asset, asset_id, conn=conn).state != "ready":
-                    raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Asset is unavailable")
-            except m.CoreError as exc:
-                if exc.detail.code not in (
-                    m.ErrorCode.REFERENCE_INVALID,
-                    m.ErrorCode.RESOURCE_UNAVAILABLE,
-                ):
-                    raise
-                issues.append(
-                    {"kind": "asset", "asset_id": asset_id, "code": exc.detail.code.value}
-                )
+            resolver.asset(asset_id, root)
+        facts = list(resolver.cache.values())
+        stale = _is_stale(resolver, revision.facts_refs)
     text = revision.text
-    format_name = revision.preferences.get("format", "plain_text")
-    format_issues = []
-    if format_name not in ("plain_text", "markdown"):
-        format_issues.append("Unrecognized declared format")
-    if "\x00" in text:
-        format_issues.append("Text contains NUL code points")
-    if not text:
-        format_issues.append("Text is empty")
-    data = {
-        "draft_id": draft.id,
-        "revision": revision.revision,
-        "digest": revision.digest,
-        "text": text,
-        "platform": revision.platform,
-        "stale": draft.stale,
-        "counts": {
-            "code_points": len(text),
-            "utf16_units": len(text.encode("utf-16-le")) // 2,
-            "utf8_bytes": len(text.encode("utf-8")),
-        },
-        "counting_algorithm": "Python len for Unicode code points; UTF-16LE bytes / 2 "
-        "without BOM; UTF-8 encoded bytes. Grapheme clusters are not counted.",
-        "format": {"declared": format_name, "issues": format_issues},
-        "reference_issues": issues,
-        "reference_notice": "Reference exists does not mean semantically supported.",
-        "conflict_candidates": _conflict_candidates(text, facts),
-        "platform_limit": {"value": None, "source": None, "verified_at": None},
-    }
+    format_issues = [
+        message
+        for condition, message in (
+            ("\x00" in text, "Text contains NUL code points"),
+            (not text, "Text is empty"),
+        )
+        if condition
+    ]
     return m.Envelope(
         status="ok",
-        data=data,
+        data={
+            "draft_id": draft.id,
+            "revision": revision.revision,
+            "digest": revision.digest,
+            "text": text,
+            "platform": revision.platform,
+            "stale": stale,
+            "counts": {
+                "code_points": len(text),
+                "utf16_units": len(text.encode("utf-16-le")) // 2,
+                "utf8_bytes": len(text.encode("utf-8")),
+            },
+            "counting_algorithm": "Python len for Unicode code points; "
+            "UTF-16LE bytes / 2 without BOM; "
+            "UTF-8 encoded bytes. Grapheme clusters are not counted.",
+            "format": {"declared": revision.preferences.format, "issues": format_issues},
+            "reference_issues": resolver.issues,
+            "reference_notice": "Reference exists does not mean semantically supported.",
+            "conflict_candidates": _conflict_candidates(text, facts),
+            "platform_limit": {"value": None, "source": None, "verified_at": None},
+        },
         warnings=[
             "Platform length limit is unknown: no recorded source and verification date.",
             "Date/number checks identify lexical candidates only; host review is required.",
@@ -560,7 +716,15 @@ def preview_draft(ctx: AppContext, request: m.DraftPreviewRequest) -> m.Envelope
 
 def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
     def cell(value: str) -> str:
-        return "'" + value if value.startswith(("=", "+", "-", "@", "\t", "\r")) else value
+        candidate = value.lstrip()
+        while candidate.startswith(('"', "'")):
+            candidate = candidate[1:].lstrip()
+        return (
+            "'" + value
+            if value.startswith(("\t", "\r", "\n"))
+            or candidate.startswith(("=", "+", "-", "@", "|"))
+            else value
+        )
 
     stream = io.StringIO(newline="")
     writer = csv.writer(stream)
@@ -575,14 +739,16 @@ def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
                     ref["id"],
                     ref["revision"],
                     record["text"],
-                    m.canonical_json(record["source"]).decode("utf-8"),
+                    m.canonical_json(record["source"]).decode(),
                 )
             ]
         )
     return stream.getvalue().encode("utf-8")
 
 
-def _export_files(format_name: str, records: list[dict[str, Any]]) -> dict[str, bytes]:
+def _export_files(
+    format_name: str, records: list[dict[str, Any]], *, redacted: bool = False
+) -> dict[str, bytes]:
     if format_name == "jsonl":
         return {"records.jsonl": b"".join(m.canonical_json(r) + b"\n" for r in records)}
     if format_name == "csv":
@@ -590,21 +756,25 @@ def _export_files(format_name: str, records: list[dict[str, Any]]) -> dict[str, 
     if format_name == "text":
         return {f"object-{i:04d}.txt": r["text"].encode("utf-8") for i, r in enumerate(records, 1)}
     if format_name == "markdown":
+        notice = (
+            "" if redacted else "Notice: Private unredacted export; not a public share bundle.\n\n"
+        )
         return {
             f"object-{i:04d}.md": (
-                "Evidence: "
-                + m.canonical_json(r["ref"]).decode("utf-8")
-                + "\n\n"
-                + "Source: "
-                + m.canonical_json(r["source"]).decode("utf-8")
+                notice
+                + "Evidence: "
+                + m.canonical_json(r["ref"]).decode()
+                + "\n\nSource: "
+                + m.canonical_json(r["source"]).decode()
                 + "\n\n"
                 + r["text"]
             ).encode("utf-8")
             for i, r in enumerate(records, 1)
         }
-    # Public-share bundle uses only whitelisted, redacted text and asset metadata.
-    # Opaque media bytes cannot be made public-safe by this text redaction guard.
-    return {**_export_files("jsonl", records), **_export_files("markdown", records)}
+    return {
+        **_export_files("jsonl", records, redacted=True),
+        **_export_files("markdown", records, redacted=True),
+    }
 
 
 def _verify_export(ctx: AppContext, data: dict[str, Any]) -> None:
@@ -614,23 +784,35 @@ def _verify_export(ctx: AppContext, data: dict[str, Any]) -> None:
         raise m.CoreError(m.ErrorCode.STORAGE, "Invalid stored export artifact")
     directory = ctx.paths.root / artifact
     if directory.resolve() != directory or not directory.is_dir():
-        raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Export artifact is unavailable")
-    expected_manifest = m.canonical_json(data["manifest"]) + b"\n"
+        raise m.CoreError(
+            m.ErrorCode.RESOURCE_UNAVAILABLE,
+            "Export artifact is unavailable; core backups do not contain export directories",
+            next_action="Restore the verified artifact separately, or use a new request key",
+        )
     manifest_path = directory / "manifest.json"
-    if manifest_path.is_symlink() or not manifest_path.is_file():
-        raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Export manifest is unavailable")
-    if manifest_path.read_bytes() != expected_manifest:
-        raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Export manifest has changed")
+    if (
+        manifest_path.is_symlink()
+        or not manifest_path.is_file()
+        or manifest_path.read_bytes() != m.canonical_json(data["manifest"]) + b"\n"
+    ):
+        raise m.CoreError(
+            m.ErrorCode.RESOURCE_UNAVAILABLE, "Export manifest is unavailable or changed"
+        )
     names = {"manifest.json"}
     for entry in data["manifest"]["files"]:
         name = entry["name"]
-        if re.fullmatch(r"(?:records\.(?:csv|jsonl)|object-\d{4,}\.(?:txt|md))", name) is None:
+        if (
+            re.fullmatch(
+                r"(?:records\.(?:csv|jsonl)|object-\d{4,}\.(?:txt|md))", name, flags=re.ASCII
+            )
+            is None
+        ):
             raise m.CoreError(m.ErrorCode.STORAGE, "Invalid export member")
         path = directory / name
         if path.is_symlink() or not path.is_file():
             raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Export file is unavailable")
-        content = path.read_bytes()
-        if len(content) != entry["bytes"] or hashlib.sha256(content).hexdigest() != entry["sha256"]:
+        raw = path.read_bytes()
+        if len(raw) != entry["bytes"] or hashlib.sha256(raw).hexdigest() != entry["sha256"]:
             raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Export file has changed")
         names.add(name)
     if {p.name for p in directory.iterdir()} != names:
@@ -642,11 +824,20 @@ def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
     committed = False
     try:
         with ctx.store.transaction() as conn:
-            ctx.store.get(m.Project, request.project_id, conn=conn)
-            records = [_resolve(ctx, request.project_id, ref, conn) for ref in request.selection]
+            resolver = _Resolver(ctx, request.project_id, conn)
+
+            def validate() -> list[dict[str, Any]]:
+                ctx.store.get(m.Project, request.project_id, conn=conn)
+                selected = [resolver.resolve(ref) for ref in request.selection]
+                identities = {_identity(ref) for ref in request.selection}
+                return selected + [
+                    value
+                    for identity, value in resolver.cache.items()
+                    if identity not in identities
+                ]
 
             def create() -> dict[str, Any]:
-                nonlocal staging, final
+                records = validate()
                 export_id = m.new_id("exp")
                 export = m.Export(
                     id=export_id,
@@ -654,52 +845,52 @@ def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
                     selection=request.selection,
                     format=request.format,
                 )
-                ctx.store.insert(export, conn=conn)
+                TransactionWriter(ctx.store, conn).insert(export)
                 redactions: list[dict[str, Any]] = []
                 selected = (
                     _safe_value(records, redactions) if request.format == "bundle" else records
                 )
                 files = _export_files(request.format, selected)
+                if sum(len(value) for value in files.values()) > ctx.limits.text_max_bytes:
+                    raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Export byte budget exceeded")
                 manifest = {
                     "export_id": export_id,
                     "format": request.format,
                     "selection": [r.model_dump(mode="json") for r in request.selection],
-                    "redactions": _summarize_redactions(redactions),
+                    "redactions": _summarize_redactions(redactions)
+                    if request.format == "bundle"
+                    else None,
                     "text_policy": "redacted" if request.format == "bundle" else "original_private",
                     "asset_policy": "metadata_only; opaque media bytes are not included",
                     "files": [
-                        {
-                            "name": name,
-                            "sha256": hashlib.sha256(content).hexdigest(),
-                            "bytes": len(content),
-                        }
-                        for name, content in sorted(files.items())
+                        {"name": name, "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
+                        for name, raw in sorted(files.items())
                     ],
                 }
                 if request.format == "bundle":
                     manifest["redaction_notice"] = (
                         "Automatic redaction is a guard, not a guarantee."
                     )
-                staging_parent = _internal_dir(ctx, "staging")
-                stage = staging_parent / export_id
-                stage.mkdir(mode=0o700)  # Exclusive create; never delete an existing artifact.
+                stage = _internal_dir(ctx, "staging") / export_id
+                stage.mkdir(mode=0o700)
+                nonlocal staging, final
                 staging = stage
                 exports = _internal_dir(ctx, "exports")
                 destination = exports / export_id
-                for name, content in files.items():
-                    _write(staging / name, content)
-                _write(staging / "manifest.json", m.canonical_json(manifest) + b"\n")
-                _sync_dir(staging)
+                for name, raw in files.items():
+                    _write(stage / name, raw)
+                _write(stage / "manifest.json", m.canonical_json(manifest) + b"\n")
+                _sync_dir(stage)
                 if destination.exists() or destination.is_symlink():
                     raise m.CoreError(m.ErrorCode.STORAGE, "Export destination already exists")
-                staging.rename(destination)
+                stage.rename(destination)
                 final = destination
                 _sync_dir(exports)
                 _sync_dir(ctx.paths.root / "staging")
                 artifact = f"exports/{export_id}"
                 conn.execute(
                     "UPDATE exports SET manifest=?,artifact=?,state='ready' WHERE id=?",
-                    (m.canonical_json(manifest).decode("utf-8"), artifact, export_id),
+                    (m.canonical_json(manifest).decode(), artifact, export_id),
                 )
                 _event(ctx, conn, "export.ready", export_id, request.project_id)
                 return {
@@ -712,6 +903,10 @@ def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
             data = ctx.store.mutate_once(
                 conn, "export.objects", request.request_key, request, create
             )
+            validate()
+            stored = ctx.store.get(m.Export, data["id"], conn=conn)
+            if stored.state != "ready" or stored.project_id != request.project_id:
+                raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Stored export is not ready")
         committed = True
     finally:
         if not committed:

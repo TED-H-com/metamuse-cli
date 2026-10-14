@@ -303,6 +303,16 @@ revision insertion advances current_revision. Features enforce semantic/source h
 The core does not infer native identities, resolve missing parents, parse content or
 validate packet semantic claims.
 
+Content adds a nonempty SearchRequest.query and typed DraftPreferences on both input
+and stored DraftRevision: language/emoji are nonempty bounded strings (35/32 code
+points), format plain_text/markdown, scope this_draft. The content-owner/core-owner task
+explicitly authorizes these additive contracts; generated schemas come from models.py.
+See [CONTENT_API.md](CONTENT_API.md) for content resolution budgets and replay behavior.
+Content currently persists one workspace cursor-signing key through existing SQLite
+request receipts (operation content.cursor_key, request key v1), with no per-query state.
+Formal signing-key lifecycle and export-artifact backup support remain core change
+requests; core backup currently preserves the key/receipts, but excludes export files.
+
 `put_object(binary_stream, mime=..., max_bytes=..., duration_ms=None)` measures/hash-streams
 actual bytes into staging, fsyncs, atomically renames to the SHA-256 path, then commits a
 ready Asset. Duplicate bytes reuse the same Asset ID; add separate ItemAsset relations

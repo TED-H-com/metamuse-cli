@@ -49,3 +49,68 @@ def test_redaction_handles_multiple_parameters_and_case():
     output, records = redact_text(text)
     assert output == "https://example.invalid/a?sig=[REDACTED]&v=2&AUTH_TOKEN=[REDACTED]#keep"
     assert records == [{"kind": "url_token", "count": 2}]
+
+
+@pytest.mark.parametrize(
+    "sample,secret",
+    [
+        ("https://example.invalid/cb#access_token=FAKE_FRAG", "FAKE_FRAG"),
+        ("https://example.invalid/cb#id_token=FAKE_ID", "FAKE_ID"),
+        ("https://example.invalid/?api_key=FAKE_API", "FAKE_API"),
+        ("https://example.invalid/?apikey=FAKE_API", "FAKE_API"),
+        ("https://example.invalid/?refresh_token=FAKE_REFRESH", "FAKE_REFRESH"),
+        ("https://example.invalid/?client_secret=FAKE_CLIENT", "FAKE_CLIENT"),
+        ("https://example.invalid/?secret=FAKE_SECRET", "FAKE_SECRET"),
+        (
+            "https://example.invalid/?next=https%3A%2F%2Fexample.invalid%2F%3Faccess_token%3DFAKE_ENC",
+            "FAKE_ENC",
+        ),
+        ("https://example.invalid/?next=%3Fv%3D1%26sig%3DFAKE_ENC", "FAKE_ENC"),
+        (
+            "https://example.invalid/?sp=FAKE_SP&sv=FAKE_SV&sr=FAKE_SR&se=FAKE_SE&skoid=FAKE_ID",
+            "FAKE_",
+        ),
+        ("https://example.invalid/?oh=FAKE_OH&oe=FAKE_OE", "FAKE_"),
+        ("session%5Fid=FAKE_SESSION", "FAKE_SESSION"),
+        ("Authorization: Basic FAKE_BASIC", "FAKE_BASIC"),
+        ("Authorization: Token FAKE_TOKEN", "FAKE_TOKEN"),
+        ('Authorization: Digest username="FAKE_USER", response="FAKE_RESPONSE"', "FAKE_"),
+        ("Authorization: AWS4-HMAC-SHA256 Credential=FAKE_CREDENTIAL", "FAKE_CREDENTIAL"),
+        ("[http] Cookie: xs=FAKE_XS", "FAKE_XS"),
+        ("[http] Set-Cookie: datr=FAKE_DATR", "FAKE_DATR"),
+        ('foo="FAKE QUOTED COOKIE"; bar=2', "FAKE QUOTED COOKIE"),
+        ("Cookie: a=1;\r\n b=FAKE_FOLDED", "FAKE_FOLDED"),
+        ('{"access_token":"FAKE_JSON"}', "FAKE_JSON"),
+        ('{"Authorization":"Bearer FAKE_JSON"}', "FAKE_JSON"),
+        ('{"Cookie":"xs=FAKE_JSON"}', "FAKE_JSON"),
+        ('{"sessionid":"FAKE_JSON"}', "FAKE_JSON"),
+        ('{"auth":"Authorization: Bearer FAKE_JSON"}', "FAKE_JSON"),
+        ('{"cookie":"sessionid=FAKE_JSON"}', "FAKE_JSON"),
+        ('{"path":"/tmp/synthetic.txt"}', "/tmp/synthetic.txt"),
+    ],
+)
+def test_review_bypass_table_and_json_integrity(sample, secret):
+    output, records = redact_text(sample)
+    assert secret not in output and secret not in json.dumps(records)
+    assert records and redact_text(output)[0] == output
+    if sample.startswith("{"):
+        json.loads(output)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "年增率 5%/年",
+        "費用（元）/人",
+        "「台北」/「台中」",
+        "請選擇：是 /否",
+        "人數=100; 預算=200",
+        "甲=一; 乙=二",
+        "公園/學校",
+        "繁中😀\r\n換行",
+        '{"note":"5%/年", "人數":"100"}',
+        "https://example.invalid/a/b?q=繁中",
+    ],
+)
+def test_review_false_positive_table(text):
+    assert redact_text(text) == (text, [])

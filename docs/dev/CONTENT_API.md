@@ -14,28 +14,34 @@ two-character zh-Hant queries without a tokenizer. It performs no Traditional/Si
 conversion, case folding, Unicode normalization, stemming, or wildcard expansion.
 Empty queries are invalid; literal newlines, emoji and combining characters are supported.
 
-The first page fixes the latest revision of each item/segment at query time, matches
-that revision's text, and saves ordered exact-reference membership in a private snapshot.
-Order is item_revision before transcript_segment, then binary ID order and revision.
-Later insertions and new revisions cannot change that membership. Pages resolve exact
-revisions, rather than re-running an offset query against current latest revisions.
-A deleted or newly foreign member fails with `E_REFERENCE_INVALID`; it is never silently
-skipped. Source metadata is read at page time, while selected text revisions are fixed.
+The first page captures SQLite item/segment row watermarks in one read transaction.
+Every page computes latest revisions as of those watermarks, with exact-reference
+membership and a content fingerprint. Order is item_revision before transcript_segment,
+then binary ID order and revision. Keyset pagination keeps later insertions/revisions
+out of the snapshot. Deletion, replacement or loss of visibility changes the fingerprint
+and fails with `E_REFERENCE_INVALID`; it never silently skips members or substitutes an
+older revision. Source metadata is read at page time, while selected text revisions are
+fixed. Schema-1 transcript visibility can shrink when current item attachments change.
 
-Results contain `ref` (an exact EvidenceRef), `snippet` (at most 240 code points),
+Results contain `ref` (an exact EvidenceRef), `snippet` (normally at most 240 code points),
 `snippet_start_code_points` (offset into the original text), and whitelisted `source`
 metadata including collection_method and upstream_collection_method. Transcript results
 include method, timing, review and the limitation that frames were not analyzed.
-`data.snapshot_id` identifies membership; `next_cursor` is a random opaque marker bound
-to project and exact query digest. Malformed, unknown, expired, or foreign cursors are
-`E_INPUT_INVALID`. Cursors survive application restart and page size can change.
+Long queries reduce leading context; queries above 240 code points expand the snippet
+to contain the full match. `data.snapshot_id` fingerprints membership. `next_cursor` is a
+stateless, opaque HMAC-SHA256 authenticated token carrying project, exact query digest,
+watermarks, fingerprint/count and last sort key. Malformed, tampered, wrong-workspace or
+foreign cursors are `E_INPUT_INVALID`. Cursors survive restart and backup/restore; page
+size can change. They grant no permission and are not an encryption mechanism.
 
-Snapshots and cursor markers reside in `runtime/search/`, with 0700 directories and
-0600 files. They hold only refs, project/query digests and offsets, not source text or
-credentials. No migration or second database is added. There is no automatic expiry or
-retention sweep yet: the operator may clear these markers to invalidate old cursors.
-Privacy deletion must account for surviving reference markers. Markers are pagination
-state and never permissions; same-UID hostile shell access is outside this trust model.
+Search creates no per-query state or files. One random 32-byte workspace signing key
+uses the existing SQLite mutation-receipt API (`content.cursor_key`, key `v1`), so core
+backup/restore retains it. Search performs a short bookkeeping transaction before the
+read snapshot; the first call provisions that key. Formal key lifecycle/rotation support
+is a core change request. No migration or second store is added. Old file-marker cursors
+are invalid; this implementation neither reads nor creates their files. Existing legacy
+markers require operator retention cleanup. Same-UID hostile shell access is outside
+this trust model.
 
 ## Packet preview
 
@@ -56,16 +62,22 @@ The result includes the Packet fields plus `utf8_bytes`, `sources` and a redacti
 never secret values, secret hashes or original offsets. Source text requesting secret
 leaks, shell execution or permission changes remains inert text.
 
-Packets are immutable through the feature API. A receipt replays the original preview;
-changed payload under the same request key is `E_IDEMPOTENCY_CONFLICT`. New data requires
-a new selection and key, creating a new packet. The core may mark the old packet stale
-without changing its selection, text or digest. Replay still validates source existence.
+Packets are immutable through the feature API and core payload triggers. A receipt
+replays the original preview; changed payload under the same key is
+`E_IDEMPOTENCY_CONFLICT`, before reference validation. New data requires a new selection
+and key, creating a new packet. Replay validates current project/reference/asset access
+and recomputes staleness without changing selection, text or digest. Already superseded
+selections start stale. Timestamps use the Store connection's `metamuse_now()` clock.
 
 Automatic redaction is a guard, not a guarantee of privacy, anonymity, legal compliance
-or safe sharing. It covers URL token/signed parameters (including percent-encoded names),
-Bearer headers, cookie/session strings, sk-style keys and absolute POSIX/Windows paths.
-Structured bundle metadata also redacts recognized sensitive fields. Host/operator review
-and the independent grant/send verifier remain necessary for any actual external share.
+or safe sharing. It covers URL query/fragment and encoded token/signed parameters,
+JSON secret strings, Authorization schemes, inline/folded cookie/session strings,
+sk-style keys and plausible absolute POSIX/Windows paths. ASCII-scoped credential names
+avoid treating CJK key/value prose as cookies; bare CJK slash expressions remain intact.
+Quoted values retain their delimiters, preserving embedded JSON syntax. Structured bundle
+metadata also redacts recognized sensitive keys and hyphen/underscore variants.
+Host/operator review and the independent grant/send verifier remain necessary for any
+actual external share.
 
 ## Host drafts and preview
 
@@ -73,36 +85,53 @@ and the independent grant/send verifier remain necessary for any actual external
 `facts_refs` defaults to an empty list. CLI supports `--facts-file`, `--assets-file`,
 `--variant-file`, and `--preferences-file` (strict UTF-8 JSON, with existing file limits).
 Preferences default to language `und`, emoji `unspecified`, format `plain_text`, scope
-`this_draft`. Explicit format may be `markdown`; persistent or project preferences are
-not implemented, and no author persona, formula, CTA or timing strategy is imposed.
+`this_draft`. Language is a nonempty string of at most 35 code points; emoji is a
+nonempty preference string of at most 32 code points. Both request and stored revision
+use `DraftPreferences`, with extra fields rejected. Explicit format may be `markdown`;
+persistent or project preferences are not implemented, and no author persona, formula,
+CTA or timing strategy is imposed.
 
 Save preserves only host-provided text, including CRLF and Unicode composition, and
 performs no model call. New drafts start at revision 1 and omit expected_revision.
 Updates require draft_id and expected_revision; a stale writer gets `E_DATA_STALE`.
-Revisions append atomically with the head update and receipt. The digest uses canonical
+Revisions use `TransactionWriter.append_draft_revision` for atomic CAS, head advancement
+and receipt. Replays validate references/assets and report the selected revision's
+staleness without overwriting a newer head. The digest uses canonical
 JSON over full text, platform, variant, exact facts_refs, asset IDs and preferences.
 Evidence and ready assets must be visible in the project. Same request replay never
-silently updates a newer draft head. References to drafts are checked transitively;
-cycles or depth above 32 fail instead of recursively leaking foreign/missing facts.
+silently updates a newer draft head. References to drafts are checked transitively with
+one memo per operation. Cycles or depth above 32 fail with `E_REFERENCE_INVALID`;
+2,000 unique reference nodes, 10,000 reference/asset edges and the configured text-byte
+budget bound total work with `E_LIMIT_REACHED`. Cached subtrees retain their depth bound.
+Export serializes each dependency once as a flat record with direct `facts_refs`, rather
+than duplicating nested diamond branches. Final export payload bytes are also bounded
+by the configured text-byte budget.
 
 Preview returns the exact draft revision, counts, declared format issues, reference and
 asset issues, and date/number lexical conflict candidates. It counts Unicode code points
 with Python len, UTF-16 units as UTF-16LE byte length / 2 (no BOM), and UTF-8 bytes by encoding.
-It does not count grapheme clusters. Format checks report unknown format, NUL and empty
-text; they do not assert platform rendering correctness. Missing/foreign/deleted refs and
-missing asset bytes are listed. Reference existence never establishes semantic support.
+It does not count grapheme clusters. Typed formats are plain_text/markdown; objective
+checks report NUL and empty text, without asserting platform rendering correctness.
+Missing/foreign/deleted refs and missing asset bytes are listed. Asset issues identify
+the asset and owning exact ref; transitive asset failures do not abort remaining facts.
+Reference existence never establishes semantic support. Staleness follows the specific
+revision's facts, including transitive refs and newer transcript revisions, rather than
+using the draft head's flag.
 
 No sourced, dated platform length limits are configured in this build. Every platform
 therefore returns a warning and null limit/source/verified_at, with no guessed hard limit.
-Conflict candidates compare written date/number tokens without interpreting claims,
-converting dates, or asserting contradiction; the host must review them.
+Conflict candidates include transitive facts and compare written date/number tokens
+without interpreting claims, converting dates, or asserting contradiction. Matched dates
+are removed before number-token extraction. The host must review candidates.
 
 ## Exports and recovery
 
 `export_objects` supports text, markdown, jsonl, csv and bundle. All selections and the
 transitive facts/assets of selected drafts are checked before export and on replay.
 Missing/foreign/deleted refs fail. Original private text is preserved in text/Markdown/
-JSONL; CSV prefixes an apostrophe to cells starting with `=`, `+`, `-`, `@`, tab or CR.
+JSONL. CSV prefixes an apostrophe to any cell starting with tab, CR or LF, or whose first
+non-whitespace character after removing leading single/double quotes is `=`, `+`, `-`,
+`@` or `|`. Whitespace includes Unicode whitespace; quote removal repeats across spaces.
 JSONL decoding recovers the original text exactly, including emoji, CRLF and composition.
 
 Bundle is a directory containing redacted JSONL records, Markdown members and a manifest.
@@ -111,7 +140,8 @@ transport records or opaque media bytes. Copying media cannot establish public s
 using a text redaction guard. A full media archive remains pending; the manifest explicitly
 records `asset_policy=metadata_only`. Bundle redaction has the same guard limitation as
 packets. Other formats are private original-text exports and must not be described as
-redacted public bundles.
+redacted public bundles. Private manifests set `redactions=null` (not a zero-redaction
+audit) and private Markdown members carry an inline private unredacted export notice.
 
 Names are internal (`records.jsonl`, `records.csv`, `object-0001.txt`/`.md`, manifest.json),
 never derived from source titles, URLs or local paths. All final members stay below
@@ -128,13 +158,27 @@ Handled write/rename/commit errors roll back and remove only directories owned b
 attempt. A process/host crash may leave orphan staging/final directories without a ready
 row; they are not returned as success and automatic orphan cleanup is not implemented.
 
+Core backups include SQLite and ready objects, not export directories. Search cursor
+replay survives restore, but export replay cannot verify an absent artifact. It returns
+`E_RESOURCE_UNAVAILABLE` with a recovery action instead of claiming success. Restore the
+original artifact separately and verify it, or use a new request key to export again
+from still-valid exact refs. Archive support for exports is a core change request; no
+automatic regeneration is presented as replay of the old artifact.
+
 ## Integration pending
 
-Schema 1 transcript visibility follows project item/asset links. All content visibility
-SQL lives in `_transcript_scope_sql`; exact validation also calls the core store validator.
-B05/B06 migration 002's project-scoped, nullable-asset transcripts need this helper and
-the core validator adapted together. No migration, store semantics or jobs semantics
-were changed for this task. Asset-independent transcripts are not claimed implemented.
+Schema 1 lacks transcript project ownership. All content visibility SQL lives in
+`_transcript_scope_sql`: a transcript requires an asset attachment through a current item
+revision in the requested project and no surviving attachment in any other project.
+The latter includes historical attachments, conservatively avoiding exposure after a
+different project's current item drops that asset. Shared assets hide transcripts from
+both projects; historical attachments in the requested project alone grant no access.
+This is a fail-closed stopgap, not an ownership inference. When B05/B06 migration 002
+lands, switch this helper to authoritative `transcript_segments.project_id` with nullable
+assets/item/source anchors, and adapt the core validator together. No migration, store
+semantics or jobs semantics were changed. Asset-independent transcripts and proactive
+core stale marking on transcript insertion remain pending; these content operations
+compute transcript/transitive staleness on creation, preview and replay.
 
 `tools/measure_content_search.py` produces real MEASURE results for 30 fresh first-page
 calls on a fixed 10,000-record synthetic zh-Hant corpus. It uses a unique home-directory

@@ -12,7 +12,16 @@ from metamuse import app, cli, content
 from metamuse import models as m
 
 
-def add_item(ctx, project, iid="itm_one", text="繁體中文😀\r\n第二行", rev=1, *, complete=False):
+def add_item(
+    ctx,
+    project,
+    iid="itm_one",
+    text="繁體中文😀\r\n第二行",
+    rev=1,
+    *,
+    complete=False,
+    collection_method="file_import",
+):
     with ctx.store.transaction() as conn:
         if rev == 1:
             sid = "src_" + iid
@@ -21,7 +30,7 @@ def add_item(ctx, project, iid="itm_one", text="繁體中文😀\r\n第二行", 
                     id=sid,
                     project_id=project,
                     platform="generic",
-                    collection_method="file_import",
+                    collection_method=collection_method,
                     upstream_collection_method="auto",
                     fetched_at=ctx.clock(),
                 ),
@@ -192,7 +201,7 @@ def test_packet_exact_revisions_preview_digest_immutability_idempotency(ctx, pro
     assert data["sources"][0]["upstream_collection_method"] == "auto"
     assert data["coverage_status"] == "bounded" and "comments" in data["rendered_text"]
     newer = add_item(ctx, project, text="新觀測", rev=2)
-    assert app.prepare_packet(ctx, request).data == data
+    assert app.prepare_packet(ctx, request).data == {**data, "stale": True}
     stored = ctx.store.get(m.Packet, data["id"])
     assert (
         stored.stale
@@ -648,7 +657,7 @@ def test_cli_content_additive_flags_and_full_offline_flow(ctx, project, tmp_path
     )
     directory = ctx.paths.root / result["data"]["artifact"]
     assert (
-        json.loads((directory / "records.jsonl").read_bytes())["text"]
+        json.loads((directory / "records.jsonl").read_bytes().splitlines()[0])["text"]
         == text_file.read_bytes().decode()
     )
 
@@ -686,16 +695,15 @@ def test_search_snapshot_survives_application_reopen(ctx, project):
 
 
 def test_packet_and_bundle_omit_raw_metadata_and_redact_nested_sensitive_fields(ctx, project):
-    ref = add_item(ctx, project)
+    ref = add_item(ctx, project, collection_method="Cookie: foo=FAKE_METHOD")
     with ctx.store.transaction() as conn:
         conn.execute(
-            "UPDATE sources SET original_url=?,use_basis=?,collection_method=? WHERE id=?",
+            "UPDATE sources SET original_url=?,use_basis=? WHERE id=?",
             (
                 "https://example.invalid/?sig=FAKE_NOT_SELECTED",
                 m.canonical_json(
                     {"headers": {"Authorization": "Bearer FAKE_HEADER"}, "path": "/tmp/FAKE_PATH"}
                 ).decode(),
-                "Cookie: foo=FAKE_METHOD",
                 "src_" + ref["id"],
             ),
         )
