@@ -133,3 +133,11 @@ B13 classifies login URLs as E_AUTH_REQUIRED and checkpoint/challenge URLs as
 E_CHECKPOINT_REQUIRED from observed main-frame navigations and the final URL,
 before parsing any underlying post container. All browser barriers stop without
 retry; no synthetic DOM marker is needed for an encrypted redirect barrier.
+
+Proxy policy/resolution waits are bounded by the read timeout and interruptible on
+close. Closure fences dialing and socket registration; once close returns, no
+upstream connection can occur later. Python cannot cancel an in-flight NSS lookup;
+abandoned daemon resolution tasks have no dialing capability and a process-wide
+16-slot bound, released only when their lookup returns. Capacity exhaustion refuses
+requests. An already entered dial is bounded by the socket timeout and closure waits
+for it before closing every registered socket.

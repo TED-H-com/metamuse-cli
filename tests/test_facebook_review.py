@@ -4,6 +4,7 @@ import base64
 import hashlib
 import http.server
 import json
+import socket
 import ssl
 import subprocess
 import threading
@@ -18,7 +19,7 @@ from test_facebook import (
     _write_facebook_config,
 )
 
-from metamuse import app, config, facebook, jobs
+from metamuse import _browser_egress, app, config, facebook, jobs
 from metamuse import models as m
 
 URL = "https://www.facebook.com/synth.lab/posts/pfbid0101synth"
@@ -402,3 +403,49 @@ def test_finding_05_encrypted_barrier_redirect_is_distinct(tmp_path, monkeypatch
             require_comments_section=True,
         )
     assert error.value.detail.code.value == code
+
+
+def test_finding_06_close_cancels_waiting_resolution_and_prevents_late_dial(monkeypatch):
+    _allow_loopback_sockets(monkeypatch)
+    entered, release, finished = threading.Event(), threading.Event(), threading.Event()
+    dials = []
+    real_connect = socket.create_connection
+
+    def slow_resolver(_):
+        entered.set()
+        release.wait(5)
+        finished.set()
+        return ["127.0.0.1"]
+
+    guard = facebook.EgressGuard.for_fixture_test(
+        allowed_hosts=("allowed.test",), resolver=slow_resolver
+    )
+    target = socket.socket()
+    target.bind(("127.0.0.1", 0))
+    target.listen()
+    port = target.getsockname()[1]
+
+    def spy_connect(address, *args, **kwargs):
+        if address[1] == port:
+            dials.append(address)
+        return real_connect(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "create_connection", spy_connect)
+    proxy = _browser_egress.BrowserEgressProxy(guard, idle_timeout_s=0.5)
+    client = real_connect(("127.0.0.1", proxy.port), timeout=2)
+    try:
+        client.sendall(f"CONNECT allowed.test:{port} HTTP/1.1\r\n\r\n".encode())
+        assert entered.wait(2)
+        proxy.close()
+        release.set()
+        assert finished.wait(2)
+        for worker in proxy._worker_threads:
+            worker.join(timeout=2)
+        assert not any(worker.is_alive() for worker in proxy._worker_threads)
+        assert dials == []
+        assert proxy._active_sockets == set()
+    finally:
+        release.set()
+        proxy.close()
+        client.close()
+        target.close()

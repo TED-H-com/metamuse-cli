@@ -1306,6 +1306,14 @@ All WebSockets, including worker WebSockets and WSS to approved hosts, are close
 by context.route_web_socket before the first navigation. No upstream WebSocket
 connection is established; CONNECT host/IP checks remain a separate boundary.
 
+Proxy policy/resolution waits are bounded by the read timeout and interruptible on
+close. Closure fences dialing and socket registration; once close returns, no
+upstream connection can occur later. Python cannot cancel an in-flight NSS lookup;
+abandoned daemon resolution tasks have no dialing capability and a process-wide
+16-slot bound, released only when their lookup returns. Capacity exhaustion refuses
+requests. An already entered dial is bounded by the socket timeout and closure waits
+for it before closing every registered socket.
+
 ---
 
 # 來源與恢復說明
