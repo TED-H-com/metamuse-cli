@@ -80,7 +80,7 @@ def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
         if "allow_unsandboxed_browser" in config.FacebookConfig.model_fields
         else []
     )
-    _write_facebook_config(ctx.paths.root, auth_ref=auth_ref, extra_facebook_lines=extra)
+    _write_facebook_config(ctx.paths.root, auth_ref=auth_ref, allow_unsandboxed_browser=bool(extra))
     config_path = ctx.paths.root / "metamuse.toml"
     config_path.write_text(
         config_path.read_text().replace("read_timeout_seconds = 30", "read_timeout_seconds = 2")
@@ -271,7 +271,7 @@ def test_finding_02_browser_secret_hostname_never_reaches_diagnostics(tmp_path, 
             if "allow_unsandboxed_browser" in config.FacebookConfig.model_fields
             else []
         )
-        _write_facebook_config(ctx.paths.root, auth_ref=ref, extra_facebook_lines=extra)
+        _write_facebook_config(ctx.paths.root, auth_ref=ref, allow_unsandboxed_browser=bool(extra))
         ctx = app.AppContext.open(ctx.paths.root)
         job_id = submit(ctx, project, permit)
         finish(ctx, job_id)
@@ -743,3 +743,127 @@ def test_finding_15_oversized_connect_port_gets_fixed_4xx_without_worker_traceba
     finally:
         proxy.close()
     assert "Traceback" not in capsys.readouterr().err
+
+
+def test_sandbox_failed_default_launch_is_fixed_and_never_retries(monkeypatch, tmp_path):
+    import playwright.sync_api as pw_sync
+
+    attempts = []
+    stopped = []
+
+    class Launcher:
+        def __init__(self):
+            self.chromium = self
+
+        def start(self):
+            return self
+
+        def stop(self):
+            stopped.append(True)
+
+        def launch(self, **kwargs):
+            attempts.append(kwargs)
+            raise RuntimeError("synthetic sandbox unavailable")
+
+    monkeypatch.setattr(pw_sync, "sync_playwright", Launcher)
+    monkeypatch.setattr(facebook, "find_playwright_browser", lambda: tmp_path / "fake-browser")
+    prefix = "SYNTH"
+    state = facebook.sanitize_storage_state(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "fixture", "value": f"{prefix}_COOKIE", "domain": "www.facebook.com"}
+                ]
+            }
+        ).encode()
+    )
+    guard = facebook.EgressGuard(allowed_hosts=("www.facebook.com",), resolver=lambda _: [])
+    with pytest.raises(m.CoreError) as error:
+        facebook.PlaywrightBrowserDriver().open_session(state, guard, timeout_ms=1000)
+    assert error.value.detail.code == m.ErrorCode.DEPENDENCY_MISSING
+    assert "AppArmor" in error.value.detail.next_action
+    assert "allow_unsandboxed_browser" in error.value.detail.next_action
+    assert len(attempts) == 1 and attempts[0]["chromium_sandbox"] is True
+    assert stopped == [True]
+
+
+@pytest.mark.parametrize(
+    "opt_in,verified,environment",
+    [(False, False, "unavailable"), (False, True, "ready"), (True, False, "ready")],
+)
+def test_sandbox_capability_and_job_record_operator_mode(tmp_path, opt_in, verified, environment):
+    ctx, project, permit, auth_ref, _ = _setup_fb_env(tmp_path)
+    _write_facebook_config(ctx.paths.root, auth_ref=auth_ref, allow_unsandboxed_browser=opt_in)
+    ctx = app.AppContext.open(ctx.paths.root)
+    launches = []
+
+    class FakeLauncherDriver(facebook.FixtureBrowserDriver):
+        def sandbox_available(self):
+            return verified
+
+        def open_session(self, *args, **kwargs):
+            launches.append(kwargs["allow_unsandboxed_browser"])
+            if not verified and not kwargs["allow_unsandboxed_browser"]:
+                raise m.CoreError(
+                    m.ErrorCode.DEPENDENCY_MISSING,
+                    "Sandbox unavailable",
+                    next_action=facebook.SANDBOX_NEXT_ACTION,
+                )
+            return super().open_session(*args, **kwargs)
+
+    driver = FakeLauncherDriver(observation(_synthetic_post_html()))
+    facebook.set_driver_factory(lambda: driver)
+    inspected = app.inspect_capabilities(ctx, {})
+    row = next(
+        r for r in inspected.data["capabilities"] if r["name"] == "metamuse_collect.facebook_post"
+    )
+    assert row["environment"] == environment
+    assert (facebook.SANDBOX_DISABLED_WARNING in inspected.warnings) == opt_in
+    job_id = submit(ctx, project, permit)
+    job = finish(ctx, job_id)
+    mode = "disabled_by_operator" if opt_in else "enabled"
+    assert launches == [opt_in]
+    if environment == "unavailable":
+        assert job["error"]["code"] == "E_DEPENDENCY_MISSING"
+    else:
+        assert job["result"]["data"]["steps"][0]["data"]["browser_sandbox"] == mode
+    step = app.get_job(ctx, {"job_id": job_id}).data["steps"][0]
+    assert step["checkpoint"]["browser_sandbox"] == mode
+    request = {
+        "project_id": project,
+        "inputs": [{"kind": "url", "url": URL}],
+        "resources": ["post"],
+        "request_key": "invalid-override",
+        "allow_unsandboxed_browser": True,
+    }
+    assert app.submit_collect(ctx, request).error.code == m.ErrorCode.INPUT_INVALID
+
+
+def test_real_sandboxed_launch_or_explicit_skip(tmp_path, monkeypatch):
+    if facebook.find_playwright_browser() is None:
+        pytest.skip("Playwright or Chromium is not installed")
+    _allow_loopback_sockets(monkeypatch)
+    for key in facebook.PROXY_ENV_VARS:
+        monkeypatch.delenv(key, raising=False)
+    prefix = "SYNTH"
+    state = facebook.sanitize_storage_state(
+        json.dumps(
+            {
+                "cookies": [
+                    {"name": "fixture", "value": f"{prefix}_COOKIE", "domain": "www.facebook.com"}
+                ]
+            }
+        ).encode()
+    )
+    guard = facebook.EgressGuard(allowed_hosts=("www.facebook.com",), resolver=lambda _: [])
+    try:
+        session = facebook.PlaywrightBrowserDriver().open_session(state, guard, timeout_ms=5000)
+    except m.CoreError as error:
+        assert error.detail.code == m.ErrorCode.DEPENDENCY_MISSING
+        pytest.skip("Sandboxed Chromium unavailable; install an AppArmor userns profile")
+    try:
+        args = session._browser.new_browser_cdp_session().send("Browser.getBrowserCommandLine")
+        assert "--no-sandbox" not in args["arguments"]
+        assert session._page.url == "about:blank"
+    finally:
+        session.close()
