@@ -161,7 +161,13 @@ def test_mcp_stdio_unexpected_exception_does_not_log_markers(tmp_path: Path) -> 
                 "--non-interactive",
                 "mcp",
             ],
-            env={"PYTHONUNBUFFERED": "1", "PATH": os.environ.get("PATH", "")},
+            env={
+                **os.environ,
+                "PYTHONUNBUFFERED": "1",
+                "PYTHONPATH": os.environ.get(
+                    "PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src")
+                ),
+            },
             cwd=tmp_path,
         )
         with errlog_path.open("w+", encoding="utf-8") as errlog:

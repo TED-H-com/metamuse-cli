@@ -314,6 +314,15 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
         from metamuse.skill_export import export_skill
 
         return export_skill(args.dest, force=args.force)
+    if args.command == "auth" and args.action in {"list", "revoke"}:
+        from metamuse import safety
+
+        ctx = safety.auth_context(args.workspace)
+        return (
+            safety.list_auth(ctx)
+            if args.action == "list"
+            else safety.revoke_auth(ctx, args.auth_ref)
+        )
     ctx = app.AppContext.open(args.workspace)
     ctx.non_interactive = args.non_interactive
     result = _dispatch(ctx, args)

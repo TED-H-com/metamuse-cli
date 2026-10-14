@@ -29,7 +29,11 @@ def _metamuse_command(
     workspace: Path, *, extra_env: dict[str, str] | None = None
 ) -> StdioServerParameters:
     script = Path(sys.executable).with_name("metamuse")
-    env = {"PYTHONUNBUFFERED": "1"}
+    env = {
+        **os.environ,
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": os.environ.get("PYTHONPATH", str(ROOT / "src")),
+    }
     if extra_env:
         env.update(extra_env)
     if script.is_file():

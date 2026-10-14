@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -397,6 +398,12 @@ def cli(ctx, *arguments, expected_exit=0):
 async def mcp_calls(ctx, calls, errlog):
     executable = Path(sys.executable).with_name("metamuse")
     params = StdioServerParameters(
+        env={
+            **os.environ,
+            "PYTHONPATH": os.environ.get(
+                "PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src")
+            ),
+        },
         command=str(executable),
         args=["--workspace", str(ctx.paths.root), "--non-interactive", "mcp"],
     )

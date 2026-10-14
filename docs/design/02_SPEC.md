@@ -117,24 +117,65 @@ Packet固定版本；修正建立新packet。批准可以涵蓋已展示的proje
 
 Question也是分享資料。去姓名不代表匿名，URL和原文仍可能識別人物。來源內容和Muse回答都不能建立grant、執行shell、修改取得方式或擴大授權。
 
-B16a privacy guard: credential names keep the existing list and, after case and
-hyphen/underscore normalization, match suffixes `sess`, `sessid`, `session`, `token`,
-`secret`, `cookie`, `password`; `cookie_header` is also sensitive. Query/fragment
-separators `?`, `&`, `#`, `=` are located through up to three percent-encoding layers;
-the value is replaced in its original encoded span. Sensitive JSON string fields are
-redacted even within an incomplete document. JSON escapes in string values are decoded
-for credential classification; replacement still covers their original encoded span.
-Counts expose only class and count.
-Packet rendering is redacted before its UTF-8 digest; bundle members use the same rules.
-Topics and questions are refused with fixed `E_INPUT_INVALID` only for credential-class
-values (`sensitive_field`, `cookie`, `session_cookie`, `authorization`, `url_token`,
-`api_key`, including bare bearer tokens, userinfo passwords and colon assignments).
-Local paths, header prose without credentials, code expressions, numeric session counters,
-pagination `nextPageToken` and eos/bos/pad/unk/max token vocabulary are accepted.
-The known public paths `/docs/plan.md` and `/etc/hosts` survive redaction unchanged.
-Accepted topics/questions are sent byte-for-byte and displayed exactly in the approval
-preview, public request and summary. Refusal never echoes values, silently rewrites text
-or creates an approval preview. Packets retain their independent privacy redaction.
+B16a privacy guard classifies credentials by name and syntax, never by the value's
+alphabet. The existing name list remains, with normalized suffixes `sess`, `sessid`,
+`session`, `token`, `secret`, `cookie`, `password`, `passwd`, `pwd`, `pass`, and names
+`auth`, `credentials`, `x-api-key`, `cookie_header` and `Proxy-Authorization`.
+Case, hyphens, underscores and up to three percent-encoding layers are normalized.
+Assignments (`=`, `:`, `=>`), JSON/TOML/YAML fields, XML elements and command flags
+(`--name=value`, `--name value`, `-Dname=value`, `curl -u user:value`) identify values.
+Quoted values end at their closing quote; unquoted values end at whitespace or a
+contextual list separator. Sensitive JSON strings, numbers, arrays and objects are
+redacted whole, including embedded, escaped, truncated and multiline documents.
+Structured packet/bundle records apply the same exemptions to every value type.
+
+Authorization and Proxy-Authorization values with a scheme and following material
+are private through end of line (or their enclosing string), regardless of scheme.
+A bare standard scheme such as `Authorization: Bearer` has no credential. Opaque
+Cookie/Set-Cookie values, folded headers, cookie chains joined by `;`, `,` or `&`,
+and Netscape cookie-jar value fields are covered. Unknown assignments outside cookie
+chains remain ordinary data. Userinfo passwords in any URL scheme run from the first
+colon after `//` to the last `@` before the authority ends, including empty users.
+Sensitive query values end at literal/encoded `&` or `#`, or an encoded `?`; a literal
+`?` remains in the value. Encoded spaces and quotes remain part of query values.
+
+Only these value exemptions apply: empty values; `null`, `None`, `nil`, `true`, `false`;
+`<...>`, `${...}`, `$VAR`, `%VAR%`, `{{...}}`, `{}`, `{name}`, `%s`; exact `[REDACTED]`
+and `REDACTED`; three or more `*`, `x` or `X`; `...` or `…`; the same identifier as
+the key, or a dotted attribute whose final segment matches it ignoring case/underscores;
+`os.environ[...]`, `os.getenv(...)`, `process.env.X`; closed type names `str`, `string`,
+`bytes`, `int`, `bool`, `Any`, `None`, `SecretStr`, their `Optional[...]` forms and
+unions of these with `None`. Numeric signs, decimals and percentages are exempt only
+for session counter names ending in `session`. Other calls and `changeme` are credentials.
+Names excluded altogether are pagination `*page*token`, `next*token`,
+`continuation*token`, `sync*token`, `cursor`, and tokenizer `pad/eos/bos/unk/sep/cls/mask_token`,
+`max_tokens`, `max_new_tokens`, `num_tokens`, `*_token_id` (including dotted attributes).
+
+Self-identifying values also count: bare case-insensitive Bearer followed by token68
+of at least 16 characters with a digit or mixed case, or a JWT; separators include
+spaces, tabs, NBSP, newline, `+` and encodings. Vendor prefixes cover GitHub classic
+and fine-grained tokens, GitLab, Slack, AWS, Google, Stripe live keys, npm, Hugging Face,
+OpenAI/Anthropic-style keys and three-segment JWTs. PEM private-key blocks extend
+through their matching END line, or to end of text when unterminated. A bare English
+phrase such as "The bearer instrument was signed" remains unchanged.
+
+Canonical percent and JSON-escape views use at most three layers each, with literal
+`+` treated as a space in query/form contexts before percent decoding. `%2B` remains
+literal plus. Spans map to their smallest enclosing original spans; unaffected original
+bytes are preserved. `[REDACTED]` is opaque up to the syntax terminator; appended
+material is covered as part of the value. Forward interval closure covers a complete
+value when an intersecting rule masks part of it, so redaction is idempotent.
+Counts expose only rule class and count, never values, lengths, hashes or offsets.
+
+New Muse topics/questions are refused with fixed `E_INPUT_INVALID` if any finding
+other than `local_path` appears. The message and next action never echo the value.
+Accepted text is sent byte-for-byte and displayed exactly in its approval preview,
+request and summary. Prose that mentions credential names without assignment syntax,
+closed code references, exempt pagination/vocabulary, `/docs/plan.md` and `/etc/hosts`
+stays benign. By design `Password: required`, `Secret: the meeting moved`,
+`Session: Opening keynote`, `Authorization: Basic or Bearer?`, and other uncertain
+values after sensitive assignment names are refused. Rephrase, for example "the
+password is required". Credentials cannot create a fresh approval preview.
 
 Draft save只保存host提供文字；更新必須expected_revision，不默默覆蓋。預設language=und、emoji=unspecified、plain_text、this_draft；使用者明示才改。沒有作者人設或策略。
 
@@ -203,8 +244,8 @@ backend obligations. These are human-only commands, never MCP self-approval tool
 
 `auth list` returns provider, account, auth_ref, created_at, storage_kind and config_bound
 for every imported reference, without values or filesystem paths. Every import creates
-a new reference; revocation unlinks exactly that one owned regular auth record and refuses
-symlinks/non-regular files. It reports any current Muse config binding still pointing at
+a new reference; revocation unlinks exactly that owned record or symlink without
+following it. FIFOs/directories require fixed manual cleanup guidance. It reports any current Muse config binding still pointing at
 the revoked ref, with a next action to import and rebind. Config is not rewritten.
 Resolving a revoked, missing or corrupt ref returns fixed `E_AUTH_REQUIRED`, with neither
 an exception cause nor context retaining the file contents. Auth lifecycle commands
@@ -282,27 +323,53 @@ Skill短主檔＋按需references，先查實際工具；只有Skill不代表bac
 
 Linux／WSL2為首個執行目標；其他平台按實測列。無憑證離線路線零背景網路。升級須migration/backup restore，不刪庫過關。product tests初始not_run。
 
-B16a submit and prepare order is read-only exact-payload receipt replay, credential
-check, then preview/grant checks/persistence/work. Replay preserves accepted requests
-after a rule upgrade. The worker checks frozen text again before issuing a token or
-opening a gateway. Refused frozen bodies have proven `not_submitted` delivery; sends
-close as `abandoned`, cannot block the discussion, and require preparing a new send.
+B16a submit/prepare order is a read-only exact-payload receipt replay, the credential
+check on new text, then preview/grant checks, persistence and work. Exact replay keeps
+its original result after a rule upgrade. The worker checks session.start topics,
+questions, packet fixpoints and body equality again before any token or gateway.
+Frozen refusals prove `not_submitted`, close sends as `abandoned`, and keep the refusal's
+own next action; a stale packet asks to prepare a new packet. No refused send quarantines
+a discussion as an unknown delivery.
 
-B16a `auth list` returns `partial` when records are corrupt: valid metadata stays in
-`references`, corrupt opaque refs/fixed reasons/exact revoke commands in `unavailable`,
-and `next_action` lists those commands. Neither file contents nor paths are exposed.
-Human-only auth/permit commands refuse noninteractive calls before opening a workspace;
-scripted `permit approve --exact-digest` needs no TTY.
+Stored discussion titles are not new outbound text and are never re-checked. Previews
+show a display-redacted "Stored discussion title"; it is not in the send body or read
+payload. Reconciliation compares its request topic with the exact stored title only.
+The original reconciliation request, not the display-redacted topic, is used for the
+human approval request file and retry. Approval failures propagate their actual fixed
+code, message and next action rather than replacing them with a permit error.
 
-B16a packets reach a redaction fixpoint before hashing. Muse sends exactly stored
-`packet.rendered_text`; it never transforms packets at send time. If the current
-redactor would change an older packet, submit/preview/wire refuse with
-`E_REFERENCE_INVALID`, "Packet is stale; prepare a new packet", without a preview.
-The send body is only the accepted original question, two newlines and that fixed text.
+Packets reach a fixpoint before hashing, with at most three passes as a bounded
+backstop. Still-changing text is fixed `E_INPUT_INVALID` "Packet redaction did not
+stabilize": invalid share text cannot be hashed or stored. Muse sends exactly stored
+`packet.rendered_text`. Current rules changing an older packet cause `E_REFERENCE_INVALID`,
+"Packet is stale; prepare a new packet", in prepare/preview/submit/wire, with no preview.
+The body contains only the accepted original question, two newlines and that packet.
+Private original exports retain `original_private` and their documented original bytes.
 
-B16a handoff shapes include bare `Bearer` credential values, HTTP(S) userinfo
-passwords, colon forms of every sensitive name, and JSON objects embedded in prose.
-Their meaningful percent-encoded forms through three layers are redacted in packets
-and bundles and refused in topics/questions. Original encoded value spans are replaced
-without rewriting the rest of the URL/text. Benign code, pagination, header prose and
-known public paths remain unchanged. Private original export labels remain unchanged.
+Redaction uses bounded possessive name grammars, forward scans and precomputed quote,
+container and tag terminators. Every scan advances past consumed values; interval
+streams merge with a fixed fan-in and output uses one join. Sparse, coalesced decoding
+offsets allocate for escapes only. CPU growth is checked at four doubling sizes for
+all review families and new rules. Packet/bundle resolution checks raw canonical sizes,
+then renders/redacts before `BEGIN IMMEDIATE`; the write repeats reference/snapshot
+checks. `_save_send` redacts the full remote detail (capped at 1 MiB) before its write
+batch opens, then cuts to 512 characters. The remaining settlement callback sanitizes
+only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes).
+It rejects oversized legacy text before redaction with fixed `E_LIMIT_REACHED`; it
+cannot turn uncertain delivery into proof. Configured limits may lower these hard caps.
+
+`auth list` returns `partial` for corrupt records: valid metadata in `references`,
+opaque refs and fixed reasons in `unavailable`. Its actions revoke regular records or
+symlinks, or give a fixed manual instruction for FIFOs/directories/unowned entries.
+`auth revoke` unlinks a symlink itself via dir_fd without opening its target; it refuses
+other non-regular entries with that manual instruction. List/revoke read existing
+configuration for config_bound but never initialize/open a workspace or Store.
+Noninteractive auth/permit calls refuse before opening anything; scripted human
+`permit approve --exact-digest` needs no TTY. Auth values and outside paths never appear.
+
+Sensitive YAML keys also cover the complete indented container or block scalar,
+through its dedent. Whitespace around assignment separators includes non-ASCII
+spaces and split lines. A Kubernetes `valueFrom`/`secretKeyRef` object under a
+sensitive key is refused by design; it is outside the closed environment-reference
+exemptions. Quoted JSON-style keys can introduce raw-newline scalar values even in
+an incomplete document.

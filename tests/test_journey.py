@@ -113,7 +113,13 @@ class Entrypoints:
         params = StdioServerParameters(
             command=str(self.command),
             args=["--workspace", str(self.workspace), "--non-interactive", "mcp", *extra],
-            env=env,
+            env={
+                **os.environ,
+                "PYTHONPATH": os.environ.get(
+                    "PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src")
+                ),
+                **(env or {}),
+            },
         )
         with log.open("w+") as errlog:
             async with stdio_client(params, errlog=errlog) as (read, write):

@@ -71,23 +71,26 @@ and key, creating a new packet. Replay validates current project/reference/asset
 and recomputes staleness without changing selection, text or digest. Already superseded
 selections start stale. Timestamps use the Store connection's `metamuse_now()` clock.
 
-Automatic redaction is a guard, not a guarantee of privacy, anonymity, legal compliance
-or safe sharing. It covers URL query/fragment and encoded token/signed parameters,
-JSON secret strings, Authorization schemes, inline/folded cookie/session strings,
-sk-style keys and plausible absolute POSIX/Windows paths. ASCII-scoped credential names
-avoid treating CJK key/value prose as cookies; bare CJK slash expressions remain intact.
-Quoted values retain their delimiters, preserving embedded JSON syntax. Structured bundle
-metadata also redacts recognized sensitive keys and hyphen/underscore variants.
-Host/operator review and the independent grant/send verifier remain necessary for any
-actual external share.
+Automatic redaction is a guard, not a privacy, anonymity or legality guarantee.
+The [SPEC classifier](../design/02_SPEC.md) binds the name-and-syntax rules and every
+closed exemption. Sensitive structured fields are redacted whole for strings, numbers,
+arrays and objects. JSON strings, including embedded/incomplete/escaped documents,
+headers, cookie chains/jars, flags, XML, URL credentials, known token prefixes, JWTs,
+private-key blocks and paths use the same shared detector. CJK prose and slash
+expressions remain unchanged. Quoted JSON keeps its delimiters; container/numeric
+JSON uses a quoted sentinel. Findings contain only category and count.
 
-B16a keeps the existing names and adds normalized credential suffixes `sess`, `sessid`,
-`session`, `token`, `secret`, `cookie`, `password`, plus `cookie_header`. URL separators
-are decoded through at most three percent-encoding layers to locate the original value
-span; unaffected bytes stay unchanged. Sensitive JSON string values are covered even
-when the whole document is incomplete. Prose such as "the session ended", "token economy"
-and "cookie recipe", and URLs without credential parameters, remains unchanged.
-Original local search still exposes selected source snippets; it does not search packets.
+Redaction is idempotent, with a maximum-three-pass packet backstop before any digest.
+Still-changing text gives fixed E_INPUT_INVALID and cannot create a packet or receipt.
+Raw canonical size checks precede rendering; packet/bundle redaction runs outside the
+write transaction, whose snapshot validation remains database-only. Sparse decoding
+maps up to three percent and JSON-escape layers to original value spans and literal
+plus is form/query whitespace. Forward scans and interval closure prevent suffix
+rescanning and newly exposed values. Output uses one join. Current-rule changes to an
+older packet refuse Muse prepare/preview/submit/wire with E_REFERENCE_INVALID, without
+rewriting stored text or issuing an approval preview. Original exports remain
+original_private. Original local search continues exposing selected source snippets;
+it does not search packets.
 
 ## Host drafts and preview
 
@@ -229,3 +232,16 @@ remain available even when Python warnings are suppressed. Legacy manifests with
 database checksums are refused. SQL conflict clauses (including OR IGNORE/DO NOTHING)
 and rowid writes are forbidden; deduplicate with SELECT/request receipt checks and plain
 INSERT in a short transaction. Schema and immutable bindings are core-owned.
+
+Sensitive YAML keys also cover the complete indented container or block scalar,
+through its dedent. Whitespace around assignment separators includes non-ASCII
+spaces and split lines. A Kubernetes `valueFrom`/`secretKeyRef` object under a
+sensitive key is refused by design; it is outside the closed environment-reference
+exemptions. Quoted JSON-style keys can introduce raw-newline scalar values even in
+an incomplete document.
+
+Human `packet preview` refuses text rendered by older rules with the fixed
+`E_REFERENCE_INVALID` stale-packet error before exposing it. URL userinfo stops at
+the literal authority boundary (`/`, `?` or `#`); encoded characters remain inside
+the mapped password span. Scheme scanning has a forward anchor and accepts custom
+schemes of any length.

@@ -105,36 +105,46 @@ INTEGRATION/OFFLINE/FIXTURE evidence only. AT-043/LIVE remains blocked pending a
 separate authorized environment. B16 still owns broader fault matrices, performance,
 30-run p95/RSS, scaling and capacity measurement; this journey claims no MEASURE.
 
-B16a submit and prepare order is read-only exact-payload receipt replay, credential
-check, then preview/grant checks/persistence/work. Replay preserves accepted requests
-after a rule upgrade. The worker checks frozen text again before issuing a token or
-opening a gateway. Refused frozen bodies have proven `not_submitted` delivery; sends
-close as `abandoned`, cannot block the discussion, and require preparing a new send.
+B16a submit/prepare order is a read-only exact-payload receipt replay, the credential
+check on new text, then preview/grant checks, persistence and work. Exact replay keeps
+its original result after a rule upgrade. The worker checks session.start topics,
+questions, packet fixpoints and body equality again before any token or gateway.
+Frozen refusals prove `not_submitted`, close sends as `abandoned`, and keep the refusal's
+own next action; a stale packet asks to prepare a new packet. No refused send quarantines
+a discussion as an unknown delivery.
 
-B16a `auth list` returns `partial` when records are corrupt: valid metadata stays in
-`references`, corrupt opaque refs/fixed reasons/exact revoke commands in `unavailable`,
-and `next_action` lists those commands. Neither file contents nor paths are exposed.
-Human-only auth/permit commands refuse noninteractive calls before opening a workspace;
-scripted `permit approve --exact-digest` needs no TTY.
+Stored discussion titles are not new outbound text and are never re-checked. Previews
+show a display-redacted "Stored discussion title"; it is not in the send body or read
+payload. Reconciliation compares its request topic with the exact stored title only.
+The original reconciliation request, not the display-redacted topic, is used for the
+human approval request file and retry. Approval failures propagate their actual fixed
+code, message and next action rather than replacing them with a permit error.
 
-B16a redaction uses disjoint bounded possessive JSON key atoms (128 atoms), bounded
-assignment/query names, original encoded spans and a single final join after overlap
-merging. It has no dense per-character percent-offset map or per-span text rebuild.
-Packet and export resolution check the raw canonical byte budget before rendering;
-rendering/redaction happens outside `BEGIN IMMEDIATE`. The write transaction repeats
-scope/existence checks and compares the evidence snapshot before committing.
-Concurrent evidence changes require a fresh prepare/export; receipt conflicts and
-artifact verification retain the shared core API.
+Packets reach a fixpoint before hashing, with at most three passes as a bounded
+backstop. Still-changing text is fixed `E_INPUT_INVALID` "Packet redaction did not
+stabilize": invalid share text cannot be hashed or stored. Muse sends exactly stored
+`packet.rendered_text`. Current rules changing an older packet cause `E_REFERENCE_INVALID`,
+"Packet is stale; prepare a new packet", in prepare/preview/submit/wire, with no preview.
+The body contains only the accepted original question, two newlines and that packet.
+Private original exports retain `original_private` and their documented original bytes.
 
-B16a packets reach a redaction fixpoint before hashing. Muse sends exactly stored
-`packet.rendered_text`; it never transforms packets at send time. If the current
-redactor would change an older packet, submit/preview/wire refuse with
-`E_REFERENCE_INVALID`, "Packet is stale; prepare a new packet", without a preview.
-The send body is only the accepted original question, two newlines and that fixed text.
+Redaction uses bounded possessive name grammars, forward scans and precomputed quote,
+container and tag terminators. Every scan advances past consumed values; interval
+streams merge with a fixed fan-in and output uses one join. Sparse, coalesced decoding
+offsets allocate for escapes only. CPU growth is checked at four doubling sizes for
+all review families and new rules. Packet/bundle resolution checks raw canonical sizes,
+then renders/redacts before `BEGIN IMMEDIATE`; the write repeats reference/snapshot
+checks. `_save_send` redacts the full remote detail (capped at 1 MiB) before its write
+batch opens, then cuts to 512 characters. The remaining settlement callback sanitizes
+only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes).
+It rejects oversized legacy text before redaction with fixed `E_LIMIT_REACHED`; it
+cannot turn uncertain delivery into proof. Configured limits may lower these hard caps.
 
-B16a handoff shapes include bare `Bearer` credential values, HTTP(S) userinfo
-passwords, colon forms of every sensitive name, and JSON objects embedded in prose.
-Their meaningful percent-encoded forms through three layers are redacted in packets
-and bundles and refused in topics/questions. Original encoded value spans are replaced
-without rewriting the rest of the URL/text. Benign code, pagination, header prose and
-known public paths remain unchanged. Private original export labels remain unchanged.
+`auth list` returns `partial` for corrupt records: valid metadata in `references`,
+opaque refs and fixed reasons in `unavailable`. Its actions revoke regular records or
+symlinks, or give a fixed manual instruction for FIFOs/directories/unowned entries.
+`auth revoke` unlinks a symlink itself via dir_fd without opening its target; it refuses
+other non-regular entries with that manual instruction. List/revoke read existing
+configuration for config_bound but never initialize/open a workspace or Store.
+Noninteractive auth/permit calls refuse before opening anything; scripted human
+`permit approve --exact-digest` needs no TTY. Auth values and outside paths never appear.

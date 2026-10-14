@@ -46,12 +46,13 @@ The transport does not mint a core token and does not reserve a permit. B10 owns
 
 Question text is at most 8192 UTF-8 bytes. Packet text is at most 49152 UTF-8 bytes. Both caps are checked on the prepared payload and on the JSON body before `consume`. The marker matches `^[A-Za-z0-9._~-]{1,128}$` and is the caller's for both create and send. The transport does not generate one after authorization.
 
-B16a checks both host topics and questions for credential-class values with the shared
-redactor. Fixed `E_INPUT_INVALID` asks the host to remove credentials, without echoing
-values or silently rewriting text. Paths, ordinary code, pagination/model vocabulary
-and header prose are accepted. Accepted text is sent byte-for-byte and shown exactly in
-the preview/request/summary. Credentials are refused before any approval preview.
-Wire construction checks session.start topics and send questions again.
+B16a checks new topics/questions with the shared name-and-syntax classifier and closed
+exemptions in [SPEC §FR-019](../design/02_SPEC.md). Every finding except `local_path`
+refuses with fixed `E_INPUT_INVALID` before a preview. Prose that merely mentions names
+without assignment syntax stays benign; `Password: required`, `Secret: the meeting moved`,
+`Session: Opening keynote` and `Authorization: Basic or Bearer?` are refused by design.
+Accepted topic/question bytes remain exact. Stored titles are display-only and are
+never credential-checked during send/read/reconciliation.
 
 ## Prepared request
 
@@ -355,27 +356,52 @@ original step. It does not require a newly created echo proof, increase attempts
 again. The same verifier still validates immutable observations for stored user-echo
 proofs. This checkpoint boundary is exercised by the real subprocess worker tests.
 
-B16a submit and prepare order is read-only exact-payload receipt replay, credential
-check, then preview/grant checks/persistence/work. Replay preserves accepted requests
-after a rule upgrade. The worker checks frozen text again before issuing a token or
-opening a gateway. Refused frozen bodies have proven `not_submitted` delivery; sends
-close as `abandoned`, cannot block the discussion, and require preparing a new send.
+B16a submit/prepare order is a read-only exact-payload receipt replay, the credential
+check on new text, then preview/grant checks, persistence and work. Exact replay keeps
+its original result after a rule upgrade. The worker checks session.start topics,
+questions, packet fixpoints and body equality again before any token or gateway.
+Frozen refusals prove `not_submitted`, close sends as `abandoned`, and keep the refusal's
+own next action; a stale packet asks to prepare a new packet. No refused send quarantines
+a discussion as an unknown delivery.
 
-B16a `auth list` returns `partial` when records are corrupt: valid metadata stays in
-`references`, corrupt opaque refs/fixed reasons/exact revoke commands in `unavailable`,
-and `next_action` lists those commands. Neither file contents nor paths are exposed.
-Human-only auth/permit commands refuse noninteractive calls before opening a workspace;
-scripted `permit approve --exact-digest` needs no TTY.
+Stored discussion titles are not new outbound text and are never re-checked. Previews
+show a display-redacted "Stored discussion title"; it is not in the send body or read
+payload. Reconciliation compares its request topic with the exact stored title only.
+The original reconciliation request, not the display-redacted topic, is used for the
+human approval request file and retry. Approval failures propagate their actual fixed
+code, message and next action rather than replacing them with a permit error.
 
-B16a packets reach a redaction fixpoint before hashing. Muse sends exactly stored
-`packet.rendered_text`; it never transforms packets at send time. If the current
-redactor would change an older packet, submit/preview/wire refuse with
-`E_REFERENCE_INVALID`, "Packet is stale; prepare a new packet", without a preview.
-The send body is only the accepted original question, two newlines and that fixed text.
+Packets reach a fixpoint before hashing, with at most three passes as a bounded
+backstop. Still-changing text is fixed `E_INPUT_INVALID` "Packet redaction did not
+stabilize": invalid share text cannot be hashed or stored. Muse sends exactly stored
+`packet.rendered_text`. Current rules changing an older packet cause `E_REFERENCE_INVALID`,
+"Packet is stale; prepare a new packet", in prepare/preview/submit/wire, with no preview.
+The body contains only the accepted original question, two newlines and that packet.
+Private original exports retain `original_private` and their documented original bytes.
 
-B16a handoff shapes include bare `Bearer` credential values, HTTP(S) userinfo
-passwords, colon forms of every sensitive name, and JSON objects embedded in prose.
-Their meaningful percent-encoded forms through three layers are redacted in packets
-and bundles and refused in topics/questions. Original encoded value spans are replaced
-without rewriting the rest of the URL/text. Benign code, pagination, header prose and
-known public paths remain unchanged. Private original export labels remain unchanged.
+Redaction uses bounded possessive name grammars, forward scans and precomputed quote,
+container and tag terminators. Every scan advances past consumed values; interval
+streams merge with a fixed fan-in and output uses one join. Sparse, coalesced decoding
+offsets allocate for escapes only. CPU growth is checked at four doubling sizes for
+all review families and new rules. Packet/bundle resolution checks raw canonical sizes,
+then renders/redacts before `BEGIN IMMEDIATE`; the write repeats reference/snapshot
+checks. `_save_send` redacts the full remote detail (capped at 1 MiB) before its write
+batch opens, then cuts to 512 characters. The remaining settlement callback sanitizes
+only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes).
+It rejects oversized legacy text before redaction with fixed `E_LIMIT_REACHED`; it
+cannot turn uncertain delivery into proof. Configured limits may lower these hard caps.
+
+`auth list` returns `partial` for corrupt records: valid metadata in `references`,
+opaque refs and fixed reasons in `unavailable`. Its actions revoke regular records or
+symlinks, or give a fixed manual instruction for FIFOs/directories/unowned entries.
+`auth revoke` unlinks a symlink itself via dir_fd without opening its target; it refuses
+other non-regular entries with that manual instruction. List/revoke read existing
+configuration for config_bound but never initialize/open a workspace or Store.
+Noninteractive auth/permit calls refuse before opening anything; scripted human
+`permit approve --exact-digest` needs no TTY. Auth values and outside paths never appear.
+
+Human `packet preview` refuses text rendered by older rules with the fixed
+`E_REFERENCE_INVALID` stale-packet error before exposing it. URL userinfo stops at
+the literal authority boundary (`/`, `?` or `#`); encoded characters remain inside
+the mapped password span. Scheme scanning has a forward anchor and accepts custom
+schemes of any length.
