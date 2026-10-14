@@ -172,6 +172,7 @@ def _prepared(route, target, body, marker, node):
 
 def prepare_open(ctx, request: m.MuseOpenRequest):
     """Operator preview helper: full stable target/payload digest for an access grant."""
+    _check_question(request.topic)
     binding, backend = _binding(ctx)
     identity = _identity("dsc", request.project_id, request.request_key)
     target = _target(request.project_id, binding, backend, "muse.open", intent=identity)
@@ -431,6 +432,8 @@ def _wire(payload):
     }
     if any(payload.payload.get(key) != value for key, value in expected.items()):
         _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared wire bytes differ from verified payload")
+    if payload.route == "session.start":
+        _check_question(payload.body["title"])
     if payload.route == "chat.stream":
         question = payload.payload.get("question")
         packet_text = payload.payload.get("packet_text")
@@ -555,6 +558,10 @@ def _assert_open_available(db, discussion):
 
 def open_muse_discussion(ctx, request):
     register_operations()
+    replay = _replay(ctx, "muse.open", request)
+    if replay is not None:
+        return replay
+    _check_question(request.topic)
     if request.discussion_id is not None:
         discussion = ctx.store.get(m.Discussion, request.discussion_id)
         _binding(ctx, discussion)
@@ -569,9 +576,6 @@ def open_muse_discussion(ctx, request):
             sessions=discussion.remote_session is None,
             request_key=request.request_key,
         )
-    replay = _replay(ctx, "muse.open", request)
-    if replay is not None:
-        return replay
     prepared = prepare_open(ctx, request)
     binding, backend = _binding(ctx)
     discussion = m.Discussion(
