@@ -3,283 +3,235 @@
 # requires-python = ">=3.12"
 # dependencies = ["pillow==12.1.1"]
 # ///
-"""Capture real Alacritty windows of the installed MetaMuse CLI.
+"""Capture actual CLI commands in Alacritty, at 2x density, on a private Xvfb.
 
-Each scene is a shell that prints a command and then runs it. Pillow
-ImageGrab grabs the Xvfb display. The crop is the terminal window only.
+The only pixel operation is a full-width crop with one empty terminal row below
+content. PNG compression is verified against the captured RGB bytes.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
-import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
 import time
+import unicodedata
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from PIL import Image, ImageGrab
+from PIL import Image, ImageChops, ImageGrab
 
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from site_lib import privacy_failures  # noqa: E402
+from site_lib import privacy_failures, sha256_file  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 DEMO = Path("/tmp/metamuse-demo")
-WS = DEMO / "workspace"
 OUT = REPO / "site" / "images"
-COLUMNS = 112
-LINES = 68
-SCREEN = "1500x1800x24"
-DISPLAY = ":61"
-
-# (filename stem, what the reader sees, commands)
-SCENES: list[tuple[str, str, list[str]]] = [
-    (
-        "01-health",
-        "Offline init, fixture Muse config, and doctor. "
-        "network_mode=offline, backend = fixture, verification fixture_passed, "
-        "worker_available=false. Muse open and send stay effective=false.",
-        [
-            "metamuse --workspace /tmp/metamuse-demo/workspace init",
-            "python3 /tmp/metamuse-demo/configure_demo_workspace.py",
-            (
-                "sed -n '1,4p;/^\\[muse\\]/,/^\\[publishing\\]/p' "
-                "/tmp/metamuse-demo/workspace/metamuse.toml"
-            ),
-            (
-                "metamuse --workspace /tmp/metamuse-demo/workspace doctor | jq -r "
-                "'\"network_mode=\\(.network_mode) "
-                'worker_available=\\(.worker_available)", '
-                '(.capabilities[] | "\\(.name) \\(.verification) \\(.environment) '
-                "\\(.permission) effective=\\(.effective)\")'"
-            ),
-        ],
-    ),
-    (
-        "02-import",
-        "Create a project and import the synthetic mixed file with --run. "
-        "The job ends partial, stop row_errors, 7 committed and 7 rejected. "
-        "worker_available stays false after the foreground run returns.",
-        [
-            (
-                "metamuse --workspace /tmp/metamuse-demo/workspace project create "
-                "--name 'Synthetic demo' --request-key project | "
-                "tee /tmp/metamuse-demo/out/project.json | jq '{id, name, revision}'"
-            ),
-            (
-                "jq -r .id /tmp/metamuse-demo/out/project.json | "
-                "tee /tmp/metamuse-demo/state/project_id"
-            ),
-            (
-                "metamuse --workspace /tmp/metamuse-demo/workspace add --project "
-                "$(cat /tmp/metamuse-demo/state/project_id) --file "
-                "/tmp/metamuse-demo/inputs/comments_mixed_bad.jsonl --kind jsonl "
-                "--request-key import --run | tee /tmp/metamuse-demo/out/add.json | "
-                "jq '{job_id, state, worker_available, coverage: .job.coverage_status, "
-                "stop: .job.stop_reason, committed: .job.observed_scope.steps[0].committed, "
-                "rejected: .job.observed_scope.steps[0].rejected}'"
-            ),
-            "jq -r .job_id /tmp/metamuse-demo/out/add.json | tee /tmp/metamuse-demo/state/job_id",
-        ],
-    ),
-    (
-        "03-rows",
-        "jobs get for that import. Each line is committed or rejected. "
-        "Rejected lines keep their error code. Coverage stays partial.",
-        [
-            (
-                "metamuse --workspace /tmp/metamuse-demo/workspace jobs get "
-                "$(cat /tmp/metamuse-demo/state/job_id) | jq -r "
-                "'\"state=\\(.job.state) coverage=\\(.job.coverage_status) "
-                'stop=\\(.job.stop_reason)", '
-                '"committed=\\(.steps[0].result.observed_scope.committed) '
-                'rejected=\\(.steps[0].result.observed_scope.rejected)", '
-                "(.steps[0].result.data.rows[] | "
-                '"line=\\(.line) \\(.status) code=\\(.code // "-") '
-                'field=\\(.field // "-")")\''
-            )
-        ],
-    ),
-    (
-        "04-search",
-        "Exact-substring search. The hit cites one item revision, with "
-        "collection_method file_import and upstream synthetic_fixture.",
-        [
-            (
-                "metamuse --workspace /tmp/metamuse-demo/workspace search --project "
-                "$(cat /tmp/metamuse-demo/state/project_id) --query '正常留言第一行' --limit 1 | "
-                "tee /tmp/metamuse-demo/out/search.json | jq -r "
-                '\'"search_mode=\\(.search_mode)", '
-                '"ref=\\(.results[0].ref.kind) \\(.results[0].ref.id) '
-                'revision=\\(.results[0].ref.revision)", '
-                '"stale=\\(.results[0].stale)", '
-                '"platform=\\(.results[0].source.platform)", '
-                '"collection_method=\\(.results[0].source.collection_method)", '
-                '"upstream=\\(.results[0].source.upstream_collection_method)", '
-                '"complete=\\(.results[0].source.complete)", '
-                '"snippet=\\(.results[0].snippet)"\''
-            )
-        ],
-    ),
-    (
-        "05-packet",
-        "Import the synthetic secrets file, select one revision, and preview the packet. "
-        "The frame shows the exact pre-share text, redaction counts, and the SHA-256 digest. "
-        "The token value is not printed; the preview shows [REDACTED].",
-        [
-            (
-                "metamuse --workspace /tmp/metamuse-demo/workspace add --project "
-                "$(cat /tmp/metamuse-demo/state/project_id) --file "
-                "/tmp/metamuse-demo/inputs/secrets.jsonl --kind jsonl "
-                "--request-key secrets --run | tee /tmp/metamuse-demo/out/secrets-add.json | "
-                "jq '{state, stop: .job.stop_reason, "
-                "committed: .job.observed_scope.steps[0].committed, "
-                "rejected: .job.observed_scope.steps[0].rejected}'"
-            ),
-            (
-                "metamuse --workspace /tmp/metamuse-demo/workspace search --project "
-                "$(cat /tmp/metamuse-demo/state/project_id) --query '存取網址' --limit 1 | "
-                "tee /tmp/metamuse-demo/out/secret-search.json | jq "
-                "'{search_mode, ref: .results[0].ref, "
-                "upstream: .results[0].source.upstream_collection_method, "
-                "collection: .results[0].source.collection_method, "
-                "complete: .results[0].source.complete}'"
-            ),
-            (
-                "jq '[.results[0].ref]' /tmp/metamuse-demo/out/secret-search.json | "
-                "tee /tmp/metamuse-demo/inputs/selection.json"
-            ),
-            (
-                "metamuse --workspace /tmp/metamuse-demo/workspace packet prepare --project "
-                "$(cat /tmp/metamuse-demo/state/project_id) --selection-file "
-                "/tmp/metamuse-demo/inputs/selection.json --request-key packet | "
-                "tee /tmp/metamuse-demo/out/packet.json | jq -r "
-                '\'"id=\\(.id)", "digest=\\(.digest)", '
-                '"coverage=\\(.coverage_status)", '
-                '"stale=\\(.stale)", "utf8_bytes=\\(.utf8_bytes)", '
-                '"redactions=\\(.redactions)", '
-                '"--- exact text ---", .rendered_text\''
-            ),
-        ],
-    ),
-    (
-        "06-draft",
-        "The host writes the draft text. draft save stores that text and cites "
-        "the local item revision from search. No model is called.",
-        [
-            (
-                'printf "%s\\n" "活動紀錄（host 撰寫）" '
-                '"本地留言仍在。壞列沒有被算成完整匯入。" | '
-                "tee /tmp/metamuse-demo/inputs/draft.txt"
-            ),
-            (
-                "jq '[.results[0].ref]' /tmp/metamuse-demo/out/search.json | "
-                "tee /tmp/metamuse-demo/inputs/facts.json"
-            ),
-            (
-                "metamuse --workspace /tmp/metamuse-demo/workspace draft save --project "
-                "$(cat /tmp/metamuse-demo/state/project_id) --text-file "
-                "/tmp/metamuse-demo/inputs/draft.txt --platform generic --facts-file "
-                "/tmp/metamuse-demo/inputs/facts.json --request-key draft | "
-                "tee /tmp/metamuse-demo/out/draft.json | jq -r "
-                '\'"draft_id=\\(.draft_id)", "revision=\\(.revision)", '
-                '"digest=\\(.digest)", '
-                '"stale=\\(.stale)", "platform=\\(.platform)", '
-                '"facts=\\(.facts_refs)", '
-                '"--- host text ---", .text\''
-            ),
-            (
-                "jq -r .draft_id /tmp/metamuse-demo/out/draft.json | "
-                "tee /tmp/metamuse-demo/state/draft_id"
-            ),
-        ],
-    ),
-    (
-        "07-export",
-        "Bundle export of the host draft. Stderr says nothing was published or uploaded. "
-        "The manifest lists text_policy, the redaction notice, and each file SHA-256.",
-        [
-            (
-                'jq -n --arg id "$(cat /tmp/metamuse-demo/state/draft_id)" '
-                "'[{kind:\"draft_revision\", id:\\$id, revision:1}]' | "
-                "tee /tmp/metamuse-demo/inputs/export-refs.json"
-            ),
-            (
-                "metamuse --workspace /tmp/metamuse-demo/workspace export --project "
-                "$(cat /tmp/metamuse-demo/state/project_id) --refs-file "
-                "/tmp/metamuse-demo/inputs/export-refs.json --format bundle "
-                "--request-key export-bundle | tee /tmp/metamuse-demo/out/export.json | "
-                "jq -r "
-                '\'"id=\\(.id)", "state=\\(.state)", "artifact=\\(.artifact)", '
-                '"format=\\(.manifest.format)", '
-                '"text_policy=\\(.manifest.text_policy)", '
-                '"asset_policy=\\(.manifest.asset_policy)", '
-                '"redaction_notice=\\(.manifest.redaction_notice)", '
-                '"redactions=\\(.manifest.redactions)", '
-                '(.manifest.files[] | "\\(.name) sha256=\\(.sha256) '
-                'bytes=\\(.bytes)"), '
-                '"selection=\\(.manifest.selection)"\''
-            ),
-        ],
-    ),
-    (
-        "08-mcp",
-        "Official MCP Python client over metamuse mcp. It lists the tools, "
-        "then calls the read-only metamuse_search tool.",
-        ["python3 /tmp/metamuse-demo/mcp_demo.py"],
-    ),
-]
+SCREEN = "2800x2200x24"
+SCALE = 2
+BACKGROUND = "#14211c"
+ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 
 
-def _run(cmd: list[str], *, env: dict[str, str] | None = None, check: bool = True) -> str:
-    result = subprocess.run(cmd, check=check, env=env, text=True, capture_output=True)
-    return (result.stdout or "") + (result.stderr or "")
+@dataclass(frozen=True)
+class Scene:
+    stem: str
+    summary: str
+    acceptance: tuple[str, ...]
+    commands: tuple[str, ...]
+    columns: int = 98
+    lines: int = 42
+    font_size: float = 13.0
+    max_content_rows: int = 40
 
 
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    digest.update(path.read_bytes())
-    return digest.hexdigest()
+# Add future approved scenes here. No application shortcuts or fabricated output:
+# each command is printed literally and evaluated by bash in the real terminal.
+SCENES = (
+    Scene(
+        "01-setup",
+        "Offline init, explicit fixture config, and doctor capability rows.",
+        ("AT-001",),
+        (
+            "cd /tmp/metamuse-demo",
+            "metamuse --workspace ws init",
+            "python3 configure_demo_workspace.py",
+            "sed -n '/^network_mode/p;/^backend/p' ws/metamuse.toml",
+            "metamuse --workspace ws doctor > out/doctor.json",
+            (
+                "jq -cC '{network_mode, worker_available}, (.capabilities[] | "
+                "[.name, .verification, .effective])' out/doctor.json"
+            ),
+        ),
+    ),
+    Scene(
+        "02-queue",
+        (
+            "Accepted and queued without a worker; run once, then partial "
+            "with 7 committed and 7 rejected."
+        ),
+        ("AT-003", "AT-008"),
+        (
+            (
+                "metamuse --workspace ws project create --name 'Synthetic "
+                "demo' --request-key project > out/project.json"
+            ),
+            "P=$(jq -r .id out/project.json)",
+            (
+                'metamuse --workspace ws --json add --project "$P" --file '
+                "inputs/mixed.jsonl --kind jsonl --request-key import > "
+                "out/add.json"
+            ),
+            (
+                "jq -C '{status, state: .data.state, worker_available: "
+                ".data.worker_available}' out/add.json"
+            ),
+            "J=$(jq -r .data.job_id out/add.json)",
+            "metamuse --workspace ws worker run --once",
+            'metamuse --workspace ws jobs get "$J" > out/job.json',
+            "jq -C '.job | {state, coverage_status}' out/job.json",
+            "jq -cC '.steps[0].result.observed_scope | {committed, rejected}' out/job.json",
+            (
+                "jq -cC '.steps[0].result.data.rows[] | select(.status == "
+                '"rejected") | {line, code}\' out/job.json'
+            ),
+        ),
+    ),
+    Scene(
+        "03-search",
+        "One exact item revision, with file_import and synthetic_fixture source labels.",
+        ("AT-017",),
+        (
+            (
+                'metamuse --workspace ws search --project "$P" --query '
+                "正常留言第一行 --limit 1 > out/search.json"
+            ),
+            "jq -C '.results[0] | {ref, snippet, source}' out/search.json",
+        ),
+    ),
+    Scene(
+        "04-packet",
+        "Exact packet text, one url_token redaction, and its SHA-256. Nothing is sent.",
+        ("AT-015", "AT-028"),
+        (
+            (
+                'metamuse --workspace ws add --project "$P" --file '
+                "inputs/secrets.jsonl --kind jsonl --request-key secrets "
+                "--run > out/secrets.json"
+            ),
+            (
+                'metamuse --workspace ws search --project "$P" --query 存取網址 '
+                "--limit 1 > out/secret-search.json"
+            ),
+            "jq '[.results[0].ref]' out/secret-search.json > inputs/selection.json",
+            (
+                'metamuse --workspace ws packet prepare --project "$P" '
+                "--selection-file inputs/selection.json --request-key packet "
+                "> out/packet.json"
+            ),
+            "jq -r .rendered_text out/packet.json",
+            "jq -C '{redactions, digest}' out/packet.json",
+        ),
+    ),
+    Scene(
+        "05-draft",
+        "Host-supplied text stored as written, citing an exact item revision; no model call.",
+        ("AT-023",),
+        (
+            (
+                "printf '%s\\n' '活動紀錄（host 撰寫）' "
+                "'本地留言仍在。壞列沒有被算成完整匯入。' > inputs/draft.txt"
+            ),
+            "jq '[.results[0].ref]' out/search.json > inputs/facts.json",
+            (
+                'metamuse --workspace ws draft save --project "$P" '
+                "--text-file inputs/draft.txt --platform generic --facts-file "
+                "inputs/facts.json --request-key draft > out/draft.json"
+            ),
+            "jq -C '{draft_id, revision, text, facts_refs}' out/draft.json",
+        ),
+    ),
+    Scene(
+        "06-export",
+        "Local bundle manifest and the CLI's no-publish, no-upload, redaction-guard warnings.",
+        ("AT-025",),
+        (
+            "D=$(jq -r .draft_id out/draft.json)",
+            (
+                'jq -n --arg id "$D" \'[{kind:"draft_revision", id:$id, '
+                "revision:1}]' > inputs/export-refs.json"
+            ),
+            (
+                'metamuse --workspace ws export --project "$P" --refs-file '
+                "inputs/export-refs.json --format bundle --request-key export "
+                "> out/export.json"
+            ),
+            (
+                "jq -C '.manifest | {format, text_policy, asset_policy, "
+                "redaction_notice}' out/export.json"
+            ),
+            "jq -cC '.manifest.files[]' out/export.json",
+        ),
+    ),
+    Scene(
+        "07-mcp",
+        "Official mcp stdio client lists 15 tools and readOnly hints, then calls metamuse_search.",
+        ("AT-026",),
+        ("python3 mcp_demo.py",),
+    ),
+    Scene(
+        "08-skill",
+        "Skill export writes SKILL.md and references to the named local destination.",
+        ("AT-027",),
+        ("metamuse skill export --dest host-skill", "ls -R host-skill"),
+    ),
+)
+HERO = Scene(
+    "00-hero",
+    "The same packet's exact text, redaction count, and digest, captured for the hero.",
+    ("AT-015", "AT-028"),
+    ("jq -r .rendered_text out/packet.json", "jq -cC '{redactions, digest}' out/packet.json"),
+    columns=60,
+    lines=24,
+    font_size=16.0,
+    max_content_rows=22,
+)
+
+
+def _run(cmd: list[str], **kwargs) -> str:
+    result = subprocess.run(cmd, check=True, text=True, capture_output=True, **kwargs)
+    return result.stdout.strip()
+
+
+def _width(text: str) -> int:
+    return sum(
+        0 if unicodedata.combining(char) else 2 if unicodedata.east_asian_width(char) in "WF" else 1
+        for char in ANSI.sub("", text)
+    )
 
 
 def _visual_lines(text: str, columns: int) -> int:
-    count = 0
-    for line in text.splitlines():
-        width = 0
-        for char in line:
-            width += 2 if ord(char) > 0x2E80 else 1
-        count += max(1, (width + columns - 1) // columns)
-    return count
+    return sum(max(1, (_width(line) + columns - 1) // columns) for line in text.splitlines())
 
 
-def _sh_command(cmd: str) -> str:
-    """A run invocation. Unquoted heredocs expand $(...); quoted ones do not."""
-    opener = "EOF" if "$(" in cmd else "'EOF'"
-    return f'run "$(cat <<{opener}\n{cmd}\nEOF\n)"\n'
-
-
-def _scene_script(commands: list[str], transcript: Path, done: Path) -> str:
-    body = "".join(_sh_command(cmd) + 'printf "\\n"\n' for cmd in commands)
+def _scene_script(scene: Scene, transcript: Path, done: Path) -> str:
+    commands = "\n".join(f"run {shlex.quote(cmd)}" for cmd in scene.commands)
     return f"""#!/bin/bash
 set -u
 set -o pipefail
-export HOME=/tmp/metamuse-demo/home
-export TMPDIR=/tmp/metamuse-demo/tmp
-export PATH=/tmp/metamuse-demo/bin:/usr/bin:/bin
-export LANG=zh_TW.UTF-8
-export LC_ALL=zh_TW.UTF-8
-export MM_WORKSPACE=/tmp/metamuse-demo/workspace
-export MM_BIN=/tmp/metamuse-demo/bin/metamuse
-export MM_PROJECT_FILE=/tmp/metamuse-demo/state/project_id
 cd /tmp/metamuse-demo
-exec > >(tee {transcript}) 2>&1
+if [ -f out/state.sh ]; then source out/state.sh; fi
+exec > >(tee {shlex.quote(str(transcript))}) 2>&1
+printf '\\033[?25l'
 run() {{
-  printf '$ %s\\n' "$1"
+  printf '\\033[32m$\\033[0m %s\\n' "$1"
   eval "$1"
   code=$?
   if [ "$code" -ne 0 ] && [ "$code" -ne 5 ]; then
@@ -287,77 +239,65 @@ run() {{
     exit "$code"
   fi
 }}
-{body}touch {done}
-sleep 90
+{commands}
+declare -p P J D > out/state.sh 2>/dev/null || true
+touch {shlex.quote(str(done))}
+exec sleep 45
 """
 
 
 def _prepare_demo() -> None:
     if DEMO.exists():
         shutil.rmtree(DEMO)
-    for name in ("home", "tmp", "inputs", "out", "state", "bin"):
+    for name in ("home", "tmp", "inputs", "out", "bin", "transcripts"):
         (DEMO / name).mkdir(parents=True)
     venv_bin = REPO / ".venv" / "bin"
-    # The venv interpreter is itself a symlink. A second symlink resolves to the
-    # base interpreter and drops the virtualenv. A wrapper keeps `python3` on
-    # the demo PATH without printing the real path.
+    # Keep the virtualenv path off screen; resolving a Python symlink loses the venv.
     python = DEMO / "bin" / "python3"
-    python.write_text(f'#!/bin/sh\nexec {venv_bin / "python3"} "$@"\n', encoding="utf-8")
+    python.write_text(f'#!/bin/sh\nexec {shlex.quote(str(venv_bin / "python3"))} "$@"\n')
     python.chmod(0o755)
     (DEMO / "bin" / "metamuse").symlink_to(venv_bin / "metamuse")
-    (DEMO / "bin" / "jq").symlink_to("/usr/bin/jq")
     corpus = REPO / "tests" / "fixtures" / "corpus"
-    shutil.copy(corpus / "import" / "comments_mixed_bad.jsonl", DEMO / "inputs")
-    shutil.copy(corpus / "security" / "secrets.jsonl", DEMO / "inputs")
-    shutil.copy(
-        REPO / "scripts" / "configure_demo_workspace.py", DEMO / "configure_demo_workspace.py"
+    shutil.copyfile(corpus / "import" / "comments_mixed_bad.jsonl", DEMO / "inputs/mixed.jsonl")
+    # A shorter synthetic URL keeps access_token=[REDACTED] together in the hero.
+    # This changes INPUT data only; the CLI output and framebuffer are unedited.
+    secrets = (corpus / "security" / "secrets.jsonl").read_text()
+    secrets = secrets.replace(
+        "API 存取網址測試：https://example.org/api/v1/feed?",
+        "存取網址：https://example.org/?",
     )
-    shutil.copy(REPO / "scripts" / "mcp_demo.py", DEMO / "mcp_demo.py")
+    (DEMO / "inputs/secrets.jsonl").write_text(secrets)
+    for name in ("configure_demo_workspace.py", "mcp_demo.py"):
+        shutil.copyfile(REPO / "scripts" / name, DEMO / name)
     (DEMO / "fonts.conf").write_text(
-        """<?xml version="1.0"?>
-<!DOCTYPE fontconfig SYSTEM "fonts.dtd">
-<fontconfig>
-  <include ignore_missing="yes">/etc/fonts/fonts.conf</include>
-  <alias>
-    <family>DejaVu Sans Mono</family>
-    <prefer>
-      <family>DejaVu Sans Mono</family>
-      <family>Noto Sans CJK TC</family>
-    </prefer>
-  </alias>
-</fontconfig>
-""",
-        encoding="utf-8",
+        '<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n'
+        '<fontconfig><include ignore_missing="yes">/etc/fonts/fonts.conf</include>\n'
+        "<alias><family>DejaVu Sans Mono</family><prefer>"
+        "<family>DejaVu Sans Mono</family><family>Noto Sans CJK TC</family>"
+        "</prefer></alias></fontconfig>\n"
     )
-    (DEMO / "alacritty.toml").write_text(
-        f"""[general]
+
+
+def _config(scene: Scene) -> str:
+    return f"""[general]
 live_config_reload = false
 working_directory = "/tmp/metamuse-demo"
-
 [window]
 decorations = "None"
 dynamic_title = false
-title = "metamuse-scene"
-startup_mode = "Windowed"
-dimensions = {{ columns = {COLUMNS}, lines = {LINES} }}
+title = "metamuse-{scene.stem}"
+dimensions = {{ columns = {scene.columns}, lines = {scene.lines} }}
 padding = {{ x = 12, y = 10 }}
-opacity = 1.0
-
 [font]
-size = 13.0
-
+size = {scene.font_size}
 [font.normal]
 family = "DejaVu Sans Mono"
-style = "Regular"
-
 [font.bold]
 family = "DejaVu Sans Mono"
 style = "Bold"
-
 [colors.primary]
-background = "#14211c"
+background = "{BACKGROUND}"
 foreground = "#e7f2ea"
-
 [colors.normal]
 black = "#1b2a24"
 red = "#e07a5f"
@@ -367,12 +307,10 @@ blue = "#7aa2c4"
 magenta = "#c4a3c4"
 cyan = "#7ec8c3"
 white = "#d7e4dc"
-""",
-        encoding="utf-8",
-    )
+"""
 
 
-def _scene_env() -> dict[str, str]:
+def _scene_env(display: str) -> dict[str, str]:
     return {
         "HOME": str(DEMO / "home"),
         "TMPDIR": str(DEMO / "tmp"),
@@ -380,74 +318,77 @@ def _scene_env() -> dict[str, str]:
         "LANG": "zh_TW.UTF-8",
         "LC_ALL": "zh_TW.UTF-8",
         "FONTCONFIG_FILE": str(DEMO / "fonts.conf"),
-        "DISPLAY": DISPLAY,
+        "DISPLAY": display,
+        "WINIT_X11_SCALE_FACTOR": str(SCALE),
         "TERM": "xterm-256color",
         "PYTHONUNBUFFERED": "1",
-        "ALACRITTY_LOG": str(DEMO / "alacritty.log"),
     }
 
 
-def _window_box(title: str) -> tuple[int, int, int, int]:
-    deadline = time.time() + 15
-    while time.time() < deadline:
-        result = subprocess.run(
-            ["xdotool", "search", "--name", title, "getwindowgeometry", "--shell"],
-            check=False,
-            env={**os.environ, "DISPLAY": DISPLAY},
-            text=True,
-            capture_output=True,
+def _start_xvfb() -> tuple[subprocess.Popen, str]:
+    # Check sockets AND lockfiles. Never connect to an existing display.
+    for number in range(60, 200):
+        if Path(f"/tmp/.X11-unix/X{number}").exists() or Path(f"/tmp/.X{number}-lock").exists():
+            continue
+        display = f":{number}"
+        proc = subprocess.Popen(
+            ["Xvfb", display, "-screen", "0", SCREEN, "-nolisten", "tcp", "-ac"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
-        values: dict[str, int] = {}
-        for line in result.stdout.splitlines():
-            if "=" in line:
-                key, raw = line.split("=", 1)
-                if raw.isdigit():
-                    values[key] = int(raw)
-        if {"X", "Y", "WIDTH", "HEIGHT"} <= values.keys() and values["WIDTH"] > 100:
-            return values["X"], values["Y"], values["WIDTH"], values["HEIGHT"]
-        time.sleep(0.1)
-    raise SystemExit(f"no terminal window titled {title}")
+        for _ in range(30):
+            if proc.poll() is not None:
+                break  # Lost a race for this number: try the next free display.
+            if Path(f"/tmp/.X11-unix/X{number}").exists():
+                return proc, display
+            time.sleep(0.1)
+        _stop(proc)
+    raise SystemExit("could not start Xvfb on a free display")
 
 
-def _capture_scene(stem: str, commands: list[str]) -> None:
-    transcript = DEMO / "transcripts" / f"{stem}.txt"
-    transcript.parent.mkdir(parents=True, exist_ok=True)
-    done = DEMO / f"{stem}.done"
-    script = DEMO / f"{stem}.sh"
-    title = f"metamuse-{stem}"
-    if transcript.exists():
-        transcript.unlink()
-    if done.exists():
-        done.unlink()
-    script.write_text(_scene_script(commands, transcript, done), encoding="utf-8")
-    script.chmod(0o700)
-    config = DEMO / "alacritty.toml"
-    config.write_text(
-        (DEMO / "alacritty.base.toml")
-        .read_text(encoding="utf-8")
-        .replace('title = "metamuse-scene"', f'title = "{title}"'),
-        encoding="utf-8",
+def _stop(proc: subprocess.Popen) -> None:
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+
+
+def _window_box(title: str, env: dict) -> dict[str, int]:
+    output = _run(
+        ["xdotool", "search", "--name", f"^{title}$", "getwindowgeometry", "--shell"], env=env
     )
-    env = _scene_env()
-    # Absolute paths: the scene environment's PATH is only the demo bin plus
-    # /usr/bin and /bin, and it must not grow to include a home directory.
-    # stdbuf keeps bash line-buffered after `exec > >(tee ...)`, so the grab
-    # sees the scene while the shell is still waiting.
-    alacritty = shutil.which("alacritty")
-    stdbuf = shutil.which("stdbuf")
-    bash = shutil.which("bash")
-    if not alacritty or not stdbuf or not bash:
-        raise SystemExit("capture needs alacritty, stdbuf, and bash on PATH")
+    values = dict(line.split("=", 1) for line in output.splitlines() if "=" in line)
+    return {
+        key: int(values[name])
+        for key, name in zip(
+            ("x", "y", "width", "height"), ("X", "Y", "WIDTH", "HEIGHT"), strict=True
+        )
+    }
+
+
+def _capture_scene(scene: Scene, display: str) -> dict:
+    for command in scene.commands:
+        if _visual_lines("$ " + command, scene.columns) > 2:
+            raise SystemExit(f"{scene.stem}: command exceeds two rows: {command}")
+    transcript = DEMO / "transcripts" / f"{scene.stem}.txt"
+    done = DEMO / f"{scene.stem}.done"
+    script = DEMO / f"{scene.stem}.sh"
+    script.write_text(_scene_script(scene, transcript, done))
+    config = DEMO / f"{scene.stem}.toml"
+    config.write_text(_config(scene))
+    env = _scene_env(display)
     proc = subprocess.Popen(
         [
-            alacritty,
+            shutil.which("alacritty"),
             "--config-file",
             str(config),
             "-e",
-            stdbuf,
+            "stdbuf",
             "-oL",
             "-eL",
-            bash,
+            "bash",
             "--noprofile",
             "--norc",
             str(script),
@@ -457,183 +398,224 @@ def _capture_scene(stem: str, commands: list[str]) -> None:
         stderr=subprocess.DEVNULL,
     )
     try:
-        deadline = time.time() + 180
-        while time.time() < deadline:
-            if done.exists() and transcript.is_file() and transcript.stat().st_size > 0:
-                break
-            if proc.poll() is not None:
-                raise SystemExit(f"{stem} terminal exited before the scene finished")
-            time.sleep(0.15)
-        else:
-            raise SystemExit(f"{stem} did not finish")
-        time.sleep(0.4)
-        box = _window_box(title)
-        grabbed = ImageGrab.grab(xdisplay=DISPLAY)
-        left, top, width, height = box
-        cropped = grabbed.crop((left, top, left + width, top + height))
-        cropped.save(OUT / f"{stem}.png")
-        shutil.copyfile(transcript, OUT / f"{stem}.txt")
+        deadline = time.monotonic() + 40
+        while not done.exists():
+            if proc.poll() is not None or time.monotonic() >= deadline:
+                raise SystemExit(f"{scene.stem} failed: inspect the demo transcript")
+            time.sleep(0.1)
+        time.sleep(0.5)
+        text = ANSI.sub("", transcript.read_text())
+        failures = privacy_failures(text)
+        if failures:
+            raise SystemExit(f"{scene.stem} privacy scan failed: {failures}")
+        visual_rows = _visual_lines(text, scene.columns)
+        if visual_rows > scene.max_content_rows:
+            raise SystemExit(f"{scene.stem}: {visual_rows} rows exceeds {scene.max_content_rows}")
+        box = _window_box(f"metamuse-{scene.stem}", env)
+        left, top, width, height = (box[key] for key in ("x", "y", "width", "height"))
+        grabbed = ImageGrab.grab(xdisplay=display).convert("RGB")
+        if left < 0 or top < 0 or left + width > grabbed.width or top + height > grabbed.height:
+            raise SystemExit("terminal window extends outside the virtual screen")
+        window = grabbed.crop((left, top, left + width, top + height))
+        padding_y = 10 * SCALE
+        cell_height, remainder = divmod(height - 2 * padding_y, scene.lines)
+        cell_width, width_remainder = divmod(width - 24 * SCALE, scene.columns)
+        if remainder or width_remainder:
+            raise SystemExit("window geometry does not match the configured 2x grid")
+        ink = ImageChops.difference(window, Image.new("RGB", window.size, BACKGROUND)).getbbox()
+        if not ink:
+            raise SystemExit("empty terminal framebuffer")
+        content_rows = (ink[3] - 1 - padding_y) // cell_height + 1
+        if content_rows != visual_rows:
+            raise SystemExit(
+                f"{scene.stem}: framebuffer rows {content_rows} != transcript rows {visual_rows}"
+            )
+        crop_height = padding_y + (content_rows + 1) * cell_height
+        crop = {**box, "height": crop_height}
+        cropped = window.crop((0, 0, width, crop_height))
+        png = OUT / f"{scene.stem}.png"
+        cropped.save(png, optimize=True, compress_level=9)
+        with Image.open(png) as decoded:
+            identical = decoded.convert("RGB").tobytes() == cropped.tobytes()
+        if not identical:
+            raise SystemExit("PNG optimization changed decoded pixels")
+        (OUT / f"{scene.stem}.txt").write_text(text)
+        record = {
+            "png": png.name,
+            "transcript": f"{scene.stem}.txt",
+            "commands": list(scene.commands),
+            "acceptance": list(scene.acceptance),
+            "columns": scene.columns,
+            "window_rows": scene.lines,
+            "content_rows": content_rows,
+            "font_size_pt": scene.font_size,
+            "cell_px": {"width": cell_width, "height": cell_height},
+            "padding_top_px": padding_y,
+            "window_rect": box,
+            "crop_rect": crop,
+            "bytes": png.stat().st_size,
+            "sha256": sha256_file(png),
+            "transcript_sha256": sha256_file(OUT / f"{scene.stem}.txt"),
+            "lossless_verified": identical,
+            "decoded_rgb_sha256": hashlib.sha256(cropped.tobytes()).hexdigest(),
+        }
+        print(
+            f"{scene.stem}: {width}x{crop_height}, {content_rows} rows, {record['bytes']} bytes",
+            flush=True,
+        )
+        return record
     finally:
-        proc.terminate()
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            proc.kill()
-    text = (OUT / f"{stem}.txt").read_text(encoding="utf-8")
-    failures = privacy_failures(text)
-    if failures:
-        raise SystemExit(f"{stem} privacy scan failed: {failures}")
-    visual = _visual_lines(text, COLUMNS)
-    print(f"{stem} visual_lines={visual}", flush=True)
-    if visual + 1 > LINES:
-        raise SystemExit(f"{stem} uses {visual} visual lines plus the cursor; terminal has {LINES}")
+        _stop(proc)
 
 
-def _git(args: list[str]) -> str:
-    return subprocess.run(
-        ["git", *args], cwd=REPO, check=True, text=True, capture_output=True
-    ).stdout.strip()
-
-
-def _tool_versions() -> dict[str, str]:
-    python = _run(
-        [str(DEMO / "bin" / "python3"), "-c", "import sys; print(sys.version.split()[0])"]
-    )
+def _versions() -> dict[str, str]:
     return {
-        "python": python.splitlines()[0].strip(),
+        "python": _run(
+            [str(DEMO / "bin/python3"), "-c", "import sys; print(sys.version.split()[0])"]
+        ),
         "pillow": Image.__version__,
-        "pillow_xcb": str(bool(getattr(Image.core, "HAVE_XCB", False))),
-        "jq": _run(["jq", "--version"]).strip(),
-        "alacritty": _run(["alacritty", "--version"]).strip(),
-        "xvfb": "xvfb " + _run(["dpkg-query", "-W", "-f", "${Version}", "xvfb"]).strip(),
+        "jq": _run(["jq", "--version"]),
+        "alacritty": _run(["alacritty", "--version"]),
+        "xvfb": _run(["dpkg-query", "-W", "-f", "${Version}", "xvfb"]),
         "mcp": _run(
             [
-                str(DEMO / "bin" / "python3"),
+                str(DEMO / "bin/python3"),
                 "-c",
                 "from importlib.metadata import version; print(version('mcp'))",
             ]
-        ).strip(),
+        ),
         "metamuse": _run(
             [
-                str(DEMO / "bin" / "python3"),
+                str(DEMO / "bin/python3"),
                 "-c",
                 "from importlib.metadata import version; print(version('metamuse-cli'))",
             ]
-        ).strip(),
+        ),
     }
 
 
-def _cell(text: str) -> str:
-    return text.replace("|", "\\|")
+def _write_readme(records: list[dict]) -> None:
+    parts = [
+        """# Terminal captures
 
+Real Alacritty on a newly allocated Xvfb display; `WINIT_X11_SCALE_FACTOR=2`.
+The shell prints each literal command and executes it from `/tmp/metamuse-demo`.
+Variables set visibly in earlier scenes are retained between frames.
 
-def _write_readme(images: list[dict[str, str]]) -> None:
-    rows = []
-    for scene, record in zip(SCENES, images, strict=True):
-        stem, summary, commands = scene
-        command_block = "<br>".join(f"`{_cell(cmd.replace('\\$', '$'))}`" for cmd in commands)
-        rows.append(f"| `{record['png']}` | {stem} | {_cell(summary)} | {command_block} |")
-    body = f"""# Terminal captures
+Each PNG keeps the full window width and its original top edge, ending one empty
+terminal row below the last ink. Pixels within that rectangle are unedited.
+Pillow's lossless PNG optimization is checked by decoding and comparing all RGB
+bytes. The manifest records window/crop rectangles in display coordinates,
+cell dimensions, content rows, commands, AT IDs, hashes, sizes and tool versions.
 
-These PNGs are crops of a real Alacritty window on Xvfb. The shell prints each
-command, then runs the installed `metamuse` binary against `/tmp/metamuse-demo`.
-No pixel inside the window was painted over. Cropping is the window rectangle
-from `xdotool`.
-
-Data is the committed synthetic corpus (`tests/fixtures/corpus/import/comments_mixed_bad.jsonl`
-and `tests/fixtures/corpus/security/secrets.jsonl`) copied under `/tmp/metamuse-demo/inputs`.
-Muse is configured `backend = "fixture"`. No account, credential, or network call is used.
-
-The text file next to each PNG is the terminal transcript and the accessible
-text alternative. `manifest.json` records hashes and tool versions.
+Only the repository's synthetic `comments_mixed_bad.jsonl` and `secrets.jsonl`
+fixtures are used. In the copied secrets input, the first row's synthetic URL
+is shortened from `https://example.org/api/v1/feed?` to `https://example.org/?`
+and its label to `存取網址：` so the redaction fits together at 60 columns.
+The synthetic token and source labels are unchanged; this is input data, not an
+edit to CLI output. Muse is explicitly configured with `backend = "fixture"`.
+No credentials, real account, external network, send or publication is involved.
+The text file beside every image is its accessible transcript, linked from both
+languages on the page. The hero is a separate 60-column capture of the same packet.
 
 ## Frames
-
-| Image | Scene | What the reader sees | Commands |
-|---|---|---|---|
-{chr(10).join(rows)}
-
+"""
+    ]
+    scenes = {scene.stem: scene for scene in (*SCENES, HERO)}
+    for record in records:
+        scene = scenes[Path(record["png"]).stem]
+        parts.append(
+            f"\n### {record['png']} ({', '.join(scene.acceptance)})\n\n{scene.summary}\n\n```sh\n"
+            + "\n".join(scene.commands)
+            + "\n```\n"
+        )
+    parts.append("""
 ## Reproduce
 
-From the repository root, with the project virtualenv already synced:
+With Alacritty, Xvfb, xdotool, jq and the already-synced project virtualenv:
 
 ```sh
-uv run --script scripts/capture_site.py
+UV_OFFLINE=1 uv run --script scripts/capture_site.py
 ```
 
-The script refuses a transcript that contains `$USER`, the hostname, `/home/`,
-or a line from `$SITE_PRIVATE_DENYLIST` when that file is set. A scene that
-scrolls past the fixed {COLUMNS}x{LINES} window fails the capture.
-"""
-    (OUT / "README.md").write_text(body, encoding="utf-8")
+The capture uses a pinned Pillow script dependency; it is not a product dependency.
+The script rejects local home paths, the operator's username or hostname, and any
+term from `SITE_PRIVATE_DENYLIST`. Commands over two rows and scenes over their row
+budget fail. The script stops its own terminal and virtual display on exit.
+
+Skill export demonstrates installation output, not full AT-027 missing-backend
+acceptance. MCP shows discovery and one search call, not every host/tool pairing.
+""")
+    (OUT / "README.md").write_text("".join(parts))
 
 
 def main() -> None:
-    if not (REPO / ".venv" / "bin" / "metamuse").is_file():
-        raise SystemExit("sync the project first so .venv/bin/metamuse exists")
+    if not (REPO / ".venv/bin/metamuse").is_file():
+        raise SystemExit("sync the project first")
     _prepare_demo()
-    shutil.copyfile(DEMO / "alacritty.toml", DEMO / "alacritty.base.toml")
     OUT.mkdir(parents=True, exist_ok=True)
-    tools = _tool_versions()
-    xvfb = subprocess.Popen(
-        ["Xvfb", DISPLAY, "-screen", "0", SCREEN, "-ac", "+extension", "RANDR"],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    time.sleep(0.4)
+    xvfb, display = _start_xvfb()
+    records = []
     try:
-        for stem, _summary, commands in SCENES:
-            print(f"capturing {stem}", flush=True)
-            _capture_scene(stem, commands)
+        for scene in (*SCENES, HERO):
+            records.append(_capture_scene(scene, display))
     finally:
-        xvfb.terminate()
-        try:
-            xvfb.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            xvfb.kill()
+        _stop(xvfb)
+    # Delete obsolete round-1 names only after every new capture succeeds.
+    keep = {record[key] for record in records for key in ("png", "transcript")}
+    for path in (*OUT.glob("*.png"), *OUT.glob("*.txt")):
+        if path.name not in keep:
+            path.unlink()
     captured = datetime.now().astimezone()
-    images = []
-    for stem, _summary, _commands in SCENES:
-        png = OUT / f"{stem}.png"
-        transcript = OUT / f"{stem}.txt"
-        images.append(
-            {
-                "png": png.name,
-                "transcript": transcript.name,
-                "sha256": _sha256(png),
-                "transcript_sha256": _sha256(transcript),
-            }
-        )
     manifest = {
-        "source_commit": _git(["rev-parse", "HEAD"]),
-        "source_tree": _git(["rev-parse", "HEAD^{tree}"]),
+        "source_commit": _run(["git", "rev-parse", "HEAD"], cwd=REPO),
+        "source_tree": _run(["git", "rev-parse", "HEAD^{tree}"], cwd=REPO),
+        "capture_script_sha256": sha256_file(Path(__file__)),
+        "synthetic_inputs": [
+            {
+                "file": "inputs/mixed.jsonl",
+                "source": "tests/fixtures/corpus/import/comments_mixed_bad.jsonl",
+                "sha256": sha256_file(DEMO / "inputs/mixed.jsonl"),
+            },
+            {
+                "file": "inputs/secrets.jsonl",
+                "source": "tests/fixtures/corpus/security/secrets.jsonl",
+                ("change"): (
+                    "First row label shortened to 存取網址： and URL path shortened to "
+                    "/; synthetic token unchanged"
+                ),
+                "sha256": sha256_file(DEMO / "inputs/secrets.jsonl"),
+            },
+        ],
+        "product_base_commit": _run(["git", "merge-base", "HEAD", "main"], cwd=REPO),
         "captured_at": captured.isoformat(timespec="seconds"),
-        "timezone": captured.tzname() or "",
-        "timezone_name": str(captured.tzinfo),
+        "scale_factor": SCALE,
+        ("density_method"): (
+            "WINIT_X11_SCALE_FACTOR=2; geometry verified against doubled padding and cell grid"
+        ),
         "terminal": {
-            "emulator": "alacritty",
-            "version": tools["alacritty"],
-            "font": "DejaVu Sans Mono 13, fallback Noto Sans CJK TC",
-            "geometry": f"{COLUMNS}x{LINES}",
+            "emulator": "Alacritty",
+            "font": "DejaVu Sans Mono, Noto Sans CJK TC fallback",
             "xvfb_screen": SCREEN,
-            "colors": {"background": "#14211c", "foreground": "#e7f2ea"},
+            "display": display,
         },
-        "tools": tools,
+        "tools": _versions(),
         "synthetic_data": True,
         "live_or_real_account": False,
         "image_edited": False,
-        "crop_note": (
-            "Cropped to the Alacritty window rectangle from xdotool. "
-            "Pixels inside that rectangle are the unedited framebuffer, saved as PNG."
+        ("crop_note"): (
+            "Full window width from its top edge through one empty cell "
+            "row below the final ink; display-coordinate rectangles. Kept "
+            "RGB pixels unchanged."
         ),
-        "images": images,
+        ("png_optimization"): (
+            "Pillow optimize=True, compress_level=9; decoded RGB equality checked per image"
+        ),
+        "images": records,
     }
-    (OUT / "manifest.json").write_text(
-        json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    _write_readme(images)
-    print(f"wrote {len(images)} frames under {OUT}")
+    (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    _write_readme(records)
+    print(f"Wrote {len(records)} real frames.")
 
 
 if __name__ == "__main__":

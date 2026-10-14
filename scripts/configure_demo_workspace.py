@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 ROOT = Path("/tmp/metamuse-demo")
-CONFIG = ROOT / "workspace" / "metamuse.toml"
+CONFIG = ROOT / "ws" / "metamuse.toml"
 
 
 def main() -> None:

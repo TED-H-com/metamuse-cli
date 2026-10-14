@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 from importlib.metadata import version
 from pathlib import Path
 
@@ -21,18 +20,11 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 DEMO = Path("/tmp/metamuse-demo")
 
 
-def _required(name: str) -> str:
-    value = os.environ.get(name, "")
-    if not value:
-        raise SystemExit(f"missing {name}")
-    return value
-
-
 async def main() -> None:
-    workspace = _required("MM_WORKSPACE")
-    binary = _required("MM_BIN")
-    project = Path(_required("MM_PROJECT_FILE")).read_text(encoding="utf-8").strip()
-    if not workspace.startswith("/tmp/metamuse-demo"):
+    workspace = str(DEMO / "ws")
+    binary = "metamuse"
+    project = json.loads((DEMO / "out/project.json").read_text())["id"]
+    if Path.cwd() != DEMO:
         raise SystemExit("refusing a workspace outside the demo directory")
     errlog_path = DEMO / "out" / "mcp-stderr.txt"
     errlog_path.parent.mkdir(parents=True, exist_ok=True)
