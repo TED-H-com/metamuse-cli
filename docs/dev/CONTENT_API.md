@@ -161,10 +161,13 @@ row; they are not returned as success and automatic orphan cleanup is not implem
 
 Core backups include SQLite, ready objects and every ready export directory with its
 manifest. Backup and restore use the same Store.verify_export checks as receipt replay:
-exact manifest bytes, payload hashes/sizes, no symlinks or unexpected members. Restored
-export receipts replay the original artifact after reference checks. Missing/corrupt
-artifacts return an honest error; they are never regenerated under an old receipt.
-Orphan/uncommitted export directories are excluded from backups.
+exact manifest bytes, payload hashes/sizes, no symlinks, hardlinks or unexpected members.
+Missing/changed live export artifacts produce a partial backup warning and an unavailable
+inventory entry, without blocking workspace open or migration. Restore preserves that
+unavailable state, so its old receipt keeps failing honestly. Verified original artifacts
+still replay after reference checks; they are never regenerated under an old receipt.
+Ready/unavailable export payloads are frozen, and replay compares the authoritative row
+with its receipt before verifying files. Orphan/uncommitted directories are excluded.
 
 ## Integration pending
 

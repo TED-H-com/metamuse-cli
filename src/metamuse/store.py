@@ -10,8 +10,10 @@ import re
 import secrets
 import shutil
 import sqlite3
+import stat
 import tempfile
 import threading
+import warnings
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
@@ -140,8 +142,8 @@ def file_lock(path: Path, *, exclusive: bool = True, blocking: bool = True) -> I
             flags |= fcntl.LOCK_NB
         try:
             fcntl.flock(handle, flags)
-        except BlockingIOError as exc:
-            raise m.CoreError(m.ErrorCode.JOB_BUSY, "Workspace lock is held") from exc
+        except BlockingIOError:
+            raise m.CoreError(m.ErrorCode.JOB_BUSY, "Workspace lock is held") from None
         try:
             yield handle
         finally:
@@ -170,7 +172,7 @@ class Store:
         schema_version: int | None = None,
         _restore_in_progress: bool = False,
     ):
-        if (paths.runtime / "restore.incomplete").exists() and not _restore_in_progress:
+        if _restore_marker_present(paths) and not _restore_in_progress:
             raise m.CoreError(
                 m.ErrorCode.STORAGE,
                 "Workspace restore is incomplete",
@@ -209,21 +211,20 @@ class Store:
     def _open(self) -> sqlite3.Connection:
         try:
             return self._open_database()
-        except sqlite3.Error as exc:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Cannot open workspace database") from exc
+        except sqlite3.Error:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Cannot open workspace database") from None
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
-        if (self.paths.runtime / "restore.incomplete").exists() and not self._restore_in_progress:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Workspace restore is incomplete")
+        self._check_restore_marker()
         with file_lock(self.paths.runtime / "maintenance.lock", exclusive=False):
             conn = self._open()
             try:
                 if conn.execute("PRAGMA user_version").fetchone()[0] != self.schema_version:
                     raise m.CoreError(m.ErrorCode.PROTOCOL_MISMATCH, "Database requires migration")
                 yield conn
-            except sqlite3.Error as exc:
-                raise m.CoreError(m.ErrorCode.STORAGE, "SQLite operation failed") from exc
+            except sqlite3.Error:
+                raise m.CoreError(m.ErrorCode.STORAGE, "SQLite operation failed") from None
             finally:
                 conn.close()
 
@@ -239,18 +240,23 @@ class Store:
                 try:
                     yield conn
                     conn.commit()
-                except sqlite3.IntegrityError as exc:
+                except sqlite3.IntegrityError:
                     conn.rollback()
                     raise m.CoreError(
                         m.ErrorCode.REFERENCE_INVALID, "Database reference or constraint rejected"
-                    ) from exc
+                    ) from None
                 except BaseException:
                     conn.rollback()
                     raise
         finally:
             _ACTIVE_WRITES.roots = active
 
+    def _check_restore_marker(self) -> None:
+        if _restore_marker_present(self.paths) and not self._restore_in_progress:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Workspace restore is incomplete")
+
     def migrate(self, migrations: dict[int, Path]) -> None:
+        self._check_restore_marker()
         with file_lock(self.paths.runtime / "maintenance.lock"):
             had_database = self.paths.database.exists() and self.paths.database.stat().st_size > 0
             conn = self._open()
@@ -267,10 +273,32 @@ class Store:
                         "Development database lacks workspace_keys; create a fresh workspace",
                     ) from None
                 if old_version == self.schema_version:
+                    # In-place pre-release amendments must not bless an obsolete guard set.
+                    expected = set(
+                        re.findall(
+                            r"CREATE TRIGGER ([A-Za-z_][A-Za-z0-9_]*)",
+                            migrations.get(1, MIGRATIONS[1]).read_text(),
+                        )
+                    )
+                    present = {
+                        row[0]
+                        for row in conn.execute(
+                            "SELECT name FROM sqlite_master WHERE type='trigger'"
+                        )
+                    }
+                    if expected - present:
+                        raise m.CoreError(
+                            m.ErrorCode.PROTOCOL_MISMATCH,
+                            "Development database lacks storage guards; create a fresh workspace",
+                        ) from None
                     return
                 with file_lock(self.paths.worker_lock, blocking=False):
                     if had_database:
-                        self._backup(conn, self.paths.root / "backups" / m.new_id("pre_upgrade"))
+                        self._backup(
+                            conn,
+                            self.paths.root / "backups" / m.new_id("pre_upgrade"),
+                            _pre_upgrade=True,
+                        )
                     conn.execute("PRAGMA foreign_keys=OFF")
                     conn.execute("BEGIN IMMEDIATE")
                     try:
@@ -318,7 +346,7 @@ class Store:
         return WorkspaceKey(**dict(row))
 
     def workspace_verification_keys(self, name: str) -> tuple[WorkspaceKey, ...]:
-        """Retained active/retired keys; read-only, including legacy cursor material."""
+        """Retained active/retired keys; never reads legacy receipts."""
         self._key_name(name)
         with self.connection() as conn:
             return tuple(
@@ -378,10 +406,10 @@ class Store:
                         record.rendered_text,
                         load_config(self.paths.root).limits.packet_max_utf8_bytes,
                     )
-                except ValueError as exc:
+                except ValueError:
                     raise m.CoreError(
                         m.ErrorCode.LIMIT_REACHED, "Packet UTF-8 byte limit exceeded"
-                    ) from exc
+                    ) from None
             self.validate_evidence(
                 project, record.selection, conn=conn, source_only=isinstance(record, m.Packet)
             )
@@ -466,8 +494,8 @@ class Store:
                 elif key in BOOL_FIELDS:
                     data[key] = bool(value)
             return model.model_validate(data, context={"stored": True})
-        except (ValidationError, ValueError, TypeError) as exc:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Stored record violates its contract") from exc
+        except (ValidationError, ValueError, TypeError):
+            raise m.CoreError(m.ErrorCode.STORAGE, "Stored record violates its contract") from None
 
     def get(
         self,
@@ -561,7 +589,10 @@ class Store:
                 raise m.CoreError(
                     m.ErrorCode.IDEMPOTENCY_CONFLICT, "Request key has a different payload"
                 )
-            return json.loads(row["response"])
+            try:
+                return json.loads(row["response"])
+            except (ValueError, TypeError):
+                raise m.CoreError(m.ErrorCode.STORAGE, "Stored receipt is invalid") from None
         result = mutation()
         conn.execute(
             "INSERT INTO request_receipts VALUES(?,?,?,?)",
@@ -595,14 +626,7 @@ class Store:
         )
 
     def verify_asset(self, asset: m.Asset) -> Path:
-        path = self.paths.object_path(asset.sha256)
-        if asset.object_path != str(path.relative_to(self.paths.root)) or not path.is_file():
-            raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Ready object is missing")
-        if path.stat().st_size != asset.actual_bytes:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Object size mismatch")
-        if _hash_file(path) != asset.sha256:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Object hash mismatch")
-        return path
+        return _verify_object(self.paths.root, asset.model_dump(mode="json"))
 
     def put_object(
         self,
@@ -612,6 +636,7 @@ class Store:
         max_bytes: int = 536870912,
         duration_ms: int | None = None,
     ) -> m.Asset:
+        self._check_restore_marker()
         digest = hashlib.sha256()
         size = 0
         fd, name = tempfile.mkstemp(dir=self.paths.root / "staging", prefix="object-")
@@ -658,16 +683,29 @@ class Store:
         finally:
             staging.unlink(missing_ok=True)
 
-    def _backup(self, source: sqlite3.Connection, destination: Path) -> Path:
+    def _backup(
+        self, source: sqlite3.Connection, destination: Path, *, _pre_upgrade: bool = False
+    ) -> Path:
         destination = WorkspacePaths.resolve(destination).root
-        if destination.exists():
+        if _pre_upgrade:
+            if destination.parent != self.paths.root / "backups" or not destination.name.startswith(
+                "pre_upgrade_"
+            ):
+                raise m.CoreError(
+                    m.ErrorCode.INPUT_INVALID, "Invalid pre-upgrade backup destination"
+                )
+        else:
+            _reject_overlap(
+                self.paths.root, destination, "Backup destination must not overlap workspace"
+            )
+        if destination.is_symlink() or destination.exists():
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Backup destination must be fresh")
         try:
             destination.mkdir(mode=0o700, parents=True)
-        except FileExistsError as exc:
+        except FileExistsError:
             raise m.CoreError(
                 m.ErrorCode.INPUT_INVALID, "Backup destination must be fresh"
-            ) from exc
+            ) from None
         try:
             return self._write_backup(source, destination)
         except BaseException:
@@ -678,193 +716,389 @@ class Store:
         db = destination / "state.sqlite3"
         private_file(db)
         with closing(sqlite3.connect(db)) as target:
-            _configure(target)
+            _configure(target, writable=False)
             source.backup(target)
-        # Object manifest is selected from the backup, not a later live snapshot.
-        with closing(sqlite3.connect(db)) as snapshot:
-            _configure(snapshot)
-            version = snapshot.execute("PRAGMA user_version").fetchone()[0]
-            objects = []
-            exports = []
-            if version:
-                for row in snapshot.execute("SELECT * FROM assets WHERE state='ready'"):
-                    asset = self.decode(m.Asset, row)
-                    path = self.verify_asset(asset)
-                    relative = path.relative_to(self.paths.root)
-                    copied = destination / relative
-                    private_dir(copied.parent)
-                    shutil.copyfile(path, copied)
-                    copied.chmod(0o600)
-                    objects.append({"sha256": asset.sha256, "actual_bytes": asset.actual_bytes})
-                for row in snapshot.execute(
-                    "SELECT * FROM exports WHERE state='ready' ORDER BY id"
-                ):
-                    export = self.decode(m.Export, row)
+            target.execute("PRAGMA journal_mode=DELETE")
+        with _archive_connection(db) as snapshot:
+            inventory = _inventory(snapshot)
+        for obj in inventory.objects:
+            path = _verify_object(self.paths.root, obj)
+            copied = destination / obj["object_path"]
+            private_dir(copied.parent)
+            _copy_private_file(path, copied)
+            _verify_object(destination, obj)
+        entries = []
+        for export in inventory.exports:
+            state = export["state"]
+            if state == "ready":
+                try:
                     _copy_export(export, self.paths.root, destination)
-                    exports.append(_export_manifest_entry(export))
-        manifest = {"schema_version": version, "objects": objects, "exports": exports}
+                except m.CoreError as exc:
+                    if exc.detail.code != m.ErrorCode.RESOURCE_UNAVAILABLE:
+                        raise
+                    state = "unavailable"
+                    partial = destination / export["artifact"]
+                    if partial.is_dir() and not partial.is_symlink():
+                        shutil.rmtree(partial)
+            entries.append(_export_manifest_entry(export, state=state))
+        unavailable = sum(entry["state"] == "unavailable" for entry in entries)
+        messages = (
+            [f"{unavailable} export artifacts unavailable; backup is partial"]
+            if unavailable
+            else []
+        )
+        manifest = {
+            "schema_version": inventory.version,
+            "database": {"sha256": _hash_file(db), "actual_bytes": db.stat().st_size},
+            "objects": [
+                {"sha256": obj["sha256"], "actual_bytes": obj["actual_bytes"]}
+                for obj in inventory.objects
+            ],
+            "exports": entries,
+            "status": "partial" if unavailable else "ok",
+            "warnings": messages,
+        }
         file = destination / "manifest.json"
+        private_file(file)
         file.write_bytes(m.canonical_json(manifest))
-        file.chmod(0o600)
+        # Validate the archive we actually copied, including every directory member.
+        _verified_backup(destination, max_version=self.schema_version)
+        for message in messages:
+            warnings.warn(message, BackupWarning, stacklevel=3)
         return destination
 
     def backup(self, destination: Path) -> Path:
+        """Return archive path; BackupWarning and manifest status expose unavailable exports."""
         with self.connection() as conn:
             return self._backup(conn, destination)
 
     def verify_export(self, export: m.Export) -> Path:
-        """Verify ready artifact membership, exact manifest bytes and each size/hash."""
-        return _verify_export(export, self.paths.root)
+        return _verify_export(export.model_dump(mode="json"), self.paths.root)
 
     @classmethod
     def restore(cls, backup: Path, paths: WorkspacePaths) -> Store:
         try:
-            return cls._restore(backup.resolve(), paths)
-        except (OSError, sqlite3.Error, ValueError, KeyError, TypeError) as exc:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Restore verification failed") from exc
+            return cls._restore(Path(backup).resolve(), WorkspacePaths.resolve(paths.root))
+        except (OSError, sqlite3.Error, ValueError, KeyError, TypeError):
+            raise m.CoreError(m.ErrorCode.STORAGE, "Restore verification failed") from None
 
     @classmethod
     def _restore(cls, backup: Path, paths: WorkspacePaths) -> Store:
+        _reject_overlap(backup, paths.root, "Restore destination must not overlap backup")
         if paths.root.exists() and any(paths.root.iterdir()):
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Restore requires a fresh workspace")
-        manifest = json.loads((backup / "manifest.json").read_bytes())
-        backup_version = manifest["schema_version"]
-        if type(backup_version) is not int or backup_version < 0:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Invalid backup schema version")
-        if backup_version > SCHEMA_VERSION:
-            raise m.CoreError(
-                m.ErrorCode.PROTOCOL_MISMATCH, "Backup schema is newer than this build"
-            )
-        # Verify the backup before writing the new workspace.
-        with closing(
-            sqlite3.connect(f"{(backup / 'state.sqlite3').as_uri()}?mode=ro", uri=True)
-        ) as conn:
-            _configure(conn, writable=False)
-            if conn.execute("PRAGMA user_version").fetchone()[0] != backup_version:
-                raise m.CoreError(m.ErrorCode.PROTOCOL_MISMATCH, "Backup schema mismatch")
-            if (
-                conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok"
-                or conn.execute("PRAGMA foreign_key_check").fetchone()
-            ):
-                raise m.CoreError(m.ErrorCode.STORAGE, "Backup integrity check failed")
-            rows = (
-                conn.execute(
-                    "SELECT sha256,actual_bytes,object_path FROM assets WHERE state='ready'"
-                ).fetchall()
-                if backup_version
-                else []
-            )
-            exports = (
-                [
-                    cls.decode(m.Export, row)
-                    for row in conn.execute("SELECT * FROM exports WHERE state='ready' ORDER BY id")
-                ]
-                if backup_version
-                else []
-            )
-        expected = {row["sha256"]: row["actual_bytes"] for row in rows}
-        if expected != {obj["sha256"]: obj["actual_bytes"] for obj in manifest["objects"]}:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Backup manifest mismatch")
-        for row in rows:
-            sha = row["sha256"]
-            paths.object_path(sha)  # validates opaque hash before constructing a backup path
-            relative = Path("objects") / "sha256" / sha[:2] / sha
-            if row["object_path"] != str(relative):
-                raise m.CoreError(m.ErrorCode.STORAGE, "Backup object path mismatch")
-            source = backup / relative
-            if source.stat().st_size != row["actual_bytes"] or _hash_file(source) != sha:
-                raise m.CoreError(m.ErrorCode.STORAGE, "Restore object hash mismatch")
-        if manifest.get("exports", []) != [_export_manifest_entry(export) for export in exports]:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Backup export manifest mismatch")
-        export_root = backup / "exports"
-        if export_root.exists() and (
-            export_root.is_symlink()
-            or not export_root.is_dir()
-            or {path.name for path in export_root.iterdir()} != {export.id for export in exports}
-        ):
-            raise m.CoreError(m.ErrorCode.STORAGE, "Backup contains unexpected export artifacts")
-        for export in exports:
-            _verify_export(export, backup)
-        paths.initialize()
-        # Remains present across errors/crashes; a partially restored target is never opened.
+        verified = _verified_backup(backup, max_version=SCHEMA_VERSION)
+        inventory, states = verified.inventory, verified.export_states
         marker = paths.runtime / "restore.incomplete"
-        private_file(marker)
-        with marker.open("wb") as stream:
-            stream.write(b"Restore in progress; do not use this workspace.\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        _fsync_dir(paths.runtime)
         try:
-            shutil.copyfile(backup / "state.sqlite3", paths.database)
-            paths.database.chmod(0o600)
-            for row in rows:
-                relative = Path(row["object_path"])
-                private_dir((paths.root / relative).parent)
-                shutil.copyfile(backup / relative, paths.root / relative)
-                (paths.root / relative).chmod(0o600)
-            for export in exports:
-                _copy_export(export, backup, paths.root)
-            # Normal guarded open: maintenance + worker locks, pre-upgrade backup, DDL rollback.
+            # Create and fsync the blocker before any general initialization can fail.
+            _write_restore_marker(paths)
+            paths.initialize()
+            _copy_private_file(backup / "state.sqlite3", paths.database)
+            if _hash_file(paths.database) != verified.database_digest:
+                raise m.CoreError(
+                    m.ErrorCode.STORAGE, "Copied database differs from verified backup"
+                )
+            for obj in inventory.objects:
+                target = paths.root / obj["object_path"]
+                private_dir(target.parent)
+                _copy_private_file(backup / obj["object_path"], target)
+            for export in inventory.exports:
+                if states[export["id"]] == "ready":
+                    _copy_export(export, backup, paths.root)
+            # Verify the actual copy at its old schema, using raw SQL, before migration.
+            with _archive_connection(paths.database) as conn:
+                if _inventory(conn) != inventory:
+                    raise m.CoreError(m.ErrorCode.STORAGE, "Copied database inventory mismatch")
+            _verify_artifacts(paths.root, inventory, states)
+            # Clear stale ownership and persist known artifact loss before pre-upgrade backup.
+            if inventory.version:
+                with closing(sqlite3.connect(paths.database, isolation_level=None)) as conn:
+                    _configure(conn, writable=False)
+                    conn.execute("BEGIN IMMEDIATE")
+                    try:
+                        conn.execute("UPDATE worker_state SET owner_nonce=NULL,heartbeat=NULL")
+                        for export in inventory.exports:
+                            if states[export["id"]] == "unavailable":
+                                conn.execute(
+                                    "UPDATE exports SET state='unavailable' WHERE id=?",
+                                    (export["id"],),
+                                )
+                        conn.commit()
+                    except BaseException:
+                        conn.rollback()
+                        raise
             store = cls(paths, _restore_in_progress=True)
-            with store.transaction() as conn:
-                if (
-                    conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok"
-                    or conn.execute("PRAGMA foreign_key_check").fetchone()
+            with store.connection() as conn:
+                actual = _inventory(conn)
+                if actual.objects != inventory.objects or actual.exports != tuple(
+                    {**export, "state": states[export["id"]]} for export in inventory.exports
                 ):
-                    raise m.CoreError(
-                        m.ErrorCode.STORAGE, "Restored database integrity check failed"
-                    )
-                conn.execute("UPDATE worker_state SET owner_nonce=NULL,heartbeat=NULL")
-            _fsync_dir(paths.runtime)
+                    raise m.CoreError(m.ErrorCode.STORAGE, "Restored database inventory mismatch")
+                _check_integrity(conn)
+            _verify_artifacts(paths.root, actual, states)
             marker.unlink()
+            _fsync_dir(paths.runtime)
             store._restore_in_progress = False
             return store
-        except Exception as exc:
-            raise m.CoreError(
-                m.ErrorCode.STORAGE,
-                "Restore failed; target workspace is incomplete",
-                next_action="Restore the verified backup into a fresh workspace",
-            ) from exc
+        except BaseException as exc:
+            # A failed unlink fsync must also leave the workspace blocked.
+            if not _restore_marker_present(paths):
+                try:
+                    _write_restore_marker(paths)
+                except OSError:
+                    pass
+            if isinstance(exc, Exception):
+                raise m.CoreError(
+                    m.ErrorCode.STORAGE,
+                    "Restore failed; target workspace is incomplete",
+                    next_action="Restore the verified backup into a fresh workspace",
+                ) from None
+            raise
 
 
-def _export_manifest_entry(export: m.Export) -> dict[str, Any]:
+class BackupWarning(UserWarning):
+    """A completed archive explicitly records unavailable export artifacts."""
+
+
+@dataclass(frozen=True)
+class _Inventory:
+    version: int
+    objects: tuple[dict[str, Any], ...]
+    exports: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class _VerifiedBackup:
+    inventory: _Inventory
+    database_digest: str
+    export_states: dict[str, str]
+
+
+def _inventory(conn: sqlite3.Connection) -> _Inventory:
+    """Read stable archive columns at this DB's version, never current Pydantic models."""
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if not version:
+        return _Inventory(0, (), ())
+    objects = tuple(
+        dict(row)
+        for row in conn.execute(
+            "SELECT id,sha256,actual_bytes,object_path,state FROM assets "
+            "WHERE state='ready' ORDER BY id"
+        )
+    )
+    exports = []
+    try:
+        for row in conn.execute(
+            "SELECT id,project_id,selection,format,manifest,artifact,state FROM exports "
+            "WHERE state IN ('ready','unavailable') ORDER BY id"
+        ):
+            export = dict(row)
+            for field_name in ("selection", "manifest"):
+                export[field_name] = json.loads(export[field_name])
+            exports.append(export)
+    except (ValueError, TypeError):
+        raise m.CoreError(m.ErrorCode.STORAGE, "Invalid archived export metadata") from None
+    return _Inventory(version, objects, tuple(exports))
+
+
+@contextmanager
+def _archive_connection(database: Path) -> Iterator[sqlite3.Connection]:
+    # immutable prevents SQLite from creating journals/sidecars during archive inspection.
+    with closing(sqlite3.connect(f"{database.as_uri()}?mode=ro&immutable=1", uri=True)) as conn:
+        _configure(conn, writable=False)
+        yield conn
+
+
+def _check_integrity(conn: sqlite3.Connection) -> None:
+    if (
+        conn.execute("PRAGMA integrity_check").fetchone()[0] != "ok"
+        or conn.execute("PRAGMA foreign_key_check").fetchone()
+    ):
+        raise m.CoreError(m.ErrorCode.STORAGE, "Backup integrity check failed")
+
+
+def _verified_backup(root: Path, *, max_version: int) -> _VerifiedBackup:
+    if {p.name for p in root.iterdir()} - {"manifest.json", "state.sqlite3", "objects", "exports"}:
+        raise m.CoreError(m.ErrorCode.STORAGE, "Backup contains sidecars or unexpected entries")
+    _regular_file(root / "manifest.json")
+    database = root / "state.sqlite3"
+    _regular_file(database)
+    manifest = json.loads((root / "manifest.json").read_bytes())
+    version = manifest["schema_version"]
+    if type(version) is not int or version < 0:
+        raise m.CoreError(m.ErrorCode.STORAGE, "Invalid backup schema version")
+    if version > max_version:
+        raise m.CoreError(m.ErrorCode.PROTOCOL_MISMATCH, "Backup schema is newer than this build")
+    digest = _hash_file(database)
+    if "database" in manifest and manifest["database"] != {
+        "sha256": digest,
+        "actual_bytes": database.stat().st_size,
+    }:
+        raise m.CoreError(m.ErrorCode.STORAGE, "Backup database digest mismatch")
+    with _archive_connection(database) as conn:
+        _check_integrity(conn)
+        inventory = _inventory(conn)
+    if inventory.version != version:
+        raise m.CoreError(m.ErrorCode.PROTOCOL_MISMATCH, "Backup schema mismatch")
+    if manifest["objects"] != [
+        {"sha256": obj["sha256"], "actual_bytes": obj["actual_bytes"]} for obj in inventory.objects
+    ]:
+        raise m.CoreError(m.ErrorCode.STORAGE, "Backup object manifest mismatch")
+    entries = manifest.get("exports", [])
+    if len(entries) != len(inventory.exports):
+        raise m.CoreError(m.ErrorCode.STORAGE, "Backup export manifest mismatch")
+    states = {}
+    for export, entry in zip(inventory.exports, entries, strict=True):
+        state = entry.get("state", "ready")
+        if state not in ("ready", "unavailable") or (
+            export["state"] == "unavailable" and state != "unavailable"
+        ):
+            raise m.CoreError(m.ErrorCode.STORAGE, "Invalid archived export state")
+        expected = _export_manifest_entry(export, state=state)
+        if {**entry, "state": state} != expected:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Backup export manifest mismatch")
+        states[export["id"]] = state
+    partial = any(state == "unavailable" for state in states.values())
+    if manifest.get("status", "partial" if partial else "ok") != ("partial" if partial else "ok"):
+        raise m.CoreError(m.ErrorCode.STORAGE, "Backup status mismatch")
+    _verify_artifacts(root, inventory, states)
+    if _hash_file(database) != digest:
+        raise m.CoreError(m.ErrorCode.STORAGE, "Backup changed during verification")
+    return _VerifiedBackup(inventory, digest, states)
+
+
+def _verify_artifacts(root: Path, inventory: _Inventory, states: dict[str, str]) -> None:
+    expected_objects = {Path(obj["object_path"]) for obj in inventory.objects}
+    for obj in inventory.objects:
+        _verify_object(root, obj)
+    object_root = root / "objects"
+    if object_root.is_symlink():
+        raise m.CoreError(m.ErrorCode.STORAGE, "Invalid backup object directory")
+    if object_root.exists():
+        if not object_root.is_dir():
+            raise m.CoreError(m.ErrorCode.STORAGE, "Invalid backup object directory")
+        expected_dirs = {Path("objects"), Path("objects/sha256")}
+        for path in expected_objects:
+            expected_dirs.update(path.parents)
+        for path in object_root.rglob("*"):
+            relative = path.relative_to(root)
+            if path.is_symlink() or path.resolve() != path:
+                raise m.CoreError(m.ErrorCode.STORAGE, "Linked backup object entry")
+            if path.is_dir():
+                if relative not in expected_dirs:
+                    raise m.CoreError(m.ErrorCode.STORAGE, "Unlisted backup object directory")
+            elif relative not in expected_objects:
+                raise m.CoreError(m.ErrorCode.STORAGE, "Unlisted backup object file")
+    ready_exports = [export for export in inventory.exports if states[export["id"]] == "ready"]
+    export_root = root / "exports"
+    if export_root.is_symlink() or (
+        export_root.exists()
+        and (
+            not export_root.is_dir()
+            or {p.name for p in export_root.iterdir()} != {e["id"] for e in ready_exports}
+        )
+    ):
+        raise m.CoreError(m.ErrorCode.STORAGE, "Backup contains unexpected export artifacts")
+    for export in ready_exports:
+        _verify_export(export, root)
+
+
+def _reject_overlap(first: Path, second: Path, message: str) -> None:
+    if first == second or first in second.parents or second in first.parents:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, message)
+
+
+def _restore_marker_present(paths: WorkspacePaths) -> bool:
+    marker = paths.runtime / "restore.incomplete"
+    return marker.is_symlink() or marker.exists()
+
+
+def _write_restore_marker(paths: WorkspacePaths) -> None:
+    private_dir(paths.runtime)
+    marker = paths.runtime / "restore.incomplete"
+    fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "wb") as stream:
+        stream.write(b"Restore in progress; do not use this workspace.\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    _fsync_dir(paths.runtime)
+
+
+def _regular_file(path: Path) -> None:
+    if path.is_symlink() or path.resolve() != path:
+        raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Linked archive file is unavailable")
+    info = path.stat()
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise m.CoreError(
+            m.ErrorCode.RESOURCE_UNAVAILABLE, "Archive file is not a private regular file"
+        )
+
+
+def _copy_private_file(source: Path, target: Path) -> None:
+    _regular_file(source)
+    shutil.copyfile(source, target)
+    target.chmod(0o600)
+    _regular_file(target)
+    with target.open("rb") as stream:
+        os.fsync(stream.fileno())
+
+
+def _verify_object(root: Path, obj: dict[str, Any]) -> Path:
+    sha = obj["sha256"]
+    relative = Path("objects/sha256") / sha[:2] / sha
+    if re.fullmatch(r"[0-9a-f]{64}", sha, flags=re.ASCII) is None or obj["object_path"] != str(
+        relative
+    ):
+        raise m.CoreError(m.ErrorCode.STORAGE, "Invalid object path")
+    path = root / relative
+    try:
+        _regular_file(path)
+        if path.stat().st_size != obj["actual_bytes"] or _hash_file(path) != sha:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Object size/hash mismatch")
+    except OSError:
+        raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Ready object is missing") from None
+    return path
+
+
+def _export_manifest_entry(export: dict[str, Any], *, state: str) -> dict[str, Any]:
     return {
-        "id": export.id,
-        "artifact": export.artifact,
-        "manifest_sha256": hashlib.sha256(m.canonical_json(export.manifest) + b"\n").hexdigest(),
+        "id": export["id"],
+        "artifact": export["artifact"],
+        "state": state,
+        "manifest_sha256": hashlib.sha256(m.canonical_json(export["manifest"]) + b"\n").hexdigest(),
     }
 
 
-def _verify_export(export: m.Export, root: Path) -> Path:
+def _verify_export(export: dict[str, Any], root: Path) -> Path:
     if (
-        export.state != "ready"
-        or re.fullmatch(r"[A-Za-z0-9_-]{3,128}", export.id, flags=re.ASCII) is None
-        or export.artifact != f"exports/{export.id}"
+        export["state"] != "ready"
+        or re.fullmatch(r"[A-Za-z0-9_-]{3,128}", export["id"], flags=re.ASCII) is None
+        or export["artifact"] != f"exports/{export['id']}"
     ):
         raise m.CoreError(m.ErrorCode.STORAGE, "Invalid stored export artifact")
-    directory = root / export.artifact
+    directory = root / export["artifact"]
     unavailable = m.CoreError(
         m.ErrorCode.RESOURCE_UNAVAILABLE,
         "Export artifact is unavailable or changed",
         next_action="Restore a verified backup containing the artifact, or use a new request key",
     )
     try:
-        if directory.resolve() != directory or not directory.is_dir():
+        if directory.is_symlink() or directory.resolve() != directory or not directory.is_dir():
             raise unavailable
-        manifest = export.manifest
+        manifest = export["manifest"]
         if (
-            manifest["export_id"] != export.id
-            or manifest["format"] != export.format
-            or manifest["selection"] != [ref.model_dump(mode="json") for ref in export.selection]
+            manifest["export_id"] != export["id"]
+            or manifest["format"] != export["format"]
+            or manifest["selection"] != export["selection"]
             or not isinstance(manifest["files"], list)
         ):
             raise ValueError
         manifest_path = directory / "manifest.json"
         expected_manifest = m.canonical_json(manifest) + b"\n"
+        _regular_file(manifest_path)
         if (
-            manifest_path.is_symlink()
-            or not manifest_path.is_file()
-            or manifest_path.stat().st_size != len(expected_manifest)
+            manifest_path.stat().st_size != len(expected_manifest)
             or manifest_path.read_bytes() != expected_manifest
         ):
             raise unavailable
@@ -888,30 +1122,24 @@ def _verify_export(export: m.Export, root: Path) -> Path:
             ):
                 raise ValueError
             path = directory / entry["name"]
-            if (
-                path.is_symlink()
-                or not path.is_file()
-                or path.stat().st_size != entry["bytes"]
-                or _hash_file(path) != entry["sha256"]
-            ):
+            _regular_file(path)
+            if path.stat().st_size != entry["bytes"] or _hash_file(path) != entry["sha256"]:
                 raise unavailable
             names.add(entry["name"])
         if {path.name for path in directory.iterdir()} != names:
             raise unavailable
         return directory
-    except OSError as exc:
-        raise unavailable from exc
-    except (ValueError, KeyError, TypeError) as exc:
-        raise m.CoreError(m.ErrorCode.STORAGE, "Invalid stored export manifest") from exc
+    except OSError:
+        raise unavailable from None
+    except (ValueError, KeyError, TypeError):
+        raise m.CoreError(m.ErrorCode.STORAGE, "Invalid stored export manifest") from None
 
 
-def _copy_export(export: m.Export, source_root: Path, target_root: Path) -> None:
+def _copy_export(export: dict[str, Any], source_root: Path, target_root: Path) -> None:
     source = _verify_export(export, source_root)
-    target = private_dir(target_root / export.artifact)
-    for name in ["manifest.json", *(entry["name"] for entry in export.manifest["files"])]:
-        shutil.copyfile(source / name, target / name)
-        (target / name).chmod(0o600)
-    # Detect changes between source verification and copying before declaring success.
+    target = private_dir(target_root / export["artifact"])
+    for name in ["manifest.json", *(entry["name"] for entry in export["manifest"]["files"])]:
+        _copy_private_file(source / name, target / name)
     _verify_export(export, target_root)
 
 

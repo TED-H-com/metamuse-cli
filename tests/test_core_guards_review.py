@@ -115,3 +115,12 @@ def test_f2_recursive_delete_triggers_fire_on_replace(ctx):
     with pytest.raises(m.CoreError):
         with ctx.store.transaction() as conn:
             conn.execute("REPLACE INTO retained_probe VALUES(1)")
+
+
+def test_f2_obsolete_development_guard_set_is_not_silently_accepted(ctx):
+    from metamuse.store import Store
+
+    with ctx.store.transaction() as conn:
+        conn.execute("DROP TRIGGER source_no_replace")
+    with pytest.raises(m.CoreError, match="fresh workspace"):
+        Store(ctx.paths)
