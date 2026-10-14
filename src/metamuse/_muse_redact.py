@@ -21,6 +21,7 @@ _EXTRA_KEYS = frozenset(
         "recoverykey",
         "rvkey",
         "endorsement",
+        "hatchsess",
     }
 )
 # The same compact sensitive family is used for JSON, headers, repr and queries.
@@ -52,23 +53,33 @@ def sensitive_key(key: str) -> bool:
     # Association metadata is public; remembered values remain independently scrubbed.
     if key in {"session_id", "request_marker", "x-request-id", "client_request_id"}:
         return False
-    compact = re.sub(r"[^a-z0-9]", "", key.casefold())
+    # Split acronym/camelCase boundaries before folding; words such as tokenizer
+    # and secretary are not token/secret components.
+    separated = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", key)
+    separated = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", separated)
+    components = re.findall(r"[a-z0-9]+", separated.casefold())
+    compact = "".join(components)
+    # Versioned aliases shipped in the previous grammar retain their meaning.
+    if components and re.fullmatch(r"v[0-9]+", components[-1]):
+        components.pop()
+    endings = {"".join(components[-1:]), "".join(components[-2:])}
+    families = {
+        "nonce",
+        "token",
+        "proof",
+        "secret",
+        "notary",
+        "noisekey",
+        "attemptid",
+        "requestid",
+        "recovery",
+        "rvkey",
+        "recoverykey",
+        "wakebody",
+    }
     return (
-        any(name in compact for name in _EXTRA_KEYS | {"hatchsess"})
-        or any(
-            family in compact
-            for family in (
-                "nonce",
-                "token",
-                "proof",
-                "secret",
-                "notary",
-                "noisekey",
-                "attemptid",
-                "requestid",
-                "recovery",
-            )
-        )
+        compact in _EXTRA_KEYS
+        or bool(endings & (families | _EXTRA_KEYS))
         or redaction_sensitive_key(key)
     )
 
@@ -179,7 +190,28 @@ def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
                 if positions is not None
                 else (start, end)
             )
-    return redact_text(_render_spans(value, spans))[0]
+    rendered = _render_spans(value, spans)
+    # Core historically classifies session_id as a cookie. Protect only these
+    # exact public key names; values still pass known-value and core scrubbing.
+    protected = {}
+    for key in ("session_id", "request_marker", "x-request-id", "client_request_id"):
+        placeholder = "musepublicfield" + str(len(protected))
+        while placeholder in rendered:
+            placeholder += "x"
+        protected[placeholder] = key
+    by_key = {key: placeholder for placeholder, key in protected.items()}
+
+    def public_key(match):
+        key = match[2]
+        if key not in {"session_id", "request_marker", "x-request-id", "client_request_id"}:
+            return match[0]
+        return match[0].replace(key, by_key[key], 1)
+
+    rendered = _ASSIGNMENT.sub(public_key, rendered)
+    cleaned = redact_text(rendered)[0]
+    for placeholder, key in protected.items():
+        cleaned = cleaned.replace(placeholder, key)
+    return cleaned
 
 
 def sanitize_document(value: Any, known: tuple[str, ...] = (), depth=0) -> Any:

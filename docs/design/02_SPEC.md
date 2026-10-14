@@ -288,3 +288,11 @@ shapes, and treats Authorization and Proxy-Authorization scheme plus credential
 as one value. Known secrets are matched in both raw text and up to two decoded
 percent-encoding layers; their coordinate-mapped span union is merged before
 one output join. A literal percent next to a hex nonce or UUID cannot hide it.
+
+Muse secret aliases are matched by separator and camelCase components: an
+exact extra key, or a final component/pair from the secret family. Prefixed and
+versioned aliases remain covered. Ordinary words (awake, proofread, tokenizer,
+secretary), token counts, handshake_ms and wake_time remain visible. Exact
+session_id and the three association marker keys are exempt from key-family
+redaction, while known values are still scrubbed. The shared core continues to
+classify policy as sensitive.
