@@ -576,6 +576,10 @@ def _raise_if(error: CoreError | None) -> None:
 # error is re-raised as one of these, outside the handler, so its text and
 # traceback chain are not the public error.
 _PUBLIC_ERRORS: dict[str, tuple[ErrorCode, str]] = {
+    "Muse minted credentials remain stale": (
+        ErrorCode.RESOURCE_UNAVAILABLE,
+        "Retry the connection later; minted credentials remain stale",
+    ),
     "Outbound peer was rejected": (
         ErrorCode.SCOPE_REQUIRED,
         "Do not accept a response from an address outside the pin.",
@@ -1307,15 +1311,15 @@ class MuseTransport:
             return payload
         if path == "/api/auth/check":
             token = payload.get("access_token")
-            if not isinstance(token, str) or _TOKEN.fullmatch(token) is None:
-                raise _error(
-                    ErrorCode.AUTH_REQUIRED,
-                    "Muse authentication response did not include a usable token",
-                    next_action="Refresh the operator cookie jar for this auth_ref",
-                )
-            self._remember(token)
-            if payload.get("ok") is not True:
+            if payload.get("ok") is False:
                 raise _error(ErrorCode.AUTH_REQUIRED, "Muse authentication failed")
+            if (
+                payload.get("ok") is not True
+                or not isinstance(token, str)
+                or _TOKEN.fullmatch(token) is None
+            ):
+                raise protocol_stop()
+            self._remember(token)
             context = {}
             for key in ("viewer_id", "session_binding_id"):
                 value = payload.get(key)
@@ -1324,9 +1328,7 @@ class MuseTransport:
                     or not 1 <= len(value) <= 4096
                     or any(ord(c) < 33 or ord(c) >= 127 for c in value)
                 ):
-                    raise _error(
-                        ErrorCode.AUTH_REQUIRED, "Muse authenticated context is unavailable"
-                    )
+                    raise protocol_stop()
                 self._remember(value)
                 context[key] = value
             return {"access_token": token, **context}
@@ -1338,11 +1340,7 @@ class MuseTransport:
                     _credential_shape(payload[key])
             token = payload.get("token")
             if not _hatch_token(token):
-                raise _error(
-                    ErrorCode.AUTH_REQUIRED,
-                    "Muse hatch response did not include a usable token",
-                    next_action="Refresh the operator cookie jar for this auth_ref",
-                )
+                raise protocol_stop()
             aliases = [_notary_token(payload[key]) for key in fields[1:] if key in payload]
             present = {value for value in aliases if value is not None}
             if len(present) > 1:
@@ -1498,10 +1496,12 @@ class MuseTransport:
             )
             if not _notary_stale(hatch.get("notary_token"), self._wall_clock()):
                 return hatch
+        # REPORT-2 §6.2 specifies unavailable after one remint; neither it nor
+        # S1 establishes that refreshing a session repairs a twice-stale notary.
         raise _error(
-            ErrorCode.AUTH_REQUIRED,
-            "Muse minted credentials are stale",
-            next_action="Refresh operator credentials before reconnecting",
+            ErrorCode.RESOURCE_UNAVAILABLE,
+            "Muse minted credentials remain stale",
+            next_action="Retry the connection later; minted credentials remain stale",
         )
 
     def _invalidate_trust(self) -> None:

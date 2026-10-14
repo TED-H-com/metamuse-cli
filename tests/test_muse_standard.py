@@ -375,9 +375,7 @@ def test_hatch_malformed_tokens_never_wake_or_dial(token):
     )
     with pytest.raises(CoreError) as caught:
         transport.sessions_list()
-    assert caught.value.detail.code == (
-        ErrorCode.PROTOCOL_MISMATCH if token.startswith("s0:") else ErrorCode.AUTH_REQUIRED
-    )
+    assert caught.value.detail.code == (ErrorCode.PROTOCOL_MISMATCH)
     assert len(http.calls) == 3 and not connector.urls
 
 
@@ -597,7 +595,7 @@ def test_stale_mint_remints_only_once_without_wake():
     transport, http, _, connector = build(handler=ok_frames([]), http=http, wall_clock=lambda: 100)
     with pytest.raises(CoreError) as caught:
         transport.sessions_list()
-    assert caught.value.detail.code == ErrorCode.AUTH_REQUIRED
+    assert caught.value.detail.code == ErrorCode.RESOURCE_UNAVAILABLE
     assert len(http.calls) == 4 and not connector.urls
 
 
