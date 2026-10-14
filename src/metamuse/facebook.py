@@ -844,17 +844,33 @@ def sanitize_storage_state(
         if not isinstance(origin_entry, Mapping):
             continue
         raw_origin = origin_entry.get("origin")
-        if not isinstance(raw_origin, str):
-            continue
         try:
+            if not isinstance(raw_origin, str):
+                raise ValueError
             split_origin = urlsplit(raw_origin)
-        except ValueError:
-            continue
-        origin_scheme = split_origin.scheme.lower()
-        origin_host = _normalize_host(split_origin.hostname)
-        if origin_host is None or origin_host not in allowed_hosts:
-            continue
-        if origin_scheme != "https":
+            origin_scheme = split_origin.scheme.lower()
+            origin_host = _normalize_host(split_origin.hostname)
+            origin_port = split_origin.port  # Parse inside the fixed-error boundary.
+            if (
+                origin_host is None
+                or origin_scheme != "https"
+                or origin_port not in (None, 443)
+                or split_origin.username is not None
+                or split_origin.password is not None
+                or split_origin.query
+                or split_origin.fragment
+                or split_origin.path not in ("", "/")
+                or "\\" in raw_origin
+                or any(ch.isspace() for ch in raw_origin)
+            ):
+                raise ValueError
+        except (ValueError, UnicodeError):
+            raise m.CoreError(
+                m.ErrorCode.AUTH_REQUIRED,
+                "Invalid Facebook storage-state origin",
+                next_action="Import a valid HTTPS Playwright storage state",
+            ) from None
+        if origin_host not in allowed_hosts:
             continue
         local_storage = origin_entry.get("localStorage", [])
         clean_ls: list[dict[str, str]] = []
@@ -866,7 +882,7 @@ def sanitize_storage_state(
                     if isinstance(k, str) and isinstance(v, str):
                         secret_tokens.append(v)
                         clean_ls.append({"name": k, "value": v})
-        port_sfx = f":{split_origin.port}" if split_origin.port else ""
+        port_sfx = ""
         kept_origins.append(
             {
                 "origin": f"{origin_scheme}://{origin_host}{port_sfx}",
