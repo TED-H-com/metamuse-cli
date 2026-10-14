@@ -736,7 +736,14 @@ also covers `%5F`; JavaScript `\u005f`/`\x5f` underscore escapes and NFKC fullwi
 underscores are recognized. Split string literals are not detected; no JavaScript
 is executed or reconstructed.
 Marker normalization scans overlapping 32 KiB blocks, so it does not decode an
-entire media response at once.
+entire media response at once. Every block checks the step's cancellation and wall
+deadline; expiry keeps the existing E_LIMIT_REACHED / Job wall clock limit reached
+error. Every response body is scanned, including media bytes.
+An offline measurement of eight 64 MiB bodies (512 MiB total per content type,
+16,384 guarded blocks) used 0.290 CPU seconds for ASCII, 64.013 for deterministic
+random bytes, and 110.962 for NFKC-expanding U+FDFA text on the review host.
+These are measured scan costs, not throughput or wall-time guarantees; the wall
+budget can stop a scan before completion.
 Invalid or credential-shaped `remote_media.provider` / `remote_media.account` labels
 return a fixed E_INPUT_INVALID configuration error naming the setting, never its value.
 

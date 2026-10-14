@@ -1682,7 +1682,14 @@ def _header_values(headers: dict[str, str], name: str) -> list[str]:
     return [value for key, value in headers.items() if key.lower() == name]
 
 
-def _challenge_marked(status: int, headers: dict[str, str], payload: bytes, reason: str) -> bool:
+def _challenge_marked(
+    status: int,
+    headers: dict[str, str],
+    payload: bytes,
+    reason: str,
+    *,
+    check_deadline: Callable[[], object] | None = None,
+) -> bool:
     """True for a challenge marker at any HTTP status. MetaMuse does not answer it."""
 
     del status
@@ -1703,6 +1710,8 @@ def _challenge_marked(status: int, headers: dict[str, str], payload: bytes, reas
     block = 32 * 1024
     overlap = 256
     for start in range(0, len(payload), block):
+        if check_deadline is not None:
+            check_deadline()
         part = payload[max(0, start - overlap) : start + block + overlap]
         if marked(part.decode("utf-8", "replace")):
             return True
@@ -1792,7 +1801,9 @@ def _exchange(
             nxt = urljoin(checked.url, target)
             redirect = net.checker(nxt, purpose="redirect")
             redirect_url = redirect.url
-        if _challenge_marked(status, response_headers, payload, reason):
+        if _challenge_marked(
+            status, response_headers, payload, reason, check_deadline=net.before_dial
+        ):
             raise _challenge_error()
         if redirect_url is not None:
             _stop_for_target(redirect_url)
