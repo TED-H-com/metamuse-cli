@@ -279,7 +279,7 @@ source = ctx.store.get(Source, "src_fixture")
 
 `connection()` gives a short read connection. `transaction()` uses BEGIN IMMEDIATE,
 commit/rollback and bounded 5-second busy timeout. All writable connections use foreign
-keys, WAL and synchronous FULL. Read-only schema probes inspect journal mode and never
+keys, recursive_triggers ON, WAL and synchronous FULL. Read-only schema probes inspect journal mode and never
 change a newer DB. Both contexts close their connection and hold a shared maintenance
 lock. Pass `conn=conn` when already inside a transaction. Always use parameters for
 values and known table/column names for SQL. Do not retain a connection across download,
@@ -530,6 +530,27 @@ Keep one side-effect class per operation: Muse create/send are external_submit j
 history reads/reconciliation are separate safe_read jobs. Any explicitly approved new
 submission after a proven refusal requires feature-level target/intent/permission checks;
 a new key cannot bypass unresolved delivery.
+
+Every Store connection enables recursive_triggers so conflict-resolution deletes fire
+retention triggers. BEFORE INSERT guards reject REPLACE/INSERT OR REPLACE/UPSERT conflicts
+on these identities; use explicit guarded UPDATE for mutable state, not conflict replacement.
+
+| Guarded table | Protected identity / behavior |
+|---|---|
+| sources | id and reliable source identity; acquisition methods immutable |
+| item_revisions | (item_id, revision); append-only UPDATE |
+| packets | id; exact payload immutable, stale mutable |
+| permits | id; immutable scope, monotonic use, sticky revocation, expiry checks |
+| exchanges | id, discussion/request key, open-exchange slot; settled outcome sticky |
+| drafts | id; current_revision requires appended head and never decreases |
+| draft_revisions | (draft_id, revision); sequential append and immutable UPDATE |
+| job_steps | id and job/sequence; entered external steps cannot reset/requeue |
+| workspace_keys | name/version and active slot; immutable material, retained retired keys |
+| exports | id; ready/unavailable payload immutable, ready→unavailable allowed once |
+
+Exports cannot regain ready state from unavailable; receipt replay checks the authoritative
+row against the stored receipt, then verifies that row's artifact. Corrections use new IDs.
+Transcript guards/scoping remain B05/B06-owned and are not amended here.
 
 Storage triggers freeze packet payloads (stale remains mutable), acquisition methods,
 permit scope and settled exchange outcomes. Permit used is monotonic, revocation sticky,

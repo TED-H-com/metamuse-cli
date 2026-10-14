@@ -915,6 +915,7 @@ def _fsync_dir(path: Path) -> None:
 def _configure(conn: sqlite3.Connection, *, writable: bool = True) -> None:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA recursive_triggers=ON")
     conn.execute("PRAGMA busy_timeout=5000")
     if writable:
         conn.execute("PRAGMA journal_mode=WAL")

@@ -771,10 +771,6 @@ def _export_files(
     }
 
 
-def _verify_export(ctx: AppContext, data: dict[str, Any]) -> None:
-    ctx.store.verify_export(m.Export.model_validate(data))
-
-
 def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
     staging = final = None
     committed = False
@@ -863,13 +859,18 @@ def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
             stored = ctx.store.get(m.Export, data["id"], conn=conn)
             if stored.state != "ready" or stored.project_id != request.project_id:
                 raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Stored export is not ready")
+            if stored.model_dump(mode="json") != data:
+                raise m.CoreError(
+                    m.ErrorCode.STORAGE, "Export receipt differs from stored artifact"
+                )
+            ctx.store.verify_export(stored)
         committed = True
     finally:
         if not committed:
             for directory in (staging, final):
                 if directory is not None and directory.is_dir() and not directory.is_symlink():
                     shutil.rmtree(directory)
-    _verify_export(ctx, data)
+    ctx.store.verify_export(stored)
     return m.Envelope(
         status="ok",
         data=data,
