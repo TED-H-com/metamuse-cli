@@ -242,3 +242,6 @@ THIRD_PARTY_NOTICES.md; no new dependency or core schema/migration is added.
 Chromium explicitly advertises automation. This also permits CDP command-line
 inspection in the real sandbox test, which verifies successful default launch with
 no --no-sandbox flag. The test skips only when that launch is unavailable.
+
+
+A present but unparseable Facebook comment count adds comment_count_unparsed to post and job gaps; affirmative exhaustion never converts that uncertainty into scope_satisfied.
