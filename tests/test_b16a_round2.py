@@ -1,8 +1,12 @@
 """Independent B16a review regressions; synthetic OFFLINE evidence only."""
 
 import signal
+import json
+import subprocess
+import sys
 import time
 import uuid
+from pathlib import Path
 
 import pytest
 from test_muse_lifecycle import fixture_ctx as fixture_ctx
@@ -244,3 +248,65 @@ def test_f8_deep_secret_has_fixed_detached_error(tmp_path, operation):
     assert error.value.detail.code == m.ErrorCode.AUTH_REQUIRED
     assert error.value.__context__ is None and error.value.__cause__ is None
     assert marker not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        ["auth", "list"],
+        ["auth", "import", "--file", "missing"],
+        ["auth", "revoke", "--auth-ref", "missing"],
+        ["permit", "list", "--project", "missing"],
+        ["permit", "revoke", "missing", "--request-key", "refused"],
+        [
+            "permit",
+            "approve",
+            "--operation",
+            "muse.open",
+            "--request-file",
+            "missing",
+            "--request-key",
+            "refused",
+        ],
+        [
+            "permit",
+            "create",
+            "--project",
+            "missing",
+            "--kind",
+            "access",
+            "--scope-file",
+            "missing",
+            "--provider",
+            "synthetic",
+            "--account",
+            "synthetic",
+            "--issuer",
+            "operator",
+            "--expires-at",
+            "2026-10-15T00:00:00Z",
+            "--max-uses",
+            "1",
+            "--request-key",
+            "refused",
+        ],
+    ],
+)
+def test_f9_human_only_subprocess_never_opens_workspace(tmp_path, command):
+    workspace = tmp_path / "must-not-exist"
+    process = subprocess.run(
+        [
+            str(Path(sys.executable).with_name("metamuse")),
+            "--workspace",
+            str(workspace),
+            "--json",
+            "--non-interactive",
+            *command,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert process.returncode == 3, process.stderr
+    assert json.loads(process.stdout)["error"]["code"] == "E_SCOPE_REQUIRED"
+    assert not workspace.exists()
