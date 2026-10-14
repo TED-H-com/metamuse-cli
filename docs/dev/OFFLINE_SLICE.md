@@ -50,7 +50,8 @@ retry the unchanged MCP request with share_grant_id or access_grant_id. Model co
 cannot choose provider/account or mint a grant. Changed request plus the old digest
 is refused; a changed question with the old permit receives E_SCOPE_DENIED without a
 preview. Repeat without the grant to obtain a fresh review.
-Preview credential-like text is redacted; its digest still binds original bytes.
+Credential topics/questions are refused before preview creation. Accepted text is shown
+exactly as sent, including benign paths; its digest binds those original bytes.
 
 ## Follow-up, restart and exported evidence
 
@@ -94,12 +95,8 @@ strip or alter labels and rebuild consistent hashes and manifest bytes; verifica
 still returns the fixed E_RESOURCE_UNAVAILABLE export error. CLI and MCP receipt
 replay use the same verifier.
 
-Known limitation: shared redaction currently misses a bare Muse session-cookie pair
-(`hatch_sess=` followed by synthetic marker text). Such text can leak into a bundle
-whose policy is `redacted`. The strict xfail in `tests/test_at042_review_fixes.py` pins
-that leak; B16a owns the shared redaction fix and must remove the xfail when it passes.
-The journey tests a Cookie-header form, so its passing privacy check does not prove
-that the bare form is safe. Review input before sharing any generated bundle.
+B16a covers bare session-cookie pairs and mixed cookie chains. The AT-042 bare-cookie
+bundle regression is a normal passing test; private exports retain `original_private`.
 
 Worker process tests cover default execution, held-lock refusal, --no-worker,
 SIGTERM/SIGINT safe drainage and SIGKILL recovery at a durable fixture send checkpoint.

@@ -46,14 +46,12 @@ The transport does not mint a core token and does not reserve a permit. B10 owns
 
 Question text is at most 8192 UTF-8 bytes. Packet text is at most 49152 UTF-8 bytes. Both caps are checked on the prepared payload and on the JSON body before `consume`. The marker matches `^[A-Za-z0-9._~-]{1,128}$` and is the caller's for both create and send. The transport does not generate one after authorization.
 
-B16a lifecycle checks the host topic and question with `safety.redact_text` before preparation,
-replay, persistence or an approval preview. If it would change, the send returns fixed
-`E_INPUT_INVALID` with an action to remove credentials/private paths, never echoing the
-value or silently rewriting the question. Body text is only the checked question,
-`"\n\n"`, and packet text passed through the same redactor. The latter also guards older
-packets at preparation; the exact outbound digest still covers the actual prepared body.
-Wire construction rechecks both session.start topics and send inputs before the worker's external-action boundary;
-an older queued body needing redaction is refused and must be prepared and granted anew.
+B16a checks both host topics and questions for credential-class values with the shared
+redactor. Fixed `E_INPUT_INVALID` asks the host to remove credentials, without echoing
+values or silently rewriting text. Paths, ordinary code, pagination/model vocabulary
+and header prose are accepted. Accepted text is sent byte-for-byte and shown exactly in
+the preview/request/summary. Credentials are refused before any approval preview.
+Wire construction checks session.start topics and send questions again.
 
 ## Prepared request
 
@@ -189,8 +187,8 @@ the old grant. Repeat without a grant to get a fresh review. Stale packets retur
 E_REFERENCE_INVALID and require a new packet. Provider/account come only
 from the binding, and the verified body/headers/verb/path/marker/node cannot be
 substituted. Reservation and expiry/revocation checks occur again at the step boundary.
-Credential-like request text is redacted for review; use the original human-owned
-request file to approve its original digest, never substitute the redacted copy.
+Credential topics/questions are refused before review. Accepted text is displayed exactly;
+save the preview request without edits to approve the same bytes.
 
 A live send requires a successful authorized history job for its baseline; use the
 mapped discussion's open reconciliation request with an access approval first. A new

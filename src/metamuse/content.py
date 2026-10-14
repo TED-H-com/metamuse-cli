@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from metamuse import models as m
 from metamuse.paths import private_dir
-from metamuse.safety import redact_text, redaction_sensitive_key
+from metamuse.safety import redact_text, redaction_sensitive_value
 from metamuse.store import CONTENT_CURSOR_KEY, TransactionWriter
 
 if TYPE_CHECKING:
@@ -344,7 +344,7 @@ def _safe_value(value: Any, records: list[dict[str, Any]]) -> Any:
         output = {}
         for key, child in value.items():
             safe_key = _safe_value(key, records)
-            if redaction_sensitive_key(key):
+            if redaction_sensitive_value(key, child):
                 output[safe_key] = "[REDACTED]"
                 records.append({"kind": "sensitive_field", "count": 1})
             else:

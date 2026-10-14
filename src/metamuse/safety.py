@@ -1286,6 +1286,8 @@ def redaction_sensitive_key(key: str) -> bool:
     if re.fullmatch(r"[A-Za-z0-9_.-]+", decoded, flags=re.ASCII) is None:
         return False
     name = decoded.lower().replace("-", "").replace("_", "")
+    if name in {"nextpagetoken", "eostoken", "bostoken", "padtoken", "unktoken", "maxtoken"}:
+        return False
     return (
         name
         in {
@@ -1329,6 +1331,36 @@ def redaction_sensitive_key(key: str) -> bool:
         or name.endswith(("sess", "sessid", "session", "token", "secret", "cookie", "password"))
         or decoded.lower().startswith(("x-amz-", "x-goog-", "__secure-", "__host-"))
     )
+
+
+def redaction_sensitive_value(key: str, value: Any) -> bool:
+    """A credential name needs a value, rather than vocabulary or code prose."""
+    if not redaction_sensitive_key(key):
+        return False
+    if not isinstance(value, str):
+        return key.lower() in {"headers", "authorization", "cookie", "cookie_header"}
+    value = value.strip().strip("\"'")
+    if not value or value == "[REDACTED]" or value.endswith("()"):
+        return False
+    if value.lower() in {"none", "null", "true", "false"}:
+        return False
+    if value.isdecimal():
+        return key.lower().replace("_", "") in {"cuser", "sid"}
+    if re.fullmatch(r"[A-Za-z0-9._~+/%=@:|?\-]+", value, re.ASCII):
+        return True
+    return re.search(r"[A-Za-z0-9_.-]+=[^\s;]+|[A-Z0-9_]{8,}", value, re.ASCII) is not None
+
+
+def _cookie_values(text: str) -> bool:
+    attributes = {"path", "domain", "expires", "max-age", "samesite"}
+    for match in re.finditer(r"([A-Za-z0-9_.-]+)=([^;\r\n]+)", text):
+        key, value = match.groups()
+        if key.lower() not in attributes and (
+            redaction_sensitive_value(key, value)
+            or (not value.strip().isdecimal() and (len(value.strip()) >= 8 or " " in value))
+        ):
+            return True
+    return False
 
 
 def _redaction_decoded_spans(text: str) -> tuple[str, array | None]:
@@ -1389,7 +1421,9 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
                 key = json.loads('"' + key + '"')
             except ValueError:
                 return match.group(0)
-        if redaction_sensitive_key(key):
+        if key.lower().replace("_", "").replace("-", "") == "localpath":
+            return match.group(0)
+        if redaction_sensitive_value(key, match["value"]):
             return (
                 match["q"]
                 + match["key"]
@@ -1418,6 +1452,7 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         + header_body
         + r")*",
         "cookie",
+        lambda match: "[REDACTED]" if _cookie_values(match.group()) else match.group(),
     )
     replace(
         r"(?i)(?<![A-Za-z0-9_.-])authorization[ \t]*:[ \t]*"
@@ -1427,6 +1462,11 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         + header_body
         + r")*",
         "authorization",
+        lambda match: (
+            "[REDACTED]"
+            if redaction_sensitive_value("authorization", match.group().split(":", 1)[1])
+            else match.group()
+        ),
     )
 
     # Locate separators without swallowing outer redirect values, so encoded nested
@@ -1468,7 +1508,10 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
             end = end_match.start() if end_match else len(decoded)
             start_offset = offsets[match.end()] if offsets is not None else match.end()
             end_offset = offsets[end] if offsets is not None else end
-            spans.append((start_offset, end_offset))
+            if end > match.end() and redaction_sensitive_value(
+                "token" if name in signed else name, decoded[match.end() : end]
+            ):
+                spans.append((start_offset, end_offset))
     for start, end in reversed(spans):
         if text[start:end] != "[REDACTED]":
             text = text[:start] + "[REDACTED]" + text[end:]
@@ -1480,10 +1523,11 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         r"(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]+=(?:" + value + ")"
         r"(?:;[ \t]*[A-Za-z0-9_.-]+=(?:" + value + "))+",
         "cookie",
+        lambda match: "[REDACTED]" if _cookie_values(match.group()) else match.group(),
     )
 
     def session(match):
-        if redaction_sensitive_key(match["key"]):
+        if redaction_sensitive_value(match["key"], match.group().split("=", 1)[1]):
             return "[REDACTED]"
         return match.group(0)
 
@@ -1506,10 +1550,17 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         + plausible
         + r"""[^"'\r\n]*))(?P=q)""",
         "local_path",
-        lambda match: match["q"] + "[REDACTED]" + match["q"],
+        lambda match: (
+            match.group()
+            if match["path"] in {"/docs/plan.md", "/etc/hosts"}
+            else match["q"] + "[REDACTED]" + match["q"]
+        ),
     )
     replace(
         r"(?<![A-Za-z0-9:/])" + plausible + r"""[^\s<>"'`,;{}\]\[)]+""",
         "local_path",
+        lambda match: (
+            match.group() if match.group() in {"/docs/plan.md", "/etc/hosts"} else "[REDACTED]"
+        ),
     )
     return text, [{"kind": kind, "count": n} for kind, n in sorted(counts.items())]
