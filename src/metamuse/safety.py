@@ -1383,6 +1383,9 @@ def redaction_sensitive_value(key: str, value: Any) -> bool:
         return False
     if not isinstance(value, str):
         return key.lower() in {"headers", "authorization", "cookie", "cookie_header"}
+    if len(value) <= 4096 and "%" in value:
+        for _ in range(3):
+            value = unquote(value)
     value = value.strip().strip("\"'")
     if not value or value == "[REDACTED]" or value.endswith("()"):
         return False
@@ -1390,8 +1393,13 @@ def redaction_sensitive_value(key: str, value: Any) -> bool:
         value = value[len("[REDACTED]") :]
     if value.lower() in {"none", "null", "true", "false"}:
         return False
-    if value.isdecimal():
-        return key.lower().replace("_", "") in {"cuser", "sid"}
+    if re.fullmatch(
+        r"[+-]?(?:[0-9]++(?:\.[0-9]*+)?|\.[0-9]++)(?:[eE][+-]?[0-9]++)?", value, re.ASCII
+    ):
+        normalized = key
+        for _ in range(3):
+            normalized = unquote(normalized)
+        return not normalized.lower().replace("_", "").replace("-", "").endswith("session")
     if re.fullmatch(r"[A-Za-z0-9._~+/%=@:|?\-]+", value, re.ASCII):
         return True
     return re.search(r"[A-Za-z0-9_.-]+=[^\s;]+|[A-Z0-9_]{8,}", value, re.ASCII) is not None
@@ -1399,10 +1407,12 @@ def redaction_sensitive_value(key: str, value: Any) -> bool:
 
 def _cookie_values(text: str) -> bool:
     attributes = {"path", "domain", "expires", "max-age", "samesite"}
+    header = text.lower().startswith(("cookie:", "set-cookie:"))
     for match in re.finditer(r"([A-Za-z0-9_.-]+)=([^;\r\n]+)", text):
         key, value = match.groups()
         if key.lower() not in attributes and (
-            redaction_sensitive_value(key, value)
+            header
+            or redaction_sensitive_value(key, value)
             or (not value.strip().isdecimal() and (len(value.strip()) >= 8 or " " in value))
         ):
             return True
