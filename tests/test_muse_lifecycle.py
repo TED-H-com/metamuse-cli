@@ -738,8 +738,7 @@ def test_migration_003_retains_legacy_unknown_and_audits_every_guard(tmp_path):
         conn.execute(
             (
                 "INSERT INTO exchanges VALUES('exc_legacy','prj_legacy','dsc_legacy',NU"
-                "LL,'legacy','Synthetic','pkt_legacy',?,'pmt_legacy','{}','send_uncerta"
-                "in',NULL)"
+                "LL,'legacy','Synthetic','pkt_legacy',?,'pmt_legacy','{}','failed_before_send',NULL)"
             ),
             (m.payload_digest("legacy"),),
         )
@@ -747,6 +746,7 @@ def test_migration_003_retains_legacy_unknown_and_audits_every_guard(tmp_path):
     exchange = migrated.get(m.Exchange, "exc_legacy")
     discussion = migrated.get(m.Discussion, "dsc_legacy")
     assert exchange.bytes_handed_off is None and exchange.attempt_verdict is None
+    assert exchange.state == "send_uncertain"
     assert discussion.account is None and discussion.backend is None
     with migrated.transaction() as conn:
         assert not conn.execute("PRAGMA foreign_key_check").fetchall()
