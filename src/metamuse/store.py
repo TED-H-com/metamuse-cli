@@ -1113,10 +1113,7 @@ class Store:
             failure = m.CoreError(
                 m.ErrorCode.STORAGE,
                 "Muse confidentiality could not be recorded",
-                next_action=fixed.detail.next_action
-                if fixed.detail.message in {item[0] for item in _MUSE_ENVIRONMENT.values()}
-                or fixed.detail.message == "Muse security state has a committed propagation barrier"
-                else fixed.detail.next_action,
+                next_action=fixed.detail.next_action,
             )
             failure.detail.retry_class = fixed.detail.retry_class
         if failure is not None:

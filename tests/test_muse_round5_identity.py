@@ -35,10 +35,10 @@ def attempt(store, payload, *, owner="viewer-fixture", label="synthetic"):
 @pytest.mark.parametrize("alias", ALIASES)
 @pytest.mark.parametrize("first", [True, False])
 @pytest.mark.parametrize("where", ["session", "row"])
-@pytest.mark.parametrize("value", ["cvmx", None, 42, "bad/id"])
+@pytest.mark.parametrize("value", ["vm2", None, 42, "bad/id"])
 def test_r5_1_identity_agreement(ctx, alias, first, where, value):
-    # Leading aliases used to route vm1 while validating cvmx's name/address.
-    row = assignment(vm_name="cvmx", endpoint_url="wss://cvmx.metaaivm.com/")
+    # Leading aliases used to route vm1 while validating vm2's name/address.
+    row = assignment(vm_name="vm2", endpoint_url="wss://vm2.metaaivm.com/")
     row = dict([(alias, value), *row.items()] if first else [*row.items(), (alias, value)])
     payload = row if where == "session" else assignment(vms=[row])
     transport, http, connector = attempt(ctx.store, payload)

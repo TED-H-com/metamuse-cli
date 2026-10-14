@@ -42,5 +42,11 @@ def test_r4_3_committed_barrier_has_safe_repair(ctx):
         assert dict(
             conn.execute("SELECT account,confidential_required FROM muse_trust_accounts")
         ) == {"A": 1, "B": 1, "B2": 1, "C": 0}
+        assert dict(conn.execute("SELECT account,confidential_required FROM muse_trust_vms")) == {
+            "A": 1,
+            "B": 1,
+            "B2": 1,
+            "C": 0,
+        }
     ctx.store.muse_assert_current(unrelated)
     assert not freeze(ctx.store, account="C", viewer_id="C", vm_id="z").confidential_required
