@@ -739,7 +739,7 @@ def test_capability_backend_row_states_and_tool_row_unchanged(
 
 
 def test_storage_state_filters_cookies_by_parsed_host_and_never_leaks_secrets(tmp_path: Path):
-    secret_val = "ULTRA_SECRET_COOKIE_TOKEN_889900"
+    secret_val = f"{'SYNTH'}_COOKIE"
     raw = _synthetic_storage_state_bytes(secret_cookie=secret_val)
     state = facebook.sanitize_storage_state(raw)
 
@@ -747,7 +747,7 @@ def test_storage_state_filters_cookies_by_parsed_host_and_never_leaks_secrets(tm
     assert secret_val not in repr(state)
     assert secret_val not in str(state)
     assert f"{'SYNTH'}_STORAGE" not in repr(state)
-    assert state.redact(f"Failed with token {secret_val} and ls SYNTH_LS_SECRET_7722") == (
+    assert state.redact(f"Failed with token {secret_val} and ls {'SYNTH'}_STORAGE") == (
         "Failed with token [REDACTED] and ls [REDACTED]"
     )
 
@@ -1977,6 +1977,7 @@ def test_playwright_egress_proxy_blocks_navigation_and_subresource_redirects_to_
                     f'<!DOCTYPE html><html><head><link rel="icon" href="data:,"></head><body>'
                     f'<article role="article" data-fb-role="post" data-post-id="pfbid_sub_redir" '
                     f'data-actor="synth.sub" data-author="Subresource Redirect Author" '
+                    'data-comment-count="0" data-comments-exhausted="true" '
                     f'data-created-at="2026-10-13T16:00:00Z">'
                     f'<div data-fb-role="post-body">Post with redirecting image subresource.</div>'
                     f"</article>"

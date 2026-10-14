@@ -204,3 +204,7 @@ parent links, counts and completeness under an explicitly approved account/URL s
 and record sandbox/OS isolation, versions, date, bounds and human comparison. No LIVE
 requests or success claims are made here. Existing third-party provenance remains in
 THIRD_PARTY_NOTICES.md; no new dependency or core schema/migration is added.
+
+Chromium explicitly advertises automation. This also permits CDP command-line
+inspection in the real sandbox test, which verifies successful default launch with
+no --no-sandbox flag. The test skips only when that launch is unavailable.
