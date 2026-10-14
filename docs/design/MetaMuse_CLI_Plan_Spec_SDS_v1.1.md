@@ -302,6 +302,17 @@ mismatched or non-exact share grants retain E_SCOPE_DENIED and their actual mess
 without a preview; repeat the call without a grant for a fresh review. Stale packets
 return E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in submit and preview.
 Policy and authentication failures retain their actual errors without a preview.
+For B12 remote media, the exact digest also binds the whole configured approval table:
+canonical sorted extractor keys, normalized sorted hosts and opaque auth_ref or null.
+The review identifies first-hop and later-hop entries and shows each cookie label/account.
+Selection uses those bound entries; even an unrelated approval edit invalidates an
+outstanding grant before consumption or egress and requires a fresh review.
+Remote URL display is structural: scheme, normalized host, non-default port, complete
+path including semicolon parameters, and query; mask only known secret query values
+using the shared url_token key rules. Request echo and permit-approve stderr agree.
+Refuse trailing-dot hosts or URLs whose display would still lose other structure to
+free-text redaction with fixed E_INPUT_INVALID and no preview or URL echo. Exact digests
+bind original bytes even when the displayed request is normalized or masked.
 The preview's operator command uses the next unused digest-based approval key, so a
 fresh review cannot replay an exhausted/revoked/expired grant. Repeating a previously
 submitted approval command still replays its original permit and mutable use state.
@@ -485,6 +496,35 @@ Owned scanning passes. On this main, core safety.redact_text is still quadratic
 for k=> and ordinary ampersand pairs. Strict xfails name B16a and fail on XPASS;
 no safety.py change is included. The 1 MiB CPU ceiling is 12 s, allowing ample
 margin above the passing sub-second measurements, while rejecting minute-long work.
+
+
+B12 preparation checks metadata for all bound cookie references without reading secret
+bytes: existence and provider/account must match, otherwise E_AUTH_REQUIRED without a
+preview. Execution resolves and parses every bound secret before permit consumption,
+including unused later-hop bindings. Parsed cookies are scoped to bound entries.
+
+B12 receipt lookup precedes permit verification: an identical request including its grant
+returns its original job after consumption or workspace-cap edits. Any changed payload
+is E_IDEMPOTENCY_CONFLICT. Workspace caps do not enter target or job identity; the
+B12-owned step checkpoint stores `remote_media_caps` at atomic job acceptance.
+
+At the B12 boundary each workspace cap is min(acceptance snapshot, current value).
+Lower caps apply to queued jobs; increases cannot exceed the reviewed snapshot.
+Request limits remain digest-bound and are checked against current workspace limits.
+Retries above the effective B12 cap stop before consumption or egress, even if the
+core executor schedules another local attempt.
+
+B12 preparation enforces the shared 8192-byte UTF-8 URL bound and cheap HTTP(S)
+syntax checks before redaction, display, digest, preview or job creation. One byte
+over the bound returns the same outbound-policy error as the dial-time guard,
+without a preview. URLInput still needs a core-owned schema/validation bound.
+
+Remote configuration labels that are invalid or credential-shaped return fixed
+E_INPUT_INVALID naming only the setting. Approval callback Exceptions preserve the
+original refusal without a preview; logging contains only a fixed line and type.
+Login form actions honor the first base href. Challenge token __rd_verify matches
+case-insensitively regardless of preceding slash encoding. Cookie domains require
+at least two labels; multi-label public suffix detection needs a public-suffix list.
 
 ---
 
@@ -1116,6 +1156,50 @@ Owned scanning passes. On this main, core safety.redact_text is still quadratic
 for k=> and ordinary ampersand pairs. Strict xfails name B16a and fail on XPASS;
 no safety.py change is included. The 1 MiB CPU ceiling is 12 s, allowing ample
 margin above the passing sub-second measurements, while rejecting minute-long work.
+
+
+B12's target includes the complete canonical remote-media approval table: extractor key,
+normalized sorted hosts, and opaque auth_ref or null. Preparation preserves configured
+extractor priority and orders entries within each key canonically; selected first-hop
+keys are also bound. The preview identifies first-hop and later-hop entries, hosts and
+cookie labels/accounts. Execution selects hops only from the bound entries. A change
+to any entry, including an unrelated approval, invalidates the grant before use or
+egress and requires a fresh preview. No network-derived resolved URL enters the digest.
+
+Remote destinations are constructed from URL structure, retaining non-default ports,
+the full path with semicolon parameters and the query. Only shared url_token secret
+parameter values are masked; request echo and operator stderr use the same display.
+Preparation refuses trailing-dot hosts and remaining free-text redaction of material
+URL structure with a fixed E_INPUT_INVALID and no preview or URL echo. Fragments are
+not fetched. The action digest continues to bind original bytes.
+
+B12 preparation checks metadata for all bound cookie references without reading secret
+bytes: existence and provider/account must match, otherwise E_AUTH_REQUIRED without a
+preview. Execution resolves and parses every bound secret before permit consumption,
+including unused later-hop bindings. Parsed cookies are scoped to bound entries.
+
+B12 receipt lookup precedes permit verification: an identical request including its grant
+returns its original job after consumption or workspace-cap edits. Any changed payload
+is E_IDEMPOTENCY_CONFLICT. Workspace caps do not enter target or job identity; the
+B12-owned step checkpoint stores `remote_media_caps` at atomic job acceptance.
+
+At the B12 boundary each workspace cap is min(acceptance snapshot, current value).
+Lower caps apply to queued jobs; increases cannot exceed the reviewed snapshot.
+Request limits remain digest-bound and are checked against current workspace limits.
+Retries above the effective B12 cap stop before consumption or egress, even if the
+core executor schedules another local attempt.
+
+B12 preparation enforces the shared 8192-byte UTF-8 URL bound and cheap HTTP(S)
+syntax checks before redaction, display, digest, preview or job creation. One byte
+over the bound returns the same outbound-policy error as the dial-time guard,
+without a preview. URLInput still needs a core-owned schema/validation bound.
+
+Remote configuration labels that are invalid or credential-shaped return fixed
+E_INPUT_INVALID naming only the setting. Approval callback Exceptions preserve the
+original refusal without a preview; logging contains only a fixed line and type.
+Login form actions honor the first base href. Challenge token __rd_verify matches
+case-insensitively regardless of preceding slash encoding. Cookie domains require
+at least two labels; multi-label public suffix detection needs a public-suffix list.
 
 ---
 
