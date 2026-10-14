@@ -14,9 +14,17 @@
       "type": "integer"
     },
     "text": {
-      "maxLength": 1000000,
-      "title": "Text",
-      "type": "string"
+      "anyOf": [
+        {
+          "maxLength": 1000000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Text"
     },
     "text_hash": {
       "pattern": "^[0-9a-f]{64}$",
@@ -84,7 +92,6 @@
   "required": [
     "item_id",
     "revision",
-    "text",
     "text_hash",
     "fetched_at"
   ],

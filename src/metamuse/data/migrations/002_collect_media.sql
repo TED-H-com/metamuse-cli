@@ -3,7 +3,7 @@
 -- cue order and overlap. Existing rows copy only when the asset links to
 -- exactly one project; ambiguous or unlinked transcripts abort the upgrade.
 -- source_assets: project-scoped source relation for a media file that has
--- no post or comment item. Migration 001 is unchanged.
+-- no post or comment item. 001 stores absent item text as NULL and is not rebuilt.
 
 CREATE TABLE transcript_segments_v2 (
  id TEXT NOT NULL,

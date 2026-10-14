@@ -383,10 +383,11 @@ All JSON column values are text; timestamp values are UTC ISO strings.
 | request_receipts | `operation`, `request_key`, `payload_digest`, `response` |
 
 
-`item_revisions.text` is `NOT NULL`. `missing_fields` containing `"text"` is the single
-source of truth for absent text. Readers must render that revision as missing text, never
-as an empty string. An empty string without that marker is present empty text. The two
-cases use different `text_hash` values.
+`item_revisions.text` is nullable. SQL NULL is the stored form of a JSON null and is the
+source of truth for absent text. `missing_fields` containing `"text"` mirrors that NULL.
+Readers render a NULL revision as missing text, never as an empty string. An empty string
+without that marker is present empty text. The two cases use different `text_hash` values:
+the digest of `{"text": null}` and the digest of `{"text": ""}`.
 
 `jobs(operation,request_key)`, `job_steps(job_id,sequence)`, `assets(sha256)` are unique.
 Revision primary keys are `(item_id,revision)` / `(draft_id,revision)`; transcript versions

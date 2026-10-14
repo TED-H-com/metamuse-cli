@@ -473,7 +473,7 @@ class Item(Model):
 class ItemRevision(Model):
     item_id: ID
     revision: Revision
-    text: Text
+    text: Text | None = None
     text_hash: Digest
     raw_time: str | None = None
     parsed_time: str | None = None

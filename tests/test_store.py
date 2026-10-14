@@ -41,6 +41,53 @@ def revision(ctx, iid, rev=1):
     )
 
 
+def test_r16_null_item_text_is_sql_null_and_distinct_from_empty(ctx, project):
+    src = source(ctx, project, "src_null_text")
+    item(ctx, project, src.id, "itm_null_text")
+    item(ctx, project, src.id, "itm_empty_text")
+    ctx.store.insert(
+        m.ItemRevision(
+            item_id="itm_null_text",
+            revision=1,
+            text=None,
+            text_hash=m.payload_digest({"text": None}),
+            fetched_at=ctx.clock(),
+            missing_fields=["text"],
+        )
+    )
+    ctx.store.insert(
+        m.ItemRevision(
+            item_id="itm_empty_text",
+            revision=1,
+            text="",
+            text_hash=m.payload_digest({"text": ""}),
+            fetched_at=ctx.clock(),
+            missing_fields=[],
+        )
+    )
+    with ctx.store.connection() as conn:
+        absent = conn.execute(
+            "SELECT text, missing_fields, text_hash FROM item_revisions WHERE item_id=?",
+            ("itm_null_text",),
+        ).fetchone()
+        blank = conn.execute(
+            "SELECT text, missing_fields, text_hash FROM item_revisions WHERE item_id=?",
+            ("itm_empty_text",),
+        ).fetchone()
+        declared = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE name='item_revisions'"
+        ).fetchone()[0]
+    assert absent["text"] is None
+    assert json.loads(absent["missing_fields"]) == ["text"]
+    assert blank["text"] == ""
+    assert json.loads(blank["missing_fields"]) == []
+    assert absent["text_hash"] != blank["text_hash"]
+    assert ctx.store.get(m.ItemRevision, "itm_null_text").text is None
+    assert ctx.store.get(m.ItemRevision, "itm_empty_text").text == ""
+    assert "text TEXT," in declared or "text TEXT " in declared
+    assert "text TEXT NOT NULL" not in declared
+
+
 def test_connection_pragmas_and_permissions(ctx):
     with ctx.store.connection() as conn:
         assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1

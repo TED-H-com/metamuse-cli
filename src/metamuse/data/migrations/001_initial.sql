@@ -54,7 +54,7 @@ CREATE TRIGGER parent_cycle_update BEFORE UPDATE OF parent_id ON items WHEN NEW.
  SELECT 1 FROM ancestors WHERE id=NEW.id);
 END;
 CREATE TABLE item_revisions (
- item_id TEXT NOT NULL REFERENCES items(id), revision INTEGER NOT NULL CHECK(revision>=1), text TEXT NOT NULL,
+ item_id TEXT NOT NULL REFERENCES items(id), revision INTEGER NOT NULL CHECK(revision>=1), text TEXT,
  text_hash TEXT NOT NULL, raw_time TEXT, parsed_time TEXT, source_time TEXT, fetched_at TEXT NOT NULL,
  complete INTEGER NOT NULL CHECK(complete IN (0,1)), missing_fields TEXT NOT NULL, evidence TEXT NOT NULL,
  PRIMARY KEY(item_id,revision)
