@@ -504,6 +504,28 @@ def _receipt(ctx, operation, request):
             "SELECT * FROM jobs WHERE operation=? AND request_key=?",
             (operation, request.request_key),
         ).fetchone()
+        if row is None and operation == "muse.open" and request.discussion_id is not None:
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE operation IN ('muse.history','muse.sessions') AND request_key=? ORDER BY rowid LIMIT 1",
+                (request.request_key,),
+            ).fetchone()
+            if row is not None:
+                job = ctx.store.decode(m.Job, row)
+                discussion = ctx.store.get(m.Discussion, request.discussion_id, conn=conn)
+                if (
+                    job.project_id != request.project_id
+                    or discussion.project_id != request.project_id
+                    or discussion.topic != request.topic
+                    or job.payload.get("discussion_id") != request.discussion_id
+                    or job.payload.get("exchange_id") is not None
+                    or job.payload.get("permit_id") != request.access_grant_id
+                ):
+                    _error(m.ErrorCode.IDEMPOTENCY_CONFLICT, "Request key has a different payload")
+                step = conn.execute(
+                    "SELECT target FROM job_steps WHERE job_id=? ORDER BY sequence LIMIT 1",
+                    (job.id,),
+                ).fetchone()
+                return job, json.loads(step[0]), discussion.id
         if row is None:
             return None
         job = ctx.store.decode(m.Job, row)
@@ -547,6 +569,20 @@ def _replay(ctx, operation, request):
                     + (detail.next_action or "resolve its pending action")
                 }
             ),
+        )
+    if job.operation in {"muse.history", "muse.sessions"}:
+        return m.Envelope(
+            status="accepted"
+            if job.state not in TERMINAL
+            else "partial"
+            if job.state == "partial"
+            else "ok",
+            data={
+                "job_id": job.id,
+                "state": job.state,
+                "worker_available": worker_available(ctx.store),
+                "job": job.model_dump(mode="json"),
+            },
         )
     return m.Envelope(
         status="accepted"
