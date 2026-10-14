@@ -331,10 +331,10 @@ read-only tools must use the read methods. `rotate_workspace_key(name)` atomical
 the active version and creates the next; retired material remains verifiable and immutable.
 WorkspaceKey hides material from repr, but callers must never serialize it to envelopes,
 logs, events or exports. SQLite backups contain these keys and are private sensitive data.
-Initialization imports and removes the legacy content.cursor_key/v1 receipt once; old
-stateless cursors still verify. Pre-release schema-1 databases missing the table get the
-001 key amendment under maintenance/worker locks with a pre-amendment backup. No schema
-version bump or key-management CLI is introduced.
+Pre-release 001 amendments apply to fresh development workspaces. There is no schema-1
+key shim or legacy content.cursor_key receipt import: a development DB missing the key
+table fails open with guidance to create a fresh workspace. No released compatibility
+is implied. Rotation still retains keys already provisioned in workspace_keys.
 
 `put_object(binary_stream, mime=..., max_bytes=..., duration_ms=None)` measures/hash-streams
 actual bytes into staging, fsyncs, atomically renames to the SHA-256 path, then commits a
@@ -363,7 +363,9 @@ from normal Store/AppContext open. Restore the original verified backup into ano
 workspace after resolving a failure; do not remove the marker to pretend a partial restore
 succeeded. The original backup and rolled-back target/pre-upgrade backup are retained.
 Migration uses an exclusive maintenance lock and the worker lock, pre-upgrade online
-backup, and transactional DDL; a failure rolls back without deleting original data. `PRAGMA
+backup, and transactional DDL; a failure rolls back without deleting original data.
+Migration disables FK enforcement before BEGIN IMMEDIATE for documented table rebuilds,
+checks foreign_key_check before commit, and restores FK enforcement in finally. `PRAGMA
 user_version` is schema version 2; older builds refuse newer schemas on every connection.
 Add future migrations only through the core owner. No LIVE, privacy erasure/compaction,
 Schema 2 adds project-scoped transcript anchors and source_assets. Migration 002 copies

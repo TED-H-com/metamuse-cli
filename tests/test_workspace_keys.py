@@ -1,4 +1,4 @@
-"""Internal workspace key lifecycle and backward-compatible stateless cursors."""
+"""Internal workspace key lifecycle and retained-version stateless cursors."""
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -102,40 +102,6 @@ def test_rotation_retains_old_cursors_and_versions_through_restore(
     assert first.key_material.hex() not in (backup / "manifest.json").read_text()
 
 
-@pytest.mark.parametrize("old_table", [True, False])
-def test_legacy_receipt_imported_once_and_cursors_still_verify(
-    ctx, project, search_page, old_table
-):
-    key = ctx.store.get_workspace_key(CONTENT_CURSOR_KEY)
-    if not old_table:
-        ctx.store.rotate_workspace_key(CONTENT_CURSOR_KEY)
-    with ctx.store.transaction() as conn:
-        if old_table:
-            conn.execute("DROP TABLE workspace_keys")
-        ctx.store.mutate_once(
-            conn,
-            "content.cursor_key",
-            "v1",
-            {"version": 1},
-            lambda: {"key": key.key_material.hex()},
-        )
-    reopened = app.AppContext.open(ctx.paths.root)
-    assert reopened.store.get_workspace_key(CONTENT_CURSOR_KEY, 1).key_material == key.key_material
-    with reopened.store.connection() as conn:
-        assert not conn.execute(
-            "SELECT 1 FROM request_receipts WHERE operation='content.cursor_key'"
-        ).fetchone()
-    result = app.search_evidence(
-        reopened, {"project_id": project, "query": "合成", "cursor": search_page.next_cursor}
-    )
-    assert result.status == "ok" and len(result.data["results"]) == 2
-    assert len(Store(ctx.paths).workspace_verification_keys(CONTENT_CURSOR_KEY)) == (
-        1 if old_table else 2
-    )
-    if old_table:
-        assert list((ctx.paths.root / "backups").glob("pre_upgrade_*"))
-
-
 @pytest.mark.parametrize(
     "statement",
     [
@@ -152,15 +118,3 @@ def test_key_identity_and_retention_guards(ctx, statement):
         with ctx.store.transaction() as conn:
             conn.execute(statement)
     assert len(ctx.store.workspace_verification_keys(CONTENT_CURSOR_KEY)) == 2
-
-
-def test_corrupt_legacy_key_fails_without_leaking_material(ctx):
-    with ctx.store.transaction() as conn:
-        conn.execute(
-            "INSERT INTO request_receipts VALUES('content.cursor_key','v1',?,?)",
-            (m.payload_digest({"version": 1}), '{"key":"SYNTHETIC_INVALID_SECRET"}'),
-        )
-    with pytest.raises(m.CoreError) as error:
-        Store(ctx.paths)
-    assert error.value.detail.code == m.ErrorCode.STORAGE
-    assert "SYNTHETIC_INVALID_SECRET" not in str(error.value)

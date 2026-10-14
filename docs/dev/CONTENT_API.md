@@ -37,9 +37,9 @@ size can change. They grant no permission and are not an encryption mechanism.
 Search creates no per-query state or files and performs no writes. Store initialization
 provisions the active 32-byte `content.cursor` key in the private `workspace_keys` table.
 Search signs with the active key and verifies against retained versions; rotation and
-backup/restore preserve older cursors. Initialization imports a legacy
-`content.cursor_key`/`v1` receipt once, retaining its material for verification and removing
-the receipt. Schema 001 is amended in place before release; there is no second store. Old file-marker cursors
+backup/restore preserve cursors signed by retained workspace_keys versions. Legacy
+`content.cursor_key`/`v1` receipts are not imported; old development DBs missing the key
+table must be recreated. Schema 001 is amended for fresh workspaces before release. Old file-marker cursors
 are invalid; this implementation neither reads nor creates their files. Existing legacy
 markers require operator retention cleanup. Same-UID hostile shell access is outside
 this trust model.
