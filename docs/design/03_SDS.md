@@ -843,3 +843,12 @@ visibility rules. Chromium snapshots annotate computed invisibility on the clone
 with `data-metamuse-invisible`; they preserve the page's own `hidden` attribute
 and never mutate the live DOM. Head/meta and hidden inputs are invisible in both
 drivers. Text and structural JSON extraction retain their existing rules.
+
+
+Facebook browser routes validate the destination through the shared URL policy
+(scheme, credentials, port, exact host allowlist and all resolved IPs) before
+classifying login/checkpoint or off-post navigation. Denied destinations return
+`E_SCOPE_DENIED` with the fixed message “Facebook browser destination is denied
+by egress policy”. Production requires HTTPS. Chromium route DNS checks share
+the proxy's bounded resolver slots/deadline; DNS capacity and timeout failures
+retain `E_NETWORK_TIMEOUT`. The proxy still independently checks every dial/hop.

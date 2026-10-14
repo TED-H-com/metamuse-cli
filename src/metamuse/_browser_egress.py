@@ -37,6 +37,7 @@ import select
 import socket
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlsplit
@@ -549,22 +550,33 @@ class BrowserEgressProxy:
                 with self._lock:
                     self._active_tunnels = max(0, self._active_tunnels - 1)
 
+    def check_url_bounded(self, url: str, purpose: safety.URLPurpose) -> safety.CheckedURL:
+        try:
+            return self._check_bounded(lambda: self.egress._check_route_destination(url, purpose))
+        except ProxyRequestError as exc:
+            self.egress.record_proxy_protocol_refusal(hostname="proxy", reason=exc.reason)
+            assert self.egress.last_proxy_error is not None
+            raise self.egress.last_proxy_error from None
+
     def _check_target_bounded(self, parsed: ParsedProxyRequest) -> safety.CheckedURL:
+        return self._check_bounded(
+            lambda: self.egress.check_proxy_target(
+                parsed.check_url,
+                method=parsed.method,
+                is_connect=parsed.is_connect,
+                purpose=parsed.purpose,
+                is_navigation=parsed.is_navigation,
+            )
+        )
+
+    def _check_bounded(self, check: Callable[[], safety.CheckedURL]) -> safety.CheckedURL:
         if self._closed.is_set() or not _RESOLUTION_SLOTS.acquire(blocking=False):
             raise ProxyRequestError("resolution_unavailable")
         result: queue.Queue[object] = queue.Queue(maxsize=1)
 
         def resolve() -> None:
             try:
-                result.put(
-                    self.egress.check_proxy_target(
-                        parsed.check_url,
-                        method=parsed.method,
-                        is_connect=parsed.is_connect,
-                        purpose=parsed.purpose,
-                        is_navigation=parsed.is_navigation,
-                    )
-                )
+                result.put(check())
             except Exception as exc:
                 result.put(exc)
             finally:

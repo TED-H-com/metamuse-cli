@@ -1123,6 +1123,7 @@ class EgressGuard:
         self.byte_limit_exceeded: bool = False
         self.authorized_permalink: PostPermalinkTarget | None = None
         self.resume_identity: PostPermalinkTarget | None = None
+        self._route_url_checker = self._check_route_destination
 
     def authorize_permalink(
         self, target: PostPermalinkTarget, expected_resolution: PostPermalinkTarget | None = None
@@ -1239,6 +1240,19 @@ class EgressGuard:
             )
         return None
 
+    def _check_route_destination(self, url: str, purpose: safety.URLPurpose) -> safety.CheckedURL:
+        try:
+            if self._fixture_url_checker is not None:
+                return self._fixture_url_checker(url, purpose)
+            if urlsplit(url).scheme.lower() != "https":
+                raise m.CoreError(m.ErrorCode.SCOPE_DENIED, "HTTPS required")
+            return self.policy.before_request(url, purpose=purpose)
+        except (m.CoreError, ValueError):
+            raise m.CoreError(
+                m.ErrorCode.SCOPE_DENIED,
+                "Facebook browser destination is denied by egress policy",
+            ) from None
+
     def check_browser_route(
         self,
         url: str,
@@ -1249,8 +1263,8 @@ class EgressGuard:
     ) -> None:
         """Secondary browser-level check for context.route (resource-type & initial nav shape).
 
-        Does not perform DNS resolution; BrowserEgressProxy performs the authoritative
-        OutboundURLPolicy check and pinned dial for every hop.
+        Destination policy precedes classification. In Chromium the proxy bounds this
+        check's DNS work; it also independently checks and pins every actual dial.
         """
         rtype = (resource_type or "other").lower()
         if is_navigation:
@@ -1265,6 +1279,23 @@ class EgressGuard:
             host_guess = _normalize_host(urlsplit(url).hostname) or "invalid"
         except ValueError:
             pass
+
+        try:
+            self._route_url_checker(url, purpose)
+        except m.CoreError as exc:
+            with self._lock:
+                if is_navigation:
+                    self.navigation_error = exc
+                self.decisions.append(
+                    EgressDecision(
+                        hostname=host_guess,
+                        purpose=purpose,
+                        resource_type=rtype,
+                        allowed=False,
+                        reason=exc.detail.code.value,
+                    )
+                )
+            raise
 
         if rtype in ("websocket", "eventsource", "manifest", "service_worker"):
             with self._lock:
@@ -1861,6 +1892,8 @@ class _PlaywrightSession:
         self._page = page
         self._egress = egress
         self._proxy = proxy
+        if proxy is not None:
+            egress._route_url_checker = proxy.check_url_bounded
         self._timeout_ms = timeout_ms
         self._test_origin = _test_origin.rstrip("/") if _test_origin else None
         self.popups_blocked = 0
