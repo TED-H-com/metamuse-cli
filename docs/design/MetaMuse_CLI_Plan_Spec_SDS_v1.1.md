@@ -743,6 +743,12 @@ host/IP policy, using that pinned set through the proxy dial and peer check. The
 proxy does not resolve a different address between the browser check and its
 validated dial. Redirect destinations on new authorities get independent checks.
 
+
+A disconnected browser transport is not proof that a download or browser process
+is gone. Failed download cancellation and context/browser teardown therefore
+fail closed even when CDP is disconnected; a page close exception may be ignored
+only when the page's closed event proves that target has already disappeared.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -1646,6 +1652,12 @@ Facebook session. Every later URL still passes the shared scheme/credential/port
 host/IP policy, using that pinned set through the proxy dial and peer check. The
 proxy does not resolve a different address between the browser check and its
 validated dial. Redirect destinations on new authorities get independent checks.
+
+
+A disconnected browser transport is not proof that a download or browser process
+is gone. Failed download cancellation and context/browser teardown therefore
+fail closed even when CDP is disconnected; a page close exception may be ignored
+only when the page's closed event proves that target has already disappeared.
 
 ---
 

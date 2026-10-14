@@ -121,3 +121,21 @@ def test_r6_popup_close_exception_checks_liveness(tmp_path, monkeypatch, gone):
         else:
             assert job["error"] and job["error"]["code"] == "E_PROTOCOL_MISMATCH", job["error"]
             assert job["state"] == "failed"
+
+
+def test_r6_disconnected_browser_does_not_prove_download_cancelled():
+    from types import SimpleNamespace
+
+    from metamuse import facebook
+
+    session = object.__new__(facebook._PlaywrightSession)
+    session.downloads_blocked = 0
+    session._transport_error = None
+    session._browser = SimpleNamespace(is_connected=lambda: False)
+
+    def cancel():
+        raise RuntimeError("synthetic lost browser transport")
+
+    session._on_download(SimpleNamespace(cancel=cancel))
+    assert session._transport_error is not None
+    assert session._transport_error.detail.code.value == "E_PROTOCOL_MISMATCH"

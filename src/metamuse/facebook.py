@@ -2103,8 +2103,7 @@ class _PlaywrightSession:
             try:
                 await route._impl_obj.close(code=1008, reason="WebSockets are disabled")
             except Exception:
-                if not self._page.is_closed():
-                    self._guard_failed()
+                self._guard_failed()  # A lost close reply cannot prove the socket is gone.
 
         self._context.on(
             "console",
@@ -2365,7 +2364,7 @@ class _PlaywrightSession:
             popup.close()
         except Exception:
             try:
-                gone = popup.is_closed()
+                gone = self._browser.is_connected() and popup.is_closed()
             except Exception:
                 gone = False
             if not gone:
@@ -2376,14 +2375,9 @@ class _PlaywrightSession:
         try:
             download.cancel()
         except Exception:
-            # Download.failure() may itself wait for the production read timeout.
-            # A live browser, or unavailable liveness evidence, fails closed.
-            try:
-                gone = not self._browser.is_connected()
-            except Exception:
-                gone = False
-            if not gone:
-                self._guard_failed()
+            # A disconnected CDP transport does not prove a download is gone.
+            # Download.failure() can itself wait for the production read timeout.
+            self._guard_failed()
 
     def _raise_if_byte_limit(self) -> None:
         if self._egress.byte_limit_exceeded or (
@@ -2559,9 +2553,9 @@ class _PlaywrightSession:
             except Exception:
                 try:
                     gone = (
-                        self._page.is_closed()
-                        if obj is self._page
-                        else (not self._browser.is_connected())
+                        obj is self._page
+                        and self._browser.is_connected()
+                        and self._page.is_closed()
                     )
                 except Exception:
                     gone = False
