@@ -208,6 +208,8 @@ schema version before forward migration through normal guarded open, including i
 pre-upgrade backup. A private runtime/restore.incomplete marker blocks failed/interrupted
 targets; only successful migration and integrity checks remove it. The original backup
 is retained, and migration failure rolls back the restored database without claiming success.
+Table-rebuild migrations disable foreign_keys before BEGIN IMMEDIATE, run foreign_key_check
+before commit, and restore enforcement in finally; runtime connections keep foreign_keys ON.
 
 ## 13. 驗收與決策
 
@@ -267,8 +269,9 @@ Unicode conversion. Stateless HMAC cursors carry project/query bindings, row wat
 membership fingerprints and last sort keys; latest-as-of queries exclude later inserts
 and revisions. Deletion, replacement or loss of visibility fails rather than skipping a
 reference. Store initialization provisions a private versioned workspace key before read-only search.
-Active/retired keys survive backup/restore, and legacy receipt keys are imported once for
-existing cursor verification. Pre-release schema 001 is amended without a version bump;
+Active/retired workspace_keys versions survive backup/restore. Legacy receipt keys are
+not imported; old development DBs lacking the table fail with fresh-workspace guidance.
+Pre-release schema 001 is amended for fresh workspaces without a version bump;
 no per-query files or second store is added. Keys never enter tool results/events/exports. Long snippets preserve the entire matched query.
 
 Packet digests are SHA-256 of exact redacted rendered UTF-8 bytes, including source labels

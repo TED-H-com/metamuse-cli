@@ -252,29 +252,24 @@ class Store:
             conn = self._open()
             try:
                 old_version = conn.execute("PRAGMA user_version").fetchone()[0]
-                # Pre-release schema-1 workspaces can predate the key-table amendment.
-                key_amendment = (
-                    old_version >= 1
+                if (
+                    old_version
                     and not conn.execute(
                         "SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_keys'"
                     ).fetchone()
-                )
-                if old_version == self.schema_version and not key_amendment:
+                ):
+                    raise m.CoreError(
+                        m.ErrorCode.PROTOCOL_MISMATCH,
+                        "Development database lacks workspace_keys; create a fresh workspace",
+                    ) from None
+                if old_version == self.schema_version:
                     return
                 with file_lock(self.paths.worker_lock, blocking=False):
                     if had_database:
                         self._backup(conn, self.paths.root / "backups" / m.new_id("pre_upgrade"))
+                    conn.execute("PRAGMA foreign_keys=OFF")
                     conn.execute("BEGIN IMMEDIATE")
                     try:
-                        if key_amendment:
-                            # Read the authoritative 001 statements, never a second DDL copy.
-                            for statement in _statements(MIGRATIONS[1].read_text()):
-                                if re.match(
-                                    r"CREATE (?:TABLE workspace_keys|UNIQUE INDEX workspace_key_|"
-                                    r"TRIGGER workspace_key_)",
-                                    statement.lstrip(),
-                                ):
-                                    conn.execute(statement)
                         for version in range(old_version + 1, self.schema_version + 1):
                             if version not in migrations:
                                 raise m.CoreError(m.ErrorCode.STORAGE, "Missing migration")
@@ -287,10 +282,12 @@ class Store:
                     except BaseException:
                         conn.rollback()
                         raise
-            except (sqlite3.Error, ValueError) as exc:
+                    finally:
+                        conn.execute("PRAGMA foreign_keys=ON")
+            except (sqlite3.Error, ValueError):
                 raise m.CoreError(
                     m.ErrorCode.STORAGE, "Migration failed; original data retained"
-                ) from exc
+                ) from None
             finally:
                 conn.close()
 
@@ -361,37 +358,6 @@ class Store:
 
     def _provision_workspace_keys(self) -> None:
         with self.transaction() as conn:
-            legacy = conn.execute(
-                "SELECT response FROM request_receipts "
-                "WHERE operation='content.cursor_key' AND request_key='v1'"
-            ).fetchone()
-            if legacy:
-                try:
-                    material = bytes.fromhex(json.loads(legacy[0])["key"])
-                    if len(material) != 32:
-                        raise ValueError
-                except (ValueError, KeyError, TypeError) as exc:
-                    raise m.CoreError(
-                        m.ErrorCode.STORAGE, "Legacy cursor signing key is unavailable"
-                    ) from exc
-                rows = conn.execute(
-                    "SELECT * FROM workspace_keys WHERE name=?", (CONTENT_CURSOR_KEY,)
-                ).fetchall()
-                if not any(row["key_material"] == material for row in rows):
-                    conn.execute(
-                        "INSERT INTO workspace_keys VALUES(?,?,?,?,?)",
-                        (
-                            CONTENT_CURSOR_KEY,
-                            max((row["version"] for row in rows), default=0) + 1,
-                            material,
-                            self.clock(),
-                            "retired" if rows else "active",
-                        ),
-                    )
-                conn.execute(
-                    "DELETE FROM request_receipts "
-                    "WHERE operation='content.cursor_key' AND request_key='v1'"
-                )
             self.get_or_create_workspace_key(CONTENT_CURSOR_KEY, conn=conn)
 
     def insert(self, record: T, *, conn: sqlite3.Connection | None = None) -> T:
