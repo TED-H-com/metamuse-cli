@@ -449,6 +449,37 @@ def test_feature_capabilities_aggregate_without_granting_verification(ctx, monke
     assert row["effective"]
 
 
+def test_backend_capability_rows_stay_separate_from_their_tool(ctx, monkeypatch):
+    from metamuse import collect
+
+    ready = {
+        "verification": "fixture_passed",
+        "environment": "ready",
+        "permission": "granted_scope",
+    }
+    missing = {**ready, "environment": "missing_dependency", "permission": "not_configured"}
+    rows = {"metamuse_collect": ready, "metamuse_collect.browser_post": missing}
+    monkeypatch.setattr(collect, "capability_status", lambda ctx: rows)
+    names = [row["name"] for row in app.inspect_capabilities(ctx).data["capabilities"]]
+    assert names == [*m.TOOL_REQUEST_MODELS, "metamuse_collect.browser_post"]
+    by_name = {row["name"]: row for row in app.inspect_capabilities(ctx).data["capabilities"]}
+    assert by_name["metamuse_collect"]["effective"]
+    backend = by_name["metamuse_collect.browser_post"]
+    assert backend["implementation"] == "implemented" and not backend["effective"]
+    assert backend["environment"] == "missing_dependency"
+    for bad in (
+        {"metamuse_search.browser_post": ready},
+        {"metamuse_collect.": ready},
+        {"metamuse_collect.Browser": ready},
+        {"metamuse_collect.browser.post": ready},
+        {"metamuse_collect.browser_post": {"environment": "ready"}},
+        {"metamuse_collect.browser_post": {**ready, "implementation": "implemented"}},
+    ):
+        monkeypatch.setattr(collect, "capability_status", lambda ctx, bad=bad: bad)
+        result = app.inspect_capabilities(ctx)
+        assert result.status == "error" and result.error.code == m.ErrorCode.STORAGE
+
+
 def test_builtin_registration_fixed_modules_and_optional_hooks(monkeypatch):
     seen = []
     for module in app._feature_modules():

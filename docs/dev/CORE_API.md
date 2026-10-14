@@ -526,6 +526,11 @@ def capability_status(ctx):
 tools remain absent; declarations alone default to unverified/unavailable/not_configured.
 The optional status hook can set only verification/environment/permission for tools
 declared by that module. `Capability` computes effective status from all four axes.
+An optional backend or page type reports its own row named `<declared tool>.<backend>`
+(`[a-z][a-z0-9_]{0,63}`, all three fields required), for example
+`metamuse_collect.browser_post`. Backend rows follow the fifteen tool rows in name order.
+A missing browser, extra or login therefore never marks the tool's local function
+unavailable (SPEC §2: missing Muse or browser does not block local features).
 Hooks never make network calls. Use the idempotent `register_operations` example above;
 operation names must be unique and preserve side-effect/recovery semantics on restart.
 

@@ -129,7 +129,8 @@ def test_envelope_consistency():
 
 
 def test_capability_and_stub(ctx):
-    capabilities = app.inspect_capabilities(ctx).data["capabilities"]
+    rows = app.inspect_capabilities(ctx).data["capabilities"]
+    capabilities = [row for row in rows if row["name"] in m.TOOL_REQUEST_MODELS]
     assert len(capabilities) == 15
     from metamuse import collect, content
 

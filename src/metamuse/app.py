@@ -6,6 +6,7 @@ import base64
 import binascii
 import json
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from functools import wraps
@@ -118,21 +119,33 @@ def register_builtin_operations(registry: dict[str, Operation] | None = None) ->
             register(registry)
 
 
+_CAPABILITY_FIELDS = frozenset({"verification", "environment", "permission"})
+_BACKEND_NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
+
+
 @application(m.InspectRequest)
 def inspect_capabilities(ctx: AppContext, request: m.InspectRequest) -> m.Envelope:
     implemented = set(CORE_IMPLEMENTED_TOOLS)
     metadata: dict[str, dict[str, str]] = {}
+    backends: dict[str, dict[str, str]] = {}
     for module in _feature_modules():
         declared = module.IMPLEMENTED_TOOLS
         if not declared <= m.TOOL_REQUEST_MODELS.keys():
             raise m.CoreError(m.ErrorCode.STORAGE, "Feature declares an unknown tool")
         implemented.update(declared)
         status = getattr(module, "capability_status", None)
-        if status is not None:
-            rows = status(ctx)  # offline checks only; never perform a health request here
-            if not rows.keys() <= declared:
+        if status is None:
+            continue
+        for key, row in status(ctx).items():  # offline checks only; never a health request
+            tool, dot, backend = key.partition(".")
+            if tool not in declared or (dot and not _BACKEND_NAME.fullmatch(backend)):
                 raise m.CoreError(m.ErrorCode.STORAGE, "Capability status has no implementation")
-            metadata.update(rows)
+            if not dot:
+                metadata[key] = row
+            elif row.keys() != _CAPABILITY_FIELDS or key in backends:
+                raise m.CoreError(m.ErrorCode.STORAGE, "Invalid capability status fields")
+            else:
+                backends[key] = row
     capabilities = []
     for name in m.TOOL_REQUEST_MODELS:
         core = name in CORE_IMPLEMENTED_TOOLS
@@ -151,6 +164,14 @@ def inspect_capabilities(ctx: AppContext, request: m.InspectRequest) -> m.Envelo
                 implementation="implemented" if name in implemented else "absent",
                 effective=False,
                 **state,
+            ).model_dump(mode="json")
+        )
+    # A `tool.backend` row reports one optional backend or page type on its own, so a missing
+    # browser or extra never marks the tool's local function unavailable.
+    for name in sorted(backends):
+        capabilities.append(
+            m.Capability(
+                name=name, implementation="implemented", effective=False, **backends[name]
             ).model_dump(mode="json")
         )
     return m.Envelope(
