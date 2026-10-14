@@ -2247,6 +2247,7 @@ class _DOMExtractor(HTMLParser):
         self.attachments: list[dict[str, str]] = []
         self.comments_section_present = False
         self.comments_exhausted = False
+        self.count_gaps: set[str] = set()
         self.comments: list[dict[str, Any]] = []
         self._current_comment: dict[str, Any] | None = None
         self._in_comment_body = 0
@@ -2353,7 +2354,9 @@ class _DOMExtractor(HTMLParser):
             self.comments_section_present = True
             control_id = attr_map.get("data-expand-id") or f"expand_{len(self.expand_controls) + 1}"
             hint_raw = attr_map.get("data-remaining-count")
-            hint = int(hint_raw) if (hint_raw and hint_raw.isdigit()) else None
+            hint = _opt_int(hint_raw)
+            if hint_raw is not None and hint is None:
+                self.count_gaps.add("remaining_count_unparsed")
             self.expand_controls.append(
                 ExpandControl(
                     control_id=control_id,
@@ -2444,13 +2447,18 @@ def _parse_iso_time(raw: str | None) -> str | None:
 
 
 def _opt_int(val: Any) -> int | None:
+    # Page-controlled counts are bounded ASCII decimals, never Unicode isdigit().
     if isinstance(val, bool):
         return None
     if isinstance(val, int):
-        return val
-    if isinstance(val, str) and val.strip().isdigit():
+        return val if 0 <= val < 10**18 else None
+    if isinstance(val, str) and re.fullmatch(r"[0-9]{1,18}", val.strip()):
         return int(val.strip())
     return None
+
+
+def _count_gaps(values: Mapping[str, Any]) -> tuple[str, ...]:
+    return tuple(f"{name}_unparsed" for name, value in values.items() if _opt_int(value) is None)
 
 
 def _validate_extracted_identity(post_id: str, actor: Any, target: PostPermalinkTarget) -> None:
@@ -2598,9 +2606,20 @@ def classify_and_parse_observation(
         expand_controls=list(extractor.expand_controls),
         comments_section_present=extractor.comments_section_present,
         comments_exhausted=extractor.comments_exhausted,
-        missing_fields=("comment_count_unparsed",)
-        if "data-comment-count" in attrs and _opt_int(attrs["data-comment-count"]) is None
-        else (),
+        missing_fields=tuple(
+            sorted(
+                set(
+                    _count_gaps(
+                        {
+                            name: attrs["data-" + name.replace("_", "-")]
+                            for name in ("reaction_count", "comment_count", "share_count")
+                            if "data-" + name.replace("_", "-") in attrs
+                        }
+                    )
+                )
+                | extractor.count_gaps
+            )
+        ),
     )
 
 
@@ -2674,6 +2693,7 @@ def _parse_json_payload(
         )
 
     controls: list[ExpandControl] = []
+    control_gaps: set[str] = set()
     for ctrl in payload.get("expand_controls", []) or []:
         if not isinstance(ctrl, Mapping):
             continue
@@ -2681,6 +2701,8 @@ def _parse_json_payload(
         ckind: Literal["more_comments", "more_replies"] = (
             "more_replies" if ctrl.get("kind") == "more_replies" else "more_comments"
         )
+        if "remaining" in ctrl and _opt_int(ctrl["remaining"]) is None:
+            control_gaps.add("remaining_count_unparsed")
         controls.append(
             ExpandControl(
                 control_id=cid,
@@ -2708,9 +2730,20 @@ def _parse_json_payload(
         expand_controls=controls,
         comments_section_present=has_comments_key,
         comments_exhausted=payload.get("comments_exhausted") is True,
-        missing_fields=("comment_count_unparsed",)
-        if "comment_count" in post_obj and _opt_int(post_obj["comment_count"]) is None
-        else (),
+        missing_fields=tuple(
+            sorted(
+                set(
+                    _count_gaps(
+                        {
+                            name: post_obj[name]
+                            for name in ("reaction_count", "comment_count", "share_count")
+                            if name in post_obj
+                        }
+                    )
+                )
+                | control_gaps
+            )
+        ),
     )
 
 

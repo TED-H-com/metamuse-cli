@@ -85,3 +85,48 @@ def test_r5_11_unparsed_count_keeps_job_and_post_incomplete(tmp_path):
     post = rows(ctx)[0]
     assert not post["complete"]
     assert "comment_count_unparsed" in json.loads(post["missing_fields"])
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("comment_count", "²"),
+        ("reaction_count", "¹²"),
+        ("share_count", "①"),
+        ("comment_count", "١٢٣"),
+        ("comment_count", "1" * 5000),
+    ],
+)
+@pytest.mark.parametrize("kind", ["dom", "json"])
+def test_r5_n6_counts_accept_only_bounded_ascii_digits(tmp_path, kind, field, value):
+    markup = json_page(**{field: value})
+    if kind == "dom":
+        attr = "data-" + field.replace("_", "-")
+        old = {"comment_count": "0", "reaction_count": "12", "share_count": "1"}[field]
+        markup = _synthetic_post_html().replace(f'{attr}="{old}"', f'{attr}="{value}"')
+    assert field + "_unparsed" in parse(markup).missing_fields
+
+
+@pytest.mark.parametrize("kind", ["dom", "json"])
+def test_r5_n6_unparseable_remaining_hint_is_a_gap(tmp_path, kind):
+    if kind == "dom":
+        markup = _synthetic_post_html(expand_controls=[{"id": "more", "remaining": "³"}])
+    else:
+        payload = {
+            "post": {"post_id": "pfbid0101synth", "actor": "synth.lab", "text": "Synthetic"},
+            "comments": [],
+            "expand_controls": [{"id": "more", "remaining": "³"}],
+        }
+        markup = (
+            '<script type="application/json" data-fb-post-payload>'
+            + json.dumps(payload)
+            + "</script>"
+        )
+    assert "remaining_count_unparsed" in parse(markup).missing_fields
+
+
+def test_r5_n6_unicode_count_keeps_observed_post(tmp_path):
+    ctx, job = fixture_job(tmp_path, json_page(comment_count="²"))
+    assert job["error"] is None
+    assert len(rows(ctx)) == 1
+    assert "comment_count_unparsed" in job["missing_fields"]
