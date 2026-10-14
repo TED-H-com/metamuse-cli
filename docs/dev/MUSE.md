@@ -182,6 +182,9 @@ it returns stored data and an accepted `refresh_job_id`, `state`, `worker_availa
 `read_action(discussion, sessions=False)` previews the exact read scope. A refresh
 fetches one bounded history page from the original session; absence is not proof of
 non-delivery or full history coverage. Raw observations are retained before association.
+Echo comparison applies the same deterministic `sanitize_document` redaction to the
+prepared outbound text and stored observations. The wire still carries the exact host
+question and packet; redaction collisions remain subject to the ambiguity rule.
 Association excludes prepared attempts and proven `not_submitted` / zero-handoff
 attempts, including closed ones. The boundary records a write-once
 `submitted_observation_high_water`; only messages first observed after that mark

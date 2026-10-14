@@ -304,3 +304,32 @@ def test_zero_handoff_races_do_not_wedge_worker(fixture_ctx, project, monkeypatc
         else:
             assert exchange.state == "failed_before_send" and job.state == "cancelled"
     assert sum(route == "chat.stream" for route, _ in ctx.muse_gateway.calls) == 1
+
+
+@pytest.mark.parametrize("mode", ["normal", "send_timeout"])
+@pytest.mark.parametrize(
+    "question", ["Compare with /docs/plan.md please", "Mail me at alice@example.com"]
+)
+def test_markerless_echo_uses_the_same_redaction_as_outbound_text(
+    fixture_ctx, project, mode, question
+):
+    ctx = fixture_ctx
+    opening, _ = opened(ctx, project)
+    did = opening.data["discussion_id"]
+    ctx.muse_gateway.mode = mode
+    identity = queue_send(ctx, project, did, packet(ctx, project), "send", question)
+    run(ctx)
+    exchange = ctx.store.get(m.Exchange, identity)
+    # The host's exact text is retained for the wire; only association uses normalization.
+    assert exchange.outbound_payload.body["text"].startswith(question + "\n\n")
+    if mode == "send_timeout":
+        assert ctx.store.get(m.JobStep, exchange.submission_step_id).state == "send_uncertain"
+    markerless_history(ctx, did)
+    queue_history(ctx, identity)
+    run(ctx)
+    result = invoke(ctx, "read", {"exchange_id": identity})
+    assert result.status == "ok" and result.data["association"] == "progress"
+    assert len(result.data["messages"]) == 2
+    exchange = ctx.store.get(m.Exchange, identity)
+    assert ctx.store.get(m.JobStep, exchange.submission_step_id).state == "succeeded"
+    assert exchange.delivery_proof.kind == ("user_echo" if mode == "send_timeout" else "ack")
