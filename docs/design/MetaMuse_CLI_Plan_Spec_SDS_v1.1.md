@@ -1285,6 +1285,9 @@ Facebook uses a nonempty exact host allowlist validated at configuration load.
 Wildcard, IP, local, invalid and empty entries fail with a fixed E_INPUT_INVALID
 without reflecting the operator value; B08's generic optional allowlist is unchanged.
 
+B13 egress diagnostics expose fixed reason/purpose counts only; denied destination
+strings never enter job results, checkpoints, events or errors (AT-028).
+
 ---
 
 # 來源與恢復說明

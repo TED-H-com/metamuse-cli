@@ -108,3 +108,9 @@ wildcard, IP literal, local hostname, invalid or empty entry with the fixed
 `E_INPUT_INVALID: Invalid Facebook host allowlist`. Invalid entries never silently
 disappear, and an empty effective set never grants unrestricted egress. The default
 explicit Facebook/CDN host list is retained.
+
+Egress diagnostics retain only fixed reason/purpose classifications and counts.
+No denied hostname, URL, path or query is persisted or returned, even when a page
+encodes cookie/localStorage bytes into a refused destination. In-memory transport
+state is private to the session; summaries, checkpoints, events and errors contain
+no such source-controlled diagnostic strings.

