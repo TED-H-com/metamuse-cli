@@ -30,14 +30,6 @@ uv run --script scripts/capture_site.py
 
 `capture_site.py` pins Pillow in its PEP 723 header. It refuses any transcript that contains `$USER`, the machine hostname, a home-directory path, or a line from `$SITE_PRIVATE_DENYLIST`. It records both `window_rect` and `crop_rect` per image in `site/images/manifest.json` and verifies that lossless PNG compression preserves exact decoded pixels.
 
-## Round 3
-
-After the remaining branch lands on `main`, re-capture to add:
-
-- the human approval preview and `metamuse permit approve`;
-- a fixture Muse discussion whose frame shows `backend=fixture`, `mock=true`, and `research_complete=false`;
-- the MCP attached worker.
-
 Showcase frames use 98 columns and at most 40 content rows. The dedicated hero
 uses 60 columns and an 18-row packet preview. Commands retain shell variables
 set visibly in earlier frames and take no more than two terminal rows. The
@@ -51,15 +43,42 @@ rectangles, byte count, file and transcript hashes, decoded RGB hash and the
 lossless comparison result. The checker verifies the full file set, PNG header
 and dimensions, crop geometry, row budget, hashes and matching transcript links.
 
+The scene list follows the README's tested offline walkthrough: packet preview,
+grant-free approval review, human-only `permit approve`, fixture questions and a
+follow-up in the same discussion, cached reads, host draft and local export.
+The terminal operator input is scripted for this synthetic demo and recorded as
+such in the manifest. The open approval frame shows the real stderr review,
+including expiry and one use. Later send/read reviews go to demo `out/` files to
+keep the two Muse frames compact. Product operations use shipped commands only;
+there is no direct application/database access or model-generated grant.
+
+The official MCP stdio client starts the server with its default attached worker,
+lists 15 tools, imports a local synthetic file and polls `metamuse_job_get` to a
+terminal state. It never invokes a manual worker. The worker belongs to the MCP
+server process; closing the server does not promise background continuation.
+
+## Keep status in sync
+
 The status columns contain exactly the README's rows and four-state vocabulary,
 preserving README order within each column. Traditional Chinese translates the
-capability and note while retaining the same state. Approval previews remain in
-the introduction as in progress; there is no added or upgraded README row.
+capability and note while retaining the same state. Public copy describes the
+product and its limits, without branch names or planned capture rounds.
+
+When a README status row changes:
+
+1. Update the matching row in `site/page.json` in both languages.
+2. Re-render with `python3 "$PAGE_KIT_DIR/render.py" .`.
+3. Run `PAGE_KIT_DIR="$PAGE_KIT_DIR" python3 scripts/check_site.py`.
+
+`tests/test_site_check.py::test_real_site_status_transcripts_and_manifest` reads
+the real README, page source, transcripts and manifest without the kit, display
+tools or network. It runs in the required CI `check` through the normal pytest
+suite. A README state change without its matching page update fails that test.
 
 ## Visual review
 
 Run the kit's `shoot.py` against the rendered directory, then capture the entire
 page at 1440 px and 390 px in English and Traditional Chinese. The kit's fixed
 window can stop before the footer and omits English mobile. Review every chunk,
-including the hero, all eight frames, status and footer. Keep review captures
+including the hero, every frame, status and footer. Keep review captures
 outside the repository. Browser traffic must remain on loopback for this task.

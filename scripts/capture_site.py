@@ -56,10 +56,10 @@ class Scene:
 # each command is printed literally and evaluated by bash in the real terminal.
 SCENES = (
     Scene(
-        "01-setup",
-        "Offline init, explicit fixture config, and doctor capability rows.",
-        ("AT-001",),
-        (
+        stem="01-setup",
+        summary="Offline init, explicit fixture config, and doctor capability rows.",
+        acceptance=("AT-001",),
+        commands=(
             "cd /tmp/metamuse-demo",
             "metamuse --workspace ws init",
             "python3 configure_demo_workspace.py",
@@ -70,18 +70,22 @@ SCENES = (
                 "[.name, .verification, .effective])' out/doctor.json"
             ),
         ),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
     ),
     Scene(
-        "02-queue",
-        (
+        stem="02-queue",
+        summary=(
             "Accepted and queued without a worker; run once, then partial "
             "with 7 committed and 7 rejected."
         ),
-        ("AT-003", "AT-008"),
-        (
+        acceptance=("AT-003", "AT-008"),
+        commands=(
             (
-                "metamuse --workspace ws project create --name 'Synthetic "
-                "demo' --request-key project > out/project.json"
+                "metamuse --workspace ws project create --name 'Synthetic demo' "
+                "--request-key project > out/project.json"
             ),
             "P=$(jq -r .id out/project.json)",
             (
@@ -103,28 +107,36 @@ SCENES = (
                 '"rejected") | {line, code}\' out/job.json'
             ),
         ),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
     ),
     Scene(
-        "03-search",
-        "One exact item revision, with file_import and synthetic_fixture source labels.",
-        ("AT-017",),
-        (
+        stem="03-search",
+        summary="One exact item revision, with file_import and synthetic_fixture source labels.",
+        acceptance=("AT-017",),
+        commands=(
             (
-                'metamuse --workspace ws search --project "$P" --query '
-                "正常留言第一行 --limit 1 > out/search.json"
+                'metamuse --workspace ws search --project "$P" --query 正常留言第一行 '
+                "--limit 1 > out/search.json"
             ),
             "jq -C '.results[0] | {ref, snippet, source}' out/search.json",
         ),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
     ),
     Scene(
-        "04-packet",
-        "Exact packet text, one url_token redaction, and its SHA-256. Nothing is sent.",
-        ("AT-015", "AT-028"),
-        (
+        stem="04-packet",
+        summary="Exact packet text, one url_token redaction, and its SHA-256. Nothing is sent.",
+        acceptance=("AT-015", "AT-028"),
+        commands=(
             (
                 'metamuse --workspace ws add --project "$P" --file '
-                "inputs/secrets.jsonl --kind jsonl --request-key secrets "
-                "--run > out/secrets.json"
+                "inputs/secrets.jsonl --kind jsonl --request-key secrets --run > "
+                "out/secrets.json"
             ),
             (
                 'metamuse --workspace ws search --project "$P" --query 存取網址 '
@@ -133,36 +145,258 @@ SCENES = (
             "jq '[.results[0].ref]' out/secret-search.json > inputs/selection.json",
             (
                 'metamuse --workspace ws packet prepare --project "$P" '
-                "--selection-file inputs/selection.json --request-key packet "
-                "> out/packet.json"
+                "--selection-file inputs/selection.json --request-key packet > "
+                "out/packet.json"
             ),
             "jq -r .rendered_text out/packet.json",
             "jq -C '{redactions, digest}' out/packet.json",
+            "K=$(jq -r .id out/packet.json)",
         ),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
     ),
     Scene(
-        "05-draft",
-        "Host-supplied text stored as written, citing an exact item revision; no model call.",
-        ("AT-023",),
-        (
+        stem="05-approval-preview",
+        summary="A grant-free Muse open returns E_SCOPE_REQUIRED with the exact action preview.",
+        acceptance=("AT-016", "AT-020"),
+        commands=(
             (
-                "printf '%s\\n' '活動紀錄（host 撰寫）' "
-                "'本地留言仍在。壞列沒有被算成完整匯入。' > inputs/draft.txt"
+                "metamuse --workspace ws --json --non-interactive muse open "
+                '--project "$P" --topic "Synthetic review" --request-key open > '
+                "out/open-review.json || test $? -eq 3"
             ),
-            "jq '[.results[0].ref]' out/search.json > inputs/facts.json",
             (
-                'metamuse --workspace ws draft save --project "$P" '
-                "--text-file inputs/draft.txt --platform generic --facts-file "
+                "jq -C '{status, error: .error.code, approval: .approval | "
+                "{operation, action_digest, destination, topic, request}}' "
+                "out/open-review.json"
+            ),
+            (
+                'read R A < <(jq -r ".approval | [.request_file, .action_digest] '
+                '| @tsv" out/open-review.json)'
+            ),
+            'jq .approval.request out/open-review.json > "$R"',
+        ),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
+    ),
+    Scene(
+        stem="06-human-approval",
+        summary=(
+            "The operator previews the packet and approves the exact digest; Muse open is accepted."
+        ),
+        acceptance=("AT-015", "AT-016", "AT-020"),
+        commands=(
+            'metamuse --workspace ws packet preview "$K" > out/packet-preview.json',
+            "jq -r .rendered_text out/packet-preview.json",
+            (
+                "metamuse --workspace ws --json permit approve --operation "
+                'muse.open --request-file "$R" --exact-digest "$A" --request-key '
+                "open-grant > out/open-grant.json"
+            ),
+            "G=$(jq -r .data.id out/open-grant.json)",
+            (
+                'metamuse --workspace ws --json muse open --project "$P" --topic '
+                '"Synthetic review" --access-grant "$G" --request-key open > '
+                "out/open.json"
+            ),
+            (
+                "jq -C '{status, data: .data | {state, discussion_id, "
+                "worker_available}}' out/open.json"
+            ),
+            "T=$(jq -r .data.discussion_id out/open.json)",
+        ),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
+    ),
+    Scene(
+        stem="07-fixture-discussion",
+        summary=(
+            "Approved fixture question, worker refresh, cached reply and "
+            "explicit needs_more_data closure."
+        ),
+        acceptance=("AT-016", "AT-020", "AT-021", "AT-022", "AT-024"),
+        commands=(
+            "metamuse --workspace ws worker run --once > out/w-open.json",
+            "printf '%s' '這份資料有哪些資訊缺口？' > inputs/q1.txt",
+            (
+                'metamuse --workspace ws --json muse send --discussion "$T" '
+                '--packet "$K" --question-file inputs/q1.txt --request-key '
+                "send-1 > out/s1-review.json || test $? -eq 3"
+            ),
+            'metamuse --workspace ws packet preview "$K" > out/p1.json',
+            (
+                'read R A < <(jq -r ".approval | [.request_file, .action_digest] '
+                '| @tsv" out/s1-review.json)'
+            ),
+            'jq .approval.request out/s1-review.json > "$R"',
+            (
+                "metamuse --workspace ws --json permit approve --operation "
+                'muse.send --request-file "$R" --exact-digest "$A" --request-key '
+                "sg1 > out/sg1.json 2> out/sg1.txt"
+            ),
+            "G=$(jq -r .data.id out/sg1.json)",
+            (
+                'metamuse --workspace ws --json muse send --discussion "$T" '
+                '--packet "$K" --question-file inputs/q1.txt --share-grant "$G" '
+                "--request-key send-1 > out/s1.json"
+            ),
+            "E=$(jq -r .data.exchange_id out/s1.json)",
+            "metamuse --workspace ws worker run --once > out/ws1.json",
+            (
+                'metamuse --workspace ws --json muse read --exchange "$E" '
+                "--refresh > out/r1-review.json || test $? -eq 3"
+            ),
+            (
+                'read R A < <(jq -r ".approval | [.request_file, .action_digest] '
+                '| @tsv" out/r1-review.json)'
+            ),
+            'jq .approval.request out/r1-review.json > "$R"',
+            (
+                "metamuse --workspace ws --json permit approve --operation "
+                'muse.read --request-file "$R" --exact-digest "$A" --request-key '
+                "rg1 > out/rg1.json 2> out/rg1.txt"
+            ),
+            "G=$(jq -r .data.id out/rg1.json)",
+            (
+                'metamuse --workspace ws muse read --exchange "$E" --refresh '
+                '--access-grant "$G" > out/rf1.json'
+            ),
+            "metamuse --workspace ws worker run --once > out/wr1.json",
+            'metamuse --workspace ws --json muse read --exchange "$E" > out/r1.json',
+            (
+                "jq -cC '.data | {discussion_id, exchange_id, backend, mock, "
+                "research_complete}' out/r1.json"
+            ),
+            (
+                'jq -cC \'.data.messages[] | select(.role == "assistant") | '
+                "{role, text, association}' out/r1.json"
+            ),
+            (
+                'metamuse --workspace ws muse close-exchange "$E" --outcome '
+                "needs_more_data --request-key close-1 > out/c1.json"
+            ),
+            "jq -cC '{outcome, research_complete}' out/c1.json",
+        ),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
+    ),
+    Scene(
+        stem="08-fixture-follow-up",
+        summary=(
+            "Approved fixture question, worker refresh, cached reply and "
+            "explicit needs_more_data closure."
+        ),
+        acceptance=("AT-016", "AT-020", "AT-021", "AT-022", "AT-024"),
+        commands=(
+            "printf '%s' '哪些缺口會影響這個判斷？' > inputs/q2.txt",
+            (
+                'metamuse --workspace ws --json muse send --discussion "$T" '
+                '--packet "$K" --question-file inputs/q2.txt --request-key '
+                "send-2 > out/s2-review.json || test $? -eq 3"
+            ),
+            'metamuse --workspace ws packet preview "$K" > out/p2.json',
+            (
+                'read R A < <(jq -r ".approval | [.request_file, .action_digest] '
+                '| @tsv" out/s2-review.json)'
+            ),
+            'jq .approval.request out/s2-review.json > "$R"',
+            (
+                "metamuse --workspace ws --json permit approve --operation "
+                'muse.send --request-file "$R" --exact-digest "$A" --request-key '
+                "sg2 > out/sg2.json 2> out/sg2.txt"
+            ),
+            "G=$(jq -r .data.id out/sg2.json)",
+            (
+                'metamuse --workspace ws --json muse send --discussion "$T" '
+                '--packet "$K" --question-file inputs/q2.txt --share-grant "$G" '
+                "--request-key send-2 > out/s2.json"
+            ),
+            "E=$(jq -r .data.exchange_id out/s2.json)",
+            "metamuse --workspace ws worker run --once > out/ws2.json",
+            (
+                'metamuse --workspace ws --json muse read --exchange "$E" '
+                "--refresh > out/r2-review.json || test $? -eq 3"
+            ),
+            (
+                'read R A < <(jq -r ".approval | [.request_file, .action_digest] '
+                '| @tsv" out/r2-review.json)'
+            ),
+            'jq .approval.request out/r2-review.json > "$R"',
+            (
+                "metamuse --workspace ws --json permit approve --operation "
+                'muse.read --request-file "$R" --exact-digest "$A" --request-key '
+                "rg2 > out/rg2.json 2> out/rg2.txt"
+            ),
+            "G=$(jq -r .data.id out/rg2.json)",
+            (
+                'metamuse --workspace ws muse read --exchange "$E" --refresh '
+                '--access-grant "$G" > out/rf2.json'
+            ),
+            "metamuse --workspace ws worker run --once > out/wr2.json",
+            'metamuse --workspace ws --json muse read --exchange "$E" > out/r2.json',
+            (
+                "jq -cC '.data | {discussion_id, exchange_id, backend, mock, "
+                "research_complete}' out/r2.json"
+            ),
+            (
+                'jq -cC \'.data.messages[] | select(.role == "assistant") | '
+                "{role, text, association}' out/r2.json"
+            ),
+            (
+                'metamuse --workspace ws muse close-exchange "$E" --outcome '
+                "needs_more_data --request-key close-2 > out/c2.json"
+            ),
+            "jq -cC '{outcome, research_complete}' out/c2.json",
+        ),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
+    ),
+    Scene(
+        stem="09-host-draft",
+        summary=(
+            "Host text stored unchanged, citing the item revision and both fixture observations."
+        ),
+        acceptance=("AT-023", "AT-024"),
+        commands=(
+            (
+                "printf '%s\\n' '活動紀錄（host 撰寫）' "  # Preserve the host's two lines.
+                "'首輪與追問仍有缺口，尚未完成研究。' > inputs/draft.txt"
+            ),
+            (
+                "jq '[.results[0].ref] + [inputs | "
+                ".data.observations[-1].evidence_ref]' out/search.json "
+                "out/r1.json out/r2.json > inputs/facts.json"
+            ),
+            (
+                'metamuse --workspace ws draft save --project "$P" --text-file '
+                "inputs/draft.txt --platform generic --facts-file "
                 "inputs/facts.json --request-key draft > out/draft.json"
             ),
-            "jq -C '{draft_id, revision, text, facts_refs}' out/draft.json",
+            "jq -C '{draft_id, revision, text}' out/draft.json",
+            "jq -cC '.facts_refs[]' out/draft.json",
         ),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
     ),
     Scene(
-        "06-export",
-        "Local bundle manifest and the CLI's no-publish, no-upload, redaction-guard warnings.",
-        ("AT-025",),
-        (
+        stem="10-local-export",
+        summary=(
+            "Local bundle manifest and the CLI's no-publish, no-upload, redaction-guard warnings."
+        ),
+        acceptance=("AT-025",),
+        commands=(
             "D=$(jq -r .draft_id out/draft.json)",
             (
                 'jq -n --arg id "$D" \'[{kind:"draft_revision", id:$id, '
@@ -170,29 +404,45 @@ SCENES = (
             ),
             (
                 'metamuse --workspace ws export --project "$P" --refs-file '
-                "inputs/export-refs.json --format bundle --request-key export "
-                "> out/export.json"
+                "inputs/export-refs.json --format bundle --request-key export > "
+                "out/export.json"
             ),
             (
-                "jq -C '.manifest | {format, text_policy, asset_policy, "
-                "redaction_notice}' out/export.json"
+                "jq -C '.manifest | {format, backend, mock, research_complete, "
+                "text_policy, asset_policy, redaction_notice}' out/export.json"
             ),
             "jq -cC '.manifest.files[]' out/export.json",
         ),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
     ),
     Scene(
-        "07-mcp",
-        "Official mcp stdio client lists 15 tools and readOnly hints, then calls metamuse_search.",
-        ("AT-026",),
-        ("python3 mcp_demo.py",),
+        stem="11-mcp-worker",
+        summary=(
+            "The official client discovers 15 tools, collects a synthetic "
+            "file and polls the attached worker."
+        ),
+        acceptance=("AT-008", "AT-026"),
+        commands=("python3 mcp_demo.py",),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
     ),
     Scene(
-        "08-skill",
-        "Skill export writes SKILL.md and references to the named local destination.",
-        ("AT-027",),
-        ("metamuse skill export --dest host-skill", "ls -R host-skill"),
+        stem="12-skill-export",
+        summary="Skill export writes SKILL.md and references to the named local destination.",
+        acceptance=("AT-027",),
+        commands=("metamuse skill export --dest host-skill", "ls -R host-skill"),
+        columns=98,
+        lines=42,
+        font_size=13.0,
+        max_content_rows=40,
     ),
 )
+
 HERO = Scene(
     "00-hero",
     "The same packet's exact text, redaction count, and digest, captured for the hero.",
@@ -240,7 +490,7 @@ run() {{
   fi
 }}
 {commands}
-declare -p P J D > out/state.sh 2>/dev/null || true
+declare -p P J D K R A G T E > out/state.sh 2>/dev/null || true
 touch {shlex.quote(str(done))}
 exec sleep 45
 """
@@ -267,6 +517,9 @@ def _prepare_demo() -> None:
         "存取網址：https://example.org/?",
     )
     (DEMO / "inputs/secrets.jsonl").write_text(secrets)
+    # The MCP frame imports a separate redistributable synthetic file.
+    mcp_rows = (corpus / "import/comments_tree.jsonl").read_text().splitlines()[:3]
+    (DEMO / "inputs/mcp.jsonl").write_text("\n".join(mcp_rows) + "\n")
     for name in ("configure_demo_workspace.py", "mcp_demo.py"):
         shutil.copyfile(REPO / "scripts" / name, DEMO / name)
     (DEMO / "fonts.conf").write_text(
@@ -514,7 +767,12 @@ is shortened from `https://example.org/api/v1/feed?` to `https://example.org/?`
 and its label to `存取網址：` so the redaction fits together at 60 columns.
 The synthetic token and source labels are unchanged; this is input data, not an
 edit to CLI output. Muse is explicitly configured with `backend = "fixture"`.
-No credentials, real account, external network, send or publication is involved.
+No credentials, real account, external network or publication is involved.
+Muse sends go only to the offline fixture backend. Operator approvals are scripted
+terminal input in this reproducible synthetic demo; a host has no MCP approval tool.
+Full send/read operator reviews are redirected to demo out/ files to keep their
+frames compact; the open approval frame displays the real stderr review in full.
+The MCP input is the first three rows of the synthetic comments_tree.jsonl fixture.
 The text file beside every image is its accessible transcript, linked from both
 languages on the page. The hero is a separate 60-column capture of the same packet.
 
@@ -544,7 +802,8 @@ term from `SITE_PRIVATE_DENYLIST`. Commands over two rows and scenes over their 
 budget fail. The script stops its own terminal and virtual display on exit.
 
 Skill export demonstrates installation output, not full AT-027 missing-backend
-acceptance. MCP shows discovery and one search call, not every host/tool pairing.
+acceptance. MCP shows discovery, local collection, attached-worker polling and one search,
+not every host/tool pairing. Fixture replies are progress, not completed research.
 """)
     (OUT / "README.md").write_text("".join(parts))
 
@@ -561,7 +820,7 @@ def main() -> None:
             records.append(_capture_scene(scene, display))
     finally:
         _stop(xvfb)
-    # Delete obsolete round-1 names only after every new capture succeeds.
+    # Delete obsolete frame names only after every new capture succeeds.
     keep = {record[key] for record in records for key in ("png", "transcript")}
     for path in (*OUT.glob("*.png"), *OUT.glob("*.txt")):
         if path.name not in keep:
@@ -586,6 +845,12 @@ def main() -> None:
                 ),
                 "sha256": sha256_file(DEMO / "inputs/secrets.jsonl"),
             },
+            {
+                "file": "inputs/mcp.jsonl",
+                "source": "tests/fixtures/corpus/import/comments_tree.jsonl",
+                "change": "First three rows only",
+                "sha256": sha256_file(DEMO / "inputs/mcp.jsonl"),
+            },
         ],
         "product_base_commit": _run(["git", "merge-base", "HEAD", "main"], cwd=REPO),
         "captured_at": captured.isoformat(timespec="seconds"),
@@ -600,6 +865,11 @@ def main() -> None:
             "display": display,
         },
         "tools": _versions(),
+        "scripted_operator_input": True,
+        "operator_input_note": (
+            "Synthetic terminal approvals use permit approve --exact-digest; "
+            "no MCP approval tool or model-minted grant."
+        ),
         "synthetic_data": True,
         "live_or_real_account": False,
         "image_edited": False,

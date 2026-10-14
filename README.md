@@ -14,6 +14,8 @@ Design baseline: [docs/design/](docs/design/README.md). Collection behaviour is 
 
 Each row uses one of four states: implemented with offline tests; implemented but not independently accepted; not done; needs a real account (LIVE).
 
+<!-- The project page mirrors this status table; CI checks that they stay in sync. -->
+
 | Capability | State | Note |
 |---|---|---|
 | Local import | implemented with offline tests | Local files and text. A remote URL is rejected before a job exists. |

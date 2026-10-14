@@ -134,7 +134,8 @@ def readme_status_rows(readme: str) -> list[tuple[str, str]] | None:
         while cursor < len(lines) and "|" in lines[cursor] and lines[cursor].strip():
             cells = _split_row(lines[cursor])
             if status_at is not None and cells and cells[0] and status_at < len(cells):
-                block.append((cells[0], cells[status_at]))
+                capability = re.sub(r"`([^`]+)`", r"\1", cells[0])
+                block.append((capability, cells[status_at]))
             cursor += 1
         if status_at is not None:
             rows = block
@@ -190,8 +191,6 @@ def status_problems(readme: str, page: dict) -> list[str]:
     intro = str((status.get("intro") or {}).get("en", ""))
     if "Muse LIVE is not verified" not in intro:
         problems.append("status intro must state that Muse LIVE is not verified")
-    if not re.search(r"[Aa]pproval previews.*in progress", intro):
-        problems.append("status intro must state that approval previews are in progress")
     return problems
 
 

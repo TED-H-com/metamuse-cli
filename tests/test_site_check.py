@@ -40,7 +40,7 @@ SAMPLE_README = """# MetaMuse CLI
 | Local import | implemented with offline tests | Local files and text. |
 | Search | implemented with offline tests | Project-scoped search. |
 | Muse LIVE | needs a real account (LIVE) | Blocked by upstream protocol drift. |
-| MCP attached worker | not done | In progress on another branch. |
+| MCP attached worker | not done | Unavailable in this synthetic sample. |
 | Publishing | not done | Not started. |
 | CI | implemented but not independently accepted | Offline CI workflow. |
 """
@@ -52,8 +52,8 @@ def _sample_page() -> dict:
         "showcase": {"shots": [{"src": "site/images/01-setup.png"}]},
         "status": {
             "intro": {
-                "en": "Muse LIVE is not verified; approval previews are in progress.",
-                "zh": "Muse LIVE 尚未驗證；核准預覽仍在進行中。",
+                "en": "Muse LIVE is not verified; permissions require a human.",
+                "zh": "Muse LIVE 尚未驗證；權限須由人類核准。",
             },
             "works": [],
             "limits": [],
@@ -104,6 +104,21 @@ def test_readme_without_status_table_fails() -> None:
     readme = "# MetaMuse CLI\n\nPre-alpha. Nothing is released yet.\n"
     assert readme_status_rows(readme) is None
     assert status_problems(readme, _sample_page()) == ["README has no status table"]
+
+
+def test_real_site_status_transcripts_and_manifest(monkeypatch) -> None:
+    # Use the actual CI identity for this repository check, not the unit fixture.
+    monkeypatch.undo()
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    page = json.loads((ROOT / "site/page.json").read_text(encoding="utf-8"))
+    assert status_problems(readme, page) == []
+    assert caption_transcript_problems(ROOT / "site", page) == []
+    assert manifest_problems(ROOT / "site") == []
+
+
+def test_status_capability_inline_code_matches_visible_text() -> None:
+    readme = SAMPLE_README.replace("| Search |", "| `Search` |")
+    assert status_problems(readme, _sample_page()) == []
 
 
 @pytest.mark.parametrize("header", ["State", "Status", "狀態"])
