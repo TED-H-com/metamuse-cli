@@ -21,10 +21,12 @@ class RemoteApproval(m.Model):
 
     Hosts are normalized exact names. A subdomain, a path, or a query does not
     extend the approval. Generic and unknown extractor keys are never implied.
+    ``auth_ref`` is optional operator configuration. ``CollectRequest`` has none.
     """
 
     extractor: str = Field(min_length=1, max_length=64, pattern=r"[A-Za-z][A-Za-z0-9_-]{0,63}")
     hosts: list[str] = Field(min_length=1, max_length=32)
+    auth_ref: str | None = Field(default=None, pattern=r"auth_[0-9a-f]{32}")
 
 
 class RemoteMediaConfig(m.Model):

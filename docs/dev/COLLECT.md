@@ -305,23 +305,106 @@ key, never `manual`. A remote video item is stored as kind `post` until core
 adds a media kind.
 
 The checkpoint stores the phase, indexes, ids, revision, text hash, and counts.
-It does not store upstream media or subtitle URLs. A resume re-reads the page,
-counts that response in `bytes_used`, and compares native id, extractor,
-platform, and scope with the checkpoint. On a mismatch the input is
+It does not store upstream media or subtitle URLs, and it does not store a
+share redirect's raw `Location`. A share input may store the canonical resolved
+URL, which has no tracking query. A resume of that input reuses the stored URL
+instead of requesting the share link again. The resume still re-reads the
+resolved page, counts that response in `bytes_used`, and compares native id,
+extractor, platform, and scope with the checkpoint. On a mismatch the input is
 `E_DATA_STALE`: committed metadata stays, no subtitle or media from the new
 page is attached to the old item, coverage is `partial`, stop reason is
 `data_stale`, and the permit use stays at the one already reserved. The job
 error stays empty. Other inputs continue.
 
 Each input is checked only against the hosts approved for its own extractor.
-Approvals are not unioned across the job.
+Approvals are not unioned across the job. A checked delegation hop uses only
+the hopped extractor's approval.
+
+A platform challenge stops the job inside the request handler, before yt-dlp
+can answer it. MetaMuse does not solve, retry, or POST a challenge. A response
+with status 403, 429, or 503 stops the input when the body contains
+`fetch(…"/__rd_verify…")`, a `cf-mitigated: challenge` header is present, or
+the dial layer reports a reason phrase containing "challenge". Any request
+whose path starts with `/__rd_verify` is refused before the dial, on any host.
+The error is `E_CHECKPOINT_REQUIRED`, message `Platform challenge`, next action
+`Stop. Do not solve a challenge or retry it.` The job is `awaiting_user`.
+Nothing new is stored for that input. The received body still counts against
+`max_bytes`, and the permit use stays at the one already reserved. A 403
+without a challenge marker stays `E_ACCESS_DENIED`.
+
+`https://<approved host>/share/r/<token>` and
+`https://<approved host>/share/v/<token>` are accepted when the token is one
+to 32 letters or digits, with an optional trailing slash and no userinfo,
+port, query, or fragment. MetaMuse resolves them. They are not a yt-dlp
+extractor, a plugin, or the generic extractor. `/share/r/` targets
+`FacebookReel`. `/share/v/` targets `Facebook`. Submit requires an approval
+for that key whose hosts contain the share URL's exact host. The permit stores
+the target key. The share URL is kept exactly as requested.
+`/share/p/<token>` is refused at submit with `E_UNSUPPORTED` and next action
+`Use the Facebook post collector for /share/p/ links.`
+
+Resolution is one checked GET of the share URL through the same handler:
+checker, byte budget, wall clock, cancel, the HTTPS-to-HTTP refusal, and no
+request body. Redirects are not followed. The first 30x `Location` is accepted
+only when it is `https`, its exact host is in the target approval, and the
+target extractor's `suitable()` accepts the canonical form. `/reel/<digits>`
+and `/<page>/videos/<digits>` drop the query and fragment. `/watch/?v=<digits>`
+keeps only `v`. A 200 page or a redirect to `/login` or `checkpoint` is
+`E_AUTH_REQUIRED`, message `Login required`, next action
+`Stop. Do not retry a login wall.` Anything else is `E_UNSUPPORTED`, message
+`Share link did not resolve to an approved media URL`. A redirect to an
+unapproved host is `E_SCOPE_DENIED` before that host is dialed. Nothing is
+stored. The source `use_basis` and the step result record `requested_url` (the
+share URL) and `resolved_url` (the canonical URL).
+
+Extraction uses `extract_info(..., download=False, process=False)` and a
+MetaMuse hop loop, so yt-dlp does not follow `url` or `url_transparent`
+results itself. A hop whose `ie_key` has an approval containing the hop URL's
+exact host runs as a new extraction with `allowed_extractors` set to that key
+only and a checker built from that approval's hosts only. At most two hops are
+allowed. Each hop is a dial: budget, wall clock, and cancel apply. A
+`url_transparent` result merges the way yt-dlp does: non-None outer fields
+override inner ones, except `_type`, `url`, `ie_key`, and, when the outer
+result has no section, `id`, `extractor`, and `extractor_key`. The source
+`use_basis` and the step result record the extractor chain, for example
+`["FacebookReel", "Facebook"]`. `upstream_collection_method` is the final
+extractor. A hop to an unapproved key or host is `E_SCOPE_DENIED`. The next
+action names the extractor key and the exact host. Nothing is stored. A third
+hop is `E_UNSUPPORTED`. `FacebookIE` rewrites `m.facebook.com` to
+`www.facebook.com` before its page GET, so an approval that only lists the
+mobile host allows the hop and then the checker refuses the desktop host.
 
 Cookies, netrc, the yt-dlp cache, usernames, passwords, and client certificates
-are set off in the fixed parameters. `CollectRequest` has no `auth_ref`: model
-content must not choose credentials. A later cookie binding would be an
-operator field on `remote_media.approvals`, resolved with
-`resolve_secret(auth_ref, provider=, account=)` against the permit. That field
-is not implemented. A token left under `XDG_CACHE_HOME` is not read.
+stay off in the fixed parameters. `cookiefile` stays unset. `CollectRequest`
+has no `auth_ref`: model content cannot choose credentials. An operator may
+set `auth_ref` on one approval. The job resolves it with
+`resolve_secret(auth_ref, provider=<permit provider>, account=<permit account>)`
+before the first dial of that approval. A missing secret or a provider or
+account mismatch is the B08 `E_AUTH_REQUIRED` secret error, and that input
+does not dial. The imported bytes must be a Netscape cookie file or one
+`Cookie:` header line. Anything else is `E_INPUT_INVALID` and the message does
+not echo the file. Cookies are parsed in memory. A `Cookie` header is added
+only when the request's exact host is in that approval's hosts and the cookie
+matches by domain, host-only, path, `Secure`, and expiry. A hop or redirect
+to a host outside that approval does not receive the cookie. Subtitle and
+media CDN hosts do not receive it unless they are in that approval and match.
+`Set-Cookie` is ignored. The job stores no new credential. Cookie values are
+absent from the checkpoint, step result, job request, events, logs, envelopes,
+exceptions, and the database.
+
+```toml
+[[remote_media.approvals]]
+extractor = "FacebookReel"
+hosts = ["www.facebook.com"]
+auth_ref = "auth_0123456789abcdef0123456789abcdef"
+
+[[remote_media.approvals]]
+extractor = "Facebook"
+hosts = ["m.facebook.com", "www.facebook.com"]
+```
+
+`auth_ref` is optional. The value above is a synthetic reference, not a
+secret. A token left under `XDG_CACHE_HOME` is not read.
 
 A process-wide audit hook, installed once at import, refuses `subprocess.Popen`,
 `os.system`, `os.posix_spawn`, `os.exec*`, and `os.fork*` while extraction or

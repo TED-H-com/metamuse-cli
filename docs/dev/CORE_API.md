@@ -637,6 +637,8 @@ environment is `missing_dependency` without the pinned import and `ready` when
 is offline or `remote_media.approvals` is empty, and `granted_scope` when the
 workspace is live and an approval is configured. Each collection still needs
 its own `collect.remote` permit at submit. The capability row is not that permit.
+An approval may set optional `auth_ref` (`auth_` and 32 hex digits). That field
+is configuration only. `CollectRequest` has no `auth_ref`.
 Hooks never make network calls. Use the idempotent `register_operations` example above;
 operation names must be unique and preserve side-effect/recovery semantics on restart.
 
