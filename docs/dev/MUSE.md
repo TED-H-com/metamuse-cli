@@ -260,9 +260,13 @@ first open attempt accounting and session proof, plus unresolved-step quarantine
 discussion/message FKs, observed time and backend. `messages` is the stable projection.
 Distinct IDs sharing a seq remain distinct; enrichment is another observation.
 
-The guard audit includes every registered migration and dropped/recreated trigger.
-Discussion/message/exchange/observation identities reject REPLACE and conflicting UPSERT;
-retention triggers reject delete. Bindings/prepared identity are immutable; attempt fields
+Every Store open, archive verification before writes and migration commit compares
+`sqlite_master` with the canonical replay of all registered migrations. Retained tables
+keep every earlier guard name. Package SQL and migrations use explicit existence checks
+and ordinary inserts or updates; the conflict-clause allowlist is empty.
+Discussion/message/exchange/observation insert guards cover rowid, primary and declared
+unique identities. Update guards freeze rowid, identities and immutable bindings;
+retention triggers reject delete. Prepared identity is immutable; attempt fields
 are write-once; outcomes and closed state are sticky; transitions, same-discussion message
 attachment, backend labels, original step and proof references are checked. Observation
 memory retains ambiguity/competing/disqualified keys and a high-water mark, not a second
