@@ -43,6 +43,7 @@ CREATE TRIGGER muse_trust_vm_guard BEFORE UPDATE ON muse_trust_vms
 WHEN NEW.rowid != OLD.rowid OR NEW.provider != OLD.provider OR NEW.account != OLD.account
     OR NEW.vm_id != OLD.vm_id OR NEW.version != OLD.version
     OR NEW.confidential_required < OLD.confidential_required
+    OR (OLD.confidential_required=1 AND (NEW.source IS NOT OLD.source OR NEW.observed_at IS NOT OLD.observed_at))
 BEGIN SELECT RAISE(ABORT, 'muse trust VM immutable or downgrade'); END;
 CREATE TRIGGER muse_trust_vm_retention BEFORE DELETE ON muse_trust_vms
 BEGIN SELECT RAISE(ABORT, 'muse trust VM retention'); END;
@@ -119,6 +120,7 @@ WHEN EXISTS(SELECT 1 FROM muse_trust_observations WHERE (viewer_hash=NEW.viewer_
 BEGIN SELECT RAISE(ABORT, 'muse trust observation replacement'); END;
 CREATE TRIGGER muse_trust_observation_guard BEFORE UPDATE ON muse_trust_observations
 WHEN NEW.rowid != OLD.rowid OR NEW.viewer_hash != OLD.viewer_hash OR NEW.vm_id != OLD.vm_id OR NEW.version != OLD.version OR NEW.confidential_required < OLD.confidential_required
+    OR (OLD.confidential_required=1 AND (NEW.source IS NOT OLD.source OR NEW.observed_at IS NOT OLD.observed_at))
 BEGIN SELECT RAISE(ABORT, 'muse trust observation immutable or downgrade'); END;
 CREATE TRIGGER muse_trust_observation_retention BEFORE DELETE ON muse_trust_observations
 BEGIN SELECT RAISE(ABORT, 'muse trust observation retention'); END;

@@ -966,7 +966,7 @@ class Store:
         if confidential:
             conn.executemany(
                 "UPDATE muse_trust_observations SET confidential_required=1, "
-                "source=?,observed_at=? WHERE viewer_hash=? AND vm_id=?",
+                "source=?,observed_at=? WHERE viewer_hash=? AND vm_id=? AND confidential_required=0",
                 (
                     (source, observed, viewer_hash, identity)
                     for identity in identities
@@ -1020,7 +1020,7 @@ class Store:
         conn.executemany(
             "UPDATE muse_trust_vms SET confidential_required=1, "
             "source='authenticated_assignment',observed_at=? "
-            "WHERE provider=? AND account=? AND vm_id=?",
+            "WHERE provider=? AND account=? AND vm_id=? AND confidential_required=0",
             (
                 (observed, provider, account, identity)
                 for identity in sorted(vm_ids)

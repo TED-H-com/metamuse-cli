@@ -9,13 +9,13 @@
     },
     {
       "path": "02_SPEC.md",
-      "bytes": 24700,
-      "sha256": "ca60fba19f1fc530fd109b81cf8bc1e966c581371ef92b50678282f03fa990a2"
+      "bytes": 25233,
+      "sha256": "61b7305716d5bd9f067d1163d5e4c17c843a0a967a9d4a3dfc5101e82c2a3a3f"
     },
     {
       "path": "03_SDS.md",
-      "bytes": 40118,
-      "sha256": "f928657de1e83dd2cf849eaa25ee15ca95b6f1960175cc3022517fe5cf412238"
+      "bytes": 40651,
+      "sha256": "e24cac728e1d7568a89dc2eb3fbb021f268415f8c886ae9ca60089ebf46fe38a"
     },
     {
       "path": "04_BACKLOG.md",
@@ -49,8 +49,8 @@
     },
     {
       "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
-      "bytes": 74110,
-      "sha256": "503c4dd810dafa487af7b2a1ef91e2fc9685336ce2b9d4234ff896b0c0f04c1f"
+      "bytes": 75176,
+      "sha256": "1185970bfc1ecfdca3b85305c12ef7f1db979b5b131f884817c32cf6a0ae8f3d"
     },
     {
       "path": "README.md",
