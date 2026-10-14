@@ -78,6 +78,10 @@ def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
         else []
     )
     _write_facebook_config(ctx.paths.root, auth_ref=auth_ref, extra_facebook_lines=extra)
+    config_path = ctx.paths.root / "metamuse.toml"
+    config_path.write_text(
+        config_path.read_text().replace("read_timeout_seconds = 30", "read_timeout_seconds = 2")
+    )
     ctx = app.AppContext.open(ctx.paths.root)
     cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
     subprocess.run(
@@ -272,3 +276,44 @@ def test_finding_02_browser_secret_hostname_never_reaches_diagnostics(tmp_path, 
         assert "evil.invalid" not in visible
         assert all("hostname" not in row for row in guard.summary()["aborted_reasons"])
         assert all(upgrade is None for _, upgrade in hits)
+
+
+@pytest.mark.parametrize(
+    "other_actor,other_id",
+    [("other.actor", "OTHER_POST"), ("synth.lab", "12345"), ("other.actor", "pfbid0101synth")],
+)
+def test_finding_03_extracted_identity_must_match(tmp_path, other_actor, other_id):
+    ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
+    driver = facebook.FixtureBrowserDriver(
+        observation(_synthetic_post_html(actor=other_actor, post_id=other_id))
+    )
+    facebook.set_driver_factory(lambda: driver)
+    job = finish(ctx, submit(ctx, project, permit))
+    assert job["error"]["code"] == "E_REFERENCE_INVALID"
+    with ctx.store.connection() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
+
+
+@pytest.mark.parametrize("hop", ["redirect", "script", "meta"])
+def test_finding_03_browser_navigation_identity_stops_before_import(tmp_path, monkeypatch, hop):
+    path = "/synth.lab/posts/pfbid0101synth"
+    other = "/other.actor/posts/OTHER_POST"
+    if hop == "redirect":
+        initial = (302, other)
+    elif hop == "script":
+        initial = f"<script>location.replace('{other}')</script>"
+    else:
+        initial = f'<meta http-equiv="refresh" content="0;url={other}">'
+    pages = {path: initial, other: _synthetic_post_html(actor="other.actor", post_id="OTHER_POST")}
+    with browser_fixture(tmp_path, monkeypatch, pages) as env:
+        ctx, project, permit, _, hits, _, _ = env
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["error"]["code"] == "E_REFERENCE_INVALID"
+        with ctx.store.connection() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0] == 0
+            assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
+        if hop == "redirect":
+            # An encrypted 302 hop is invisible to Playwright routing until committed.
+            assert any(request == other for request, _ in hits)
+        else:
+            assert all(request != other for request, _ in hits)

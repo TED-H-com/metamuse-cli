@@ -957,6 +957,28 @@ class EgressGuard:
         self.proxy_port: int | None = None
         self.bytes_relayed: int = 0
         self.byte_limit_exceeded: bool = False
+        self.authorized_permalink: PostPermalinkTarget | None = None
+
+    def authorize_permalink(self, target: PostPermalinkTarget) -> None:
+        self.authorized_permalink = target
+
+    def validate_navigation_identity(self, url: str) -> None:
+        target = self.authorized_permalink
+        if target is None:
+            return
+        parsed = urlsplit(url)
+        # Local origins exist solely in the injected fixture egress seam.
+        if self._fixture_nav_validator is not None:
+            url = "https://www.facebook.com" + parsed.path
+            if parsed.query:
+                url += "?" + parsed.query
+        observed = parse_post_permalink(url)
+        if (observed.actor, observed.post_id) != (target.actor, target.post_id):
+            raise m.CoreError(
+                m.ErrorCode.REFERENCE_INVALID,
+                "Facebook navigation changed the authorized post identity",
+                next_action="Approve a separate permalink and permit for the other post",
+            )
 
     @classmethod
     def for_fixture_test(
@@ -1089,6 +1111,7 @@ class EgressGuard:
                     self._fixture_nav_validator(url)
                 else:
                     parse_post_permalink(url)
+                self.validate_navigation_identity(url)
             except m.CoreError as exc:
                 with self._lock:
                     self.navigation_error = exc
@@ -1203,6 +1226,7 @@ class EgressGuard:
                         self._fixture_nav_validator(url)
                     else:
                         parse_post_permalink(url)
+                    self.validate_navigation_identity(url)
                 except m.CoreError as exc:
                     with self._lock:
                         self.last_proxy_error = exc
@@ -1602,7 +1626,10 @@ class _PlaywrightSession:
                     redirected_from=redirected_from,
                 )
             except m.CoreError:
-                route.abort("blockedbyclient")
+                try:
+                    route.abort("blockedbyclient")
+                except Exception:
+                    pass  # The document may already have been cancelled by Chromium.
                 return
             route.continue_()
 
@@ -1641,11 +1668,19 @@ class _PlaywrightSession:
                 if self._peer_error is None:
                     self._peer_error = exc
 
+        def _on_frame_navigated(frame: Any) -> None:
+            if frame == self._page.main_frame and self._egress.navigation_error is None:
+                try:
+                    self._egress.check_browser_route(frame.url, is_navigation=True)
+                except m.CoreError as exc:
+                    self._egress.navigation_error = exc
+
         self._context.on("page", _on_popup)
         self._page.on("popup", _on_popup)
         self._page.on("download", _on_download)
         self._context.route("**/*", _on_route)
         self._page.on("response", _on_response)
+        self._page.on("framenavigated", _on_frame_navigated)
 
     def _raise_if_byte_limit(self) -> None:
         if self._egress.byte_limit_exceeded or (
@@ -1681,9 +1716,12 @@ class _PlaywrightSession:
                 "Browser navigation to Facebook post permalink failed",
                 next_action="Verify connectivity and the post permalink before retrying",
             ) from exc
+        # Dispatch immediate script/meta navigations before the first DOM snapshot.
+        self._page.wait_for_timeout(50)
         self._raise_if_byte_limit()
         if self._egress.navigation_error is not None:
             raise self._egress.navigation_error
+        self._egress.check_browser_route(self._page.url, is_navigation=True)
         if self._peer_error is not None:
             raise self._peer_error
         if response is None:
@@ -2109,6 +2147,15 @@ def _opt_int(val: Any) -> int | None:
     return None
 
 
+def _validate_extracted_identity(post_id: str, actor: Any, target: PostPermalinkTarget) -> None:
+    if (actor, post_id) != (target.actor, target.post_id):
+        raise m.CoreError(
+            m.ErrorCode.REFERENCE_INVALID,
+            "Extracted Facebook post does not match the authorized identity",
+            next_action="Review the approved permalink and its exact actor and post token",
+        )
+
+
 def classify_and_parse_observation(
     obs: PageObservation,
     *,
@@ -2182,7 +2229,7 @@ def classify_and_parse_observation(
         )
 
     attrs = extractor.post_attrs
-    dom_post_id = (attrs.get("data-post-id") or permalink.post_id).strip()
+    dom_post_id = (attrs.get("data-post-id") or "").strip()
     if not dom_post_id:
         raise m.CoreError(
             m.ErrorCode.SELECTOR_DRIFT,
@@ -2194,6 +2241,8 @@ def classify_and_parse_observation(
             "Facebook comments section container is missing from the post permalink DOM",
             next_action="Inspect the comment container selectors before retrying",
         )
+
+    _validate_extracted_identity(dom_post_id, attrs.get("data-actor"), permalink)
 
     post_text_raw = html_lib.unescape("".join(extractor.post_text_parts)).strip()
     post_text = post_text_raw if post_text_raw else (attrs.get("data-post-text") or None)
@@ -2259,12 +2308,13 @@ def _parse_json_payload(
             "Embedded Facebook post JSON payload is missing the post object",
         )
     post_obj = payload["post"]
-    post_id = str(post_obj.get("post_id") or post_obj.get("id") or permalink.post_id).strip()
+    post_id = str(post_obj.get("post_id") or post_obj.get("id") or "").strip()
     if not post_id:
         raise m.CoreError(
             m.ErrorCode.SELECTOR_DRIFT,
             "Embedded Facebook post JSON is missing post_id",
         )
+    _validate_extracted_identity(post_id, post_obj.get("actor"), permalink)
     has_comments_key = "comments" in payload
     if require_comments_section and not has_comments_key:
         raise m.CoreError(
@@ -2691,6 +2741,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         account=account,
     )
     egress = _active_egress(fb_cfg.allowed_hosts)
+    egress.authorize_permalink(permalink)
 
     saved = dict(step.checkpoint or {})
     resources = set(request.resources)
@@ -2720,6 +2771,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     try:
         step.guard()
         obs = session.goto_post(permalink.fetch_url)
+        egress.check_browser_route(obs.url, is_navigation=True)
         bytes_used = max(egress.bytes_relayed, len(obs.html.encode("utf-8")))
         if egress.byte_limit_exceeded or bytes_used > max_bytes:
             raise m.CoreError(
@@ -2750,6 +2802,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 step.executor.sleep(pacing_ms / 1000.0)
             ctrl = parsed.expand_controls[0]
             obs = session.expand_next(ctrl.control_id)
+            egress.check_browser_route(obs.url, is_navigation=True)
             expansions_used += 1
             bytes_used = max(
                 egress.bytes_relayed,

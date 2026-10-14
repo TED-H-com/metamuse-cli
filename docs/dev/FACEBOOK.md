@@ -114,3 +114,13 @@ No denied hostname, URL, path or query is persisted or returned, even when a pag
 encodes cookie/localStorage bytes into a refused destination. In-memory transport
 state is private to the session; summaries, checkpoints, events and errors contain
 no such source-controlled diagnostic strings.
+
+Authorized post identity requires exact, case-sensitive actor and post-token equality.
+Primary-host aliases and accepted permalink syntaxes with those same tokens are
+equivalent; numeric story_fbid and pfbid tokens are never inferred equivalent.
+Main-frame routes, every observed frame navigation and the final URL are checked
+before extraction; extracted actor/id mismatch stops with E_REFERENCE_INVALID.
+New document requests are aborted where Playwright routing (or the plaintext
+fixture proxy) exposes them. HTTPS 302 paths inside CONNECT can already have been
+requested before Playwright observes the final navigation; no data, source or item
+from that document is stored or reported. Script/meta navigation is route-blocked.
