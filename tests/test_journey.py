@@ -59,7 +59,7 @@ class Entrypoints:
         return envelope
 
     def configure(self):
-        assert self.cli("init")["data"]["schema_version"] == 4
+        assert self.cli("init")["data"]["schema_version"] == 5
         path = self.workspace / "metamuse.toml"
         path.write_text(
             path.read_text()
