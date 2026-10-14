@@ -286,3 +286,14 @@ After a Facebook post identity is bound, a main-frame navigation to an unknown n
 
 
 Facebook HTML text includes inline image alt text (including emoji), excludes script/style/template and hidden subtrees, and retains the existing one-decode/newline/edge-whitespace contract. Real Chromium snapshots mark computed CSS hiding for the common parser; fixtures express hiding through attributes or inline style. JSON text remains unchanged.
+
+CI uses Ubuntu 24.04, syncs the Facebook extra alongside the existing development
+requirements, and installs Chromium through the locked Playwright package. The
+hosted runner enables unprivileged user namespaces with the AppArmor sysctl before
+testing. All workflow actions use full commit SHAs. METAMUSE_REQUIRE_BROWSER_TESTS=1
+converts skipped Facebook/browser tests into failures; locally an absent Chromium
+or unavailable sandbox still has an explicit skip reason. The suite includes
+sandboxed launch verification and sandboxed WebSocketStream/_apiPassThrough tests;
+other loopback integration fixtures use a labelled operator exception. No browser
+test is excluded from hosted CI. Test scratch is a unique disk directory cleaned
+on exit. A hosted Actions result requires the orchestrator to publish this branch.
