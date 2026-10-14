@@ -188,6 +188,8 @@ def prepare_send(ctx, request: m.MuseSendRequest):
     packet = ctx.store.get(m.Packet, request.packet_id)
     if packet.project_id != discussion.project_id:
         _error(m.ErrorCode.REFERENCE_INVALID, "Packet is outside this discussion project")
+    if packet.stale:
+        _error(m.ErrorCode.REFERENCE_INVALID, "Packet is stale; prepare a new packet")
     if not discussion.remote_session:
         _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Session mapping requires reconciliation")
     for value, cap in (
@@ -239,8 +241,6 @@ def _approval_preview(ctx, request):
         prepared = prepare_send(ctx, request)
         target, payload = prepared.target, prepared.payload
         packet = ctx.store.get(m.Packet, request.packet_id)
-        if packet.stale:
-            _error(m.ErrorCode.REFERENCE_INVALID, "Packet is stale; prepare a new packet")
         topic = ctx.store.get(m.Discussion, request.discussion_id).topic
         question = request.question
         operation = "muse.send"
@@ -260,7 +260,11 @@ def _approval_preview(ctx, request):
         operation = "muse.open" if isinstance(request, m.MuseOpenRequest) else "muse.read"
     digest = action_digest(target, payload)
     request_file = str(ctx.paths.root / ("approval-" + digest + ".json"))
-    safe_request = json.loads(redact_text(m.canonical_json(request).decode())[0])
+    # Redact raw fields before JSON encoding can hide nested credential syntax.
+    safe_request = {
+        key: redact_text(value)[0] if isinstance(value, str) else value
+        for key, value in request.model_dump(mode="json").items()
+    }
     safe_request.pop("access_grant_id", None)
     safe_request.pop("share_grant_id", None)
     destination = target["origin"] + (
@@ -279,8 +283,12 @@ def _approval_preview(ctx, request):
         if target.get("session_id")
         else "List sessions to reconcile the original creation intent"
     )
-    safe_topic = redact_text(topic)[0] if topic is not None else None
-    safe_question = redact_text(question)[0] if question is not None else None
+    safe_topic = (
+        (safe_request["topic"] if "topic" in safe_request else redact_text(topic)[0])
+        if topic is not None
+        else None
+    )
+    safe_question = safe_request.get("question") if question is not None else None
     details = [
         "Would: " + summary,
         "Destination: " + destination,
@@ -419,7 +427,7 @@ def _share_target(permit, digest):
         _error(
             m.ErrorCode.SCOPE_DENIED,
             "Muse share grant must bind the exact question, packet and target",
-            "Review the prepared action digest and issue an exact share grant",
+            "Repeat the call without a grant to get a fresh approval preview",
         )
 
 

@@ -273,16 +273,23 @@ It refuses to overwrite an existing file unless `--force` is set. It does not ch
 agent or host config directory. It is not an MCP tool.
 
 Grant-requiring Muse open/send/read (refresh and open reconciliation) accepts an omitted or
-unusable grant and returns E_SCOPE_REQUIRED with null data and a nullable `approval` preview.
+unknown grant and returns E_SCOPE_REQUIRED with null data and a nullable `approval` preview.
 It creates no grant, discussion, exchange or job. Preview includes operation/permit_operation,
 kind, project, configured provider/account, exact action digest, destination, topic/question,
 and for shares packet ID/digest/UTF-8 bytes plus the exact `packet preview` command.
 `request` is a non-secret copy to save at `request_file`; `next_action` is the exact human
-CLI command. Credential-like text is redacted in the preview; the digest still binds original
-bytes, so a redacted or otherwise changed request cannot reuse that digest.
+CLI command. Each text field is redacted separately before JSON encoding, using the same
+strings in the summary and request. The digest still binds original bytes, so a redacted
+or otherwise changed request cannot reuse that digest. Expired, revoked, exhausted,
+mismatched or non-exact share grants retain E_SCOPE_DENIED and their actual message,
+without a preview; repeat the call without a grant for a fresh review. Stale packets
+return E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in submit and preview.
+Policy and authentication failures retain their actual errors without a preview.
 
 `permit approve` recomputes the preview through the same preparation code and displays it
-on stderr. It requires typed `yes` at a terminal or equality with `--exact-digest` in a
+on stderr, including the effective absolute UTC expires_at, remaining duration and
+max_uses before confirmation. These are the stored values (defaults: 24 hours and one
+use); replay displays the original expiry. It requires typed `yes` at a terminal or equality with `--exact-digest` in a
 non-TTY operator CLI. `--non-interactive` refuses this command even with an exact digest.
 Provider/account cannot be supplied in model text or flags. Every approval has an expiry:
 default 24 hours, or explicit timezone-aware `--expires-at` within 30 days. Exact action

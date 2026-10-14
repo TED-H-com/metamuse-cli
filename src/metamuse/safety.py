@@ -75,7 +75,7 @@ def approval_preview(ctx: AppContext, operation: str, request: Any) -> m.Approva
 
 def approval_failure(ctx: AppContext, request: m.Model, error: m.CoreError) -> m.Envelope:
     """Shared CLI/MCP hook; keep unrelated policy/auth errors without a preview."""
-    if error.detail.code not in (m.ErrorCode.SCOPE_REQUIRED, m.ErrorCode.SCOPE_DENIED):
+    if error.detail.code != m.ErrorCode.SCOPE_REQUIRED:
         return m.failure(error)
     for operation, (model, _) in _APPROVAL_PREVIEWS.items():
         if isinstance(request, model):
@@ -85,11 +85,7 @@ def approval_failure(ctx: AppContext, request: m.Model, error: m.CoreError) -> m
                 return m.failure(error)
             return m.Envelope(
                 status="error",
-                error=m.CoreError(
-                    m.ErrorCode.SCOPE_REQUIRED,
-                    "An operator permit is required for this exact action",
-                    next_action=preview.next_action,
-                ).detail,
+                error=error.detail.model_copy(update={"next_action": preview.next_action}),
                 approval=preview,
             )
     return m.failure(error)
@@ -99,16 +95,8 @@ def operator_command(ctx: AppContext, *args: str) -> str:
     return shlex.join(["metamuse", "--workspace", str(ctx.paths.root), "--json", *args])
 
 
-def approve_permit(
-    ctx: AppContext,
-    preview: m.ApprovalPreview,
-    *,
-    expires_at: str | None,
-    request_key: str,
-    max_uses: int = 1,
-) -> m.Envelope:
-    """Called by the human CLI only, after confirmation of a freshly recomputed preview."""
-    ctx.require_interactive()
+def approval_expiry(ctx: AppContext, expires_at: str | None, request_key: str) -> str:
+    """Resolve once for human review and storage, preserving the expiry on a replay."""
     if expires_at is None:
         with ctx.store.connection() as conn:
             receipt = conn.execute(
@@ -125,6 +113,20 @@ def approve_permit(
                 raise m.CoreError(m.ErrorCode.STORAGE, "Stored receipt is invalid") from None
         else:
             expires_at = (_timestamp(ctx.clock()) + timedelta(hours=24)).isoformat()
+    return _timestamp(expires_at).isoformat()
+
+
+def approve_permit(
+    ctx: AppContext,
+    preview: m.ApprovalPreview,
+    *,
+    expires_at: str | None,
+    request_key: str,
+    max_uses: int = 1,
+) -> m.Envelope:
+    """Called by the human CLI only, after confirmation of a freshly recomputed preview."""
+    ctx.require_interactive()
+    expires_at = approval_expiry(ctx, expires_at, request_key)
     scope = (
         {"packet_digests": [preview.packet_digest]}
         if preview.kind == "share"
@@ -852,6 +854,14 @@ def _scope_error(
     ) from None
 
 
+def _grant_error(message: str = "Permit does not cover this action", *, missing=False) -> None:
+    raise m.CoreError(
+        m.ErrorCode.SCOPE_REQUIRED if missing else m.ErrorCode.SCOPE_DENIED,
+        message,
+        next_action="Repeat the call without a grant to get a fresh approval preview",
+    ) from None
+
+
 def _label(value: str | None, *, optional: bool = False) -> None:
     if optional and value is None:
         return
@@ -938,10 +948,10 @@ def _verify_permit(
     check_remaining: bool = True,
 ) -> m.Permit:
     if not permit_id:
-        _scope_error("A permit is required", missing=True)
+        _grant_error("A permit is required", missing=True)
     row = conn.execute("SELECT * FROM permits WHERE id=?", (permit_id,)).fetchone()
     if row is None:
-        _scope_error("Permit does not exist", missing=True)
+        _grant_error("Permit does not exist", missing=True)
     permit = store.decode(m.Permit, row)
     if (
         permit.kind != use.kind
@@ -953,22 +963,29 @@ def _verify_permit(
         or (check_remaining and permit.used >= permit.max_uses)
         or (permit.exact_digest is not None and permit.exact_digest != use.digest)
     ):
-        _scope_error()
+        _grant_error()
     scope = _parse_scope(permit.kind, permit.scope)
     if isinstance(scope, AccessScope):
         if use.operation not in scope.operations or use.digest not in scope.target_digests:
-            _scope_error()
+            _grant_error()
     else:
         if use.operation != "muse.send" or use.packet_id is None:
-            _scope_error()
+            _grant_error()
         try:
             packet = store.get(m.Packet, use.packet_id, conn=conn)
-            if packet.project_id != use.project_id or packet.stale:
-                _scope_error()
+        except m.CoreError:
+            _grant_error()
+        if packet.stale:
+            raise m.CoreError(
+                m.ErrorCode.REFERENCE_INVALID, "Packet is stale; prepare a new packet"
+            )
+        try:
+            if packet.project_id != use.project_id:
+                _grant_error()
             store.validate_evidence(use.project_id, packet.selection, conn=conn, source_only=True)
             if scope.snapshot is None:
                 if packet.digest not in scope.packet_digests:
-                    _scope_error()
+                    _grant_error()
             else:
                 approved = {
                     m.canonical_json(ref.model_dump(mode="json"))
@@ -978,9 +995,9 @@ def _verify_permit(
                     m.canonical_json(ref.model_dump(mode="json")) not in approved
                     for ref in packet.selection
                 ):
-                    _scope_error()
+                    _grant_error()
         except m.CoreError:
-            _scope_error()
+            _grant_error()
     return permit
 
 
@@ -998,7 +1015,7 @@ def verify_permit(
     reservation identity and refuses reuse of an uncertain submission.
     """
     if reserve and not conn.in_transaction:
-        _scope_error("Permit reservation requires the caller's transaction")
+        _grant_error("Permit reservation requires the caller's transaction")
     permit = _verify_permit(store, permit_id, use, conn=conn)
     if reserve:
         try:
@@ -1009,9 +1026,9 @@ def verify_permit(
             ).rowcount
         except sqlite3.IntegrityError:
             # Core's trigger rechecks time at the update itself; a boundary race is a denial.
-            _scope_error("Permit cannot be consumed")
+            _grant_error("Permit cannot be consumed")
         if changed != 1:
-            _scope_error()
+            _grant_error()
         permit = permit.model_copy(update={"used": permit.used + 1})
     return permit
 

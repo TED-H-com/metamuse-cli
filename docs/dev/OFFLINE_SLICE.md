@@ -48,7 +48,8 @@ permit. Without --exact-digest it requires a terminal and typed `yes`. It refuse
 can change it within the existing 30-day limit. The result contains the permit ID;
 retry the unchanged MCP request with share_grant_id or access_grant_id. Model content
 cannot choose provider/account or mint a grant. Changed request plus the old digest
-is refused; a changed question with the old permit receives a new approval preview.
+is refused; a changed question with the old permit receives E_SCOPE_DENIED without a
+preview. Repeat without the grant to obtain a fresh review.
 Preview credential-like text is redacted; its digest still binds original bytes.
 
 ## Follow-up, restart and exported evidence

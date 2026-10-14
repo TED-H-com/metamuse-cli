@@ -5,7 +5,7 @@ import os
 import pty
 import subprocess
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from test_journey import Entrypoints
@@ -68,7 +68,12 @@ def test_operator_confirmation_expiry_replay_and_secret_redaction(tmp_path):
                     proc.terminate()
                     proc.wait(timeout=10)
         grant = json.loads(stdout)["data"]
-        assert preview["summary"] in log.read_text()
+        review = log.read_text()
+        assert preview["summary"] in review
+        assert f"Expires at (UTC): {grant['expires_at']} (remaining: " in review
+        assert "Max uses: 1\n" in review
+        assert review.index("Expires at (UTC):") < review.index("Type yes:")
+        assert review.index("Max uses: 1") < review.index("Type yes:")
     finally:
         os.close(master)
         os.close(slave)
@@ -77,6 +82,7 @@ def test_operator_confirmation_expiry_replay_and_secret_redaction(tmp_path):
     )
     assert 86390 <= lifetime.total_seconds() <= 86400
     assert grant["exact_digest"] == preview["action_digest"]
+    assert grant["max_uses"] == 1
     replay = entry.cli(*common, "--exact-digest", preview["action_digest"], operator=True)["data"]
     assert (
         replay["id"] == grant["id"]
@@ -110,3 +116,43 @@ def test_operator_confirmation_expiry_replay_and_secret_redaction(tmp_path):
     assert safe["action_digest"] != preview["action_digest"]
     assert entry.cli("jobs", "list", "--project", project)["data"]["jobs"] == []
     entry.hygiene()
+
+
+def test_operator_review_shows_effective_nondefault_lifetime_and_uses(tmp_path):
+    entry = Entrypoints(tmp_path)
+    entry.configure()
+    project = entry.cli("project", "create", "--name", "Limits", "--request-key", "project")[
+        "data"
+    ]["id"]
+    request = {"project_id": project, "topic": "Synthetic limits", "request_key": "open"}
+    preview = entry.cli(
+        "muse",
+        "open",
+        "--project",
+        project,
+        "--topic",
+        request["topic"],
+        "--request-key",
+        "open",
+        code=3,
+    )["approval"]
+    expiry = (datetime.now(UTC) + timedelta(hours=6)).isoformat()
+    grant = entry.approve(
+        preview, request, "limits", extra=("--expires-at", expiry, "--max-uses", "7")
+    )["data"]
+    assert grant["expires_at"] == expiry and grant["max_uses"] == 7
+    review = entry.diagnostics[-1]
+    assert f"Expires at (UTC): {expiry} (remaining: " in review
+    assert "Max uses: 7\n" in review
+    # A failed digest confirmation must still display the effective review first.
+    refused = entry.approve(
+        preview,
+        request,
+        "limits-mismatch",
+        digest="0" * 64,
+        extra=("--expires-at", expiry, "--max-uses", "7"),
+        code=3,
+    )
+    assert refused["error"]["message"] == "Approval digest differs from this request"
+    assert f"Expires at (UTC): {expiry} (remaining: " in entry.diagnostics[-1]
+    assert "Max uses: 7\n" in entry.diagnostics[-1]

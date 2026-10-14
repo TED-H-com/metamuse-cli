@@ -258,8 +258,9 @@ Use the E_SCOPE_REQUIRED `approval` from a shipped Muse CLI/MCP call. The previe
 nothing. The human saves the shown request JSON, reviews the topic/question/destination
 and packet via `packet preview`, then runs `permit approve --operation OP --request-file
 PATH --request-key KEY [--exact-digest SHA256] [--expires-at TIMESTAMP] [--max-uses N]`.
-The command recomputes/displays review on stderr and accepts terminal `yes` or an exact
-recomputed digest. `--non-interactive` is refused and no MCP approval tool exists.
+The command recomputes/displays review on stderr, including the effective absolute UTC
+expires_at, remaining duration and max_uses before accepting terminal `yes` or an exact
+recomputed digest. The displayed values are stored; defaults are 24 hours and one use. `--non-interactive` is refused and no MCP approval tool exists.
 Default expiry is 24h; explicit expiry is timezone-aware and within 30 days. Default-expiry
 replay validates stored receipts through the core duplicate-key-rejecting decoder and
 never extends the original grant. Binding labels come from configuration only.

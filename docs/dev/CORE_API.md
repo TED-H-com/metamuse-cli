@@ -737,9 +737,13 @@ Use `safety.operator_command(ctx, ...)` for shell-quoted commands; never interpo
 untrusted text as shell code. Redact credentials in summary/topic/question/request.
 The exact digest binds original prepared bytes even when display text is redacted.
 
-The shared application decorator adds a preview on SCOPE_REQUIRED/SCOPE_DENIED when
-preparation succeeds and returns E_SCOPE_REQUIRED with null data. Disabled backend,
-missing credentials, stale/invalid references and unsupported routes retain their
+The shared application decorator adds a preview only on SCOPE_REQUIRED when preparation
+succeeds, preserves its actual message (including "Permit does not exist") and returns
+null data. SCOPE_DENIED retains its code/message without a preview. Grant denials tell
+callers to repeat without a grant for a fresh preview; never reuse or widen the old one.
+Callbacks must redact raw text fields separately before encoding request JSON and use
+those same strings in the summary. Exact digests continue to bind the original bytes.
+Disabled backend, missing credentials, stale/invalid references and unsupported routes retain their
 actual errors when preparation cannot produce a valid review. Callback failures create
 no grant. `permit approve` validates through that registry and recomputes/displays the
 preview. Only the human CLI confirms and calls existing create_permit; no MCP route is

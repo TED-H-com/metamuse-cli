@@ -475,7 +475,7 @@ def test_grants_bind_packet_question_and_account_and_are_current(fixture_ctx, pr
         packet=pkt,
     )
     changed = req.model_copy(update={"question": "Different"})
-    assert invoke(ctx, "send", changed).error.code == m.ErrorCode.SCOPE_REQUIRED
+    assert invoke(ctx, "send", changed).error.code == m.ErrorCode.SCOPE_DENIED
     foreign = req.model_copy(
         update={
             "share_grant_id": grant(
@@ -488,11 +488,11 @@ def test_grants_bind_packet_question_and_account_and_are_current(fixture_ctx, pr
             )
         }
     )
-    assert invoke(ctx, "send", foreign).error.code == m.ErrorCode.SCOPE_REQUIRED
+    assert invoke(ctx, "send", foreign).error.code == m.ErrorCode.SCOPE_DENIED
     different = packet(ctx, project)
     assert (
         invoke(ctx, "send", req.model_copy(update={"packet_id": different.id})).error.code
-        == m.ErrorCode.SCOPE_REQUIRED
+        == m.ErrorCode.SCOPE_DENIED
     )
     response = invoke(ctx, "send", req)
     assert response.status == "accepted"

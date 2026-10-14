@@ -169,12 +169,15 @@ metamuse --workspace /path/to/workspace --json permit approve \
   --exact-digest DIGEST_FROM_PREVIEW --request-key operator-send-1
 ```
 
-The human command recomputes/displays the preview, requires the exact digest (or a
-terminal `yes` if omitted), and returns a permit ID. Retry the original request with
+The human command recomputes/displays the preview plus the effective UTC expiry,
+remaining duration and max_uses before accepting the exact digest (or terminal `yes`
+if omitted), and returns a permit ID. Defaults are 24 hours and one use. Retry the original request with
 that ID as `share_grant_id` or `access_grant_id`. `--non-interactive` refuses approval;
 there is no MCP approval tool. Expiry defaults to 24h and may be set explicitly with
 `--expires-at`. `--max-uses` can allow a bounded number of identical history reads;
-changed question/packet/target requires a new approval. Provider/account come only
+changed question/packet/target returns E_SCOPE_DENIED without a preview when given
+the old grant. Repeat without a grant to get a fresh review. Stale packets return
+E_REFERENCE_INVALID and require a new packet. Provider/account come only
 from the binding, and the verified body/headers/verb/path/marker/node cannot be
 substituted. Reservation and expiry/revocation checks occur again at the step boundary.
 Credential-like request text is redacted for review; use the original human-owned

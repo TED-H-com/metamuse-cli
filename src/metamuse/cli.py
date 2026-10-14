@@ -10,6 +10,7 @@ import sys
 import tomllib
 from collections.abc import Sequence
 from contextlib import ExitStack, nullcontext, redirect_stdout
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -488,7 +489,15 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
                     ctx, args.operation, _read_json(args.request_file, ctx.limits.text_max_bytes)
                 )
                 # Review goes to stderr, leaving one machine-readable envelope on stdout.
-                sys.stderr.write(preview.summary + "\n")
+                expires_at = safety.approval_expiry(ctx, args.expires_at, args.request_key)
+                remaining = datetime.fromisoformat(expires_at) - datetime.fromisoformat(ctx.clock())
+                utc_expiry = datetime.fromisoformat(expires_at).astimezone(UTC).isoformat()
+                sys.stderr.write(
+                    preview.summary
+                    + "\n"
+                    + f"Expires at (UTC): {utc_expiry}"
+                    + f" (remaining: {remaining})\nMax uses: {args.max_uses}\n"
+                )
                 if args.exact_digest is not None:
                     if args.exact_digest != preview.action_digest:
                         raise m.CoreError(
@@ -509,7 +518,7 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
                 return safety.approve_permit(
                     ctx,
                     preview,
-                    expires_at=args.expires_at,
+                    expires_at=expires_at,
                     max_uses=args.max_uses,
                     request_key=args.request_key,
                 )

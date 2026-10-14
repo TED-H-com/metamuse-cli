@@ -335,8 +335,9 @@ def test_mcp_only_journey_followup_restart_and_export(tmp_path):
                     session, "muse_send", {**changed, "share_grant_id": grant}, error=True
                 )
                 assert (
-                    bad["error"]["code"] == "E_SCOPE_REQUIRED"
-                    and bad["approval"]["action_digest"] != approval["action_digest"]
+                    bad["error"]["code"] == "E_SCOPE_DENIED"
+                    and bad["error"]["message"] == "Permit does not cover this action"
+                    and bad["approval"] is None
                 )
                 sent = (
                     await entry.call(session, "muse_send", {**sending, "share_grant_id": grant})
