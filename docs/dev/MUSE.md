@@ -153,7 +153,7 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
 7. Commit standard-observation provenance with generation CAS immediately before empty msg3,
    holding trust-domain/per-account locks across commit and msg3 handoff. Release the shared
    maintenance lock after commit and before network handoff. Split only through the
-   mature library. Generation changes invalidate local sockets; each call rechecks durable
+   mature library. Confidential writes notify every live workspace listener, including other labels; generation changes invalidate local sockets; each call rechecks durable
    currentness. No standard enrollment-health or capability-registration gate is added.
 
 Wake is an account-side power-state request, performed only inside a connection triggered

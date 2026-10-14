@@ -905,7 +905,7 @@ A stale snapshot/binding is E_STORAGE / never with a fresh-connection retry acti
 `muse_standard_handoff` checks the same state and commits provenance/CAS before empty
 msg3. Trust-domain and per-account locks span handoff; maintenance.lock and the SQLite
 transaction are released before network I/O. Every call rechecks durable state, including
-cross-process writers. Weak local listeners invalidate obsolete sockets.
+cross-process writers. Confidential writes notify every live workspace listener, so cross-label propagation immediately closes obsolete sockets. Selection-only writes notify their own label.
 
 Canonical schema verification is cached per Store trust boundary; every boundary checks
 the actual schema signature for changed guards. Integrity/schema failures block with

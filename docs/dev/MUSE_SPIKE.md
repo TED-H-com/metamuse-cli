@@ -280,8 +280,9 @@ existing serial frame/completeness budgets remain enforced.
 The browser standard branch does not validate nested key/nonce; these comparisons and
 persistent downgrade refusal are stricter local policy. Staging applicability is respected,
 not disabled. Standard does not claim attestation, SNP/TCB or notary signature verification.
-Private schema-5 Store trust is keyed by provider/account/VM, survives restart/auth_ref
-rotation, has a sticky active-account expectation and refuses stale CAS/corrupt state.
+Private schema-5 Store trust is keyed by remote owner and normalized VM, across all local
+labels. It survives restart/auth_ref rotation and refuses stale CAS/corrupt state.
+Confidential writes invalidate all live workspace listeners, including cross-label sockets.
 Connect/retry does not reselect a VM or clear security state. An account file lock serializes
 committed observation and msg3 against context changes; generation changes invalidate sockets.
 

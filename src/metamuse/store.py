@@ -590,11 +590,15 @@ class Store:
         if failure is not None:
             raise failure
 
-    def _muse_notify(self, provider: str, account: str) -> None:
-        key = (str(self.paths.root), provider, account)
+    def _muse_notify(self, provider: str, account: str, *, confidential=False) -> None:
+        root = str(self.paths.root)
         with _MUSE_LISTENERS_LOCK:
-            listeners = _MUSE_LISTENERS.get(key, [])
-            _MUSE_LISTENERS[key] = [ref for ref in listeners if ref() is not None]
+            listeners = []
+            for key, refs in _MUSE_LISTENERS.items():
+                if key[0] == root and (confidential or key[1:] == (provider, account)):
+                    alive = [ref for ref in refs if ref() is not None]
+                    _MUSE_LISTENERS[key] = alive
+                    listeners.extend(alive)
         for ref in listeners:
             callback = ref()
             if callback is not None:
@@ -1036,7 +1040,7 @@ class Store:
                     if binding is not None:
                         self._muse_bind_label(conn, provider, account, viewer_hash, vm_ids, binding)
                     self._muse_close_bind(conn)
-                self._muse_notify(provider, account)
+                self._muse_notify(provider, account, confidential=True)
         except m.CoreError as exc:
             fixed = _muse_fixed_storage(exc)
             failure = m.CoreError(

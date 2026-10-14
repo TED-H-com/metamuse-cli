@@ -355,6 +355,8 @@ A committed muse_trust_propagating marker is always invalid and has a specific E
 
 HTTP 200 session: status=unavailable或missing vm_id回resource；其他非assigned status（含missing/type/case drift）回protocol/never。non-object response action標session/hatch/auth path。
 
+Confidential write後notify全部workspace live listeners，跨local labels立即close sockets；下一call仍重查durable state。
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -854,6 +856,8 @@ Round 4 storage mapping: SQLITE_BUSY/LOCKED past busy_timeout returns E_STORAGE 
 A committed muse_trust_propagating marker is always invalid and has a specific E_STORAGE message. Safe human repair, after stopping Muse connections: acquire exclusive maintenance.lock, BEGIN IMMEDIATE, retain the barrier, rerun the recursive owner/VM closure and the three set-wise flag updates across the whole workspace, DELETE the marker, then COMMIT. This retains every observation and expectation; no restore is needed. There is no automatic repair/reset command.
 
 HTTP 200 session: status=unavailable或missing vm_id回resource；其他非assigned status（含missing/type/case drift）回protocol/never。non-object response action標session/hatch/auth path。
+
+Confidential write後notify全部workspace live listeners，跨local labels立即close sockets；下一call仍重查durable state。
 
 ---
 
