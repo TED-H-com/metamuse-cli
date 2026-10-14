@@ -1,6 +1,9 @@
 """A byte cutoff cannot downgrade policy, barrier or guard failures."""
 
+import threading
+
 import pytest
+from browser_deadline import browser_deadline
 from test_facebook import _setup_fb_env, _synthetic_post_html
 from test_facebook_review import browser_fixture, finish, observation
 from test_facebook_round5 import POST_PATH, rows, submit
@@ -178,8 +181,6 @@ def test_r7_denied_expansion_navigation_precedes_cutoff(tmp_path, monkeypatch):
     ],
 )
 def test_r7_simultaneous_fatal_precedence(winner, other):
-    from types import SimpleNamespace
-
     session = object.__new__(facebook._PlaywrightSession)
     session._closing_targets = set()
     session._transport_error = None
@@ -188,23 +189,35 @@ def test_r7_simultaneous_fatal_precedence(winner, other):
     session._navigation_responded = set()
     session._document_status = 200
     session._peer_error = m.CoreError(m.ErrorCode(winner), "Synthetic winning stop")
-    session._egress = SimpleNamespace(
-        navigation_error=m.CoreError(m.ErrorCode(other), "Other stop"), byte_limit_exceeded=True
+    session._egress = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com",), resolver=lambda _: ["93.184.216.34"]
     )
+    session._egress.navigation_error = m.CoreError(m.ErrorCode(other), "Other stop")
+    session._egress.byte_limit_exceeded = True
     with pytest.raises(m.CoreError) as error:
         session._raise_if_byte_limit()
     assert error.value.detail.code.value == winner
 
 
-@pytest.mark.parametrize("status,code", [(401, "E_AUTH_REQUIRED"), (429, "E_RATE_LIMITED")])
-def test_r7_observed_http_barrier_precedes_cutoff(tmp_path, monkeypatch, status, code):
+@pytest.mark.parametrize(
+    "status,code", [(401, "E_AUTH_REQUIRED"), (429, "E_RATE_LIMITED"), (500, "E_PROTOCOL_MISMATCH")]
+)
+@browser_deadline
+def test_r7_observed_http_barrier_precedes_cutoff(tmp_path, monkeypatch, status, code, request):
+    headers_seen = threading.Event()
+
     def oversize(request):
         request.send_response(status)
         request.send_header("Content-Type", "text/html")
         request.send_header("Content-Length", "100000")
+        request.send_header("X-Content-Type-Options", "nosniff")
         request.end_headers()
         try:
-            request.wfile.write(b"X" * 100000)
+            prefix = b"<html><body>" + b"X" * 1024
+            request.wfile.write(prefix)
+            request.wfile.flush()
+            headers_seen.wait(timeout=600)
+            request.wfile.write(b"X" * (100000 - len(prefix)))
         except OSError:
             pass
 
@@ -215,9 +228,23 @@ def test_r7_observed_http_barrier_precedes_cutoff(tmp_path, monkeypatch, status,
         _,
         _,
         guard,
-        _,
+        driver,
     ):
-        job = finish(ctx, submit(ctx, project, permit, max_bytes=24000))
+        original = driver.open_session
+
+        def opened(*args, **kwargs):
+            session = original(*args, **kwargs)
+            session._page.on(
+                "response",
+                lambda response: headers_seen.set() if response.status == status else None,
+            )
+            return session
+
+        monkeypatch.setattr(driver, "open_session", opened)
+        try:
+            job = finish(ctx, submit(ctx, project, permit, max_bytes=24000))
+        finally:
+            headers_seen.set()
         assert job["error"] and job["error"]["code"] == code, job
         assert job["state"] == ("awaiting_user" if status == 401 else "failed")
         assert guard.byte_limit_exceeded

@@ -2454,6 +2454,8 @@ class _PlaywrightSession:
             )
             if error is not None and priority(error) < 3
         ]
+        if status_error is not None and status_error.detail.code == m.ErrorCode.PROTOCOL_MISMATCH:
+            errors.append(status_error)  # An observed HTTP failure is not a cutoff interruption.
         if errors:
             raise min(errors, key=priority)
 
