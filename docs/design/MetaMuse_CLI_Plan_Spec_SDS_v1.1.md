@@ -349,6 +349,8 @@ Skill短主檔＋按需references，先查實際工具；只有Skill不代表bac
 
 Linux／WSL2為首個執行目標；其他平台按實測列。無憑證離線路線零背景網路。升級須migration/backup restore，不刪庫過關。product tests初始not_run。
 
+Round 4 storage mapping: SQLITE_BUSY/LOCKED past busy_timeout returns E_STORAGE / safe_read, “Muse security state is busy; retry”. READONLY identifies a read-only workspace and FULL a full disk, both user_action. Recording failures retain “Muse confidentiality could not be recorded” with the same fixed environment guidance, and stop before msg3. Integrity/schema failures alone advise verified restore with the later-expectations loss warning.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -842,6 +844,8 @@ recomputed digest is required before the existing create_permit API. MCP cannot 
 permits. Model text cannot select provider/account or expand the action. Packet preview
 reads its immutable text; MCP packet_prepare replay returns the same fixed pre-share
 preview. No schema migration or separate approval store is needed.
+
+Round 4 storage mapping: SQLITE_BUSY/LOCKED past busy_timeout returns E_STORAGE / safe_read, “Muse security state is busy; retry”. READONLY identifies a read-only workspace and FULL a full disk, both user_action. Recording failures retain “Muse confidentiality could not be recorded” with the same fixed environment guidance, and stop before msg3. Integrity/schema failures alone advise verified restore with the later-expectations loss warning.
 
 ---
 

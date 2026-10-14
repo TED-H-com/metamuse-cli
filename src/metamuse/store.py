@@ -104,7 +104,64 @@ def _muse_storage_error(*, stale=False) -> m.CoreError:
     return m.CoreError(m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message])
 
 
+_MUSE_ENVIRONMENT = {
+    sqlite3.SQLITE_BUSY: (
+        "Muse security state is busy; retry",
+        "Retry the connection after the workspace writer finishes",
+        "safe_read",
+    ),
+    sqlite3.SQLITE_LOCKED: (
+        "Muse security state is busy; retry",
+        "Retry the connection after the workspace writer finishes",
+        "safe_read",
+    ),
+    sqlite3.SQLITE_READONLY: (
+        "Muse security state workspace is read-only",
+        "Make the workspace writable before reconnecting",
+        "user_action",
+    ),
+    sqlite3.SQLITE_FULL: (
+        "Muse security state disk is full",
+        "Free disk space before reconnecting",
+        "user_action",
+    ),
+}
+
+
 def _muse_fixed_storage(exc):
+    # Inspect error codes only: SQLite text can contain private SQL or filenames.
+    cause = exc
+    environment = None
+    for _ in range(8):
+        code = getattr(cause, "sqlite_errorcode", 0) & 0xFF
+        if code in _MUSE_ENVIRONMENT:
+            environment = _MUSE_ENVIRONMENT[code]
+            break
+        cause = cause.__cause__ or cause.__context__
+        if cause is None:
+            break
+    if environment is None:
+        environment = next(
+            (entry for entry in _MUSE_ENVIRONMENT.values() if entry[0] == exc.detail.message), None
+        )
+    if environment is not None:
+        message, action, retry = environment
+        result = m.CoreError(m.ErrorCode.STORAGE, message, next_action=action)
+        result.detail.retry_class = retry
+        return result
+    if exc.detail.message == "Muse confidentiality could not be recorded":
+        # Recording retains its honest failure message and a fixed environment action.
+        permitted = {entry[1]: entry[2] for entry in _MUSE_ENVIRONMENT.values()}
+        action = exc.detail.next_action
+        result = m.CoreError(
+            m.ErrorCode.STORAGE,
+            exc.detail.message,
+            next_action=action
+            if action in permitted
+            else _MUSE_STORAGE_ACTIONS[exc.detail.message],
+        )
+        result.detail.retry_class = permitted.get(action, "never")
+        return result
     if exc.detail.message in _MUSE_STORAGE_ACTIONS:
         return m.CoreError(
             m.ErrorCode.STORAGE,
@@ -520,8 +577,6 @@ class Store:
                 exc
                 if validated and exc.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
                 else _muse_fixed_storage(exc)
-                if validated
-                else _muse_storage_error()
             )
         except Exception:
             failure = _muse_storage_error()
@@ -975,15 +1030,16 @@ class Store:
                         self._muse_bind_label(conn, provider, account, viewer_hash, vm_ids, binding)
                     self._muse_close_bind(conn)
                 self._muse_notify(provider, account)
-        except m.CoreError:
+        except m.CoreError as exc:
+            fixed = _muse_fixed_storage(exc)
             failure = m.CoreError(
                 m.ErrorCode.STORAGE,
                 "Muse confidentiality could not be recorded",
-                next_action=(
-                    "Repair the security-state store before reconnecting; "
-                    "confidentiality could not be recorded"
-                ),
+                next_action=fixed.detail.next_action
+                if fixed.detail.message in {item[0] for item in _MUSE_ENVIRONMENT.values()}
+                else _MUSE_STORAGE_ACTIONS["Muse confidentiality could not be recorded"],
             )
+            failure.detail.retry_class = fixed.detail.retry_class
         if failure is not None:
             raise failure
 

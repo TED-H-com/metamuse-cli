@@ -82,7 +82,7 @@ from metamuse._muse_noise import NoiseParty, handshake_standard
 from metamuse._muse_trust import SelectedVM, StoreMuseTrust, protocol_stop, storage_stop
 from metamuse.models import CoreError, ErrorCode
 from metamuse.safety import CheckedURL, action_digest
-from metamuse.store import Store
+from metamuse.store import Store, _muse_fixed_storage
 
 if TYPE_CHECKING:
     from metamuse.app import AppContext
@@ -696,6 +696,11 @@ _PUBLIC_CODES: dict[ErrorCode, tuple[str, str]] = {
 
 def _sanitize_transport_error(exc: CoreError) -> CoreError:
     """Fixed public error. The provider text is not copied."""
+    if (
+        exc.detail.code == ErrorCode.STORAGE
+        and exc.detail.message != "Muse security-state Store is not configured"
+    ):
+        return _muse_fixed_storage(exc)
     known = _PUBLIC_ERRORS.get(exc.detail.message)
     if known is not None:
         code, action = known

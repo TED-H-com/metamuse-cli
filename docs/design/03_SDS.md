@@ -489,3 +489,5 @@ recomputed digest is required before the existing create_permit API. MCP cannot 
 permits. Model text cannot select provider/account or expand the action. Packet preview
 reads its immutable text; MCP packet_prepare replay returns the same fixed pre-share
 preview. No schema migration or separate approval store is needed.
+
+Round 4 storage mapping: SQLITE_BUSY/LOCKED past busy_timeout returns E_STORAGE / safe_read, “Muse security state is busy; retry”. READONLY identifies a read-only workspace and FULL a full disk, both user_action. Recording failures retain “Muse confidentiality could not be recorded” with the same fixed environment guidance, and stop before msg3. Integrity/schema failures alone advise verified restore with the later-expectations loss warning.
