@@ -12,12 +12,17 @@ from metamuse import facebook
 @pytest.mark.parametrize(
     "script",
     [
-        "const p=window.open(''); if(p) new p.WebSocketStream('wss://'+location.host+'/escape');",
-        "const p=window.open(''); if(p) {window.WebSocket._apiPassThrough(); "
-        "new p.WebSocket('wss://'+location.host+'/escape');}",
-        "const p=window.open(''); if(p) new p.WebSocket('wss://'+location.host+'/escape');",
+        "const p=window.open(''); if(p) {new p.WebSocketStream('wss://'+location.host+'/escape');"
+        "const until=Date.now()+250; while(Date.now()<until) {}}",
+        "const p=window.open(''); if(p) {const ws=new p.WebSocket('wss://'+location.host+'/escape');"
+        "if(ws._apiPassThrough) ws._apiPassThrough();"
+        "const until=Date.now()+250; while(Date.now()<until) {}}",
+        "const p=window.open(''); if(p) {new p.WebSocket('wss://'+location.host+'/escape');"
+        "const until=Date.now()+250; while(Date.now()<until) {}}",
         "const p=window.open(''); if(p) new p.Worker(p.URL.createObjectURL(new p.Blob(["
-        "\"fetch('https://\"+location.host+\"/escape');\"],{type:'text/javascript'})));",
+        '"fetch(\'https://"+location.host+"/escape\');'
+        "new WebSocketStream('wss://\"+location.host+\"/escape');\"],{type:'text/javascript'})));"
+        "if(p) {const until=Date.now()+250; while(Date.now()<until) {}}",
         "window.open('/escape');",
         "const a=document.createElement('a'); a.href='/escape'; a.target='_blank'; "
         "document.body.append(a); a.click();",
@@ -75,7 +80,7 @@ def test_r6_popup_creation_refused_and_counted(tmp_path, monkeypatch, script):
         monkeypatch.setattr(driver, "open_session", opened)
         job = finish(ctx, submit(ctx, project, permit))
         assert job["error"] is None, job["error"]
-        assert not any(path.startswith("/escape") or upgrade for path, upgrade in hits)
+        assert not any(path.startswith("/escape") or upgrade for path, upgrade in hits), hits
         assert any(r["reason"] == "popup_blocked" for r in guard.summary()["aborted_reasons"])
         assert sessions[0].popups_blocked >= 1
         assert job["error"] is None, job["error"]
