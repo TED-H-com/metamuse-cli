@@ -86,7 +86,8 @@ _MUSE_LISTENERS_LOCK = threading.Lock()
 _MUSE_STORAGE_ACTIONS = {
     "Muse connection context changed": "Retry the connection with a fresh authenticated context",
     "Muse security state is unavailable or damaged": (
-        "Repair the security-state store; restore only a verified backup, which loses expectations recorded after that backup"
+        "Repair the security-state store; restore only a verified backup, "
+        "which loses expectations recorded after that backup"
     ),
     "Muse confidentiality could not be recorded": (
         "Repair the security-state store before reconnecting; confidentiality could not be recorded"
@@ -630,7 +631,10 @@ class Store:
                 raise _muse_storage_error()
         return (
             conn.execute(
-                "SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=?) OR (kind='vm' AND identity=?) LIMIT 1",
+                (
+                    "SELECT 1 FROM muse_trust_confidential WHERE "
+                    "(kind='owner' AND identity=?) OR (kind='vm' AND identity=?) LIMIT 1"
+                ),
                 (viewer_hash, vm_id),
             ).fetchone()
             is not None
@@ -828,7 +832,10 @@ class Store:
         """Commit remote evidence without consulting a label's currentness or generation."""
         for identity in sorted(vm_ids) or [""]:
             existing = conn.execute(
-                "SELECT confidential_required FROM muse_trust_observations WHERE viewer_hash=? AND vm_id=?",
+                (
+                    "SELECT confidential_required FROM muse_trust_observations "
+                    "WHERE viewer_hash=? AND vm_id=?"
+                ),
                 (viewer_hash, identity),
             ).fetchone()
             if existing is None:
@@ -838,7 +845,10 @@ class Store:
                 )
             elif confidential:
                 conn.execute(
-                    "UPDATE muse_trust_observations SET confidential_required=1,source=?,observed_at=? WHERE viewer_hash=? AND vm_id=?",
+                    (
+                        "UPDATE muse_trust_observations SET confidential_required=1, "
+                        "source=?,observed_at=? WHERE viewer_hash=? AND vm_id=?"
+                    ),
                     (source, self.clock(), viewer_hash, identity),
                 )
 
@@ -853,7 +863,10 @@ class Store:
             failure = m.CoreError(
                 m.ErrorCode.STORAGE,
                 "Muse confidentiality could not be recorded",
-                next_action="Repair the security-state store before reconnecting; confidentiality could not be recorded",
+                next_action=(
+                    "Repair the security-state store before reconnecting; "
+                    "confidentiality could not be recorded"
+                ),
             )
         if failure is not None:
             raise failure

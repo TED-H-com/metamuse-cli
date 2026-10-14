@@ -211,7 +211,10 @@ def test_generation_invalidates_existing_socket(ctx):
 
 def test_final_handoff_serializes_selection_change_across_store_instances(ctx):
     deadline = time.monotonic() + 90
-    remaining = lambda: max(0, deadline - time.monotonic())
+
+    def remaining():
+        return max(0, deadline - time.monotonic())
+
     first = freeze(ctx.store)
     another_store = Store(ctx.paths)
     entered, release, changed, trying = (threading.Event() for _ in range(4))

@@ -208,7 +208,10 @@ def test_r3_g_component_above_sqlite_recursion_limit_records_atomically(ctx, sha
                 (str(i), viewer, "b" * 64, vm),
             )
             conn.execute(
-                "INSERT INTO muse_trust_vms VALUES ('synthetic',?,?,1,0,'authenticated_assignment','t')",
+                (
+                    "INSERT INTO muse_trust_vms VALUES ('synthetic',?,?,1,0,'authentic"
+                    "ated_assignment','t')"
+                ),
                 (str(i), vm),
             )
     snapshot = MuseTrustSnapshot(
@@ -340,8 +343,13 @@ def test_r3_m_raw_sql_defence_in_depth(ctx, guard):
     freeze(ctx.store, account="C", viewer_id="W", vm_id="y")
     freeze(ctx.store, account="O", viewer_id="Z", vm_id=None, confidential=True)
     statements = {
-        "active": "UPDATE muse_trust_accounts SET active_vm_id='x',generation=generation+1 WHERE account='C'",
-        "normalized": "INSERT INTO muse_trust_vms VALUES ('synthetic','A','VM9 ',1,1,'noise_message_2','t')",
+        "active": (
+            "UPDATE muse_trust_accounts SET active_vm_id='x',generation=genera"
+            "tion+1 WHERE account='C'"
+        ),
+        "normalized": (
+            "INSERT INTO muse_trust_vms VALUES ('synthetic','A','VM9 ',1,1,'noise_message_2','t')"
+        ),
         "null_generation": "UPDATE muse_trust_accounts SET active_vm_id='vm9' WHERE account='O'",
         "vm_update": "UPDATE muse_trust_vms SET source='noise_message_2' WHERE account='C'",
     }
@@ -357,7 +365,8 @@ def test_r3_m_raw_sql_defence_in_depth(ctx, guard):
             for sql in definitions:
                 conn.execute("DROP TRIGGER " + sql.split()[2])
             conn.execute(
-                "UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE account='C'"
+                "UPDATE muse_trust_accounts SET confidential_required=1,generation"
+                "=generation+1 WHERE account='C'"
             )
             for sql in definitions:
                 conn.execute(sql)
@@ -397,7 +406,8 @@ def test_r3_m_amended_005_fresh_upgrade_and_restore_remote_observations(tmp_path
         assert not conn.execute("PRAGMA foreign_key_check").fetchall()
         assert (
             conn.execute(
-                "SELECT min(confidential_required) FROM muse_trust_observations WHERE vm_id IN ('cvm1','cvm2')"
+                "SELECT min(confidential_required) FROM muse_trust_observations WH"
+                "ERE vm_id IN ('cvm1','cvm2')"
             ).fetchone()[0]
             == 1
         )
@@ -426,3 +436,52 @@ def test_r3_h_schema_restore_advice_warns_of_later_expectation_loss(ctx):
         ctx.store.muse_assert_current(snapshot)
     assert caught.value.detail.code == ErrorCode.STORAGE
     assert "after that backup" in caught.value.detail.next_action
+
+
+@pytest.mark.parametrize("table,shape", [("accounts", "owner_then_vm"), ("vms", "vm_then_owner")])
+def test_r3_m_raw_sql_raises_both_sides_of_the_entire_component(ctx, table, shape):
+    if shape == "owner_then_vm":
+        freeze(ctx.store, account="B", viewer_id="V", vm_id="y")
+        freeze(ctx.store, account="C", viewer_id="W", vm_id="y")
+        freeze(ctx.store, account="A", viewer_id="V", vm_id="z")
+    else:
+        freeze(ctx.store, account="B", viewer_id="W", vm_id="x")
+        freeze(ctx.store, account="C", viewer_id="W", vm_id="y")
+        freeze(ctx.store, account="A", viewer_id="V", vm_id="x")
+    with ctx.store.transaction() as conn:
+        suffix = ",generation=generation+1" if table == "accounts" else ""
+        conn.execute(
+            f"UPDATE muse_trust_{table} SET confidential_required=1{suffix} WHERE account='A'"
+        )
+        assert (
+            conn.execute(
+                "SELECT confidential_required FROM muse_trust_accounts WHERE account='C'"
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT confidential_required FROM muse_trust_vms WHERE account='C'"
+            ).fetchone()[0]
+            == 1
+        )
+
+
+def test_r3_b_rv_record_survives_changed_label_owner(ctx):
+    import hashlib
+
+    snapshot = freeze(ctx.store)
+    with ctx.store.transaction() as conn:
+        guard = conn.execute(
+            "SELECT sql FROM sqlite_schema WHERE name='muse_trust_account_guard'"
+        ).fetchone()[0]
+        conn.execute("DROP TRIGGER muse_trust_account_guard")
+        conn.execute(
+            "UPDATE muse_trust_accounts SET viewer_hash=?,generation=generation+1",
+            (hashlib.sha256(b"different-owner").hexdigest(),),
+        )
+        conn.execute(guard)
+    ctx.store.muse_record_confidential(snapshot)
+    later = freeze(ctx.store, account="observed-owner-label", vm_id="new-vm")
+    assert later.confidential_required
+    refused(ctx.store, later)

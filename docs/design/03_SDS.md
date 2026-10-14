@@ -235,19 +235,23 @@ enrollment/recovery/fallback-notary/capability registration。upgrade URL/query/
 request選identity encoding；duplicate/unsupported response encoding拒絕，single consumer和完整性caps
 不變。握手／token失敗不改B10先前handoff的不明送達、不重送、不false failed_before_send。
 
-2026-10-14 B09 authoritative trust補充：migration 005在同一private Store保存
-per-provider/account/VM的version、source/time、sticky confidential_required，及account
-active selection、viewer/session hash與generation；不以可輪替auth_ref作security identity。
-第一次authenticated bootstrap綁viewer；衝突owner不重綁。authenticated hatch_cvm/CVM_*與
-valid RV observation即使不支援也先持久化confidential requirement，standard不得清除。
-effective expectation OR local account/VM、同viewer_hash全部account、同normalized VM
-全部VM rows；新row繼承，SQL guards/propagation不容許matching row降為0。無usable VM id的CVM hint
-只record owner/account expectation；auth_ref輪替或新local label不得downgrade。005未merge，round 2
-原地amend、不新增006。connect/retry不重新選VM、不reset trust。standard observation以generation CAS
-及provider/account trust lock commit後才handoff msg3；commit後先release maintenance.lock再network。
-每次call用同transaction重查effective expectation，再比generation；confidential transition回
-E_PROTOCOL_MISMATCH（never），corrupt/unavailable state或failed CAS回E_STORAGE（never）。Store只做
-一次canonical schema verify，每boundary比actual signature檢出schema變更，無memory fallback。
+2026-10-14 B09 authoritative trust補充（round 3）：005未merge，原地amend、無006。
+固定MUSE_ORIGIN/HATCH_WSS_BASE只有一個trust domain；provider/account是local binding label，
+不partition remote expectation。label-bound account/VM row保存selection/session/generation；
+label-independent muse_trust_observations以viewer_hash/normalized VM id保存authenticated observation，
+empty VM id只表示owner evidence，不是wire identity。owner↔VM associations形成graph；recursive SQL
+closure把confidential owner傳至全部VM、confidential VM傳至全部owner，transitive且monotonic。
+21 guards、3 indexes及transaction-local propagation barrier作set-wise更新；超過1000 rows不增加
+trigger depth、不因size丟record。committed barrier、changed schema/corruption阻擋connection。
+CVM hints在owner binding/status/selection拒絕前獨立commit全部usable VM ids；RV msg2在stale或
+changed binding也以remote identity commit、不用generation CAS。write失敗停止msg3並明示無法record。
+standard handoff才做currentness/generation CAS；effective confidential先於generation檢查，回protocol/never。
+trust-domain/per-account locks跨msg3，maintenance及transaction在network前release。stale context回
+E_STORAGE/never並請重connect；integrity/schema才建議repair/verified restore，明示older backup（含v4
+rollback）會丟backup後的confidential expectations。無in-place reset。schema一次verify、每boundary比signature。
+msg2 decrypt上限65535、先full RV discriminator再standard 8192 cap；session cap 1 MiB，超界不record也不dial。
+HTTP 200 missing/malformed fields是protocol/never；explicit ok:false或401/403才auth；twice-stale
+notary依spike§6.2 unavailable guidance回resource/retry later，無session refresh修復證據。
 
 ### Session建立
 
@@ -485,6 +489,3 @@ permits. Model text cannot select provider/account or expand the action. Packet 
 reads its immutable text; MCP packet_prepare replay returns the same fixed pre-share
 preview. No schema migration or separate approval store is needed.
 
-Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and account are local connection labels; neither partitions owner or VM expectations. The shared trust-domain lock serializes all labels.
-
-Round 3 amends unreleased migration 005 in place (no 006). Label-independent authenticated observations and label-bound selection history form an owner↔VM graph. The recursive `muse_trust_confidential` view computes its transitive closure, with owner-only evidence as an isolated seed. Each propagation trigger updates matching account, VM and observation rows set-wise. A transaction-local `muse_trust_propagating` barrier suppresses nested propagation; a committed barrier row is integrity failure and blocks connects. Component size does not grow trigger depth; there is no identity cap on recording confidentiality. The flag never clears, and a newly observed edge inherits both ends' effective expectation.

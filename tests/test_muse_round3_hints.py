@@ -37,7 +37,7 @@ def test_r3_j_hint_spellings_are_sticky(ctx, change):
     with ctx.store.connection() as conn:
         assert (
             conn.execute(
-                "SELECT confidential_required FROM muse_trust_observations WHERE vm_id='vm1'"
+                "SELECT confidential_required FROM muse_trust_accounts WHERE account='synthetic'"
             ).fetchone()[0]
             == 1
         )

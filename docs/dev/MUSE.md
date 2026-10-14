@@ -89,7 +89,7 @@ Transport purpose names stay `auth.check`, `session`, `hatch.token`, `hatch.wake
 
 There is no guard-validated proxy. `MuseTransport(proxy=...)` raises `E_SCOPE_REQUIRED`. The adapter always sets `CURLOPT_PROXY` to an empty string.
 
-HTTPS and WSS use `curl_cffi` 0.16.3, `impersonate="chrome"`, and the certifi CA bundle (`verify` is that path, and `CURLOPT_CAINFO` is the same path). `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, and `SSL_CERT_FILE` are not the trust store. Hostname verification stays on. `curl_options` are passed to the `Session` constructor, not to `Session.request`. Redirects are not followed: a 3xx is `E_SCOPE_REQUIRED` and the `Location` value is not copied into the error. Auth bodies stop at 65536 decompressed bytes.
+HTTPS and WSS use `curl_cffi` 0.16.3, `impersonate="chrome"`, and the certifi CA bundle (`verify` is that path, and `CURLOPT_CAINFO` is the same path). `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, and `SSL_CERT_FILE` are not the trust store. Hostname verification stays on. `curl_options` are passed to the `Session` constructor, not to `Session.request`. Redirects are not followed: a 3xx is `E_SCOPE_REQUIRED` and the `Location` value is not copied into the error. Auth/mint bodies stop at 65536 decompressed bytes; session responses stop at 1 MiB.
 
 An optional `clock() -> float` is the monotonic deadline. The default is `time.monotonic`.
 
@@ -111,9 +111,9 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    whitespace. Mint retains the row endpoint/name verbatim.
    `DISABLED`, `DELETING`, `ERROR` stop before wake. Missing/contradictory metadata fails closed.
 3. Freeze owner/session/active-selection generation in the private Store. The effective
-   expectation is the OR of the local account/VM, every fixed-upstream viewer hash and every
-   fixed-upstream normalized VM ID. New rows inherit confidentiality; existing matching rows
-   propagate it monotonically. A different local account label cannot clear either identity.
+   expectation follows authenticated owner hashes and normalized VM IDs in one fixed-upstream
+   trust domain. Provider/account labels cannot partition or clear it. Every observed owner↔VM
+   association propagates confidentiality transitively, and new rows inherit it.
    A standard observation cannot clear the expectation.
    Connect/retry cannot reselect a different VM. Storage corruption, missing backing state,
    unsupported provenance/version or failed CAS blocks with `E_STORAGE`, retry class `never`.
@@ -151,7 +151,7 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    malformed/unsupported. Every such Noise-authenticated shape records permanent owner/VM
    confidentiality before stopping; there is no reset tool. CVM/unknown/delegation have no fallback.
 7. Commit standard-observation provenance with generation CAS immediately before empty msg3,
-   holding provider/per-account trust locks across commit and msg3 handoff. Release the shared
+   holding trust-domain/per-account locks across commit and msg3 handoff. Release the shared
    maintenance lock after commit and before network handoff. Split only through the
    mature library. Generation changes invalidate local sockets; each call rechecks durable
    currentness. No standard enrollment-health or capability-registration gate is added.
@@ -185,6 +185,8 @@ no JSON body. Read/mint success still requires bounded valid JSON and its own fi
 | HTTPS 5xx; WSS 5xx after its bounded redial (only 502/503/504 redial) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | 404, 409, 410 on session or wake | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | Other unexpected 2xx/4xx or unsupported response shape | `E_PROTOCOL_MISMATCH` | `never` |
+| 200 explicit `ok: false` on auth | `E_AUTH_REQUIRED` | `user_action` |
+| Twice-stale notary after one remint (spike §6.2 unavailable guidance) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | 200 unassigned session without confidential hints | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | CVM/RV/delegation/endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
 
@@ -223,13 +225,18 @@ After a mutation handoff, a read failure does not use safe-read retry guidance. 
 
 ## Schema
 
-B09 migration `005_muse_trust.sql` adds private account/VM trust tables and fourteen
-monotonic, identity, retention, inheritance and propagation guards. Round 2 amends this
-unmerged migration in place; no 006 is added. An older development-v5 workspace is refused
-as noncanonical rather than silently resetting its trust. Owner/session hashes, version, source/time, active VM and
-generation are private internal rows, with no public model/schema change. It uses the core
-pre-upgrade backup and atomic migration. Restore a verified schema-4 backup into a fresh
-workspace for rollback; never erase security state in place to make standard connect.
+B09 migration `005_muse_trust.sql` is amended in place for round 3, with no 006.
+Local account/VM tables retain frozen connection currentness; label-independent
+`muse_trust_observations` records authenticated owner hashes and normalized VM IDs.
+One fixed-upstream trust domain spans all provider/account labels. Its recursive closure
+and 21 SQL guards propagate confidentiality transitively and monotonically, set-wise
+without trigger depth growing with the component. Three explicit indexes support lookup.
+A committed propagation barrier, changed schema, corruption or unavailable state blocks.
+No public model/schema change is needed. Fresh-v5, v4→v5 and backup/restore are tested.
+An older development-v5 workspace is noncanonical and has no implicit reset/upgrade.
+Rollback restores a verified v4 backup into a fresh workspace. Restoring any older backup
+**discards confidential expectations recorded after that backup**, including during v4
+rollback. No in-place reset tool exists.
 
 B10 registers forward migration `003_muse_lifecycle.sql` and regenerated schemas,
 as detailed below. Do not edit `001_initial.sql`. NULL `bytes_handed_off` means unknown:

@@ -864,51 +864,53 @@ Network waits never hold a connection lock or transaction.
 
 ## B09 standard transport trust (schema 5)
 
-Migration `005_muse_trust.sql` adds private account/VM trust separate from lifecycle
-history. Round 2 amends this unmerged migration in place; there is no 006. SQL keys
-remain `(provider, account)` and `(provider, account, normalized vm_id)`. The effective
-confidential expectation joins the local account, every account with the same
-`(provider, viewer_hash)`, the local VM and every VM with the same `(provider, vm_id)`.
-New rows inherit it; insert/update guards reject a zero beside a matching one. Recursive
-SQL propagation raises existing matching owners/VMs and their generations monotonically.
-Two indexes support remote-owner and VM lookup. Rotating auth_ref or adding a local label
-cannot clear the remote owner/VM requirement. No token, cookie, raw key or auth_ref is stored.
+Unreleased migration `005_muse_trust.sql` is amended in place again for round 3;
+there is no 006. Public models/contracts do not change. The upstream is fixed by
+`MUSE_ORIGIN`/`HATCH_WSS_BASE`, so one trust domain and one `muse-trust-domain.lock`
+cover every provider/account label in the workspace. Those labels identify frozen
+connection bindings, never separate security expectations.
 
-`Store.muse_freeze(...)` binds SHA-256(viewer_id) once, hashes the current session binding
-and returns a private `MuseTrustSnapshot`. Conflicting owners cannot rebind. `vm_id=None`
-is allowed only to persist an authenticated confidential indication with no usable VM ID;
-such an account has no active selection yet and must stop standard. `confidential_vm_ids`
-records every usable identity from an ambiguous confidential assignment in that same
-transaction. VM storage IDs are trimmed/lowercased; the transport retains exact server IDs
-on the wire. Connect/retry cannot reselect a different active VM or reset trust.
+`muse_trust_accounts` retains `(provider, account)` currentness: authenticated
+viewer/session hashes, active selection, generation and an inherited sticky flag.
+`muse_trust_vms` retains label-bound selection provenance. `muse_trust_observations`
+is the label-independent record keyed by `(viewer_hash, normalized vm_id)`; an empty
+VM id represents owner-only evidence. No cookies, auth_ref, tokens or raw keys are stored.
+VM storage IDs are ASCII, trimmed and lowercase; the exact server ID on the wire may
+differ only in case and surrounding whitespace.
 
-`muse_record_confidential(snapshot)` records Noise-authenticated RV-shaped msg2 permanently,
-even if the state/chip binding/other fields are unsupported or malformed. There is no reset
-tool. `muse_assert_current(snapshot)` computes the effective expectation in its transaction
-before checking generation; a confidential transition is E_PROTOCOL_MISMATCH (never), while
-stale standard context, corruption or failed CAS is E_STORAGE (never).
+Every observed owner↔VM association forms an edge. The recursive
+`muse_trust_confidential` view computes the closure of confidential seeds across all
+labels and observations. A confidential owner raises all observed VMs; a confidential
+VM raises every observed owner, transitively. New rows inherit that effective flag;
+standard never clears it. The 21 named SQL guards retain identities, refuse replacement,
+upsert/rowid reuse, downgrade and zero rows beside a required identity, and propagate
+account, VM and observation flags set-wise. Three explicit indexes support owner/VM
+lookups. `muse_trust_propagating` is a transaction-local recursion barrier, always empty
+at commit; Store boundaries refuse a committed barrier row. A component above 1000 rows
+records without per-row trigger recursion or a confidentiality-recording identity cap.
 
-`muse_standard_handoff(snapshot, callback)` commits standard provenance/CAS before msg3.
-Provider and per-account trust file locks serialize alias/context writes across commit and
-handoff. Shared maintenance.lock is released after commit and before the network callback;
-no SQLite transaction or workspace maintenance lock spans that I/O. `muse_watch` closes
-local obsolete sockets; every call also rechecks durable state for other processes. Schema
-is canonically verified once per Store trust boundary, with a cached signature compared
-against the actual schema on each boundary to detect changed guards without replaying
-migrations. One workspace worker remains execution owner.
+`Store.muse_freeze(...)` commits every authenticated confidential hint for its observed
+owner and all usable VM IDs **before** any owner binding/status/selection refusal.
+The existing label cannot be rebound silently. A hint with no usable ID records its owner.
+Standard freeze captures one session/selection generation and retains the association.
+`muse_record_confidential(snapshot)` commits Noise-authenticated RV evidence for the
+snapshot's remote owner/VM without checking its label or generation CAS. Even stale or
+changed bindings cannot discard an observation. Unsupported/malformed RV state, fields
+or chip binding still become permanent confidential expectations before refusal.
+Write failure stops before msg3 and says confidentiality could not be recorded.
 
-The amended migration has fourteen retention/identity/monotonicity/inheritance/propagation
-guards. Fresh-v5, v4→v5 and backup/restore checks include them. Upgrade uses the existing
-verified pre-upgrade v4 backup and atomic migration. Rollback restores that backup into a
-fresh workspace, never erases security rows. Earlier development-v5 schemas fail canonical
-validation and have no implicit in-place upgrade/reset. Public schemas/contracts are unchanged.
+`muse_assert_current` computes the effective requirement in the same transaction as
+currentness. Confidentiality is E_PROTOCOL_MISMATCH / never before generation checks.
+A stale snapshot/binding is E_STORAGE / never with a fresh-connection retry action.
+`muse_standard_handoff` checks the same state and commits provenance/CAS before empty
+msg3. Trust-domain and per-account locks span handoff; maintenance.lock and the SQLite
+transaction are released before network I/O. Every call rechecks durable state, including
+cross-process writers. Weak local listeners invalidate obsolete sockets.
 
-Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and account are local connection labels; neither partitions owner or VM expectations. The shared trust-domain lock serializes all labels.
-
-`muse_trust_observations` is keyed by authenticated `viewer_hash` and normalized VM id, without provider/account. An empty id means owner-only evidence. The RV record path commits monotonically without a generation CAS, even on a stale snapshot; a write failure blocks before msg3 and explicitly reports that confidentiality could not be recorded. Local rows retain binding/currentness, not trust-domain partitioning.
-
-Authenticated CVM hints commit label-independent owner/VM observations before binding, generation, status, uniqueness or selection refusals. Every usable VM id in the response is recorded, including non-selected rows. Owner mismatch never drops that observation; the existing local binding is still refused.
-
-Round 3 amends unreleased migration 005 in place (no 006). Label-independent authenticated observations and label-bound selection history form an owner↔VM graph. The recursive `muse_trust_confidential` view computes its transitive closure, with owner-only evidence as an isolated seed. Each propagation trigger updates matching account, VM and observation rows set-wise. A transaction-local `muse_trust_propagating` barrier suppresses nested propagation; a committed barrier row is integrity failure and blocks connects. Component size does not grow trigger depth; there is no identity cap on recording confidentiality. The flag never clears, and a newly observed edge inherits both ends' effective expectation.
-
-Trust is monotonic in place. Restoring an older backup, or rolling back to the documented verified v4 backup in a fresh workspace, discards confidential expectations recorded after that backup. A stale generation or changed connection binding returns E_STORAGE / never with a fresh-connection retry action; it does not advise restore. Integrity/schema failures advise repair and only a verified restore, with this loss warning. There is no in-place reset tool.
+Canonical schema verification is cached per Store trust boundary; every boundary checks
+the actual schema signature for changed guards. Integrity/schema failures block with
+E_STORAGE and advise repair or a verified restore. Fresh-v5, v4→v5 and backup/restore
+checks cover the amended observations and guards. Older development-v5 schemas are
+noncanonical and have no implicit upgrade. Rollback restores a verified v4 backup into
+a fresh workspace. **Restoring an older backup, including v4 rollback, discards
+confidential expectations recorded after that backup.** No in-place reset tool exists.

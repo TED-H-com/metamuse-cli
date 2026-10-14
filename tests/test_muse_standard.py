@@ -678,7 +678,9 @@ def test_authenticated_owner_and_session_are_required_before_assignment(change):
     )
     with pytest.raises(CoreError) as caught:
         transport.sessions_list()
-    assert caught.value.detail.code == ErrorCode.AUTH_REQUIRED
+    assert caught.value.detail.code == (
+        ErrorCode.AUTH_REQUIRED if change.get("ok") is False else ErrorCode.PROTOCOL_MISMATCH
+    )
     assert len(http.calls) == 1 and not connector.urls
 
 

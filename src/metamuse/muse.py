@@ -588,7 +588,10 @@ _PUBLIC_ERRORS: dict[str, tuple[ErrorCode, str]] = {
     ),
     "Muse confidentiality could not be recorded": (
         ErrorCode.STORAGE,
-        "Repair the security-state store before reconnecting; confidentiality could not be recorded",
+        (
+            "Repair the security-state store before reconnecting; "
+            "confidentiality could not be recorded"
+        ),
     ),
     "Muse minted credentials remain stale": (
         ErrorCode.RESOURCE_UNAVAILABLE,
@@ -651,7 +654,10 @@ _PUBLIC_ERRORS: dict[str, tuple[ErrorCode, str]] = {
 _PUBLIC_CODES: dict[ErrorCode, tuple[str, str]] = {
     ErrorCode.STORAGE: (
         "Muse security state is unavailable or damaged",
-        "Repair the security-state store; restore only a verified backup, which loses expectations recorded after that backup",
+        (
+            "Repair the security-state store; restore only a verified backup, "
+            "which loses expectations recorded after that backup"
+        ),
     ),
     ErrorCode.RESOURCE_UNAVAILABLE: (
         "Muse VM is not running yet",

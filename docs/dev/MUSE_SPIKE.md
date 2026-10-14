@@ -345,3 +345,7 @@ recorded in the task report. OFFLINE/FIXTURE only; AT-038/AT-043 remain unproven
 - Redact query tokens before any log, exception string, or event row.
 - Keep the route allowlist in §7. A method outside it is a programming error, not a `raw` escape hatch.
 - LIVE remains blocked until an operator authorizes an account. Fixture plus `blocked` is the honest result until then.
+
+### 9.3 Round-3 verification changes (2026-10-14)
+
+The fixed-upstream standard transport now keys durable trust on authenticated remote owners and normalized VMs, independent of operator labels. It commits all hints and RV observations before refusal, including stale or changed bindings, and propagates owner↔VM components set-wise. The 1 MiB session cap and full-Noise RV discriminator precede standard-only limits. Shape drift, secret encodings and deadline tests are expanded. Evidence remains OFFLINE/FIXTURE; AT-038 and AT-043 LIVE have not run. CVM remains unsupported. Earlier spike findings and limits above are history, not new LIVE evidence.
