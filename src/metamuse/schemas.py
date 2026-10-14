@@ -66,6 +66,7 @@ def main() -> None:
         tool["inputSchema"] = schema_for(m.TOOL_REQUEST_MODELS[tool["name"]])
         tool["outputSchema"] = envelope
     write_json(tools_path, tools)
+    write_json(destination / "mcp-tools.json", tools)
     (design.parent / "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md").write_text(
         design_rollup(root), encoding="utf-8"
     )

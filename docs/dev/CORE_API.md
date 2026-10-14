@@ -380,10 +380,12 @@ pytest-disktmp uv run pytest -q
 uv run ruff check .
 ```
 
-The generator writes all fifteen input schemas, the envelope and domain schemas under
-`src/metamuse/data/schemas/`, plus the design envelope and every tool's input/output
-schema. Design descriptions/annotations remain in mcp-tools.json. Drift tests check
-both directories, reject forged approved fields, and validate the design examples.
+The generator writes all fifteen input schemas, the envelope and domain schemas, and a
+packaged copy of `mcp-tools.json` under `src/metamuse/data/schemas/`, plus the design
+envelope and every tool's input/output schema in `docs/design/contracts/`. Design
+descriptions/annotations are authored in `docs/design/contracts/mcp-tools.json` and
+mirrored to package data. Drift tests check both directories, reject forged approved
+fields, and validate the design examples.
 All output schemas currently validate the shared envelope; successful data structures
 are documented above and domain records are typed. Future feature owners must request
 specific typed output additions from core rather than hand-editing generated JSON.

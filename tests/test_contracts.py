@@ -30,13 +30,19 @@ def test_non_json_values_rejected(value):
 def test_schema_drift():
     checked = ROOT / "src/metamuse/data/schemas"
     schemas = generated_schemas()
-    assert {p.name for p in checked.glob("*.json")} == set(schemas)
+    assert {p.name for p in checked.glob("*.json")} == {*schemas, "mcp-tools.json"}
     for name, schema in schemas.items():
         assert json.loads((checked / name).read_text()) == schema, name
         Draft202012Validator.check_schema(schema)
     envelope = schema_for(m.Envelope)
     assert json.loads((ROOT / "docs/design/contracts/envelope.schema.json").read_text()) == envelope
-    tools = json.loads((ROOT / "docs/design/contracts/mcp-tools.json").read_text())["tools"]
+    design_contract_text = (ROOT / "docs/design/contracts/mcp-tools.json").read_text()
+    packaged_contract_text = (checked / "mcp-tools.json").read_text()
+    assert packaged_contract_text == design_contract_text
+    design_contract = json.loads(design_contract_text)
+    packaged_contract = json.loads(packaged_contract_text)
+    assert packaged_contract == design_contract
+    tools = design_contract["tools"]
     assert len(tools) == 15
     for tool in tools:
         assert tool["inputSchema"] == schema_for(m.TOOL_REQUEST_MODELS[tool["name"]])
