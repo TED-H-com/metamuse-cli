@@ -1476,6 +1476,12 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
 
     value = quoted + r"""|[^\s;,"'{}\]]+"""
 
+    replace(
+        r"(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]+=(?:" + value + ")"
+        r"(?:;[ \t]*[A-Za-z0-9_.-]+=(?:" + value + "))+",
+        "cookie",
+    )
+
     def session(match):
         if redaction_sensitive_key(match["key"]):
             return "[REDACTED]"
@@ -1487,11 +1493,6 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         + ")",
         "session_cookie",
         session,
-    )
-    replace(
-        r"(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]+=(?:" + value + ")"
-        r"(?:;[ \t]*[A-Za-z0-9_.-]+=(?:" + value + "))+",
-        "cookie",
     )
     replace(r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])", "api_key")
 
