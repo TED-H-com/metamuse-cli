@@ -579,12 +579,12 @@
       "at_ids": [
         "AT-030"
       ],
-      "sha256": "bd6ab1b0d4e4ba336974f82df6dd0bc1ed28061099c1259b31d79111a5bf26b7",
-      "size_bytes": 7840,
+      "sha256": "e32fa7d65fc013c9a272180a7a022a855594274b3ab1759a773fc4899d106800",
+      "size_bytes": 7881,
       "expected": {
         "total_rows": 37,
-        "allowed_count": 4,
-        "rejected_count": 33
+        "allowed_count": 6,
+        "rejected_count": 31
       }
     },
     "subtitles/bom_crlf.srt": {

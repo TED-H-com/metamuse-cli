@@ -215,11 +215,6 @@ def test_fixture_mode_is_explicit_and_only_adds_loopback():
 
 CORPUS = Path(__file__).parent / "fixtures/corpus/security/urls.jsonl"
 CORPUS_CASES = [json.loads(line) for line in CORPUS.read_text(encoding="utf-8").splitlines()]
-# Corpus remains owned by its producer. These two expectations contradict the B08 contract.
-SPEC_CORPUS_EXPECTATIONS = {
-    "overlong_url": "allow",  # Corpus's 4120 UTF-8 bytes is below the documented 8192-byte bound.
-    "trailing_dot_host": "allow",  # Normalize a single trailing dot, then apply host/IP policy.
-}
 
 
 @pytest.mark.parametrize("case", CORPUS_CASES, ids=[case["reason"] for case in CORPUS_CASES])
@@ -244,13 +239,10 @@ def test_shared_url_corpus_with_explicit_policy_context(case):
     except m.CoreError as error:
         assert error.detail.code == m.ErrorCode.SCOPE_DENIED
         verdict = "reject"
-    expected_verdict = SPEC_CORPUS_EXPECTATIONS.get(reason, case["expected_verdict"])
-    assert verdict == expected_verdict
-    if reason in SPEC_CORPUS_EXPECTATIONS:
-        assert case["expected_verdict"] == "reject"  # Detect when the producer corrects these rows.
-    if reason == "overlong_url":
+    assert verdict == case["expected_verdict"]
+    if reason == "within_documented_8192_utf8_byte_limit":
         assert len(case["url"].encode("utf-8")) == 4120 < URL_MAX_BYTES
-    if reason == "trailing_dot_host":
+    if reason == "canonical_trailing_dot_public_host":
         assert result.hostname == "example.com" and result.url == "http://example.com/path"
 
 
