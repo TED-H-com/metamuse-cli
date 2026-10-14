@@ -399,6 +399,7 @@ async def mcp_calls(ctx, calls, errlog):
     params = StdioServerParameters(
         command=str(executable),
         args=["--workspace", str(ctx.paths.root), "--non-interactive", "mcp"],
+        env={"PYTHONDONTWRITEBYTECODE": "1"},
     )
     envelopes = []
     with errlog.open("w+") as log:

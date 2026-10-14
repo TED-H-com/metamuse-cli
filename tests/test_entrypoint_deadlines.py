@@ -3,6 +3,7 @@
 import json
 import subprocess
 import time
+import traceback
 from types import SimpleNamespace
 
 import anyio
@@ -71,3 +72,43 @@ def test_entrypoint_terminal_poll_deadline_names_command(tmp_path):
             await entry.terminal(None, "synthetic")
 
     anyio.run(scenario)
+
+
+@pytest.mark.parametrize("hang", [False, True])
+def test_entrypoint_real_mcp_hang_names_tool_and_disables_bytecode(tmp_path, hang):
+    import sys
+
+    entry = Entrypoints(tmp_path)
+    server = tmp_path / "mcp-server"
+    server.write_text(
+        f"#!{sys.executable}\n"
+        "import anyio, os\n"
+        "from mcp.server.mcpserver import MCPServer\n"
+        "app = MCPServer('deadline-fixture')\n"
+        "@app.tool(name='metamuse_job_get')\n"
+        "async def job_get(job_id: str) -> dict:\n"
+        "    if job_id == 'hang':\n"
+        "        await anyio.sleep_forever()\n"
+        "    return {'bytecode': os.environ.get('PYTHONDONTWRITEBYTECODE')}\n"
+        "app.run()\n"
+    )
+    server.chmod(0o755)
+    entry.command = server
+    entry.deadline = time.monotonic() + 20
+
+    async def scenario():
+        async with entry.server("--no-worker") as session:
+            if hang:
+                await entry.call(session, "job_get", {"job_id": "hang"})
+            else:
+                result = await session.call_tool("metamuse_job_get", {"job_id": "env"})
+                assert json.loads(result.content[0].text) == {"bytecode": "1"}
+
+    if hang:
+        with pytest.raises(Exception) as held:
+            anyio.run(scenario)
+        detail = "".join(traceback.format_exception(held.value))
+        assert "Test deadline exceeded: MCP metamuse_job_get" in detail
+        assert "Test deadline exceeded: metamuse mcp" not in detail
+    else:
+        anyio.run(scenario)
