@@ -48,43 +48,55 @@ CREATE TRIGGER muse_trust_vm_retention BEFORE DELETE ON muse_trust_vms
 BEGIN SELECT RAISE(ABORT, 'muse trust VM retention'); END;
 
 CREATE TRIGGER muse_trust_accounts_inherit_insert BEFORE INSERT ON muse_trust_accounts
-WHEN NEW.confidential_required=0 AND (EXISTS(SELECT 1 FROM muse_trust_accounts WHERE viewer_hash=NEW.viewer_hash AND confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_vms WHERE vm_id=NEW.active_vm_id AND confidential_required=1))
+WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=NEW.viewer_hash) OR (kind='vm' AND identity=NEW.active_vm_id))
 BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;
 CREATE TRIGGER muse_trust_accounts_propagate_insert AFTER INSERT ON muse_trust_accounts
-WHEN NEW.confidential_required=1
+WHEN NEW.confidential_required=1 AND NOT EXISTS(SELECT 1 FROM muse_trust_propagating)
 BEGIN
-UPDATE muse_trust_accounts SET confidential_required=1, generation=generation+1 WHERE viewer_hash=NEW.viewer_hash AND confidential_required=0;
-UPDATE muse_trust_vms SET confidential_required=1 WHERE provider=NEW.provider AND account=NEW.account AND confidential_required=0;
+INSERT INTO muse_trust_propagating VALUES (1);
+UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+UPDATE muse_trust_vms SET confidential_required=1 WHERE confidential_required=0 AND vm_id IN (SELECT identity FROM muse_trust_confidential WHERE kind='vm');
+UPDATE muse_trust_observations SET confidential_required=1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+DELETE FROM muse_trust_propagating;
 END;
 
 CREATE TRIGGER muse_trust_accounts_inherit_update BEFORE UPDATE ON muse_trust_accounts
-WHEN NEW.confidential_required=0 AND (EXISTS(SELECT 1 FROM muse_trust_accounts WHERE viewer_hash=NEW.viewer_hash AND confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_vms WHERE vm_id=NEW.active_vm_id AND confidential_required=1))
+WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=NEW.viewer_hash) OR (kind='vm' AND identity=NEW.active_vm_id))
 BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;
 CREATE TRIGGER muse_trust_accounts_propagate_update AFTER UPDATE ON muse_trust_accounts
-WHEN NEW.confidential_required=1 AND OLD.confidential_required=0
+WHEN NEW.confidential_required=1 AND OLD.confidential_required=0 AND NOT EXISTS(SELECT 1 FROM muse_trust_propagating)
 BEGIN
-UPDATE muse_trust_accounts SET confidential_required=1, generation=generation+1 WHERE viewer_hash=NEW.viewer_hash AND confidential_required=0;
-UPDATE muse_trust_vms SET confidential_required=1 WHERE provider=NEW.provider AND account=NEW.account AND confidential_required=0;
+INSERT INTO muse_trust_propagating VALUES (1);
+UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+UPDATE muse_trust_vms SET confidential_required=1 WHERE confidential_required=0 AND vm_id IN (SELECT identity FROM muse_trust_confidential WHERE kind='vm');
+UPDATE muse_trust_observations SET confidential_required=1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+DELETE FROM muse_trust_propagating;
 END;
 
 CREATE TRIGGER muse_trust_vms_inherit_insert BEFORE INSERT ON muse_trust_vms
-WHEN NEW.confidential_required=0 AND (EXISTS(SELECT 1 FROM muse_trust_vms WHERE vm_id=NEW.vm_id AND confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_accounts WHERE provider=NEW.provider AND account=NEW.account AND confidential_required=1))
+WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=(SELECT viewer_hash FROM muse_trust_accounts WHERE provider=NEW.provider AND account=NEW.account)) OR (kind='vm' AND identity=NEW.vm_id))
 BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;
 CREATE TRIGGER muse_trust_vms_propagate_insert AFTER INSERT ON muse_trust_vms
-WHEN NEW.confidential_required=1
+WHEN NEW.confidential_required=1 AND NOT EXISTS(SELECT 1 FROM muse_trust_propagating)
 BEGIN
-UPDATE muse_trust_vms SET confidential_required=1 WHERE vm_id=NEW.vm_id AND confidential_required=0;
-UPDATE muse_trust_accounts SET confidential_required=1, generation=generation+1 WHERE confidential_required=0 AND (provider, account) IN (SELECT provider, account FROM muse_trust_vms WHERE vm_id=NEW.vm_id);
+INSERT INTO muse_trust_propagating VALUES (1);
+UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+UPDATE muse_trust_vms SET confidential_required=1 WHERE confidential_required=0 AND vm_id IN (SELECT identity FROM muse_trust_confidential WHERE kind='vm');
+UPDATE muse_trust_observations SET confidential_required=1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+DELETE FROM muse_trust_propagating;
 END;
 
 CREATE TRIGGER muse_trust_vms_inherit_update BEFORE UPDATE ON muse_trust_vms
-WHEN NEW.confidential_required=0 AND (EXISTS(SELECT 1 FROM muse_trust_vms WHERE vm_id=NEW.vm_id AND confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_accounts WHERE provider=NEW.provider AND account=NEW.account AND confidential_required=1))
+WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=(SELECT viewer_hash FROM muse_trust_accounts WHERE provider=NEW.provider AND account=NEW.account)) OR (kind='vm' AND identity=NEW.vm_id))
 BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;
 CREATE TRIGGER muse_trust_vms_propagate_update AFTER UPDATE ON muse_trust_vms
-WHEN NEW.confidential_required=1 AND OLD.confidential_required=0
+WHEN NEW.confidential_required=1 AND OLD.confidential_required=0 AND NOT EXISTS(SELECT 1 FROM muse_trust_propagating)
 BEGIN
-UPDATE muse_trust_vms SET confidential_required=1 WHERE vm_id=NEW.vm_id AND confidential_required=0;
-UPDATE muse_trust_accounts SET confidential_required=1, generation=generation+1 WHERE confidential_required=0 AND (provider, account) IN (SELECT provider, account FROM muse_trust_vms WHERE vm_id=NEW.vm_id);
+INSERT INTO muse_trust_propagating VALUES (1);
+UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+UPDATE muse_trust_vms SET confidential_required=1 WHERE confidential_required=0 AND vm_id IN (SELECT identity FROM muse_trust_confidential WHERE kind='vm');
+UPDATE muse_trust_observations SET confidential_required=1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+DELETE FROM muse_trust_propagating;
 END;
 
 CREATE INDEX muse_trust_owner_expectation ON muse_trust_accounts(viewer_hash);
@@ -111,14 +123,46 @@ BEGIN SELECT RAISE(ABORT, 'muse trust observation immutable or downgrade'); END;
 CREATE TRIGGER muse_trust_observation_retention BEFORE DELETE ON muse_trust_observations
 BEGIN SELECT RAISE(ABORT, 'muse trust observation retention'); END;
 CREATE TRIGGER muse_trust_observations_propagate_insert AFTER INSERT ON muse_trust_observations
-WHEN NEW.confidential_required=1
+WHEN NEW.confidential_required=1 AND NOT EXISTS(SELECT 1 FROM muse_trust_propagating)
 BEGIN
-UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE confidential_required=0 AND (viewer_hash=NEW.viewer_hash OR (provider,account) IN (SELECT provider,account FROM muse_trust_vms WHERE vm_id=NEW.vm_id));
-UPDATE muse_trust_vms SET confidential_required=1 WHERE confidential_required=0 AND vm_id=NEW.vm_id;
+INSERT INTO muse_trust_propagating VALUES (1);
+UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+UPDATE muse_trust_vms SET confidential_required=1 WHERE confidential_required=0 AND vm_id IN (SELECT identity FROM muse_trust_confidential WHERE kind='vm');
+UPDATE muse_trust_observations SET confidential_required=1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+DELETE FROM muse_trust_propagating;
 END;
 CREATE TRIGGER muse_trust_observations_propagate_update AFTER UPDATE ON muse_trust_observations
-WHEN NEW.confidential_required=1 AND OLD.confidential_required=0
+WHEN NEW.confidential_required=1 AND OLD.confidential_required=0 AND NOT EXISTS(SELECT 1 FROM muse_trust_propagating)
 BEGIN
-UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE confidential_required=0 AND (viewer_hash=NEW.viewer_hash OR (provider,account) IN (SELECT provider,account FROM muse_trust_vms WHERE vm_id=NEW.vm_id));
-UPDATE muse_trust_vms SET confidential_required=1 WHERE confidential_required=0 AND vm_id=NEW.vm_id;
+INSERT INTO muse_trust_propagating VALUES (1);
+UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+UPDATE muse_trust_vms SET confidential_required=1 WHERE confidential_required=0 AND vm_id IN (SELECT identity FROM muse_trust_confidential WHERE kind='vm');
+UPDATE muse_trust_observations SET confidential_required=1 WHERE confidential_required=0 AND viewer_hash IN (SELECT identity FROM muse_trust_confidential WHERE kind='owner');
+DELETE FROM muse_trust_propagating;
 END;
+
+-- A transaction-local recursion barrier: propagation updates a whole closure once.
+-- No committed row is permitted here; every Store boundary checks it is empty.
+CREATE TABLE muse_trust_propagating (id INTEGER PRIMARY KEY CHECK(id=1));
+CREATE VIEW muse_trust_confidential AS
+WITH RECURSIVE edges(owner,vm) AS (
+ SELECT viewer_hash,active_vm_id FROM muse_trust_accounts WHERE active_vm_id IS NOT NULL
+ UNION SELECT a.viewer_hash,v.vm_id FROM muse_trust_vms v JOIN muse_trust_accounts a USING(provider,account)
+ UNION SELECT viewer_hash,vm_id FROM muse_trust_observations WHERE vm_id!=''
+), required(kind,identity) AS (
+ SELECT 'owner',viewer_hash FROM muse_trust_accounts WHERE confidential_required=1
+ UNION SELECT 'vm',vm_id FROM muse_trust_vms WHERE confidential_required=1
+ UNION SELECT 'owner',viewer_hash FROM muse_trust_observations WHERE confidential_required=1
+ UNION SELECT 'vm',vm_id FROM muse_trust_observations WHERE confidential_required=1 AND vm_id!=''
+ UNION SELECT 'vm',e.vm FROM required r JOIN edges e ON r.kind='owner' AND r.identity=e.owner
+ UNION SELECT 'owner',e.owner FROM required r JOIN edges e ON r.kind='vm' AND r.identity=e.vm
+)
+SELECT kind,identity FROM required;
+
+CREATE TRIGGER muse_trust_observations_inherit_insert BEFORE INSERT ON muse_trust_observations
+WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=NEW.viewer_hash) OR (kind='vm' AND identity=NEW.vm_id))
+BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;
+
+CREATE TRIGGER muse_trust_observations_inherit_update BEFORE UPDATE ON muse_trust_observations
+WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=NEW.viewer_hash) OR (kind='vm' AND identity=NEW.vm_id))
+BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;

@@ -494,6 +494,8 @@ class Store:
                         self._muse_schema_signature = _schema_signature(conn)
                     elif _schema_signature(conn) != self._muse_schema_signature:
                         raise _muse_storage_error()
+                    if conn.execute("SELECT 1 FROM muse_trust_propagating").fetchone():
+                        raise _muse_storage_error()
                 validated = True
                 yield maintenance.close
         except m.CoreError as exc:
@@ -597,10 +599,24 @@ class Store:
             ):
                 raise _muse_storage_error()
         observations = conn.execute(
-            "SELECT confidential_required FROM muse_trust_observations WHERE viewer_hash=? OR (vm_id=? AND vm_id!='')",
+            "SELECT * FROM muse_trust_observations WHERE viewer_hash=? OR (vm_id=? AND vm_id!='')",
             (viewer_hash, vm_id),
         ).fetchall()
-        return any(row["confidential_required"] for row in (*owners, *vms, *observations))
+        for row in observations:
+            if (
+                row["version"] != 1
+                or row["confidential_required"] not in (0, 1)
+                or row["source"] not in ("authenticated_assignment", "noise_message_2")
+                or not row["observed_at"]
+            ):
+                raise _muse_storage_error()
+        return (
+            conn.execute(
+                "SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=?) OR (kind='vm' AND identity=?) LIMIT 1",
+                (viewer_hash, vm_id),
+            ).fetchone()
+            is not None
+        )
 
     @_muse_safe
     def muse_freeze(

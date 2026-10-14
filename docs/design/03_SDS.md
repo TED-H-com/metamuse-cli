@@ -486,3 +486,5 @@ reads its immutable text; MCP packet_prepare replay returns the same fixed pre-s
 preview. No schema migration or separate approval store is needed.
 
 Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and account are local connection labels; neither partitions owner or VM expectations. The shared trust-domain lock serializes all labels.
+
+Round 3 amends unreleased migration 005 in place (no 006). Label-independent authenticated observations and label-bound selection history form an owner↔VM graph. The recursive `muse_trust_confidential` view computes its transitive closure, with owner-only evidence as an isolated seed. Each propagation trigger updates matching account, VM and observation rows set-wise. A transaction-local `muse_trust_propagating` barrier suppresses nested propagation; a committed barrier row is integrity failure and blocks connects. Component size does not grow trigger depth; there is no identity cap on recording confidentiality. The flag never clears, and a newly observed edge inherits both ends' effective expectation.

@@ -119,8 +119,12 @@ def test_r3_b_record_failure_stops_with_honest_error(ctx, monkeypatch):
     connector.kwargs["transform"] = lambda key, nonce: rv()
     transport, _, _, _ = build(handler=ok_frames([]), connector=connector, store=ctx.store)
 
+    original = ctx.store._muse_observe
+
     def cannot_record(*args, **kwargs):
-        raise CoreError(ErrorCode.STORAGE, "synthetic busy")
+        if kwargs["source"] == "noise_message_2":
+            raise CoreError(ErrorCode.STORAGE, "synthetic busy")
+        return original(*args, **kwargs)
 
     monkeypatch.setattr(ctx.store, "_muse_observe", cannot_record)
     with pytest.raises(CoreError) as caught:
@@ -188,3 +192,48 @@ def test_r3_c_transport_keeps_hint_under_mismatched_owner(ctx, identity):
     )
     assert later.confidential_required
     refused(ctx.store, later)
+
+
+@pytest.mark.parametrize("shape", ["owner", "vm"])
+def test_r3_g_component_above_sqlite_recursion_limit_records_atomically(ctx, shape):
+    from metamuse.store import MuseTrustSnapshot
+
+    count = 1200
+    with ctx.store.transaction() as conn:
+        for i in range(count):
+            viewer = "a" * 64 if shape == "owner" else f"{i:064x}"
+            vm = f"vm{i}" if shape == "owner" else "vm1"
+            conn.execute(
+                "INSERT INTO muse_trust_accounts VALUES ('synthetic',?,1,?,? ,?,1,0,'t')",
+                (str(i), viewer, "b" * 64, vm),
+            )
+            conn.execute(
+                "INSERT INTO muse_trust_vms VALUES ('synthetic',?,?,1,0,'authenticated_assignment','t')",
+                (str(i), vm),
+            )
+    snapshot = MuseTrustSnapshot(
+        "synthetic",
+        "0",
+        "vm0" if shape == "owner" else "vm1",
+        "a" * 64 if shape == "owner" else f"{0:064x}",
+        "b" * 64,
+        1,
+        False,
+    )
+    ctx.store.muse_record_confidential(snapshot)
+    with ctx.store.connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM muse_trust_accounts WHERE confidential_required=1"
+            ).fetchone()[0]
+            == count
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM muse_trust_vms WHERE confidential_required=1"
+            ).fetchone()[0]
+            == count
+        )
+        assert conn.execute("SELECT max(generation) FROM muse_trust_accounts").fetchone()[0] == 2
+        assert not conn.execute("SELECT * FROM muse_trust_propagating").fetchall()
+    refused(ctx.store, snapshot)
