@@ -345,3 +345,43 @@ def test_r5_n2_click_failure_imports_already_observed_data(tmp_path, monkeypatch
         assert job["stop_reason"] == "expansion_failed"
         assert "expansion_failed" in job["missing_fields"]
         assert len(rows(ctx)) == 2
+
+
+@pytest.mark.parametrize(
+    "frame",
+    [
+        "/plugins/like.php",
+        "/login/plugin/",
+        "/other.actor/posts/OTHER_POST",
+        "https://denied.example/frame",
+    ],
+)
+def test_r5_n3_subframe_does_not_change_main_navigation(tmp_path, monkeypatch, frame):
+    markup = _synthetic_post_html().replace("</body>", f'<iframe src="{frame}"></iframe></body>')
+    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}) as env:
+        ctx, project, permit, _, _, guard, _ = env
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["error"] is None
+        assert len(rows(ctx)) == 1
+        assert any(
+            row["reason"] == "blocked_subframe" for row in guard.summary()["aborted_reasons"]
+        )
+
+
+def test_r5_n3_share_adopts_only_main_frame_identity(tmp_path, monkeypatch):
+    share = "https://www.facebook.com/share/p/SyntheticCode1/"
+    markup = (
+        '<iframe src="/other.actor/posts/OTHER_POST"></iframe>'
+        '<script>setTimeout(() => location.replace("' + POST_PATH + '"), 100)</script>'
+    )
+    with browser_fixture(
+        tmp_path,
+        monkeypatch,
+        {"/share/p/SyntheticCode1/": markup, POST_PATH: _synthetic_post_html()},
+        url=share,
+    ) as env:
+        ctx, project, permit, _, hits, _, _ = env
+        job = finish(ctx, submit(ctx, project, permit, url=share))
+        assert job["error"] is None
+        assert len(rows(ctx)) == 1
+        assert not any("OTHER_POST" in path for path, _ in hits)

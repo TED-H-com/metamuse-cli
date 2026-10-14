@@ -121,7 +121,7 @@ Path-permalink tracking queries/fragments are removed before authorization; the
 semantic id/story_fbid query is parsed for the accepted PHP permalink forms and the
 canonical result is the query-free actor/posts/token URL. Any other final page type,
 including an unresolved share page, is unsupported and produces no extraction.
-The first observed supported post becomes the authorized identity; subsequent
+The first observed main-frame supported post becomes the authorized identity; subsequent
 main-frame changes must match it. Source actor/id must also match before import.
 
 Step data/observed scope record requested_locator and resolved_permalink. Sources
@@ -268,3 +268,6 @@ Facebook navigation failures use only the main-document request/redirect chain a
 
 
 Only a fetch/XHR synchronously initiated by the trusted expansion click can classify an expansion response failure. Background and proxy-aborted responses are ignored. Such a failure imports observed data with expansion_failed and partial coverage; document auth/access/barrier outcomes remain distinct. Asynchronous endpoints without click provenance are treated conservatively as progress uncertainty, not guessed failure attribution.
+
+
+Facebook navigation barriers, page shapes and identity adoption apply only to the main frame. All network subframe document requests are aborted with blocked_subframe without setting navigation_error. A share identity is adopted only from the main frame.
