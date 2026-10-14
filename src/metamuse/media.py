@@ -440,7 +440,7 @@ def _object_matches(store: Store, info: MediaInfo) -> Path:
 def ensure_asset(
     store: Store, writer: Any, info: MediaInfo, *, asset_id: str | None = None
 ) -> m.Asset:
-    """Insert or reuse an asset when the MIME matches.
+    """Reuse or create an asset when the MIME matches.
 
     Ready requires probe status ``probed``. Without ffprobe the row stays
     ``unavailable``. A later successful probe may upgrade that row and does not

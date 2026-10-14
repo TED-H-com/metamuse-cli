@@ -64,12 +64,14 @@ ALTER TABLE transcript_segments_v2 RENAME TO transcript_segments;
 -- still leave (id, revision) append-only, matching item_revisions.
 -- REPLACE deletes the old row, so the UPDATE trigger never sees it. There is
 -- no secondary UNIQUE; transcript_project_item and transcript_asset are not
--- identities. A new revision is a new primary key and still inserts.
+-- identities. Explicit rowid conflicts are also forbidden; an automatically assigned
+-- NEW.rowid is -1 in BEFORE INSERT. A new revision still inserts.
 CREATE TRIGGER transcript_revision_immutable BEFORE UPDATE ON transcript_segments
 BEGIN SELECT RAISE(ABORT,'append-only revision'); END;
 CREATE TRIGGER transcript_revision_no_replace BEFORE INSERT ON transcript_segments
 WHEN EXISTS (
- SELECT 1 FROM transcript_segments WHERE id=NEW.id AND revision=NEW.revision
+ SELECT 1 FROM transcript_segments
+ WHERE (id=NEW.id AND revision=NEW.revision) OR rowid=NEW.rowid
 )
 BEGIN
  SELECT RAISE(ABORT, 'append-only revision; cannot replace existing transcript segment');
@@ -88,11 +90,13 @@ CREATE TABLE source_assets (
 CREATE INDEX source_assets_project ON source_assets(project_id, asset_id);
 -- No column is updated in place. A different relation is a new primary key.
 -- source_assets_project is not unique, and the table has no secondary UNIQUE.
--- Collect does not update this table. Freeze the whole row.
+-- Collect does not update this table. Freeze the whole row, including rowid.
+-- The INSERT guard covers both the composite primary key and explicit rowid.
 CREATE TRIGGER source_assets_no_replace BEFORE INSERT ON source_assets
 WHEN EXISTS (
  SELECT 1 FROM source_assets
- WHERE source_id=NEW.source_id AND asset_id=NEW.asset_id AND relation=NEW.relation
+ WHERE (source_id=NEW.source_id AND asset_id=NEW.asset_id AND relation=NEW.relation)
+ OR rowid=NEW.rowid
 )
 BEGIN
  SELECT RAISE(ABORT, 'immutable source_asset relation; cannot replace');
