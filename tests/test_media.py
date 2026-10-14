@@ -98,7 +98,10 @@ def test_ffprobe_uses_a_fixed_argv_without_a_shell(tmp_path, monkeypatch):
 
         class Completed:
             returncode = 0
-            stdout = b'{"format":{"duration":"1.5"}}'
+            stdout = (
+                b'{"format":{"duration":"1.5"},'
+                b'"streams":[{"codec_type":"audio","codec_name":"pcm_s16le"}]}'
+            )
 
         return Completed()
 
@@ -178,7 +181,7 @@ def test_identical_bytes_share_one_asset_and_keep_both_sources(ctx, project, tmp
     assert data(job_a)["rows"][0]["asset_id"]
     assert data(job_a)["rows"][0]["asset_id"] == data(job_b)["rows"][0]["asset_id"]
     assets = q(ctx, "SELECT * FROM assets")
-    assert len(assets) == 1 and assets[0]["state"] == "ready"
+    assert len(assets) == 1 and assets[0]["state"] == "unavailable"
     assert assets[0]["mime"] == "audio/wav"
     assert "title" not in assets[0]["object_path"]
     assert (
@@ -416,7 +419,7 @@ def test_subtitle_parser_keeps_cues_and_rejects_bad_timestamps():
     parsed = media.parse_webvtt(text)
     assert parsed.language == "zh-Hant"
     assert [cue.text for cue in parsed.cues] == [
-        "<c.red>下次活動是否有字幕？</c>\n這是自製測試資料。👨‍👩‍👧‍👦🇹🇼",
+        "<c.red>下次活動是否有字幕？</c>\r\n這是自製測試資料。👨‍👩‍👧‍👦🇹🇼",
         "接著",
         "重疊",
     ]
@@ -439,7 +442,7 @@ def test_subtitle_parser_keeps_cues_and_rejects_bad_timestamps():
         "\ufeff1\r\n00:00:01,000 --> 00:00:02,500\r\n第一行\r\n第二行\r\n\r\n"
         "2\r\n00:00:02,500 --> 00:00:03,000\r\n接著\r\n"
     )
-    assert srt.cues[0].text == "第一行\n第二行"
+    assert srt.cues[0].text == "第一行\r\n第二行"
     assert [cue.overlap for cue in srt.cues] == [False, False]
     broken = media.parse_srt("1\n\n")
     assert broken.errors[0].field == "timestamp" and broken.cues == []
@@ -543,7 +546,10 @@ def test_subtitle_import_attaches_dedupes_and_flags_overlaps(ctx, project, tmp_p
         q(ctx, "SELECT COUNT(*) AS n FROM transcript_segments WHERE item_id=?", (other_id,))[0]["n"]
         == 2
     )
-    assert q(ctx, "SELECT DISTINCT source_id FROM transcript_segments")[0]["source_id"] == source_id
+    sources = {
+        row["source_id"] for row in q(ctx, "SELECT DISTINCT source_id FROM transcript_segments")
+    }
+    assert source_id in sources and len(sources) == 2
     header = root / "header.vtt"
     header.write_text("WEBVTT\n\n", encoding="utf-8")
     empty = run(ctx, request(project, [local(header, "vtt")], ["subtitles"], key="header"))

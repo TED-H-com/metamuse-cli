@@ -14,8 +14,8 @@
         "AT-002",
         "AT-017"
       ],
-      "sha256": "68d988e296e9c78110c865e8e37d75df87e4b038ab380e86de70140304d0ab89",
-      "size_bytes": 6251,
+      "sha256": "d1fb260271b2990a6dc86156bf0ec339d6dbf77bb782a04edf96a1a897706d90",
+      "size_bytes": 6260,
       "expected": {
         "total_rows": 10,
         "valid_rows": 10,
@@ -28,8 +28,8 @@
       "at_ids": [
         "AT-002"
       ],
-      "sha256": "06f8d1723febc276e9821304b0fc7f198d85b57b1e676daad44faf3e6e993eb0",
-      "size_bytes": 3446,
+      "sha256": "5aa6f2a47c79ce4f56e6c817d6596b198b19d553ea096f2ff9e5799fc69c286a",
+      "size_bytes": 3449,
       "expected": {
         "total_rows": 5,
         "valid_rows": 5,
@@ -43,8 +43,8 @@
         "AT-002",
         "AT-025"
       ],
-      "sha256": "3c6f97b26710690e111b0e6721d8111f08893c0184e9d7f5ebd10cb093abdf8b",
-      "size_bytes": 2364,
+      "sha256": "06cacc436573297da40fceeec7138b82289f2173f2ab6fb8789ff1e74453c4d1",
+      "size_bytes": 2367,
       "expected": {
         "total_rows": 6,
         "has_bom": false,
@@ -58,8 +58,8 @@
         "AT-002",
         "AT-025"
       ],
-      "sha256": "aa49ac620f378cee3556131830fd12d0b49c86f6bcebc6210aab79dad246d05a",
-      "size_bytes": 2367,
+      "sha256": "61546b8905c1434f473ba24304623e9b5245d870fe84bae2bfa2cbe1b727b097",
+      "size_bytes": 2370,
       "expected": {
         "total_rows": 6,
         "has_bom": true,
@@ -236,8 +236,8 @@
         "AT-002",
         "AT-041"
       ],
-      "sha256": "c4f4aa067ffcc577d93f8f504c291b82418930fdfc14db86e20bc73b9f1e5988",
-      "size_bytes": 1691,
+      "sha256": "c1c2038e241b8b60cf505a56900fc0e99fd94dcd0e2575af17b9ab51b0755c39",
+      "size_bytes": 1706,
       "expected": {
         "total_rows": 4,
         "valid_rows": 4,
@@ -247,52 +247,39 @@
     },
     "import/project_b_comments.jsonl": {
       "format": "jsonl",
-      "purpose": "Second project comments file whose parent IDs collide with project A, verifying cross-project boundary rejection",
+      "purpose": "Second project comments. A parent that exists only in project A stays unresolved. The same native id under this file's scope is a different item.",
       "at_ids": [
         "AT-004"
       ],
-      "sha256": "04cca5c2fea12cfdbca66b7f014e54f3e4054a1d013cd9ec65b7682ac5fbb78e",
-      "size_bytes": 2401,
+      "sha256": "678e2c3586b571fa2a8183de5b6eb8358d1815ada924e80abad83692dcf06d75",
+      "size_bytes": 2281,
       "expected": {
         "total_rows": 5,
         "valid_rows": 5,
         "cross_project_expectations": {
           "p-b-001": {
-            "status": "rejected_unknown_field",
-            "notes": "Unknown field project. Cross-project parent resolution is not reached.",
-            "error_code": "E_INPUT_INVALID",
-            "field": "project"
+            "status": "resolved",
+            "expected_parent": null,
+            "notes": "Root post of project B."
           },
           "c-b-colliding-parent-01": {
-            "status": "rejected_unknown_field",
-            "error_code": "E_INPUT_INVALID",
-            "notes": "Unknown field project. Cross-project parent resolution is not reached.",
-            "field": "project"
+            "status": "unresolved",
+            "parent_native_id": "post-tree-root",
+            "notes": "post-tree-root exists only in project A, so it stays unresolved in B."
           },
           "c-b-colliding-parent-02": {
-            "status": "rejected_unknown_field",
-            "error_code": "E_INPUT_INVALID",
-            "notes": "Unknown field project. Cross-project parent resolution is not reached.",
-            "field": "project"
+            "status": "resolved",
+            "expected_parent": "c-tree-valid-1",
+            "notes": "c-tree-valid-1 also exists in this file under native_scope project_b. The parent is that item, not project A's."
           },
           "c-tree-valid-1": {
-            "status": "rejected_unknown_field",
-            "notes": "Unknown field project. Cross-project parent resolution is not reached.",
-            "error_code": "E_INPUT_INVALID",
-            "field": "project"
+            "status": "resolved",
+            "expected_parent": "p-b-001"
           },
           "c-b-valid-01": {
-            "status": "rejected_unknown_field",
-            "notes": "Unknown field project. Cross-project parent resolution is not reached.",
-            "error_code": "E_INPUT_INVALID",
-            "field": "project"
+            "status": "resolved",
+            "expected_parent": "p-b-001"
           }
-        },
-        "importer_rejected": {
-          "rows": 5,
-          "error_code": "E_INPUT_INVALID",
-          "field": "project",
-          "reason": "SPEC §3 has no project field. The extra key is an unknown record field, so the rows are not imported."
         }
       }
     },

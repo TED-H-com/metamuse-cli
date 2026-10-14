@@ -92,10 +92,17 @@ def _prepare_roots(roots: list[str | Path]) -> list[Path]:
 
 
 def _lexical_absolute(path: str) -> Path:
+    """Join a relative path to the cwd without collapsing ``..``.
+
+    ``..`` is applied later, one component at a time, and only after that
+    directory was opened and was not a symlink. Lexical normalization would
+    erase a symlink and read a different file.
+    """
+
     candidate = Path(path).expanduser()
     if not candidate.is_absolute():
         candidate = Path.cwd() / candidate
-    return Path(os.path.normpath(os.fspath(candidate)))
+    return candidate
 
 
 def _reject_option_components(path: Path) -> None:

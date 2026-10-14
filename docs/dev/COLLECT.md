@@ -68,8 +68,11 @@ keys are row errors. CSV unknown columns and duplicate headers fail the file.
 
 `resources` selects rows. `post` keeps posts. `comments` keeps comments and replies.
 Other kinds in the file are `skipped`, not errors. `max_items` counts committed and
-unchanged rows. Skips and rejections do not consume it. The next row that would be
-accepted sets `limit_reached` and is not imported.
+unchanged rows. Skips and rejections do not consume it. When the cap is already
+full, a later row is validated without mutating the book. If that row would be
+committed or unchanged, the job stops with `limit_reached` and does not import it.
+If every remaining row would be rejected or skipped, those rows are reported and
+the stop reason is not `limit_reached`.
 
 ### JSON and JSONL
 
@@ -78,9 +81,13 @@ One object is row 1. Invalid UTF-8, invalid JSON, duplicate keys, `NaN`, and
 `Infinity` fail the whole document (`parser_failed`). They are not an empty success.
 
 JSONL splits on `\n`, strips one trailing `\r` before parsing, and skips blank lines.
-The row number is the file line. Invalid UTF-8, invalid JSON, and nonfinite numbers
-reject that line. Neighboring lines are still committed. One leading UTF-8 BOM is
-removed. A U+FEFF later in the text stays.
+The row number is the file line. Invalid UTF-8, invalid JSON, nonfinite numbers,
+lone surrogates, and nesting deeper than 32 reject that line. Neighboring lines
+are still committed. One leading UTF-8 BOM is removed. A U+FEFF later in the text
+stays. An unknown field is `record` / `Record contains an unknown field`. The
+field name from the file is not copied into the error. Parsing stops after
+`max_items` plus a small lookahead. Further records are not read. At most 50 row
+errors are kept, and the rest is a count.
 
 ### CSV
 
@@ -90,7 +97,9 @@ data record, so a quoted embedded newline is still one row. `media` is a JSON ar
 When that array is non-empty, `media_ref` and `media_kind` are ignored. A present
 `parent_native_id` column clears the parent when the cell is blank; omit the column
 to leave an existing parent. Invalid UTF-8, a missing required header, a repeated
-header, or an unknown column fails the file.
+header, or an unknown column fails the file. The unknown-column message does not
+include the column name. A field may be up to one million characters. An unclosed
+quote is a row error and does not merge the next row.
 
 ### Plain text
 
@@ -101,10 +110,13 @@ Invalid UTF-8 fails the input.
 
 ## Identity
 
-`(platform, native_scope, native_id)` is the reliable identity. Without a native id
-the item is weak and receives an internal `itm_` id. That id is not the row number
-and not a text hash. Two comments with the same text and different ids stay two
-items. A weak item is always new. Not seeing an item again does not mark it deleted.
+`(platform, native_scope, native_id)` is the reliable identity. The scope is stored
+on the source, including `""` when a reliable id omits `native_scope`. The same
+native id in two scopes is two items. Without a native id the item is weak and
+receives an internal `itm_` id. A weak observation stores a non-empty scope and
+stores NULL when the scope is absent. That id is not the row number and not a
+text hash. Two comments with the same text and different ids stay two items. A
+weak item is always new. Not seeing an item again does not mark it deleted.
 
 The same reliable id twice in one batch is applied in order. Identical text adds no
 revision and the row is `unchanged`. Different text appends a revision and keeps the
@@ -113,9 +125,9 @@ on `kind` and leaves the first row in place. A present parent field updates the
 parent even when the text is unchanged, without a new revision. An absent parent
 field does not clear one.
 
-`item_revisions.text` is `NOT NULL`. A JSON null is stored as `""`, `missing_fields`
-contains `text`, and `text_hash` is the digest of `{"text": null}`. An empty string
-uses `{"text": ""}` and does not list `text` as missing. The two hashes differ.
+`item_revisions.text` is nullable. JSON null is SQL NULL, `missing_fields` contains
+`text`, and `text_hash` is the digest of `{"text": null}`. An empty string stays
+`""`, uses `{"text": ""}`, and does not list `text` as missing. The two hashes differ.
 
 ## Parents
 
@@ -166,12 +178,20 @@ truncated MP4 or QuickTime box stream are per-item `E_INPUT_INVALID`. None of th
 become `ready`.
 
 When `ffprobe` is installed it runs with a fixed argument list, `shell=False`, the
-job read timeout, and one `file:` absolute-path argument. Its absence is probe
-status `not_installed`. A non-zero exit, a timeout, unreadable output, or an exit 0
-that leaves no file is a per-item error and not `ready`.
+job read timeout, and one `file:` absolute-path argument. A file is `ready` only
+when that probe reports an audio or video stream with a real codec name. A magic
+signature or an MP4 box walk is a pre-filter, not proof. Without `ffprobe`, a
+structurally plausible file is stored `unavailable` with probe `not_installed`.
+A non-zero exit, a timeout, unreadable output, an exit 0 with no usable stream,
+or an exit 0 that leaves no file is a per-item error and not `ready`. An
+`unavailable` asset may later become `ready`. A `ready` asset is not downgraded.
 
-The hash path is `objects/sha256/<prefix>/<hash>`. The object is placed before the
-database transaction. The ready asset row and the project link commit together.
+The hash path is `objects/sha256/<prefix>/<hash>`. Staged bytes are hashed again
+before they replace the object. A same-size change after measurement is
+`E_INPUT_INVALID`. The object is placed before the database transaction. The asset
+id is chosen before the checkpoint is written. The asset row and the project link
+commit together. Cumulative `bytes_used` is stored on the checkpoint and restored
+on resume. Media bytes are counted once, including a read that hits the job limit.
 The same bytes share one asset when the sniffed MIME matches the stored MIME.
 A different MIME is `E_INPUT_INVALID` (`Object MIME disagrees with its existing
 classification`) and does not replace the stored classification. Two direct
@@ -180,45 +200,65 @@ keep two `item_assets` rows. The first writer's duration stays. Object paths do
 not contain titles.
 
 `media_metadata` without `media_file` records the sniffed type on the new revision
-and does not publish an object. A referenced file is read at run time. A relative
-`ref` is resolved next to the import file, then opened under the import roots. It
-is not part of the submit-time hash. A reference that fails still commits the item, marks
-the row's `media` field, adds `media` to `missing_fields` when the revision is new,
-and ends the job `partial`. An identical-text reimport can attach bytes later and
-does not clear `missing_fields`, because revisions are append-only.
+and does not publish an object. References are opened only when `media_metadata`
+or `media_file` was requested. Otherwise the ref and kind stay on the revision as
+evidence and the file is not read. A requested file is read at run time. A relative
+`ref` is resolved next to the import file, then opened under the import roots.
+`..` is the parent of the directory just opened, and only when that directory was
+not a symlink. It is not part of the submit-time hash. A reference that fails still
+commits the item, marks the row's `media` field, adds `media` to `missing_fields`
+when the revision is new, and ends the job `partial`. An identical-text reimport
+can attach bytes later and does not clear `missing_fields`, because revisions are
+append-only. Attaching the same bytes to the same item again keeps the existing
+`item_assets` row and still records the new source.
 
-Staging removal only deletes real directories named `job_*` under `staging` when
-the job is missing, terminal, or the job currently running. Queued and
-`awaiting_user` jobs are kept. Symlinks and core `object-*` files are left alone.
+Collect writes `staging/<job>/.collect-owner` when it creates that directory. Sweep
+deletes a directory only when that marker names the directory and `import.local`,
+the job row exists with that operation, and the job is the one currently finishing
+or is already terminal. A missing job, a `job_` prefix, or another operation does
+not authorize deletion. Anything else is left in place and mentioned in the debug
+log. Symlinks and core `object-*` files are left alone.
 
 ## Subtitles
 
-WebVTT and SRT accept a leading BOM and CRLF. Cue settings are ignored. Styling
-tags and multi-line cue text stay, joined with `\n`. `NOTE`, `STYLE`, and `REGION`
-blocks are skipped. A cue needs `start >= 0` and `end >= start`. A malformed
-timestamp or an inverted range is a row error. Touching endpoints are not overlaps.
-Other overlaps are kept, stored on `overlap`, and noted on the row. They do not by
-themselves make the job partial. An HTML page named `.vtt` or `.srt` is
-`E_UNSUPPORTED`. A header-only WebVTT file has zero cues and is `empty_input`.
+WebVTT and SRT accept a leading BOM and CRLF. Lines split on CR, LF, and CRLF only.
+U+2028 and U+0085 stay inside the cue text. Cue settings are ignored. Styling tags
+and multi-line cue text stay, joined with the delimiter that was between those
+lines. Exact `NOTE`, `NOTE ` / `NOTE` plus a tab, `STYLE`, and `REGION` blocks are
+skipped. An identifier such as `STYLE-cue` is a cue. A cue needs `start >= 0` and
+`end >= start`. A malformed timestamp, an inverted range, or a time that does not
+fit in a signed 64-bit millisecond value is a row error. Touching endpoints are
+not overlaps. Other overlaps are kept, stored on `overlap`, and noted on the row.
+They do not by themselves make the job partial. An HTML page named `.vtt` or
+`.srt` is `E_UNSUPPORTED`. A header-only WebVTT file has zero cues and is
+`empty_input`.
 
 Each kept cue is a transcript segment with method `provided`, review `unreviewed`,
 `cue_index` in kept order, and language from the request, else the WebVTT
-`Language:` header, else `und`. Segments are project-scoped. The same file in
-another project gets its own segments. Reimporting the same file hash onto the
-same item and asset reports `unchanged` and does not duplicate cues. A different
-attach target may add segments on the existing subtitle source. There is no
-automatic link to an item imported in the same job; pass `--item` or `--asset`
-for a record that already exists. The asset must already be visible in the project
-through `item_assets` or `source_assets`.
+`Language:` header, else `und`. A language longer than 35 characters becomes
+`und`. Segments are project-scoped. The same file in another project gets its own
+segments. A track is the file hash plus language plus item plus asset. Reimporting
+a completed track reports `unchanged` and does not duplicate cues. A partial or
+interrupted import stays incomplete, and the next import of those bytes inserts
+only the missing cue indexes. A different language or a different item or asset is
+a different track and gets its own source. There is no automatic link to an item
+imported in the same job; pass `--item` or `--asset` for a record that already
+exists. The asset must already be visible in the project through `item_assets` or
+`source_assets`. Transcript rows are append-only. A later observation is a new
+revision and marks packets and drafts that cite the segment stale. Their selection
+and rendered text stay.
 
-Unchanged subtitle cues are listed even when they exceed `max_items`. Item imports
-do count unchanged rows toward that cap.
+Unchanged subtitle cues are listed even when they exceed `max_items`, and they do
+not consume that cap. Item imports do count unchanged rows toward that cap.
 
 ## Local paths
 
 `open_input_file` rejects an empty path, NUL, CR, LF, a component that starts with
 `-`, a symlink anywhere in the walk (`O_NOFOLLOW`, then an inode check against the
 real path), a non-regular file, and a path outside the configured roots. The root
-directory itself is not a file. Byte limits count reads and do not trust `st_size`.
-An import root that is itself a symlink is rejected. Configure the real directory.
-A file reached through a symlink is rejected even when the link is inside a root.
+directory itself is not a file. `..` is applied one component at a time and only
+after the directory just opened was not a symlink. A path such as `link/../file`
+is rejected instead of being rewritten to a different file. Byte limits count
+reads and do not trust `st_size`. An import root that is itself a symlink is
+rejected. Configure the real directory. A file reached through a symlink is
+rejected even when the link is inside a root.

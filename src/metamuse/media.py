@@ -1,7 +1,8 @@
 """Local media bytes and provided subtitle cues.
 
 Object bytes are staged, sniffed, and validated here. The collect job inserts
-the ready asset row and its project link in one database transaction.
+the asset row and its project link in one database transaction. A file is
+ready only after ffprobe reports a usable audio or video stream.
 """
 
 from __future__ import annotations
@@ -40,7 +41,7 @@ FFPROBE_ARGS = (
     "-loglevel",
     "error",
     "-show_entries",
-    "format=duration:stream=codec_type",
+    "format=duration:stream=codec_type,codec_name",
     "-of",
     "json",
     "-protocol_whitelist",
@@ -185,6 +186,21 @@ def ffprobe_command(binary: str, path: Path) -> list[str]:
     return [binary, *FFPROBE_ARGS, f"file:{path.resolve()}"]
 
 
+def _usable_stream(payload: dict) -> bool:
+    """ffprobe must name a real audio or video codec. A signature is not enough."""
+
+    streams = payload.get("streams")
+    if not isinstance(streams, list):
+        return False
+    for stream in streams:
+        if not isinstance(stream, dict) or stream.get("codec_type") not in ("audio", "video"):
+            continue
+        name = stream.get("codec_name")
+        if isinstance(name, str) and name not in ("", "none"):
+            return True
+    return False
+
+
 def _duration_ms(payload: dict) -> int | None:
     raw = (payload.get("format") or {}).get("duration")
     if raw is None:
@@ -232,6 +248,8 @@ def probe_media(path: Path, *, timeout: int) -> tuple[str, int | None]:
         ) from exc
     if not isinstance(payload, dict):
         raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Media probe returned unreadable output")
+    if not _usable_stream(payload):
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Media probe found no usable stream")
     return "probed", _duration_ms(payload)
 
 
@@ -275,6 +293,9 @@ def place_object(store: Store, staged: Path, info: MediaInfo) -> Path:
         raise m.CoreError(
             m.ErrorCode.INPUT_INVALID, "Media probe reported success but the file is missing"
         )
+    staged_hash, staged_size, _header = _hash_file(staged, max_bytes=info.byte_size)
+    if staged_hash != info.sha256 or staged_size != info.byte_size:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Media bytes changed after they were measured")
     target = store.paths.object_path(info.sha256)
     if target.exists():
         if (
@@ -311,10 +332,25 @@ def require_compatible_mime(store: Store, info: MediaInfo) -> None:
         )
 
 
-def ensure_asset(store: Store, writer: Any, info: MediaInfo) -> m.Asset:
-    """Insert a ready asset or reuse the row when the MIME matches.
+def _object_matches(store: Store, info: MediaInfo) -> Path:
+    path = store.paths.object_path(info.sha256)
+    if not path.is_file() or path.stat().st_size != info.byte_size:
+        raise m.CoreError(
+            m.ErrorCode.INPUT_INVALID, "Media probe reported success but the file is missing"
+        )
+    if _hash_file(path, max_bytes=info.byte_size)[0] != info.sha256:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Media bytes changed after they were measured")
+    return path
 
-    The first writer's duration stays. A different MIME raises E_INPUT_INVALID.
+
+def ensure_asset(
+    store: Store, writer: Any, info: MediaInfo, *, asset_id: str | None = None
+) -> m.Asset:
+    """Insert or reuse an asset when the MIME matches.
+
+    Ready requires probe status ``probed``. Without ffprobe the row stays
+    ``unavailable``. A later successful probe may upgrade that row and does not
+    downgrade one that is already ready. The first writer's duration stays.
     """
 
     row = writer.execute("SELECT * FROM assets WHERE sha256=?", (info.sha256,)).fetchone()
@@ -325,17 +361,25 @@ def ensure_asset(store: Store, writer: Any, info: MediaInfo) -> m.Asset:
                 m.ErrorCode.INPUT_INVALID,
                 "Object MIME disagrees with its existing classification",
             )
-        store.verify_asset(asset)
+        if asset.state == "unavailable" and info.probe == "probed":
+            writer.execute(
+                "UPDATE assets SET state='ready', duration_ms=COALESCE(duration_ms, ?) WHERE id=?",
+                (info.duration_ms, asset.id),
+            )
+            row = writer.execute("SELECT * FROM assets WHERE id=?", (asset.id,)).fetchone()
+            asset = store.decode(m.Asset, row)
+        if asset.state == "ready":
+            store.verify_asset(asset)
         return asset
-    path = store.paths.object_path(info.sha256)
+    path = _object_matches(store, info)
     asset = m.Asset(
-        id=m.new_id("ast"),
+        id=asset_id or m.new_id("ast"),
         sha256=info.sha256,
         mime=info.mime,
         actual_bytes=info.byte_size,
         duration_ms=info.duration_ms,
         object_path=str(path.relative_to(store.paths.root)),
-        state="ready",
+        state="ready" if info.probe == "probed" else "unavailable",
     )
     return writer.insert(asset)
 
@@ -351,15 +395,26 @@ def _timestamp_ms(token: str) -> int | None:
     if minutes > 59 or seconds > 59:
         return None
     millis = int(fraction) * (10 ** (3 - len(fraction)))
-    return ((hours * 60 + minutes) * 60 + seconds) * 1000 + millis
+    total = ((hours * 60 + minutes) * 60 + seconds) * 1000 + millis
+    if total > 2**63 - 1:
+        return None
+    return total
 
 
 def _mark_overlaps(cues: list[Cue]) -> None:
-    for index, left in enumerate(cues):
-        for right in cues[index + 1 :]:
-            if left.start_ms < right.end_ms and right.start_ms < left.end_ms:
-                left.overlap = True
-                right.overlap = True
+    """Flag a cue when its open interval meets any other. Touching ends do not overlap."""
+
+    order = sorted(range(len(cues)), key=lambda index: (cues[index].start_ms, cues[index].end_ms))
+    owner = -1
+    max_end = -1
+    for index in order:
+        cue = cues[index]
+        if owner >= 0 and max_end > cue.start_ms:
+            cue.overlap = True
+            cues[owner].overlap = True
+        if cue.end_ms > max_end:
+            max_end = cue.end_ms
+            owner = index
 
 
 def _html_page(text: str) -> bool:
@@ -367,17 +422,62 @@ def _html_page(text: str) -> bool:
     return sample.startswith(("<!doctype", "<html", "<head", "<body"))
 
 
-def _blocks(lines: list[str]) -> list[tuple[int, list[str]]]:
-    blocks: list[tuple[int, list[str]]] = []
+def _split_lines(text: str) -> list[tuple[str, str]]:
+    """Split on CR, LF, and CRLF only. U+2028 and U+0085 stay inside the line."""
+
+    lines: list[tuple[str, str]] = []
+    index = 0
+    size = len(text)
+    while index < size:
+        end = index
+        while end < size and text[end] not in "\r\n":
+            end += 1
+        ending = ""
+        nxt = end
+        if nxt < size and text[nxt] == "\r":
+            nxt += 1
+            ending = "\r"
+            if nxt < size and text[nxt] == "\n":
+                nxt += 1
+                ending = "\r\n"
+        elif nxt < size and text[nxt] == "\n":
+            nxt += 1
+            ending = "\n"
+        lines.append((text[index:end], ending))
+        if nxt == end:
+            break
+        index = nxt
+    return lines
+
+
+def _join_cue(lines: list[tuple[str, str]]) -> str:
+    """Keep the delimiter between cue lines and drop the blank-line terminator."""
+
+    parts: list[str] = []
+    for index, (content, ending) in enumerate(lines):
+        parts.append(content)
+        if index < len(lines) - 1:
+            parts.append(ending or "\n")
+    return "".join(parts)
+
+
+def _skip_block(first: str) -> bool:
+    if first == "NOTE" or first.startswith(("NOTE ", "NOTE\t")):
+        return True
+    return first in {"STYLE", "REGION"}
+
+
+def _blocks(lines: list[tuple[str, str]]) -> list[tuple[int, list[tuple[str, str]]]]:
+    blocks: list[tuple[int, list[tuple[str, str]]]] = []
     index = 0
     number = 0
     while index < len(lines):
-        while index < len(lines) and lines[index].strip() == "":
+        while index < len(lines) and lines[index][0].strip() == "":
             index += 1
         if index >= len(lines):
             break
-        block: list[str] = []
-        while index < len(lines) and lines[index].strip() != "":
+        block: list[tuple[str, str]] = []
+        while index < len(lines) and lines[index][0].strip() != "":
             block.append(lines[index])
             index += 1
         number += 1
@@ -385,15 +485,13 @@ def _blocks(lines: list[str]) -> list[tuple[int, list[str]]]:
     return blocks
 
 
-def _cue_from_block(number: int, block: list[str], *, skip_notes: bool) -> Cue | CueError | None:
-    first = block[0].strip()
-    if skip_notes and (
-        first == "NOTE"
-        or first.startswith(("NOTE ", "NOTE\t", "STYLE", "REGION"))
-        or first in ("STYLE", "REGION")
-    ):
+def _cue_from_block(
+    number: int, block: list[tuple[str, str]], *, skip_notes: bool
+) -> Cue | CueError | None:
+    first = block[0][0]
+    if skip_notes and _skip_block(first):
         return None
-    timestamp_at = next((index for index, line in enumerate(block[:2]) if "-->" in line), None)
+    timestamp_at = next((index for index, line in enumerate(block[:2]) if "-->" in line[0]), None)
     if timestamp_at is None:
         return CueError(
             number,
@@ -401,7 +499,7 @@ def _cue_from_block(number: int, block: list[str], *, skip_notes: bool) -> Cue |
             m.ErrorCode.INPUT_INVALID.value,
             "Cue timestamp is malformed",
         )
-    match = _RANGE.match(block[timestamp_at])
+    match = _RANGE.match(block[timestamp_at][0])
     if match is None:
         return CueError(
             number,
@@ -429,7 +527,7 @@ def _cue_from_block(number: int, block: list[str], *, skip_notes: bool) -> Cue |
         cue_index=0,
         start_ms=start,
         end_ms=end,
-        text="\n".join(block[timestamp_at + 1 :]),
+        text=_join_cue(block[timestamp_at + 1 :]),
         row=number,
     )
 
@@ -447,14 +545,14 @@ def parse_webvtt(text: str) -> SubtitleFile:
                 "Pass a WebVTT or SRT file, not an HTML page renamed to a caption extension"
             ),
         )
-    lines = text.splitlines()
-    if not lines or not lines[0].startswith("WEBVTT"):
+    lines = _split_lines(text)
+    if not lines or not lines[0][0].startswith("WEBVTT"):
         raise m.CoreError(m.ErrorCode.INPUT_INVALID, "WebVTT file is missing the WEBVTT header")
     language = None
     index = 1
-    while index < len(lines) and lines[index].strip() != "":
-        if lines[index].lower().startswith("language:"):
-            value = lines[index].split(":", 1)[1].strip()
+    while index < len(lines) and lines[index][0].strip() != "":
+        if lines[index][0].lower().startswith("language:"):
+            value = lines[index][0].split(":", 1)[1].strip()
             language = value or None
         index += 1
     parsed = SubtitleFile(language=language)
@@ -486,8 +584,8 @@ def parse_srt(text: str) -> SubtitleFile:
     parsed = SubtitleFile()
     if text.strip() == "":
         return parsed
-    for number, block in _blocks(text.splitlines()):
-        body = block[1:] if block and block[0].strip().isdigit() else block
+    for number, block in _blocks(_split_lines(text)):
+        body = block[1:] if block and block[0][0].strip().isdigit() else block
         if not body:
             parsed.errors.append(
                 CueError(

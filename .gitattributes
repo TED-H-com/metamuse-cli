@@ -1,0 +1,2 @@
+tests/fixtures/corpus/import/posts.csv whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+tests/fixtures/corpus/import/posts_bom.csv whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

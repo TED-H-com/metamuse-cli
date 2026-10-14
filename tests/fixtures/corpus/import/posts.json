@@ -41,7 +41,7 @@
     "author_display": "社群研究室 📻",
     "media": [
       {
-        "ref": "media/tiny.mp4",
+        "ref": "../media/tiny.mp4",
         "kind": "video"
       }
     ]

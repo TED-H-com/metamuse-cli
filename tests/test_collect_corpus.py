@@ -96,7 +96,7 @@ def test_corpus_text_fidelity(ctx):
     zh = project_for(ctx, "zh")
     job = run_file(ctx, zh, zh_path, "jsonl", ["post"], "zh")
     assert files["import/posts_zh.jsonl"]["expected"]["valid_rows"] == 10
-    assert job.state == "partial"  # three refs point beside the jsonl and do not resolve
+    assert job.state == "succeeded" and job.stop_reason == "input_exhausted"
     for record in jsonl_records(zh_path):
         item = stored_items(ctx, zh)[record["native_id"]]
         revision = ctx.store.get(m.ItemRevision, item["id"])
@@ -118,7 +118,7 @@ def test_corpus_text_fidelity(ctx):
     for record in array:
         item_id = stored_items(ctx, array_project)[record["native_id"]]["id"]
         assert ctx.store.get(m.ItemRevision, item_id).text == record["text"]
-    assert array_job.coverage_status == "partial"
+    assert array_job.coverage_status == "scope_satisfied"
 
     for name, key in (("posts.csv", "csv"), ("posts_bom.csv", "bom")):
         path = CORPUS / "import" / name
@@ -257,9 +257,9 @@ def test_corpus_reply_tree_and_cross_project(ctx, project):
     parent_project = q(ctx, "SELECT project_id FROM items WHERE id=?", (foreign["parent_id"],))
     assert parent_project[0]["project_id"] == other
 
-    rejected = manifest()["files"]["import/project_b_comments.jsonl"]["expected"]
+    spec = manifest()["files"]["import/project_b_comments.jsonl"]["expected"]
     third = project_for(ctx, "project-b-file")
-    bad = run_file(
+    isolated = run_file(
         ctx,
         third,
         CORPUS / "import/project_b_comments.jsonl",
@@ -267,17 +267,31 @@ def test_corpus_reply_tree_and_cross_project(ctx, project):
         ["post", "comments"],
         "project-b",
     )
-    rule = rejected["importer_rejected"]
-    assert len(payload(bad)["rows"]) == rule["rows"]
-    for row in payload(bad)["rows"]:
-        assert row["status"] == "rejected"
-        assert row["code"] == rule["error_code"]
-        assert row["field"] == rule["field"]
-    assert q(ctx, "SELECT COUNT(*) AS n FROM items WHERE project_id=?", (third,))[0]["n"] == 0
-    for spec in rejected["cross_project_expectations"].values():
-        assert spec["status"] == "rejected_unknown_field"
-        assert spec["error_code"] == "E_INPUT_INVALID"
-        assert spec["field"] == "project"
+    assert isolated.state == "succeeded" and isolated.stop_reason == "input_exhausted"
+    items_b = stored_items(ctx, third)
+    assert set(items_b) == set(spec["cross_project_expectations"])
+    for native, rule in spec["cross_project_expectations"].items():
+        item = items_b[native]
+        if rule["status"] == "unresolved":
+            assert item["parent_id"] is None
+            assert item["unresolved_parent"] == rule["parent_native_id"]
+            continue
+        assert item["unresolved_parent"] is None
+        parent = rule["expected_parent"]
+        if parent is None:
+            assert item["parent_id"] is None
+        else:
+            assert item["parent_id"] == items_b[parent]["id"]
+    assert items_b["c-tree-valid-1"]["id"] != items["c-tree-valid-1"]["id"]
+    assert items_b["c-b-colliding-parent-02"]["parent_id"] != items["c-tree-valid-1"]["id"]
+    assert (
+        q(
+            ctx,
+            "SELECT c.id FROM items c JOIN items p ON c.parent_id=p.id "
+            "WHERE c.project_id!=p.project_id",
+        )
+        == []
+    )
 
 
 def test_corpus_media_only_null_text(ctx, project):
@@ -289,20 +303,22 @@ def test_corpus_media_only_null_text(ctx, project):
     assert sum(record["text"] is None for record in records) == expected["text_null_count"]
     assert sum(len(record["media"]) for record in records) == expected["media_refs_count"]
     job = run_file(ctx, project, path, "jsonl", ["post", "media_file"], "media-only")
-    assert job.state == "partial"
+    assert job.state == "succeeded" and job.stop_reason == "input_exhausted"
     rows = payload(job)["rows"]
     assert len(rows) == 4
-    assert all(row["status"] == "committed" and row["field"] == "media" for row in rows)
-    assert all(row["code"] == "E_INPUT_INVALID" for row in rows)
+    assert all(row["status"] == "committed" and row.get("code") is None for row in rows)
     absent = m.payload_digest({"text": None})
     present = m.payload_digest({"text": ""})
     assert absent != present
     for item in q(ctx, "SELECT id FROM items WHERE project_id=?", (project,)):
         revision = ctx.store.get(m.ItemRevision, item["id"])
-        assert revision.text == ""
+        assert revision.text is None
         assert "text" in revision.missing_fields
         assert revision.text_hash == absent
-    assert q(ctx, "SELECT COUNT(*) AS n FROM assets")[0]["n"] == 0
+    assets = q(ctx, "SELECT state FROM assets")
+    assert len(assets) == 3
+    assert all(row["state"] == "ready" for row in assets)
+    assert q(ctx, "SELECT COUNT(*) AS n FROM item_assets")[0]["n"] == expected["media_refs_count"]
 
 
 def test_corpus_subtitles(ctx):

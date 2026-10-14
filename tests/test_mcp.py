@@ -241,6 +241,7 @@ def test_mcp_stdio_calls_state_handles_and_errors(tmp_path: Path) -> None:
                     assert secret not in invalid_res.content[0].text
 
                     # 4. Domain errors reach client with code, retry_class, next_action, isError.
+                    # Collect is implemented; a local file with no import root is a scope error.
                     unsupported_res = await session.call_tool(
                         "metamuse_collect",
                         {
@@ -264,10 +265,10 @@ def test_mcp_stdio_calls_state_handles_and_errors(tmp_path: Path) -> None:
                         },
                     )
                     unsupported_env = _assert_envelope_result(unsupported_res, expected_error=True)
-                    assert unsupported_env["error"]["code"] == "E_UNSUPPORTED"
-                    assert unsupported_env["error"]["retry_class"] == "never"
+                    assert unsupported_env["error"]["code"] == "E_SCOPE_REQUIRED"
+                    assert unsupported_env["error"]["retry_class"] == "user_action"
                     assert isinstance(unsupported_env["error"]["next_action"], str)
-                    assert unsupported_env["error"]["next_action"]
+                    assert "import_roots" in unsupported_env["error"]["next_action"]
 
                     ref_err_res = await session.call_tool(
                         "metamuse_job_get", {"job_id": "job_missing_fixture"}

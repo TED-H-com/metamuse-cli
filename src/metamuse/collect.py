@@ -15,6 +15,7 @@ import csv
 import hashlib
 import io
 import json
+import logging
 import math
 import os
 import shutil
@@ -78,6 +79,11 @@ REMOTE_NEXT = (
     "Remote URL collection is B12/B13 and stays LIVE-gated. "
     "Import a local file or text input instead."
 )
+MAX_NESTING = 32
+MAX_STORED_ERRORS = 50
+LOOKAHEAD = 64
+_OWNER_NAME = ".collect-owner"
+log = logging.getLogger(__name__)
 
 
 def capability_status(ctx: Any) -> dict[str, dict[str, str]]:
@@ -149,7 +155,7 @@ class Record:
 class _Revision:
     revision: int
     text_hash: str
-    text: str
+    text: str | None
     missing_fields: list[str]
     raw_time: str | None
     parsed_time: str | None
@@ -170,7 +176,7 @@ class _Item:
     confidence: str
     revision: int
     text_hash: str | None
-    text: str
+    text: str | None
     missing_fields: list[str]
     raw_time: str | None
     parsed_time: str | None
@@ -265,7 +271,7 @@ class _Book:
                 "Reliable id was already imported with a different kind",
             )
         digest = m.payload_digest({"text": record.text})
-        stored = "" if record.text is None else record.text
+        stored = record.text
         missing = ["text"] if record.text is None else []
         parent_id, unresolved = self._parent_of(existing, record)
         item_id = existing.item_id if existing else m.new_id("itm")
@@ -399,6 +405,33 @@ class _Book:
                 linked.append(child)
         return linked
 
+    def preview(self, record: Record) -> _Invalid | None:
+        """Identity checks for a row that must not change the book."""
+
+        key = (record.platform, record.scope, record.native_id) if record.native_id else None
+        existing = self.by_key.get(key) if key else None
+        if existing is not None and existing.kind != record.kind:
+            return _Invalid(
+                "kind",
+                m.ErrorCode.REFERENCE_INVALID,
+                "Reliable id was already imported with a different kind",
+            )
+        try:
+            parent_id, _unresolved = self._parent_of(existing, record)
+            item_id = existing.item_id if existing else "peek"
+            mapping = self.parents()
+            mapping[item_id] = parent_id
+            if parent_id is not None and _cycle(item_id, parent_id, mapping):
+                return _Invalid(
+                    "parent_native_id",
+                    m.ErrorCode.REFERENCE_INVALID,
+                    "Parent link would create a cycle",
+                )
+            self._waiting_children(record, item_id, dict(mapping))
+        except _Invalid as exc:
+            return exc
+        return None
+
     def flush(self, writer: TransactionWriter, store: Any) -> None:
         now = store.clock()
         for item in self.pending:
@@ -409,7 +442,7 @@ class _Book:
                     id=item.source_id,
                     project_id=self.project_id,
                     platform=item.platform,
-                    native_scope="" if item.native_id else None,
+                    native_scope=item.scope if item.native_id else (item.scope or None),
                     native_id=item.native_id,
                     original_url=item.original_url,
                     collection_method=item.collection_method,
@@ -541,6 +574,8 @@ def _optional_str(value: Any, name: str) -> str | None:
         return None
     if not isinstance(value, str):
         raise _Invalid(name, m.ErrorCode.INPUT_INVALID, f"{name} must be a string")
+    if any(0xD800 <= ord(char) <= 0xDFFF for char in value):
+        raise _Invalid(name, m.ErrorCode.INPUT_INVALID, f"{name} is not valid Unicode text")
     limit = FIELD_LIMITS[name]
     if len(value) > limit:
         raise _Invalid(name, m.ErrorCode.LIMIT_REACHED, f"{name} exceeds {limit} characters")
@@ -594,8 +629,7 @@ def _record_from(
         raise _Invalid("record", m.ErrorCode.INPUT_INVALID, "Record must be a JSON object")
     unknown = set(obj) - RECORD_FIELDS
     if unknown:
-        name = sorted(unknown)[0]
-        raise _Invalid(name, m.ErrorCode.INPUT_INVALID, f"Unknown record field {name}")
+        raise _Invalid("record", m.ErrorCode.INPUT_INVALID, "Record contains an unknown field")
     platform = _optional_str(obj.get("platform"), "platform")
     kind = _optional_str(obj.get("kind"), "kind")
     if not platform:
@@ -666,64 +700,369 @@ def _decode(data: bytes) -> str:
         raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "Input is not valid UTF-8") from exc
 
 
-def parse_jsonl(data: bytes, *, text_max_bytes: int | None = None) -> list[Record | dict[str, Any]]:
-    body = _strip_bom(data)
-    rows: list[Record | dict[str, Any]] = []
-    lines = body.split(b"\n")
-    if lines and lines[-1] == b"":
-        lines.pop()
-    for number, raw in enumerate(lines, start=1):
+def _budgets(max_records: int | None, max_errors: int | None) -> tuple[int, int]:
+    records = m.Limits().max_items if max_records is None else max_records
+    errors = MAX_STORED_ERRORS if max_errors is None else max_errors
+    if records < 0 or errors < 0:
+        raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "Record budget is negative")
+    return records, errors
+
+
+class _ParseBudget:
+    """Keep a bounded number of rows and errors. The rest is a count, not a copy."""
+
+    def __init__(self, max_records: int, max_errors: int) -> None:
+        self.max_records = max_records
+        self.max_errors = max_errors
+        self.seen = 0
+        self.kept_errors = 0
+        self.omitted = 0
+        self.stopped = False
+        self.rows: list[Record | dict[str, Any]] = []
+
+    def add(self, item: Record | dict[str, Any], *, error: bool) -> bool:
+        if self.seen >= self.max_records:
+            self.stopped = True
+            return False
+        self.seen += 1
+        if not error:
+            self.rows.append(item)
+            return True
+        if self.kept_errors < self.max_errors:
+            self.rows.append(item)
+            self.kept_errors += 1
+        else:
+            self.omitted += 1
+        return True
+
+    def finish(self) -> list[Record | dict[str, Any]]:
+        if self.omitted:
+            self.rows.append(
+                _problem(
+                    None,
+                    None,
+                    _Invalid(
+                        "record",
+                        m.ErrorCode.LIMIT_REACHED,
+                        f"{self.omitted} additional record errors omitted",
+                    ),
+                )
+            )
+        if self.stopped:
+            self.rows.append(
+                _problem(
+                    None,
+                    None,
+                    _Invalid(
+                        "record",
+                        m.ErrorCode.LIMIT_REACHED,
+                        "Record budget reached; remainder not inspected",
+                    ),
+                )
+            )
+        return self.rows
+
+
+def _too_deep(text: str, limit: int = MAX_NESTING) -> bool:
+    depth = 0
+    in_string = False
+    escape = False
+    for char in text:
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > limit:
+                return True
+        elif char in "]}":
+            depth = max(0, depth - 1)
+    return False
+
+
+def _json_decoder() -> json.JSONDecoder:
+    return json.JSONDecoder(
+        parse_constant=_reject_constant,
+        parse_float=_finite_float,
+        object_pairs_hook=_unique_object,
+    )
+
+
+def _skip_ws(text: str, index: int) -> int:
+    size = len(text)
+    while index < size and text[index] in " \t\r\n":
+        index += 1
+    return index
+
+
+def _skip_json_value(text: str, index: int) -> int:
+    index = _skip_ws(text, index)
+    size = len(text)
+    if index >= size:
+        return index
+    char = text[index]
+    if char == '"':
+        index += 1
+        escape = False
+        while index < size:
+            current = text[index]
+            index += 1
+            if escape:
+                escape = False
+            elif current == "\\":
+                escape = True
+            elif current == '"':
+                break
+        return index
+    if char in "[{":
+        depth = 0
+        in_string = False
+        escape = False
+        while index < size:
+            current = text[index]
+            if in_string:
+                if escape:
+                    escape = False
+                elif current == "\\":
+                    escape = True
+                elif current == '"':
+                    in_string = False
+            elif current == '"':
+                in_string = True
+            elif current in "[{":
+                depth += 1
+            elif current in "]}":
+                depth -= 1
+                if depth == 0:
+                    return index + 1
+            index += 1
+        return size
+    while index < size and text[index] not in ",]} \t\r\n":
+        index += 1
+    return index
+
+
+def _value_too_deep(text: str, index: int, limit: int = MAX_NESTING) -> bool:
+    index = _skip_ws(text, index)
+    depth = 0
+    in_string = False
+    escape = False
+    size = len(text)
+    while index < size:
+        char = text[index]
+        if in_string:
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == '"':
+                in_string = False
+            index += 1
+            continue
+        if char == '"':
+            if depth == 0:
+                return False
+            in_string = True
+        elif char in "[{":
+            depth += 1
+            if depth > limit:
+                return True
+        elif char in "]}":
+            depth -= 1
+            if depth <= 0:
+                return False
+        elif depth == 0 and char == ",":
+            return False
+        index += 1
+    return False
+
+
+def _iter_lines(body: bytes):
+    start = 0
+    size = len(body)
+    number = 0
+    while start <= size:
+        end = body.find(b"\n", start)
+        if end == -1:
+            end = size
+        raw = body[start:end]
+        number += 1
+        nxt = end + 1
         if raw.endswith(b"\r"):
             raw = raw[:-1]
-        if raw.strip() == b"":
-            continue
-        try:
-            text = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            rows.append(
-                _problem(
-                    number,
-                    number,
-                    _Invalid("record", m.ErrorCode.INPUT_INVALID, "Line is not valid UTF-8"),
-                )
-            )
-            continue
-        try:
-            parsed = _loads(text)
-            rows.append(
-                _record_from(parsed, row=number, line=number, text_max_bytes=text_max_bytes)
-            )
-        except _Invalid as exc:
-            rows.append(_problem(number, number, exc))
-        except ValueError:
-            rows.append(
-                _problem(
-                    number,
-                    number,
-                    _Invalid("record", m.ErrorCode.INPUT_INVALID, "Line is not valid JSON"),
-                )
-            )
-    return rows
+        if raw.strip():
+            yield number, raw
+        if end == size:
+            break
+        start = nxt
 
 
-def parse_json(data: bytes, *, text_max_bytes: int | None = None) -> list[Record | dict[str, Any]]:
-    try:
-        parsed = _loads(_decode(data))
-    except ValueError as exc:
-        raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "Input is not valid JSON") from exc
-    if isinstance(parsed, dict):
-        values = [parsed]
-    elif isinstance(parsed, list):
-        values = parsed
-    else:
+def _iter_json_values(text: str):
+    decoder = _json_decoder()
+    index = _skip_ws(text, 0)
+    if index >= len(text):
+        raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "Input is not valid JSON")
+    if text[index] == "{":
+        if _value_too_deep(text, index):
+            yield _Invalid("record", m.ErrorCode.LIMIT_REACHED, "Record nesting exceeds 32")
+            return
+        try:
+            value, end = decoder.raw_decode(text, index)
+        except (ValueError, RecursionError, MemoryError) as exc:
+            raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "Input is not valid JSON") from exc
+        if _skip_ws(text, end) != len(text):
+            raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "Input is not valid JSON")
+        yield value
+        return
+    if text[index] != "[":
         raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "JSON input must be an object or array")
-    rows: list[Record | dict[str, Any]] = []
-    for index, value in enumerate(values, start=1):
-        try:
-            rows.append(_record_from(value, row=index, line=None, text_max_bytes=text_max_bytes))
-        except _Invalid as exc:
-            rows.append(_problem(index, None, exc))
-    return rows
+    index += 1
+    while True:
+        index = _skip_ws(text, index)
+        if index >= len(text):
+            raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "Input is not valid JSON")
+        if text[index] == "]":
+            return
+        if _value_too_deep(text, index):
+            yield _Invalid("record", m.ErrorCode.LIMIT_REACHED, "Record nesting exceeds 32")
+            index = _skip_json_value(text, index)
+        else:
+            try:
+                value, end = decoder.raw_decode(text, index)
+            except RecursionError:
+                yield _Invalid("record", m.ErrorCode.LIMIT_REACHED, "Record nesting exceeds 32")
+                return
+            except MemoryError:
+                yield _Invalid(
+                    "record",
+                    m.ErrorCode.LIMIT_REACHED,
+                    "Record budget reached; remainder not inspected",
+                )
+                return
+            except ValueError as exc:
+                raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "Input is not valid JSON") from exc
+            yield value
+            index = end
+        index = _skip_ws(text, index)
+        if index < len(text) and text[index] == ",":
+            index += 1
+            if _skip_ws(text, index) >= len(text) or text[_skip_ws(text, index)] == "]":
+                raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "Input is not valid JSON")
+            continue
+        if index < len(text) and text[index] == "]":
+            return
+        raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "Input is not valid JSON")
+
+
+def _accept_record(
+    budget: _ParseBudget,
+    value: Any,
+    *,
+    row: int,
+    line: int | None,
+    text_max_bytes: int | None,
+) -> None:
+    if isinstance(value, _Invalid):
+        budget.add(_problem(row, line, value), error=True)
+        return
+    try:
+        budget.add(
+            _record_from(value, row=row, line=line, text_max_bytes=text_max_bytes), error=False
+        )
+    except _Invalid as exc:
+        budget.add(_problem(row, line, exc), error=True)
+
+
+def parse_jsonl(
+    data: bytes,
+    *,
+    text_max_bytes: int | None = None,
+    max_records: int | None = None,
+    max_errors: int | None = None,
+    progress: Callable[[], None] | None = None,
+) -> list[Record | dict[str, Any]]:
+    records, errors = _budgets(max_records, max_errors)
+    budget = _ParseBudget(records, errors)
+    try:
+        for number, raw in _iter_lines(_strip_bom(data)):
+            if progress is not None and budget.seen and budget.seen % 64 == 0:
+                progress()
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                if not budget.add(
+                    _problem(
+                        number,
+                        number,
+                        _Invalid("record", m.ErrorCode.INPUT_INVALID, "Line is not valid UTF-8"),
+                    ),
+                    error=True,
+                ):
+                    break
+                continue
+            if _too_deep(text):
+                if not budget.add(
+                    _problem(
+                        number,
+                        number,
+                        _Invalid("record", m.ErrorCode.LIMIT_REACHED, "Record nesting exceeds 32"),
+                    ),
+                    error=True,
+                ):
+                    break
+                continue
+            try:
+                parsed = _loads(text)
+            except (ValueError, RecursionError, MemoryError):
+                if not budget.add(
+                    _problem(
+                        number,
+                        number,
+                        _Invalid("record", m.ErrorCode.INPUT_INVALID, "Line is not valid JSON"),
+                    ),
+                    error=True,
+                ):
+                    break
+                continue
+            before = budget.seen
+            _accept_record(budget, parsed, row=number, line=number, text_max_bytes=text_max_bytes)
+            if budget.stopped and budget.seen == before:
+                break
+    except MemoryError:
+        budget.stopped = True
+    return budget.finish()
+
+
+def parse_json(
+    data: bytes,
+    *,
+    text_max_bytes: int | None = None,
+    max_records: int | None = None,
+    max_errors: int | None = None,
+    progress: Callable[[], None] | None = None,
+) -> list[Record | dict[str, Any]]:
+    records, errors = _budgets(max_records, max_errors)
+    budget = _ParseBudget(records, errors)
+    text = _decode(data)
+    try:
+        for value in _iter_json_values(text):
+            if progress is not None and budget.seen and budget.seen % 64 == 0:
+                progress()
+            row = budget.seen + 1
+            before = budget.seen
+            _accept_record(budget, value, row=row, line=None, text_max_bytes=text_max_bytes)
+            if budget.stopped and budget.seen == before:
+                break
+    except MemoryError:
+        budget.stopped = True
+    return budget.finish()
 
 
 def _csv_media(row: dict[str, str | None]) -> list[dict[str, str]] | None:
@@ -747,43 +1086,83 @@ def _csv_media(row: dict[str, str | None]) -> list[dict[str, str]] | None:
     return _media_list([{"ref": ref, "kind": kind}])
 
 
-def parse_csv(data: bytes, *, text_max_bytes: int | None = None) -> list[Record | dict[str, Any]]:
+def parse_csv(
+    data: bytes,
+    *,
+    text_max_bytes: int | None = None,
+    max_records: int | None = None,
+    max_errors: int | None = None,
+    progress: Callable[[], None] | None = None,
+) -> list[Record | dict[str, Any]]:
+    records, errors = _budgets(max_records, max_errors)
+    budget = _ParseBudget(records, errors)
     text = _decode(data)
-    reader = csv.DictReader(io.StringIO(text, newline=""))
-    header = list(reader.fieldnames or [])
-    if not header:
-        return []
-    if len(header) != len(set(header)):
-        raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "CSV header repeats a column")
-    if "platform" not in header or "kind" not in header:
-        raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "CSV header must include platform and kind")
-    unknown = set(header) - CSV_FIELDS
-    if unknown:
-        raise _FileInvalid(
-            m.ErrorCode.INPUT_INVALID, f"CSV header has unknown column {sorted(unknown)[0]}"
-        )
-    rows: list[Record | dict[str, Any]] = []
-    for index, raw in enumerate(reader, start=1):
-        if raw is None or all(value in (None, "") for value in raw.values()):
-            continue
-        obj: dict[str, Any] = {}
-        for key, value in raw.items():
-            if key in ("media", "media_ref", "media_kind"):
-                continue
-            obj[key] = None if value in (None, "") else value
-        try:
-            media = _csv_media(
-                {
-                    key: (None if raw.get(key) in ("", None) else raw.get(key))
-                    for key in ("media", "media_ref", "media_kind")
-                }
+    previous = csv.field_size_limit()
+    csv.field_size_limit(1_000_000)
+    try:
+        reader = csv.DictReader(io.StringIO(text, newline=""), strict=True)
+        header = list(reader.fieldnames or [])
+        if not header:
+            return []
+        if len(header) != len(set(header)):
+            raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "CSV header repeats a column")
+        if "platform" not in header or "kind" not in header:
+            raise _FileInvalid(
+                m.ErrorCode.INPUT_INVALID, "CSV header must include platform and kind"
             )
-            if media is not None:
-                obj["media"] = media
-            rows.append(_record_from(obj, row=index, line=None, text_max_bytes=text_max_bytes))
-        except _Invalid as exc:
-            rows.append(_problem(index, None, exc))
-    return rows
+        unknown = set(header) - CSV_FIELDS
+        if unknown:
+            raise _FileInvalid(m.ErrorCode.INPUT_INVALID, "CSV header has an unknown column")
+        index = 0
+        pending = iter(reader)
+        while True:
+            if progress is not None and budget.seen and budget.seen % 64 == 0:
+                progress()
+            try:
+                raw = next(pending)
+            except StopIteration:
+                break
+            except csv.Error:
+                budget.add(
+                    _problem(
+                        index + 1,
+                        None,
+                        _Invalid("record", m.ErrorCode.INPUT_INVALID, "CSV record is malformed"),
+                    ),
+                    error=True,
+                )
+                break
+            except MemoryError:
+                budget.stopped = True
+                break
+            index += 1
+            if raw is None or all(value in (None, "") for value in raw.values()):
+                continue
+            obj: dict[str, Any] = {}
+            for key, value in raw.items():
+                if key in ("media", "media_ref", "media_kind"):
+                    continue
+                obj[key] = None if value in (None, "") else value
+            try:
+                media = _csv_media(
+                    {
+                        key: (None if raw.get(key) in ("", None) else raw.get(key))
+                        for key in ("media", "media_ref", "media_kind")
+                    }
+                )
+                if media is not None:
+                    obj["media"] = media
+                added = budget.add(
+                    _record_from(obj, row=index, line=None, text_max_bytes=text_max_bytes),
+                    error=False,
+                )
+            except _Invalid as exc:
+                added = budget.add(_problem(index, None, exc), error=True)
+            if not added:
+                break
+    finally:
+        csv.field_size_limit(previous)
+    return budget.finish()
 
 
 def parse_text(data: bytes, *, text_max_bytes: int | None = None) -> list[Record]:
@@ -851,22 +1230,64 @@ def _real_roots(values: list[str]) -> list[str]:
     return ready
 
 
+def _marker_payload(path: Path) -> dict[str, Any] | None:
+    try:
+        payload = json.loads((path / _OWNER_NAME).read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    return payload
+
+
+def _claim_staging(store: Any, job_id: str) -> Path:
+    directory = store.paths.root / "staging" / job_id
+    directory.mkdir(parents=True, exist_ok=True)
+    marker = directory / _OWNER_NAME
+    payload = {"job_id": job_id, "operation": OPERATION}
+    current = _marker_payload(directory)
+    if current != payload:
+        marker.write_text(json.dumps(payload), encoding="utf-8")
+        marker.chmod(0o600)
+    return directory
+
+
 def _sweep(store: Any, current: str, *, remove_current: bool) -> None:
+    """Delete only staging this operation marked for this job."""
+
     staging = store.paths.root / "staging"
     if not staging.is_dir() or staging.is_symlink():
         return
     root = staging.resolve()
     with store.connection() as conn:
-        known = {row["id"]: row["state"] for row in conn.execute("SELECT id, state FROM jobs")}
+        known = {
+            row["id"]: (row["operation"], row["state"])
+            for row in conn.execute("SELECT id, operation, state FROM jobs")
+        }
     for child in staging.iterdir():
-        if not child.name.startswith("job_") or child.is_symlink() or not child.is_dir():
+        if child.is_symlink() or not child.is_dir():
             continue
         try:
             child.resolve().relative_to(root)
         except ValueError:
+            log.debug("staging left in place; directory escapes the staging root: %s", child.name)
             continue
-        state = known.get(child.name)
-        drop = (remove_current and child.name == current) or state is None or state in jobs.TERMINAL
+        payload = _marker_payload(child)
+        if payload is None:
+            log.debug("staging left in place; no collect ownership marker: %s", child.name)
+            continue
+        if payload.get("job_id") != child.name or payload.get("operation") != OPERATION:
+            log.debug("staging left in place; ownership marker does not match: %s", child.name)
+            continue
+        job = known.get(child.name)
+        if job is None:
+            log.debug("staging left in place; job is not in the database: %s", child.name)
+            continue
+        operation, state = job
+        if operation != OPERATION:
+            log.debug("staging left in place; job operation is not import.local: %s", child.name)
+            continue
+        drop = (remove_current and child.name == current) or state in jobs.TERMINAL
         if drop:
             shutil.rmtree(child)
 
@@ -889,6 +1310,7 @@ class _Run:
     method: str = ""
     sha: str = ""
     writes: list[Callable[[TransactionWriter], None]] = field(default_factory=list)
+    asset_ids: dict[str, str] = field(default_factory=dict)
 
     def checkpoint(self, input_index: int, next_record: int) -> None:
         payload = {
@@ -899,6 +1321,7 @@ class _Run:
             "inputs": self.inputs,
             "missing_fields": sorted(self.missing),
             "accepted": self.accepted,
+            "bytes_used": self.bytes_used,
         }
 
         def write(writer: TransactionWriter) -> None:
@@ -976,13 +1399,17 @@ def _execute(step: StepContext) -> m.JobResult:
         missing=set(saved.get("missing_fields", [])),
         accepted=int(saved.get("accepted", 0)),
         halt=saved.get("halt"),
-        bytes_used=sum(int(item.byte_size or 0) for item in request.inputs if item.kind != "url"),
+        bytes_used=(
+            int(saved["bytes_used"])
+            if "bytes_used" in saved
+            else sum(int(item.byte_size or 0) for item in request.inputs if item.kind != "url")
+        ),
         text_max=int(step.target.get("text_max_bytes", m.Limits().text_max_bytes)),
     )
     resources = set(request.resources)
     start_input = int(saved.get("input_index", 0))
     start_record = int(saved.get("next_record", 0))
-    staging = step.store.paths.root / "staging" / step.job.id
+    staging = _claim_staging(step.store, step.job.id)
     for index, item in enumerate(request.inputs):
         if runner.halt:
             break
@@ -1008,6 +1435,7 @@ def _execute(step: StepContext) -> m.JobResult:
         "inputs": runner.inputs,
         "missing_fields": sorted(runner.missing),
         "accepted": runner.accepted,
+        "bytes_used": runner.bytes_used,
     }
     return _result(step, request, payload)
 
@@ -1112,14 +1540,22 @@ def _import_records(
         return
     try:
         data = staged.read_bytes()
+        budget = runner.request.limits.max_items + LOOKAHEAD
+        progress = runner.step.guard
         if item.format == "jsonl":
-            parsed = parse_jsonl(data, text_max_bytes=runner.text_max)
+            parsed = parse_jsonl(
+                data, text_max_bytes=runner.text_max, max_records=budget, progress=progress
+            )
         elif item.format == "csv":
-            parsed = parse_csv(data, text_max_bytes=runner.text_max)
+            parsed = parse_csv(
+                data, text_max_bytes=runner.text_max, max_records=budget, progress=progress
+            )
         elif item.format == "text":
             parsed = list(parse_text(data, text_max_bytes=runner.text_max))
         else:
-            parsed = parse_json(data, text_max_bytes=runner.text_max)
+            parsed = parse_json(
+                data, text_max_bytes=runner.text_max, max_records=budget, progress=progress
+            )
     except _FileInvalid as exc:
         runner.inputs.append(
             {
@@ -1173,6 +1609,25 @@ def _import_text(
     _consume_records(runner, index, parsed, resources, resume, None)
 
 
+def _acceptable(book: _Book, record: Record | dict[str, Any], resources: set[str]) -> bool:
+    return (
+        isinstance(record, Record)
+        and _selected(record.kind, resources)
+        and book.preview(record) is None
+    )
+
+
+def _diagnose(book: _Book, record: Record | dict[str, Any], resources: set[str]) -> dict[str, Any]:
+    if isinstance(record, dict):
+        return dict(record)
+    if not _selected(record.kind, resources):
+        return _blank_row(0, record.row, record.line, "skipped")
+    reason = book.preview(record)
+    if reason is None:
+        return _blank_row(0, record.row, record.line, "skipped")
+    return _problem(record.row, record.line, reason)
+
+
 def _consume_records(
     runner: _Run,
     index: int,
@@ -1183,7 +1638,21 @@ def _consume_records(
 ) -> None:
     cursor = resume
     batch: list[dict[str, Any]] = []
+    limit = runner.request.limits.max_items
     while cursor < len(parsed):
+        if runner.accepted >= limit:
+            rest = parsed[cursor:]
+            if any(_acceptable(runner.book, record, resources) for record in rest):
+                runner.halt = "limit_reached"
+                break
+            for record in rest:
+                taken = _diagnose(runner.book, record, resources)
+                taken["input"] = index
+                batch.append(taken)
+            cursor = len(parsed)
+            break
+        if runner.accepted and runner.accepted % 64 == 0:
+            runner.step.guard()
         taken = runner.take(parsed[cursor], resources)
         if taken is None:
             break
@@ -1208,6 +1677,13 @@ def _attach_media(
     runner: _Run, record: Record, row: dict[str, Any], import_path: Path | None, index: int
 ) -> None:
     if not record.media or import_path is None:
+        return
+    requested = set(runner.request.resources)
+    if "media_metadata" not in requested and "media_file" not in requested:
+        notes = [{"ref": spec["ref"], "kind": spec["kind"]} for spec in record.media]
+        for item in runner.book.pending:
+            if item.item_id == row["item_id"] and item.revision_new:
+                item.evidence = {**item.evidence, "media": notes}
         return
     notes: list[dict[str, Any]] = []
     failed = False
@@ -1260,6 +1736,9 @@ def _read_media_ref(
             str(candidate), max_bytes=runner.media_max, roots=runner.roots
         ) as handle:
             header = handle.read(64)
+        runner.bytes_used += len(header)
+        if runner.bytes_used > runner.request.limits.max_bytes:
+            raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Job byte limit reached")
         mime = media_mod.sniff_mime(header)
         if mime in (None, "text/html"):
             raise m.CoreError(
@@ -1275,18 +1754,27 @@ def _read_media_ref(
     )
     dest.parent.mkdir(parents=True, exist_ok=True)
     size = 0
-    with safety.open_input_file(
-        str(candidate), max_bytes=runner.media_max, roots=runner.roots
-    ) as src:
-        with dest.open("wb") as out:
-            while chunk := src.read(1024 * 1024):
-                size += len(chunk)
-                if runner.bytes_used + size > runner.request.limits.max_bytes:
-                    raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Job byte limit reached")
-                out.write(chunk)
-            out.flush()
-            os.fsync(out.fileno())
-    runner.bytes_used += size
+    added = False
+    try:
+        with safety.open_input_file(
+            str(candidate), max_bytes=runner.media_max, roots=runner.roots
+        ) as src:
+            with dest.open("wb") as out:
+                while chunk := src.read(1024 * 1024):
+                    size += len(chunk)
+                    if runner.bytes_used + size > runner.request.limits.max_bytes:
+                        runner.bytes_used += size
+                        added = True
+                        raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Job byte limit reached")
+                    out.write(chunk)
+                out.flush()
+                os.fsync(out.fileno())
+        runner.bytes_used += size
+        added = True
+    except m.CoreError:
+        if not added:
+            runner.bytes_used += size
+        raise
     info = media_mod.analyze_file(
         dest, max_bytes=runner.media_max, read_timeout_seconds=runner.read_timeout
     )
@@ -1295,14 +1783,27 @@ def _read_media_ref(
     return {"mime": info.mime}, info
 
 
+def _allocate_asset_id(runner: _Run, sha: str) -> str:
+    known = runner.asset_ids.get(sha)
+    if known:
+        return known
+    with runner.step.store.connection() as conn:
+        found = conn.execute("SELECT id FROM assets WHERE sha256=?", (sha,)).fetchone()
+    asset_id = str(found["id"]) if found is not None else m.new_id("ast")
+    runner.asset_ids[sha] = asset_id
+    return asset_id
+
+
 def _queue_item_asset(
     runner: _Run, row: dict[str, Any], info: media_mod.MediaInfo, relation: str
 ) -> None:
+    asset_id = _allocate_asset_id(runner, info.sha256)
+    row["asset_id"] = asset_id
     item_id = row["item_id"]
     revision = row["revision"]
 
     def write(writer: TransactionWriter) -> None:
-        asset = media_mod.ensure_asset(runner.step.store, writer, info)
+        asset = media_mod.ensure_asset(runner.step.store, writer, info, asset_id=asset_id)
         existing = writer.execute(
             "SELECT 1 FROM item_assets WHERE item_id=? AND revision=? AND asset_id=? "
             "AND relation=?",
@@ -1314,7 +1815,6 @@ def _queue_item_asset(
                     item_id=item_id, revision=revision, asset_id=asset.id, relation=relation
                 )
             )
-        row["asset_id"] = asset.id
 
     runner.writes.append(write)
 
@@ -1368,8 +1868,10 @@ def _import_subtitles(
         )
         runner.checkpoint(index + 1, 0)
         return
-    source_id = _subtitle_source(runner, item.sha256 or "", language)
-    if resume == 0 and _cues_exist(runner, source_id, anchor):
+    sha = item.sha256 or ""
+    found = _find_subtitle_source(runner, sha, language, anchor)
+    if found is not None and found[1] and resume == 0:
+        source_id = found[0]
         for cue in parsed.cues:
             row = _blank_row(index, cue.row, None, "unchanged")
             row["source_id"] = source_id
@@ -1385,16 +1887,33 @@ def _import_subtitles(
             )
         runner.checkpoint(index + 1, 0)
         return
+    if found is None:
+        source_id = m.new_id("src")
+        _queue_subtitle_source(runner, source_id, sha, language, anchor)
+        have: set[int] = set()
+    else:
+        source_id = found[0]
+        have = _stored_cue_indexes(runner, source_id)
     cursor = resume
     batch = 0
+    stored_all = True
     while cursor < len(parsed.cues):
         if runner.accepted >= runner.request.limits.max_items:
             runner.halt = "limit_reached"
             break
+        if cursor and cursor % 64 == 0:
+            runner.step.guard()
         cue = parsed.cues[cursor]
+        if cue.cue_index in have:
+            row = _blank_row(index, cue.row, None, "unchanged")
+            row["source_id"] = source_id
+            runner.rows.append(row)
+            cursor += 1
+            continue
         try:
             _bound_text(cue.text, runner.text_max)
         except _Invalid as exc:
+            stored_all = False
             runner.rows.append(
                 {
                     **_blank_row(index, cue.row, None, "rejected"),
@@ -1431,6 +1950,8 @@ def _import_subtitles(
                     "message": error.message,
                 }
             )
+        if stored_all:
+            _queue_subtitle_complete(runner, source_id, sha, language, anchor, len(parsed.cues))
         runner.checkpoint(index + 1, 0)
     else:
         runner.checkpoint(index, cursor)
@@ -1451,27 +1972,53 @@ def _subtitle_anchor(runner: _Run) -> tuple[str | None, str | None]:
     return item_id, asset_id
 
 
-def _subtitle_source(runner: _Run, sha: str, language: str) -> str:
+def _subtitle_basis(
+    sha: str,
+    language: str,
+    anchor: tuple[str | None, str | None],
+    *,
+    complete: bool,
+    cue_count: int,
+) -> dict[str, Any]:
+    return {
+        "file_sha256": sha,
+        "language": language,
+        "role": "subtitles",
+        "item_id": anchor[0],
+        "asset_id": anchor[1],
+        "complete": 1 if complete else 0,
+        "cue_count": cue_count,
+    }
+
+
+def _find_subtitle_source(
+    runner: _Run, sha: str, language: str, anchor: tuple[str | None, str | None]
+) -> tuple[str, bool] | None:
     with runner.step.store.connection() as conn:
         row = conn.execute(
-            "SELECT id FROM sources WHERE project_id=? "
-            "AND json_extract(use_basis, '$.role')='subtitles' "
-            "AND json_extract(use_basis, '$.file_sha256')=?",
-            (runner.request.project_id, sha),
+            "SELECT id, json_extract(use_basis, '$.complete') AS complete FROM sources "
+            "WHERE project_id=? AND json_extract(use_basis, '$.role')='subtitles' "
+            "AND json_extract(use_basis, '$.file_sha256')=? "
+            "AND json_extract(use_basis, '$.language')=? "
+            "AND json_extract(use_basis, '$.item_id') IS ? "
+            "AND json_extract(use_basis, '$.asset_id') IS ?",
+            (runner.request.project_id, sha, language, anchor[0], anchor[1]),
         ).fetchone()
-    if row is not None:
-        return str(row["id"])
-    source_id = m.new_id("src")
+    if row is None:
+        return None
+    return str(row["id"]), bool(row["complete"])
+
+
+def _queue_subtitle_source(
+    runner: _Run,
+    source_id: str,
+    sha: str,
+    language: str,
+    anchor: tuple[str | None, str | None],
+) -> None:
+    basis = _subtitle_basis(sha, language, anchor, complete=False, cue_count=0)
 
     def write(writer: TransactionWriter) -> None:
-        existing = writer.execute(
-            "SELECT id FROM sources WHERE project_id=? "
-            "AND json_extract(use_basis, '$.role')='subtitles' "
-            "AND json_extract(use_basis, '$.file_sha256')=?",
-            (runner.request.project_id, sha),
-        ).fetchone()
-        if existing is not None:
-            return
         writer.insert(
             m.Source(
                 id=source_id,
@@ -1480,22 +2027,38 @@ def _subtitle_source(runner: _Run, sha: str, language: str) -> str:
                 collection_method="file_import",
                 upstream_collection_method="unknown",
                 fetched_at=runner.step.store.clock(),
-                use_basis={"file_sha256": sha, "language": language, "role": "subtitles"},
+                use_basis=basis,
             )
         )
 
     runner.writes.append(write)
-    return source_id
 
 
-def _cues_exist(runner: _Run, source_id: str, anchor: tuple[str | None, str | None]) -> bool:
+def _queue_subtitle_complete(
+    runner: _Run,
+    source_id: str,
+    sha: str,
+    language: str,
+    anchor: tuple[str | None, str | None],
+    cue_count: int,
+) -> None:
+    basis = _subtitle_basis(sha, language, anchor, complete=True, cue_count=cue_count)
+    encoded = m.canonical_json(basis).decode()
+
+    def write(writer: TransactionWriter) -> None:
+        writer.execute("UPDATE sources SET use_basis=? WHERE id=?", (encoded, source_id))
+
+    runner.writes.append(write)
+
+
+def _stored_cue_indexes(runner: _Run, source_id: str) -> set[int]:
     with runner.step.store.connection() as conn:
-        row = conn.execute(
-            "SELECT 1 FROM transcript_segments WHERE project_id=? AND source_id=? "
-            "AND item_id IS ? AND asset_id IS ? LIMIT 1",
-            (runner.request.project_id, source_id, anchor[0], anchor[1]),
-        ).fetchone()
-    return row is not None
+        rows = conn.execute(
+            "SELECT cue_index FROM transcript_segments "
+            "WHERE source_id=? AND project_id=? AND revision=1",
+            (source_id, runner.request.project_id),
+        ).fetchall()
+    return {int(row["cue_index"]) for row in rows}
 
 
 def _queue_cue(
@@ -1548,7 +2111,8 @@ def _import_media_file(runner: _Run, index: int, item: m.LocalFileInput, staging
             media_mod.place_object(runner.step.store, staged, info)
             media_mod.require_compatible_mime(runner.step.store, info)
             source_id = m.new_id("src")
-            _queue_direct_media(runner, source_id, info, publish=True)
+            asset_id = _allocate_asset_id(runner, info.sha256)
+            _queue_direct_media(runner, source_id, info, publish=True, asset_id=asset_id)
             asset_info: media_mod.MediaInfo | None = info
         else:
             header = staged.read_bytes()[:64]
@@ -1566,7 +2130,9 @@ def _import_media_file(runner: _Run, index: int, item: m.LocalFileInput, staging
                 source_id,
                 media_mod.MediaInfo(item.sha256 or "", mime, item.byte_size or 0, None, "metadata"),
                 publish=False,
+                asset_id=None,
             )
+            asset_id = None
     except m.CoreError as exc:
         runner.inputs.append(
             {
@@ -1582,24 +2148,20 @@ def _import_media_file(runner: _Run, index: int, item: m.LocalFileInput, staging
     row = _blank_row(index, 1, None, "committed")
     row["source_id"] = source_id
     row["item_id"] = runner.request.attach_item_id
-    runner.rows.append(row)
     if asset_info is not None:
-        _remember_asset(runner, row, asset_info)
+        row["asset_id"] = asset_id
+    runner.rows.append(row)
     runner.accepted += 1
     runner.checkpoint(index + 1, 0)
 
 
-def _remember_asset(runner: _Run, row: dict[str, Any], info: media_mod.MediaInfo) -> None:
-    def write(writer: TransactionWriter) -> None:
-        asset = writer.execute("SELECT id FROM assets WHERE sha256=?", (info.sha256,)).fetchone()
-        if asset is not None:
-            row["asset_id"] = asset["id"]
-
-    runner.writes.append(write)
-
-
 def _queue_direct_media(
-    runner: _Run, source_id: str, info: media_mod.MediaInfo, *, publish: bool
+    runner: _Run,
+    source_id: str,
+    info: media_mod.MediaInfo,
+    *,
+    publish: bool,
+    asset_id: str | None,
 ) -> None:
     project_id = runner.request.project_id
     attach_item = runner.request.attach_item_id
@@ -1623,9 +2185,9 @@ def _queue_direct_media(
                 },
             )
         )
-        if not publish:
+        if not publish or asset_id is None:
             return
-        asset = media_mod.ensure_asset(runner.step.store, writer, info)
+        asset = media_mod.ensure_asset(runner.step.store, writer, info, asset_id=asset_id)
         writer.insert(
             m.SourceAsset(
                 source_id=source_id,
@@ -1634,8 +2196,15 @@ def _queue_direct_media(
                 relation="media",
             )
         )
-        if attach_item is not None:
-            revision = writer.get(m.ItemRevision, attach_item)
+        if attach_item is None:
+            return
+        revision = writer.get(m.ItemRevision, attach_item)
+        existing = writer.execute(
+            "SELECT 1 FROM item_assets WHERE item_id=? AND revision=? AND asset_id=? "
+            "AND relation=?",
+            (attach_item, revision.revision, asset.id, "media"),
+        ).fetchone()
+        if existing is None:
             writer.insert(
                 m.ItemAsset(
                     item_id=attach_item,

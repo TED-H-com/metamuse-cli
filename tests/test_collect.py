@@ -522,7 +522,7 @@ def test_exact_text_null_empty_time_and_unicode(ctx, project, tmp_path):
     assert by_id["empty"]["text"] == ""
     assert by_id["empty"]["text_hash"] == m.payload_digest({"text": ""})
     assert json.loads(by_id["empty"]["missing_fields"]) == []
-    assert by_id["none"]["text"] == ""
+    assert by_id["none"]["text"] is None
     assert by_id["none"]["text_hash"] == m.payload_digest({"text": None})
     assert json.loads(by_id["none"]["missing_fields"]) == ["text"]
     assert by_id["empty"]["text_hash"] != by_id["none"]["text_hash"]
@@ -582,7 +582,8 @@ def test_row_errors_commit_good_rows_and_parser_failure_is_not_empty(ctx, projec
     assert any(row["field"] == "kind" and row["line"] == 5 for row in rejected)
     assert any(row["field"] == "platform" and row["code"] == "E_LIMIT_REACHED" for row in rejected)
     assert any(row["field"] == "text" and row["code"] == "E_LIMIT_REACHED" for row in rejected)
-    assert any(row["field"] == "extra" for row in rejected)
+    assert any(row["field"] == "record" for row in rejected)
+    assert all("extra" not in (row["message"] or "") for row in rejected)
     assert q(ctx, "SELECT COUNT(*) AS n FROM items")[0]["n"] == 1
     assert SENTINEL not in json.dumps(job.result)
 
@@ -791,6 +792,10 @@ def test_staging_sweep_drops_only_owned_terminal_jobs(ctx, project, tmp_path):
     finished = staging / job.id
     finished.mkdir(parents=True)
     (finished / "orphan").write_text("x", encoding="utf-8")
+    (finished / ".collect-owner").write_text(
+        json.dumps({"job_id": job.id, "operation": "import.local"}),
+        encoding="utf-8",
+    )
     # The older queued job is the one run_once claims. The newer one stays queued.
     runner = submit(ctx, request(project, [local(path, "jsonl")], ["comments"], key="sweep-run"))
     queued = submit(ctx, request(project, [local(path, "jsonl")], ["comments"], key="queued-sweep"))
@@ -809,7 +814,7 @@ def test_staging_sweep_drops_only_owned_terminal_jobs(ctx, project, tmp_path):
         assert executor.run_once()
     assert ctx.store.get(m.Job, runner.data["job_id"]).state == "succeeded"
     assert not finished.exists()
-    assert not (staging / "job_orphan").exists()
+    assert (staging / "job_orphan").is_dir()
     assert (queued_dir / "keep").read_text(encoding="utf-8") == "queued"
     assert (staging / "object-temp").read_text(encoding="utf-8") == "core"
     assert (staging / "keep-dir").is_dir()

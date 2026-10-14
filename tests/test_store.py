@@ -728,3 +728,113 @@ def test_corrupt_json_is_storage_error(ctx, project):
     with pytest.raises(m.CoreError) as error:
         ctx.store.get(m.Source, src.id)
     assert error.value.detail.code == m.ErrorCode.STORAGE
+
+
+_AMENDED_TRIGGERS = {
+    "source_method_immutable",
+    "parent_cycle_insert",
+    "parent_cycle_update",
+    "item_revision_immutable",
+    "packet_payload_immutable",
+    "permit_use_monotonic",
+    "permit_revocation_sticky",
+    "permit_use_guard",
+    "permit_scope_immutable",
+    "exchange_outcome_sticky",
+    "draft_revision_immutable",
+    "draft_revision_sequence",
+    "draft_revision_head",
+    "draft_head_guard",
+    "external_step_no_requeue",
+    "external_step_attempts_monotonic",
+    "transcript_revision_immutable",
+}
+
+
+def test_r06_transcript_history_is_append_only_on_fresh_and_upgraded_databases(
+    ctx, project, tmp_path
+):
+    from test_collect import allow, data, local, q, request, run
+
+    root = tmp_path / "imports"
+    root.mkdir()
+    allow(ctx, root)
+    path = root / "one.srt"
+    path.write_text("1\n00:00:00,000 --> 00:00:01,000\n原文\n", encoding="utf-8")
+    job = run(ctx, request(project, [local(path, "srt")], ["subtitles"], key="r06"))
+    assert job.state == "succeeded"
+    segment_id = data(job)["rows"][0]["segment_id"]
+    original = q(ctx, "SELECT * FROM transcript_segments WHERE id=?", (segment_id,))[0]
+    ctx.store.insert(
+        m.Packet(
+            id="pkt_r06",
+            project_id=project,
+            selection=[m.EvidenceRef(kind="transcript_segment", id=segment_id, revision=1)],
+            rendered_text="pinned",
+            digest=m.payload_digest("pinned"),
+            created_at=ctx.clock(),
+        )
+    )
+    with pytest.raises(m.CoreError) as blocked:
+        with ctx.store.transaction() as conn:
+            conn.execute(
+                "UPDATE transcript_segments SET text='rewritten' WHERE id=?",
+                (segment_id,),
+            )
+    assert blocked.value.detail.code == m.ErrorCode.REFERENCE_INVALID
+    pinned = ctx.store.get(m.Packet, "pkt_r06")
+    assert pinned.stale is False
+    assert pinned.rendered_text == "pinned"
+    assert pinned.selection == [m.EvidenceRef(kind="transcript_segment", id=segment_id, revision=1)]
+    assert ctx.store.get(m.TranscriptSegment, segment_id, revision=1).text == "原文"
+    ctx.store.insert(
+        m.TranscriptSegment(
+            id=segment_id,
+            project_id=original["project_id"],
+            asset_id=original["asset_id"],
+            item_id=original["item_id"],
+            source_id=original["source_id"],
+            revision=2,
+            cue_index=original["cue_index"],
+            start_ms=original["start_ms"],
+            end_ms=original["end_ms"],
+            text="新觀察",
+            language=original["language"],
+            method="provided",
+            overlap=bool(original["overlap"]),
+        )
+    )
+    stale = ctx.store.get(m.Packet, "pkt_r06")
+    assert stale.stale is True
+    assert stale.rendered_text == "pinned"
+    assert stale.selection[0].revision == 1
+    assert ctx.store.get(m.TranscriptSegment, segment_id, revision=1).text == "原文"
+
+    paths, _asset = _v1_transcript_workspace(tmp_path / "legacy", link_item=True)
+    upgraded = Store(paths)
+    with upgraded.connection() as conn:
+        names = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")
+        }
+        assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
+        assert conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE name='transcript_project_item'"
+        ).fetchone()
+        assert conn.execute("SELECT 1 FROM sqlite_master WHERE name='transcript_asset'").fetchone()
+    assert _AMENDED_TRIGGERS <= names
+    with pytest.raises(m.CoreError) as upgraded_block:
+        with upgraded.transaction() as conn:
+            conn.execute("UPDATE transcript_segments SET text='rewritten' WHERE id='seg_v1'")
+    assert upgraded_block.value.detail.code == m.ErrorCode.REFERENCE_INVALID
+    assert upgraded.get(m.TranscriptSegment, "seg_v1").text == "舊字幕"
+
+
+def test_r15_older_backup_restore_reports_protocol_mismatch(tmp_path):
+    """Older-backup restore is assigned to the core owner. This build refuses it."""
+
+    paths, _asset = _v1_transcript_workspace(tmp_path, link_item=True)
+    Store(paths)
+    backup = next((paths.root / "backups").glob("pre_upgrade_*"))
+    with pytest.raises(m.CoreError) as error:
+        Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored"))
+    assert error.value.detail.code == m.ErrorCode.PROTOCOL_MISMATCH

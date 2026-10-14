@@ -126,7 +126,7 @@ worker run、MCP附帶worker、CLI --run都搶相同OS lock。同workspace只有
 
 ## 6. 素材落盤一致性
 
-寫入staging→連續量bytes→驗MIME/hash/格式→atomic rename到object store→transaction標ready與引用。crash留下的孤立staging定期以owned job核對後清理。不能在檔案不存在時回ready。
+寫入staging→連續量bytes→驗MIME/hash，MP4/QuickTime先做box邊界預檢→atomic rename到object store。只有ffprobe回報可用的audio或video串流，transaction才標ready；沒有ffprobe時，結構上說得通的檔留在unavailable。簽名或box walk本身不是ready。crash留下的staging只刪collect寫過、且job與operation都對得上的ownership marker目錄。不能在檔案不存在時回ready。
 
 下載標題只作metadata，不能決定輸出目錄。asset路徑由內部ID/hash決定。失敗單項保留，不能整份queue清空。相同hash共用bytes，不消除不同来源。
 
