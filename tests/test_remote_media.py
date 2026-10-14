@@ -19,6 +19,7 @@ import traceback
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlsplit
 
 import pytest
@@ -1570,6 +1571,12 @@ def test_wall_clock_is_checked_before_every_dial(ctx, project, origin, monkeypat
     now = datetime.fromisoformat(ctx.clock())
     elapsed = [0]
     calls = []
+    # Advance only at the fake dial; CPU/disk contention cannot spend this budget.
+    import time as real_time
+
+    clock = SimpleNamespace(monotonic=lambda: float(elapsed[0]), time=real_time.time)
+    monkeypatch.setattr(remote_media, "time", clock)
+    monkeypatch.setattr(jobs, "time", clock)
     monkeypatch.setattr(
         ctx.store, "clock", lambda: (now + timedelta(seconds=elapsed[0])).isoformat()
     )

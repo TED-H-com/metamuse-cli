@@ -398,3 +398,68 @@ def test_review_outer_identity_reuses_inner_source(entry, monkeypatch, channel, 
         assert job["job"]["state"] == "succeeded", job
         sources.append(job["steps"][0]["result"]["data"]["rows"][0]["source_id"])
     assert sources[0] == sources[1]
+
+
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+@pytest.mark.parametrize("edit", ["limit", "account", "offline"])
+def test_review_boundary_edits_keep_scope_error_and_unused_permit(entry, channel, edit):
+    body = request(entry)
+    preview = collect(entry, body, channel)["approval"]
+    grant = entry.approve(preview, body, approval_key(preview))["data"]["id"]
+    accepted = submit(entry, {**body, "access_grant_id": grant}, channel)
+    path = entry.workspace / "metamuse.toml"
+    old, new = {
+        "limit": ("max_bytes = 1073741824", "max_bytes = 1000"),
+        "account": (f'account = "{ACCOUNT}"', 'account = "changed"'),
+        "offline": ('network_mode = "live"', 'network_mode = "offline"'),
+    }[edit]
+    path.write_text(path.read_text().replace(old, new, 1))
+    entry.cli("worker", "run", "--once")
+    job = entry.cli("jobs", "get", accepted["data"]["job_id"])["data"]["job"]
+    assert job["state"] == "awaiting_user", job
+    assert job["error"]["code"] == "E_SCOPE_DENIED"
+    if edit == "account":
+        assert (
+            job["error"]["next_action"]
+            == "Repeat the call without a grant to get a fresh approval preview"
+        )
+    if edit == "limit":
+        assert job["error"]["message"] == "Request limit exceeds the workspace limit"
+    assert permit(entry, grant)["used"] == 0
+    assert not entry.egress.exists()
+
+
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+def test_review_local_import_root_error_never_routes_to_remote_preview(entry, channel):
+    path = entry.inputs / "note.txt"
+    path.write_text("Synthetic local note\n")
+    if channel == "cli":
+        envelope = entry.cli(
+            "add",
+            "--project",
+            entry.project,
+            "--file",
+            path,
+            "--kind",
+            "text",
+            "--request-key",
+            "local",
+            code=3,
+        )
+    else:
+        body = {
+            **request(entry, key="local"),
+            "inputs": [{"kind": "local_file", "path": str(path), "format": "text"}],
+            "resources": ["post"],
+        }
+
+        async def scenario():
+            async with entry.server("--no-worker", env=entry.env) as session:
+                return await entry.call(session, "collect", body, error=True)
+
+        envelope = anyio.run(scenario)
+    assert envelope["error"]["code"] == "E_SCOPE_REQUIRED"
+    assert envelope["error"]["message"] == "No import root is configured"
+    assert envelope["approval"] is None
+    assert "Approval preview callback failed" not in "\n".join(entry.diagnostics)
+    no_created_objects(entry)
