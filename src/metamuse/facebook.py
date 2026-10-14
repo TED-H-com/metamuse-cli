@@ -2196,8 +2196,10 @@ class _PlaywrightSession:
                     },
                 )
             except Exception:
-                if not self._target_gone(info["targetId"]):
+                if info["targetId"] == page_target:
                     self._guard_failed()
+                else:
+                    self._closing_targets.add(info["targetId"])
             if info["targetId"] != page_target:
                 if info["type"] == "page":
                     self._note_popup_attempt()
@@ -2295,29 +2297,34 @@ class _PlaywrightSession:
 
     def _target_gone(self, target_id: str) -> bool:
         try:
+            if not self._browser.is_connected():
+                return False
             targets = self._worker_cdp.send("Target.getTargets")["targetInfos"]
             return not any(target["targetId"] == target_id for target in targets)
         except Exception:
             return False
 
     def _close_target(self, target_id: str) -> None:
+        # Both a positive ACK and a refusal may precede asynchronous destruction.
+        # Never resume source while waiting; the worker remains debugger-paused.
+        self._closing_targets.add(target_id)
         try:
-            result = self._worker_cdp.send("Target.closeTarget", {"targetId": target_id})
+            if not self._browser.is_connected():
+                self._guard_failed()
+                return
+            self._worker_cdp.send("Target.closeTarget", {"targetId": target_id})
         except Exception:
-            if not self._target_gone(target_id):
+            # A lost reply is inconclusive, not proof of a live or dead target.
+            # The common bounded verifier must establish disappearance.
+            if not self._browser.is_connected():
                 self._guard_failed()
-            return
-        if not result.get("success"):
-            if not self._target_gone(target_id):
-                self._guard_failed()
-        else:
-            # Dedicated worker destruction is asynchronous while its parent script runs.
-            # It stays debugger-paused; verify after the callback has returned.
-            self._closing_targets.add(target_id)
 
     def _verify_target_shutdown(self) -> None:
         deadline = time.monotonic() + 5
         while self._closing_targets:
+            if not self._browser.is_connected():
+                self._guard_failed()
+                return
             self._closing_targets = {
                 target for target in self._closing_targets if not self._target_gone(target)
             }
@@ -2326,7 +2333,14 @@ class _PlaywrightSession:
             if time.monotonic() >= deadline:
                 self._guard_failed()
                 return
-            self._page.wait_for_timeout(50)
+            try:
+                if self._page.is_closed():
+                    self._worker_cdp._sync(asyncio.sleep(0.05))
+                else:
+                    self._page.wait_for_timeout(50)
+            except Exception:
+                self._guard_failed()
+                return
 
     def _on_worker_attached(self, event: dict[str, Any]) -> None:
         info = event["targetInfo"]
@@ -2363,12 +2377,20 @@ class _PlaywrightSession:
                     },
                 )
             except Exception:
-                if not self._target_gone(info["targetId"]):
-                    self._guard_failed()
+                # It may have disappeared while attaching/evaluating. The common
+                # close path verifies that asynchronously, without any resume.
+                self._closing_targets.add(info["targetId"])
         self._close_target(info["targetId"])
 
     def _on_popup(self, popup: Any) -> None:
         self._note_popup_attempt()
+        target_id = None
+        try:
+            target_id = self._context.new_cdp_session(popup).send("Target.getTargetInfo")[
+                "targetInfo"
+            ]["targetId"]
+        except Exception:
+            pass  # Closed pages can no longer be attached; liveness is checked below.
         try:
             popup.close()
         except Exception:
@@ -2377,7 +2399,10 @@ class _PlaywrightSession:
             except Exception:
                 gone = False
             if not gone:
-                self._guard_failed()
+                if target_id is not None:
+                    self._closing_targets.add(target_id)
+                else:
+                    self._guard_failed()
 
     def _on_download(self, download: Any) -> None:
         self.downloads_blocked += 1
