@@ -222,9 +222,14 @@ This proves the committed trusted boundary, not isolation against hostile same-U
 Only the transport's concrete `failed_before_send` / `bytes_handed_off is False`, or
 `MuseNotSubmitted` from a pre-frame connect failure, can register an opaque in-process
 `NotSubmittedProof` with the issuer. Registration precedes the evidence write; that
-write and checkpoint are fenced and atomic. Core then settles the original uncertain
-step as local `failed`, `remote_state=not_submitted`. The domain exchange remains
-`failed_before_send` until the host closes it. A new attempt requires a new request key
+write and checkpoint use `commit_not_submitted`: fenced, atomic accounting which
+persists the registered proof before honoring cancellation. Core then settles the original
+step as local `failed`, `remote_state=not_submitted`, retaining local cancellation. The
+domain exchange remains `failed_before_send` until the host closes it, or retains an
+already recorded `closed` outcome. A guarded settlement callback clears only the original
+step's quarantine after that step settles. If accounting or settlement fails, the executor
+records `step.not_submitted_save_failed`, keeps delivery uncertain, releases its process-local
+authorizations, and continues the queue. This does not weaken closed-state or fencing guards. A new attempt requires a new request key
 and grant; permit use is never refunded. A crash after `submitting` but before saving
 transport accounting has NULL handoff and remains uncertain. A timeout is never relabeled
 as a remote refusal. Cancellation after handoff remains local cancelled/remote unknown

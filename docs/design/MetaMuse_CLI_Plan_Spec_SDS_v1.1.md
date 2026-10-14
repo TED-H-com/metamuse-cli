@@ -195,7 +195,7 @@ prepared與已證明not_submitted的exchange不參與關聯。訊息首次observ
 
 abandoned時若外部提交仍不明，discussion應quarantined，不能立即派下一題繞過未解提交。close_exchange不是遠端cancel。side chat不是跨客戶保密隔離；本地path不是Muse可讀資源。分析prompt不是停用Muse既有寫入工具的權限鎖。
 
-B10實作補充：零bytes證據只接受同process內transport記帳；持久化結果前crash仍unknown。
+B10實作補充：零bytes證據只接受同process內transport記帳；持久化結果前crash仍unknown。已證明零handoff的記帳先於cancel保存，原step為local failed/remote not_submitted；同時host close不重開exchange，settlement後才解除原step隔離。記帳或settlement寫入失敗時持久化失敗事件、保留uncertain並繼續queue。
 `not_submitted`不退grant、不requeue；新提交要新key與grant。binding只含provider/account/auth_ref，
 discussion固定snapshot。fixture backend須明示選擇，discussion/message/observation及content envelope標mock，
 inspect只fixture_passed。read預設local；refresh排safe_read job＋current access grant。open對帳可明示原discussion_id，
@@ -473,7 +473,7 @@ message/discussion FK與backend。legacy handoff與binding保持NULL；closed不
 
 before_external_action transaction完成verifier/reservation/intent後才mint one-use issuer-registered token，
 consume綁owner/epoch/job/step/operation/target/action digest。read不mint。transport affirmative zero-handoff可同process
-record_not_submitted，原step經settle_uncertain變local failed/remote not_submitted；crash則unknown，不退用量。
+record_not_submitted，commit_not_submitted以issuer proof保持fencing並在cancel之前atomic保存記帳；原step經settle_uncertain變local failed/remote not_submitted。closed保留host outcome，不reopen；原step settlement後guarded callback才清quarantine。寫入失敗記durable event並保留uncertain，worker清process registry後繼續queue；crash則unknown，不退用量。
 history/list在另一safe_read job，讀取current access grant；原step settlement不再reserve/send/requeue。
 send boundary持久化write-once submitted_observation_high_water；history關聯排除prepared/zero-handoff，並要求訊息首次observation在此高水位之後。多個同文exchange共享markerless echo時保持ambiguous，不按rowid先後認領。user_echo SQL guard也檢查已提交與首次observation；transport首結果保留既有history proof、另存真實ack/verdict，不reopen closed。
 live send先有已完成、授權的history baseline；已mapped discussion_id的open走history read，不做第二次create。

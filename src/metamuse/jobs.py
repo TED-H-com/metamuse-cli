@@ -244,11 +244,22 @@ class StepContext:
         self.checkpoint = step.checkpoint
         self.started = time.monotonic()
 
-    def _guard(self, conn: Any, target: dict[str, Any] | None = None) -> None:
+    def _guard(
+        self,
+        conn: Any,
+        target: dict[str, Any] | None = None,
+        *,
+        accounting: NotSubmittedProof | None = None,
+    ) -> None:
         self.executor._guard(conn)
+        if accounting is not None and (
+            self.executor._proofs.get(accounting, (None,))[0] != self.step.id
+            or self.executor._zero_handoff.get(self.step.id) is not accounting
+        ):
+            raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Missing in-process zero-handoff proof")
         job = self.store.get(m.Job, self.job.id, conn=conn)
         step = self.store.get(m.JobStep, self.step.id, conn=conn)
-        if job.cancel_requested:
+        if job.cancel_requested and accounting is None:
             raise BoundaryStop()
         if job.state != "running" or step.state not in ("running", "submitting"):
             raise m.CoreError(m.ErrorCode.JOB_BUSY, "Job is no longer running")
@@ -268,7 +279,7 @@ class StepContext:
                     - datetime.fromisoformat(job.started_at)
                 ).total_seconds(),
             )
-        if elapsed > wall_limit:
+        if elapsed > wall_limit and accounting is None:
             raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Job wall clock limit reached")
 
     def guard(self) -> None:
@@ -337,6 +348,25 @@ class StepContext:
         if self.executor.non_interactive:
             raise m.CoreError(m.ErrorCode.SCOPE_REQUIRED, "Human interaction is disabled")
 
+    def commit_not_submitted(
+        self, proof: NotSubmittedProof, *, write_batch: Callable[[TransactionWriter], None]
+    ) -> None:
+        """Persist registered zero-handoff accounting before honoring local cancellation."""
+        with self.store.transaction() as conn:
+            self._guard(conn, accounting=proof)
+            write_batch(TransactionWriter(self.store, conn))
+            self._guard(conn, accounting=proof)
+            checkpoint = {
+                **self.store.get(m.JobStep, self.step.id, conn=conn).checkpoint,
+                "not_submitted": True,
+            }
+            conn.execute(
+                "UPDATE job_steps SET checkpoint=? WHERE id=?",
+                (m.canonical_json(checkpoint).decode(), self.step.id),
+            )
+            self.executor._heartbeat(conn)
+        self.checkpoint = checkpoint
+
 
 class Executor:
     def __init__(
@@ -364,7 +394,7 @@ class Executor:
         self.muse_resolver = muse_resolver
         self._tokens: dict[ExternalActionToken, tuple] = {}
         self._zero_handoff: dict[str, NotSubmittedProof] = {}
-        self._proofs: dict[NotSubmittedProof, tuple[str, m.ErrorCode]] = {}
+        self._proofs: dict[NotSubmittedProof, tuple] = {}
 
     def __enter__(self) -> Executor:
         if self.handle is not None:
@@ -428,7 +458,13 @@ class Executor:
                 )
             self._tokens[token] = (step, expected, epoch, nonce, True)
 
-    def record_not_submitted(self, step: StepContext, attempt: Any) -> NotSubmittedProof:
+    def record_not_submitted(
+        self,
+        step: StepContext,
+        attempt: Any,
+        *,
+        after_settlement: Callable[[TransactionWriter], None] | None = None,
+    ) -> NotSubmittedProof:
         # No boolean API: require the transport's concrete zero-handoff accounting.
         from metamuse.muse import MuseNotSubmitted, StreamAttempt
 
@@ -447,7 +483,7 @@ class Executor:
             if isinstance(attempt, MuseNotSubmitted)
             else m.ErrorCode(attempt.error_code or "E_NETWORK_TIMEOUT")
         )
-        self._proofs[proof] = (step.step.id, code)
+        self._proofs[proof] = (step.step.id, code, after_settlement)
         self._zero_handoff[step.step.id] = proof
         return proof
 
@@ -800,10 +836,16 @@ class Executor:
             if job.cancel_requested:
                 self._cancel(conn, self.store.get(m.Job, job.id, conn=conn))
             if not_submitted is not None:
-                self._proofs.pop(not_submitted)
-                self._zero_handoff.pop(step_id, None)
+                after = self._proofs[not_submitted][2]
+                if after is not None:
+                    after(TransactionWriter(self.store, conn))
+                self._guard(conn)
             self.store.event(conn, "step.settled", job=job, object_id=step.id)
-            return self.store.get(m.Job, job.id, conn=conn)
+            settled = self.store.get(m.Job, job.id, conn=conn)
+        if not_submitted is not None:
+            self._proofs.pop(not_submitted)
+            self._zero_handoff.pop(step_id, None)
+        return settled
 
     def run_once(self) -> bool:
         claimed = self._claim()
@@ -813,6 +855,20 @@ class Executor:
         if step.state == "failed":
             return True
         ctx = StepContext(self, job, step)
+        try:
+            self._execute_claimed(ctx)
+        finally:
+            for token, entry in tuple(self._tokens.items()):
+                if entry[0] is ctx:
+                    del self._tokens[token]
+            remaining = self._zero_handoff.pop(step.id, None)
+            if remaining is not None:
+                self._proofs.pop(remaining, None)
+        return True
+
+    def _execute_claimed(self, ctx: StepContext) -> None:
+        job, step = ctx.job, ctx.step
+        retry_delay = None
         try:
             ctx.guard()
             result = self.registry[job.operation].handler(ctx)
@@ -870,10 +926,11 @@ class Executor:
                     retry_delay = min(error.retry_after, 30, self.limits.read_timeout_seconds)
                 else:
                     self._fail(conn, job, step, error)
-            if current.state == "submitting" and current.id in self._zero_handoff:
+        if step.id in self._zero_handoff:
+            try:
 
                 def zero_proof(conn, target):
-                    row = self.store.get(m.JobStep, current.id, conn=conn)
+                    row = self.store.get(m.JobStep, step.id, conn=conn)
                     if row.checkpoint.get("not_submitted") is not True:
                         raise m.CoreError(
                             m.ErrorCode.EXTERNAL_STATE_UNKNOWN,
@@ -881,21 +938,25 @@ class Executor:
                         )
 
                 self.settle_uncertain(
-                    current.id,
-                    expected_target=current.target,
+                    step.id,
+                    expected_target=step.target,
                     verify=zero_proof,
-                    not_submitted=self._zero_handoff[current.id],
+                    not_submitted=self._zero_handoff[step.id],
                 )
-            if retry_delay is not None:
-                # No transaction is held during Retry-After; still own the OS lock.
-                self._retry_wait(job.id, retry_delay)
-        for token, entry in tuple(self._tokens.items()):
-            if entry[0] is ctx:
-                del self._tokens[token]
-        remaining = self._zero_handoff.pop(step.id, None)
-        if remaining is not None:
-            self._proofs.pop(remaining, None)
-        return True
+            except Exception:
+                # The uncertain transition already committed; no queue-wide failure or resend.
+                with self.store.transaction() as conn:
+                    self._guard(conn)
+                    self.store.event(
+                        conn,
+                        "step.not_submitted_save_failed",
+                        job=job,
+                        object_id=step.id,
+                        detail={"code": m.ErrorCode.EXTERNAL_STATE_UNKNOWN.value},
+                    )
+        if retry_delay is not None:
+            # No transaction is held during Retry-After; still own the OS lock.
+            self._retry_wait(job.id, retry_delay)
 
     def request_stop(self) -> None:
         self._stop.set()
