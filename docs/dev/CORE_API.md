@@ -867,17 +867,21 @@ normalized sorted hosts and opaque auth_ref or null), including all possible hop
 entries. Any edit requires a fresh preview before consumption/egress. Preparation
 checks binding metadata only; the step resolves/parses all bound secrets before use.
 Exact request receipts, including the grant ID, replay before permit verification.
-Workspace caps stay outside target and job identity; B12 checkpoints their acceptance
-snapshot and applies min(snapshot, current) at execution. Request limits remain bound
+Workspace caps stay outside target and job identity, enter the approval digest payload,
+and are checkpointed exactly as reviewed at acceptance. Execution applies min(snapshot, current). Request limits remain bound
 and are checked against current workspace limits. Preparation bounds URL UTF-8 bytes
-at 8192 and checks cheap syntax before redaction, display or digest.
+at 8192 and checks cheap syntax before redaction, display or digest. The resulting
+ASCII canonical URL must also fit the same outbound bound.
 
-B12 displays destinations structurally, with normalized hosts, non-default ports,
-complete paths (including semicolon parameters) and queries. Only known secret query
-values are masked using shared url_token rules. Request echo and operator review use
-the same display; trailing-dot hosts or other material structure hidden by free-text
-redaction are refused with fixed E_INPUT_INVALID and no preview. Exact digests bind
-the original URL bytes, including when the public display copy differs.
+B12 computes one ASCII-only canonical page URL (lower-case scheme and IDNA host,
+non-default port, UTF-8 percent-encoded non-ASCII path/query). The digest, preview,
+request echo, operator stderr and extractor's first hop use exactly that string;
+job payload and original_url provenance keep the original URL. Any fragment (even #),
+shared url_token query key, trailing-dot host or free-text redaction of structural
+bytes is fixed E_INPUT_INVALID without preview or URL echo. Signed extractor-hop URLs
+keep existing redaction. All four displayed workspace caps enter the action digest
+payload; a pre-submission edit requires new approval. At execution, rebuild the digest
+from the reviewed acceptance snapshot and enforce min(snapshot, current caps).
 
 AppContext.worker_status is an optional process-owned callback installed by MCP startup.
 Shared wrappers replace worker availability fields with attached-worker truth there;

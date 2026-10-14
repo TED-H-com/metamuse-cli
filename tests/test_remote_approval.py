@@ -55,6 +55,14 @@ def extractor(key):
         return FacebookIE
     return original_class(key)
 remote_media._extractor_class = extractor
+if os.environ.get('REMOTE_TEST_RECORD_EXTRACT'):
+    from yt_dlp.extractor.facebook import FacebookIE
+    original_facebook_extract = FacebookIE._real_extract
+    def record_extract(self, url):
+        with Path(os.environ['REMOTE_TEST_EGRESS']).open('a') as handle:
+            handle.write(json.dumps({'event': 'extract', 'url': url}) + '\\n')
+        return original_facebook_extract(self, url)
+    FacebookIE._real_extract = record_extract
 if os.environ.get('REMOTE_TEST_MISSING_EXTRA'):
     remote_media.dependency_available = lambda: False
 def forbidden(*args, **kwargs):
@@ -73,6 +81,9 @@ def dial(method, url, headers, body, checked, timeout, limit):
     with Path(os.environ['REMOTE_TEST_EGRESS']).open('a') as handle:
         handle.write(json.dumps({'event': 'dial', 'url': url,
             'cookie': headers.get('Cookie'), 'limit': limit}) + '\\n')
+    if os.environ.get('REMOTE_TEST_FACEBOOK_PAGE') and checked.hostname == 'www.facebook.com':
+        return (200, {'Content-Type': 'text/html'},
+            Path(os.environ['REMOTE_TEST_FACEBOOK_PAGE']).read_bytes(), '127.0.0.1', 'OK')
     if os.environ.get('REMOTE_TEST_REDIRECT') and urlsplit(url).path == '/one':
         return (302, {'Location': os.environ['REMOTE_TEST_REDIRECT']}, b'', '127.0.0.1', 'Found')
     if url.endswith('/media.wav'):
@@ -169,6 +180,8 @@ def collect_cli(entry, body, *, code=3, run=False):
     ]
     if body["access_grant_id"]:
         args += ["--access-grant", body["access_grant_id"]]
+    if body.get("language"):
+        args += ["--language", body["language"]]
     if run:
         args += ["--run"]
     return entry.cli(*args, code=code)
@@ -412,16 +425,15 @@ def test_remote_share_preview_never_calls_egress(entry, channel):
     preview = assert_preview(entry, collect(entry, body, channel), body)
     assert "checked redirects" in preview["summary"]
     assert "two approved extractor hops" in preview["summary"]
-    assert "original share URL" in preview["summary"]
+    assert "canonical share URL" in preview["summary"]
     assert "FacebookReel" in preview["summary"]
     no_created_objects(entry)
 
 
 @pytest.mark.parametrize("channel", ["cli", "mcp"])
 def test_remote_cookie_binding_and_nested_request_fields_are_redacted(entry, channel):
-    cookie_marker, url_marker = (
-        f"SYNTHETIC_{label}_PRIVATE_VALUE" for label in ("COOKIE", "QUERY")
-    )
+    cookie_marker = f"SYNTHETIC_{'COOKIE'}_PRIVATE_VALUE"
+    url_marker = "sk-" + "proj" + "Q" * 24
     secret = entry.inputs / "cookies.txt"
     secret.write_text(
         "# Netscape HTTP Cookie File\n"
@@ -440,13 +452,14 @@ def test_remote_cookie_binding_and_nested_request_fields_are_redacted(entry, cha
         operator=True,
     )["data"]
     configure(entry, auth_ref=binding["auth_ref"])
-    body = request(entry, url=URL + "?token=" + url_marker)
+    body = {**request(entry, url="https://MEDIA.fixture.test:443/one"), "language": url_marker}
     envelope = collect(entry, body, channel)
     preview = envelope["approval"]
     assert preview["account"] == ACCOUNT
     assert binding["auth_ref"] in preview["summary"]
     assert "Cookie binding:" in preview["summary"]
-    assert "[REDACTED]" in preview["request"]["inputs"][0]["url"]
+    assert preview["request"]["language"] == "[REDACTED]"
+    assert preview["destination"] == URL
     assert preview["request"]["inputs"][0]["url"] == preview["destination"]
     path = Path(preview["request_file"])
     assert not path.exists()
@@ -458,11 +471,11 @@ def test_remote_cookie_binding_and_nested_request_fields_are_redacted(entry, cha
         *[json.dumps(row["envelope"]) for row in entry.transcript],
     ]:
         assert cookie_marker not in raw and url_marker not in raw
-    # Redaction changes displayed bytes, so the original digest cannot approve the safe copy.
-    refused = entry.approve(preview, preview["request"], "redacted", code=3)
-    assert refused["error"]["message"] == "Approval digest differs from this request"
     no_created_objects(entry)
-    for raw in [path.read_text(), *entry.diagnostics, json.dumps(refused)]:
+    # The URL echo is precisely the canonical action; auxiliary language is unused by B12.
+    approved = entry.approve(preview, preview["request"], "redacted")
+    assert approved["status"] == "ok"
+    for raw in [path.read_text(), *entry.diagnostics, json.dumps(approved)]:
         assert cookie_marker not in raw and url_marker not in raw
 
 

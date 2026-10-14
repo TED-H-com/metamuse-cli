@@ -208,20 +208,16 @@ def test_review_permit_approve_refuses_cli_d_hidden_destination(entry):
 
 @pytest.mark.parametrize("channel", ["cli", "mcp"])
 @pytest.mark.parametrize("port", [443, 4443])
-def test_review_structural_display_preserves_path_query_and_masks_only_secret_values(
-    entry, channel, port
-):
-    url = (
-        f"https://MEDIA.fixture.test:{port}/one;public=1?note=visible&token=synthetic&oe=synthetic"
-    )
+def test_review_structural_display_preserves_path_query_and_nondefault_port(entry, channel, port):
+    url = f"https://MEDIA.fixture.test:{port}/one;public=1?note=visible&public=1"
     body = request(entry, url=url)
     preview = collect(entry, body, channel)["approval"]
     authority = "media.fixture.test" + ("" if port == 443 else ":" + str(port))
-    expected = f"https://{authority}/one;public=1?note=visible&token=[REDACTED]&oe=[REDACTED]"
+    expected = f"https://{authority}/one;public=1?note=visible&public=1"
     assert preview["destination"] == expected
     assert preview["request"]["inputs"][0]["url"] == expected
     assert "synthetic" not in preview["destination"]
-    # Exact approval reviews the original bytes and shows precisely the structural display.
+    # Exact approval reviews precisely the canonical string passed to extraction.
     entry.approve(preview, body, approval_key(preview))
     assert "Destination: " + expected in entry.diagnostics[-1]
     assert url not in entry.diagnostics[-1]
