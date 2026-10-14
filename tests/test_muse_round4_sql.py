@@ -133,3 +133,25 @@ def test_r4_10_invalid_budget_does_not_initialize_msg1(monkeypatch, timeout):
             standard_handoff=lambda callback: pytest.fail("msg3"),
         )
     assert not calls
+
+
+@pytest.mark.parametrize("encoding", ["double", "lower"])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_r4_10_plain_short_value_cannot_destroy_encoded_longer_value(encoding, reverse):
+    from urllib.parse import quote, unquote
+
+    from metamuse._muse_redact import sanitize_text
+
+    # The shorter value has no encodable character: the old preliminary pass
+    # matches it inside the longer, unlisted encoding and leaves the tail exposed.
+    short = "synthetic" + "Short42"
+    tail = "tail" + "Marker77"
+    long = short + "/" + tail
+    encoded = (
+        quote(quote(long, safe=""), safe="")
+        if encoding == "double"
+        else quote(long, safe="").replace("%2F", "%2f")
+    )
+    known = (long, short) if reverse else (short, long)
+    output = sanitize_text("diagnostic " + encoded, known)
+    assert short not in output and tail not in unquote(unquote(output))
