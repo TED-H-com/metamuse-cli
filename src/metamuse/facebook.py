@@ -2413,7 +2413,52 @@ class _PlaywrightSession:
             # Download.failure() can itself wait for the production read timeout.
             self._guard_failed()
 
+    def _raise_if_fatal_stop(self) -> None:
+        self._verify_target_shutdown()
+        if self._transport_error is not None:
+            raise self._transport_error
+
+        # More specific fatal outcomes outrank a socket/wait interrupted by cutoff.
+        def priority(error: m.CoreError) -> int:
+            code = error.detail.code
+            if code == m.ErrorCode.SCOPE_DENIED:
+                return 0
+            if code in {
+                m.ErrorCode.AUTH_REQUIRED,
+                m.ErrorCode.ACCESS_DENIED,
+                m.ErrorCode.CHECKPOINT_REQUIRED,
+                m.ErrorCode.RATE_LIMITED,
+            }:
+                return (
+                    2 if error.detail.message == "Facebook navigation left the approved post" else 1
+                )
+            if code == m.ErrorCode.REFERENCE_INVALID:
+                return 2
+            return 3
+
+        proxy_error = self._egress.navigation_proxy_error(
+            url for url in self._navigation_urls if url not in self._navigation_responded
+        )
+        status_error = None
+        try:
+            _raise_observation_barrier(self._document_status, None)
+        except m.CoreError as exc:
+            status_error = exc
+        errors = [
+            error
+            for error in (
+                self._egress.navigation_error,
+                self._peer_error,
+                proxy_error,
+                status_error,
+            )
+            if error is not None and priority(error) < 3
+        ]
+        if errors:
+            raise min(errors, key=priority)
+
     def _raise_if_byte_limit(self) -> None:
+        self._raise_if_fatal_stop()
         if self._egress.byte_limit_exceeded or (
             self._proxy is not None and self._proxy.byte_limit_exceeded
         ):
@@ -2422,10 +2467,6 @@ class _PlaywrightSession:
                 "Facebook page response exceeded max_bytes budget",
                 next_action="Increase limits.max_bytes or narrow the requested resources",
             )
-
-        self._verify_target_shutdown()
-        if self._transport_error is not None:
-            raise self._transport_error
 
     def _snapshot_html(self) -> str:
         return self._page.evaluate("""() => {
@@ -2451,6 +2492,9 @@ class _PlaywrightSession:
         try:
             self._raise_if_byte_limit()
             return self._goto_post(url)
+        except m.CoreError:
+            self._raise_if_fatal_stop()
+            raise
         except Exception:
             self._raise_if_byte_limit()
             raise
@@ -2526,6 +2570,9 @@ class _PlaywrightSession:
         try:
             self._raise_if_byte_limit()
             return self._expand_next(control_id)
+        except m.CoreError:
+            self._raise_if_fatal_stop()
+            raise
         except Exception:
             self._raise_if_byte_limit()
             raise
@@ -2587,6 +2634,11 @@ class _PlaywrightSession:
         )
 
     def close(self) -> None:
+        # Verify before tearing down CDP, even if cutoff already closed the page.
+        try:
+            self._verify_target_shutdown()
+        except Exception:
+            self._guard_failed()
         self._byte_watch.cancel()
         for obj in (self._page, self._context, self._browser):
             try:
@@ -3214,6 +3266,47 @@ def _validate_extracted_identity(post_id: str, actor: Any, target: PostPermalink
         )
 
 
+def _raise_observation_barrier(status_code: int, meta_state: str | None) -> None:
+    # 1. Explicit status code and barrier checks (AT-041)
+    if status_code == 429 or meta_state == "rate_limited":
+        raise m.CoreError(
+            m.ErrorCode.RATE_LIMITED,
+            "Facebook rate-limited the browser session (HTTP 429 or rate-limit barrier)",
+            next_action=(
+                "Stop collection and wait before retrying; do not rotate accounts or proxies"
+            ),
+        )
+    if meta_state in ("checkpoint", "challenge"):
+        raise m.CoreError(
+            m.ErrorCode.CHECKPOINT_REQUIRED,
+            "Facebook presented an account checkpoint or challenge",
+            next_action=(
+                "Complete the challenge manually outside MetaMuse and re-import storage_state"
+            ),
+        )
+    if status_code == 401 or meta_state == "login_wall":
+        raise m.CoreError(
+            m.ErrorCode.AUTH_REQUIRED,
+            "Facebook required authentication (login wall encountered)",
+            next_action=(
+                "Log in outside MetaMuse, export a fresh storage_state, and run "
+                "metamuse auth import"
+            ),
+        )
+    if status_code == 403 or meta_state == "access_denied":
+        raise m.CoreError(
+            m.ErrorCode.ACCESS_DENIED,
+            "Facebook denied access to this post permalink (HTTP 403 or permission barrier)",
+            next_action="Verify that the authenticated account has permission to view this post",
+        )
+    if status_code >= 400:
+        raise m.CoreError(
+            m.ErrorCode.PROTOCOL_MISMATCH,
+            f"Unexpected HTTP status {status_code} on Facebook post permalink",
+            next_action="Inspect the target permalink and try again later",
+        )
+
+
 def classify_and_parse_observation(
     obs: PageObservation,
     *,
@@ -3234,44 +3327,7 @@ def classify_and_parse_observation(
             next_action="Inspect the page markup against the approved post_permalink parser",
         ) from exc
 
-    # 1. Explicit status code and barrier checks (AT-041)
-    if obs.status_code == 429 or extractor.meta_state == "rate_limited":
-        raise m.CoreError(
-            m.ErrorCode.RATE_LIMITED,
-            "Facebook rate-limited the browser session (HTTP 429 or rate-limit barrier)",
-            next_action=(
-                "Stop collection and wait before retrying; do not rotate accounts or proxies"
-            ),
-        )
-    if extractor.meta_state in ("checkpoint", "challenge"):
-        raise m.CoreError(
-            m.ErrorCode.CHECKPOINT_REQUIRED,
-            "Facebook presented an account checkpoint or challenge",
-            next_action=(
-                "Complete the challenge manually outside MetaMuse and re-import storage_state"
-            ),
-        )
-    if obs.status_code == 401 or extractor.meta_state == "login_wall":
-        raise m.CoreError(
-            m.ErrorCode.AUTH_REQUIRED,
-            "Facebook required authentication (login wall encountered)",
-            next_action=(
-                "Log in outside MetaMuse, export a fresh storage_state, and run "
-                "metamuse auth import"
-            ),
-        )
-    if obs.status_code == 403 or extractor.meta_state == "access_denied":
-        raise m.CoreError(
-            m.ErrorCode.ACCESS_DENIED,
-            "Facebook denied access to this post permalink (HTTP 403 or permission barrier)",
-            next_action="Verify that the authenticated account has permission to view this post",
-        )
-    if obs.status_code >= 400:
-        raise m.CoreError(
-            m.ErrorCode.PROTOCOL_MISMATCH,
-            f"Unexpected HTTP status {obs.status_code} on Facebook post permalink",
-            next_action="Inspect the target permalink and try again later",
-        )
+    _raise_observation_barrier(obs.status_code, extractor.meta_state)
 
     # 2. Check embedded JSON script payload if present (tlyu0419/facebook_crawler _parse_edge)
     if extractor.json_scripts and extractor.post_attrs is None:
@@ -3949,17 +4005,17 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         observation_bytes += len(obs.html.encode("utf-8"))
         bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
         checkpoint_usage()
+        parsed = classify_and_parse_observation(
+            obs,
+            permalink=permalink,
+            require_comments_section=require_comments,
+        )
         if egress.byte_limit_exceeded or bytes_used > max_bytes:
             raise m.CoreError(
                 m.ErrorCode.LIMIT_REACHED,
                 "Facebook page response exceeded max_bytes budget",
                 next_action="Increase limits.max_bytes or narrow the requested resources",
             )
-        parsed = classify_and_parse_observation(
-            obs,
-            permalink=permalink,
-            require_comments_section=require_comments,
-        )
 
         accumulate_page(parsed, obs.html)
         while require_comments and parsed.expand_controls:
@@ -3985,17 +4041,17 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             observation_bytes += len(obs.html.encode("utf-8"))
             bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
             checkpoint_usage()
+            parsed = classify_and_parse_observation(
+                obs,
+                permalink=permalink,
+                require_comments_section=require_comments,
+            )
             if egress.byte_limit_exceeded or bytes_used > max_bytes:
                 raise m.CoreError(
                     m.ErrorCode.LIMIT_REACHED,
                     "Facebook page response exceeded max_bytes budget",
                     next_action="Increase limits.max_bytes or narrow the requested resources",
                 )
-            parsed = classify_and_parse_observation(
-                obs,
-                permalink=permalink,
-                require_comments_section=require_comments,
-            )
             accumulate_page(parsed, obs.html)
             if obs.expansion_failed:
                 halt = "expansion_failed"
@@ -4006,7 +4062,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     except m.CoreError as exc:
         # Scrub any secret token from error messages before surfacing
         cleaned_msg = storage_state.redact(exc.detail.message)
-        if exc.detail.code == m.ErrorCode.LIMIT_REACHED or egress.byte_limit_exceeded:
+        if exc.detail.code == m.ErrorCode.LIMIT_REACHED:
             halt = "limit_reached"
             bytes_used = max(bytes_used, previous_bytes + egress.bytes_relayed)
             byte_limit_error = m.ErrorDetail(
