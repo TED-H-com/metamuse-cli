@@ -37,6 +37,7 @@ class Entrypoints:
         self.diagnostics = []
         self.server_number = 0
         self.deadline = time.monotonic() + 600
+        self._mcp_command = "metamuse mcp"
 
     def remaining(self, command):
         remaining = self.deadline - time.monotonic()
@@ -47,10 +48,12 @@ class Entrypoints:
     @contextmanager
     def waiting(self, command):
         try:
-            with anyio.fail_after(self.remaining(command)):
+            label = command() if callable(command) else command
+            with anyio.fail_after(self.remaining(label)):
                 yield
         except TimeoutError:
-            raise AssertionError("Test deadline exceeded: " + command) from None
+            label = command() if callable(command) else command
+            raise AssertionError("Test deadline exceeded: " + label) from None
 
     def cli(self, *args, operator=False, code=0, stdin=None):
         command = [str(self.command), "--workspace", str(self.workspace), "--json"]
@@ -135,17 +138,19 @@ class Entrypoints:
     async def server(self, *extra, env=None):
         self.server_number += 1
         log = self.root / f"mcp-{self.server_number}.log"
+        self._mcp_command = "metamuse mcp " + " ".join(extra)
         params = StdioServerParameters(
             command=str(self.command),
             args=["--workspace", str(self.workspace), "--non-interactive", "mcp", *extra],
-            env=env,
+            env={**(env or {}), "PYTHONDONTWRITEBYTECODE": "1"},
         )
         with (
             log.open("w+") as errlog,
-            self.waiting("metamuse mcp " + " ".join(extra)),
+            self.waiting(lambda: self._mcp_command),
         ):
             async with stdio_client(params, errlog=errlog) as (read, write):
                 async with ClientSession(read, write) as session:
+                    self._mcp_command = "MCP initialize"
                     with self.waiting("MCP initialize"):
                         try:
                             await session.initialize()
@@ -156,6 +161,7 @@ class Entrypoints:
 
     async def call(self, session, tool, request, *, error=False):
         label = "MCP metamuse_" + tool
+        self._mcp_command = label
         try:
             with anyio.fail_after(self.remaining(label)):
                 result = await session.call_tool("metamuse_" + tool, request)

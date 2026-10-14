@@ -444,6 +444,7 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
         params = StdioServerParameters(
             command=str(journey.command),
             args=["--workspace", str(journey.workspace), "--non-interactive", "mcp", "--no-worker"],
+            env={"PYTHONDONTWRITEBYTECODE": "1"},
         )
         log = tmp_path / "mcp-stderr.log"
         with log.open("w+") as errlog:
