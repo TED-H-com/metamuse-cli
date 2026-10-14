@@ -313,6 +313,7 @@ TRUST_TRIGGERS = {
     "muse_trust_observations_propagate_update",
 }
 TRUST_INDEXES = {
+    "muse_trust_active_vm",
     "muse_trust_owner_expectation",
     "muse_trust_vm_expectation",
     "muse_trust_observation_vm",

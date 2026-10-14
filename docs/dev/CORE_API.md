@@ -941,3 +941,10 @@ persistent trust key use that identity. The exact server `vm_id` may be retained
 on the wire only after that agreement check (case and surrounding whitespace
 are the only permitted differences). A confidential hint records every usable
 identity alias before any disagreement is refused, before mint, wake or dial.
+
+Effective Muse trust and SQL inherit guards seed a recursive component at the
+requested owner and VM. Every traversal uses indexed owner/VM edges, including
+active selections, historical label VMs and label-independent observations.
+Unrelated confidential components are not enumerated. Confidential bulk bind
+and human barrier repair retain the whole-workspace set-wise closure and raw-SQL
+propagation guards. Unreleased migration 005 is amended in place; no 006.

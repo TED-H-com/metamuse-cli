@@ -49,7 +49,19 @@ CREATE TRIGGER muse_trust_vm_retention BEFORE DELETE ON muse_trust_vms
 BEGIN SELECT RAISE(ABORT, 'muse trust VM retention'); END;
 
 CREATE TRIGGER muse_trust_accounts_inherit_insert BEFORE INSERT ON muse_trust_accounts
-WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=NEW.viewer_hash) OR (kind='vm' AND identity=NEW.active_vm_id))
+WHEN NEW.confidential_required=0 AND EXISTS(WITH RECURSIVE component(kind,identity) AS (
+ SELECT 'owner', NEW.viewer_hash
+ UNION SELECT 'vm', NEW.active_vm_id WHERE NEW.active_vm_id IS NOT NULL AND NEW.active_vm_id!=''
+ UNION SELECT 'vm',a.active_vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity WHERE a.active_vm_id IS NOT NULL
+ UNION SELECT 'vm',v.vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity JOIN muse_trust_vms v USING(provider,account)
+ UNION SELECT 'vm',o.vm_id FROM component r JOIN muse_trust_observations o ON r.kind='owner' AND o.viewer_hash=r.identity WHERE o.vm_id!=''
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_accounts a ON r.kind='vm' AND a.active_vm_id=r.identity
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_vms v ON r.kind='vm' AND v.vm_id=r.identity JOIN muse_trust_accounts a USING(provider,account)
+ UNION SELECT 'owner',o.viewer_hash FROM component r JOIN muse_trust_observations o ON r.kind='vm' AND o.vm_id=r.identity WHERE o.vm_id!=''
+)
+SELECT 1 FROM component r WHERE
+ (r.kind='owner' AND (EXISTS(SELECT 1 FROM muse_trust_accounts a WHERE a.viewer_hash=r.identity AND a.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.viewer_hash=r.identity AND o.confidential_required=1)))
+ OR (r.kind='vm' AND (EXISTS(SELECT 1 FROM muse_trust_vms v WHERE v.vm_id=r.identity AND v.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.vm_id=r.identity AND o.confidential_required=1))) LIMIT 1)
 BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;
 CREATE TRIGGER muse_trust_accounts_propagate_insert AFTER INSERT ON muse_trust_accounts
 WHEN NEW.confidential_required=1 AND NOT EXISTS(SELECT 1 FROM muse_trust_propagating)
@@ -62,7 +74,19 @@ DELETE FROM muse_trust_propagating;
 END;
 
 CREATE TRIGGER muse_trust_accounts_inherit_update BEFORE UPDATE ON muse_trust_accounts
-WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=NEW.viewer_hash) OR (kind='vm' AND identity=NEW.active_vm_id))
+WHEN NEW.confidential_required=0 AND EXISTS(WITH RECURSIVE component(kind,identity) AS (
+ SELECT 'owner', NEW.viewer_hash
+ UNION SELECT 'vm', NEW.active_vm_id WHERE NEW.active_vm_id IS NOT NULL AND NEW.active_vm_id!=''
+ UNION SELECT 'vm',a.active_vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity WHERE a.active_vm_id IS NOT NULL
+ UNION SELECT 'vm',v.vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity JOIN muse_trust_vms v USING(provider,account)
+ UNION SELECT 'vm',o.vm_id FROM component r JOIN muse_trust_observations o ON r.kind='owner' AND o.viewer_hash=r.identity WHERE o.vm_id!=''
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_accounts a ON r.kind='vm' AND a.active_vm_id=r.identity
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_vms v ON r.kind='vm' AND v.vm_id=r.identity JOIN muse_trust_accounts a USING(provider,account)
+ UNION SELECT 'owner',o.viewer_hash FROM component r JOIN muse_trust_observations o ON r.kind='vm' AND o.vm_id=r.identity WHERE o.vm_id!=''
+)
+SELECT 1 FROM component r WHERE
+ (r.kind='owner' AND (EXISTS(SELECT 1 FROM muse_trust_accounts a WHERE a.viewer_hash=r.identity AND a.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.viewer_hash=r.identity AND o.confidential_required=1)))
+ OR (r.kind='vm' AND (EXISTS(SELECT 1 FROM muse_trust_vms v WHERE v.vm_id=r.identity AND v.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.vm_id=r.identity AND o.confidential_required=1))) LIMIT 1)
 BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;
 CREATE TRIGGER muse_trust_accounts_propagate_update AFTER UPDATE ON muse_trust_accounts
 WHEN NEW.confidential_required=1 AND OLD.confidential_required=0 AND NOT EXISTS(SELECT 1 FROM muse_trust_propagating)
@@ -75,7 +99,19 @@ DELETE FROM muse_trust_propagating;
 END;
 
 CREATE TRIGGER muse_trust_vms_inherit_insert BEFORE INSERT ON muse_trust_vms
-WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=(SELECT viewer_hash FROM muse_trust_accounts WHERE provider=NEW.provider AND account=NEW.account)) OR (kind='vm' AND identity=NEW.vm_id))
+WHEN NEW.confidential_required=0 AND EXISTS(WITH RECURSIVE component(kind,identity) AS (
+ SELECT 'owner', (SELECT viewer_hash FROM muse_trust_accounts WHERE provider=NEW.provider AND account=NEW.account)
+ UNION SELECT 'vm', NEW.vm_id WHERE NEW.vm_id IS NOT NULL AND NEW.vm_id!=''
+ UNION SELECT 'vm',a.active_vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity WHERE a.active_vm_id IS NOT NULL
+ UNION SELECT 'vm',v.vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity JOIN muse_trust_vms v USING(provider,account)
+ UNION SELECT 'vm',o.vm_id FROM component r JOIN muse_trust_observations o ON r.kind='owner' AND o.viewer_hash=r.identity WHERE o.vm_id!=''
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_accounts a ON r.kind='vm' AND a.active_vm_id=r.identity
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_vms v ON r.kind='vm' AND v.vm_id=r.identity JOIN muse_trust_accounts a USING(provider,account)
+ UNION SELECT 'owner',o.viewer_hash FROM component r JOIN muse_trust_observations o ON r.kind='vm' AND o.vm_id=r.identity WHERE o.vm_id!=''
+)
+SELECT 1 FROM component r WHERE
+ (r.kind='owner' AND (EXISTS(SELECT 1 FROM muse_trust_accounts a WHERE a.viewer_hash=r.identity AND a.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.viewer_hash=r.identity AND o.confidential_required=1)))
+ OR (r.kind='vm' AND (EXISTS(SELECT 1 FROM muse_trust_vms v WHERE v.vm_id=r.identity AND v.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.vm_id=r.identity AND o.confidential_required=1))) LIMIT 1)
 BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;
 CREATE TRIGGER muse_trust_vms_propagate_insert AFTER INSERT ON muse_trust_vms
 WHEN NEW.confidential_required=1 AND NOT EXISTS(SELECT 1 FROM muse_trust_propagating)
@@ -88,7 +124,19 @@ DELETE FROM muse_trust_propagating;
 END;
 
 CREATE TRIGGER muse_trust_vms_inherit_update BEFORE UPDATE ON muse_trust_vms
-WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=(SELECT viewer_hash FROM muse_trust_accounts WHERE provider=NEW.provider AND account=NEW.account)) OR (kind='vm' AND identity=NEW.vm_id))
+WHEN NEW.confidential_required=0 AND EXISTS(WITH RECURSIVE component(kind,identity) AS (
+ SELECT 'owner', (SELECT viewer_hash FROM muse_trust_accounts WHERE provider=NEW.provider AND account=NEW.account)
+ UNION SELECT 'vm', NEW.vm_id WHERE NEW.vm_id IS NOT NULL AND NEW.vm_id!=''
+ UNION SELECT 'vm',a.active_vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity WHERE a.active_vm_id IS NOT NULL
+ UNION SELECT 'vm',v.vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity JOIN muse_trust_vms v USING(provider,account)
+ UNION SELECT 'vm',o.vm_id FROM component r JOIN muse_trust_observations o ON r.kind='owner' AND o.viewer_hash=r.identity WHERE o.vm_id!=''
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_accounts a ON r.kind='vm' AND a.active_vm_id=r.identity
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_vms v ON r.kind='vm' AND v.vm_id=r.identity JOIN muse_trust_accounts a USING(provider,account)
+ UNION SELECT 'owner',o.viewer_hash FROM component r JOIN muse_trust_observations o ON r.kind='vm' AND o.vm_id=r.identity WHERE o.vm_id!=''
+)
+SELECT 1 FROM component r WHERE
+ (r.kind='owner' AND (EXISTS(SELECT 1 FROM muse_trust_accounts a WHERE a.viewer_hash=r.identity AND a.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.viewer_hash=r.identity AND o.confidential_required=1)))
+ OR (r.kind='vm' AND (EXISTS(SELECT 1 FROM muse_trust_vms v WHERE v.vm_id=r.identity AND v.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.vm_id=r.identity AND o.confidential_required=1))) LIMIT 1)
 BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;
 CREATE TRIGGER muse_trust_vms_propagate_update AFTER UPDATE ON muse_trust_vms
 WHEN NEW.confidential_required=1 AND OLD.confidential_required=0 AND NOT EXISTS(SELECT 1 FROM muse_trust_propagating)
@@ -100,6 +148,7 @@ UPDATE muse_trust_observations SET confidential_required=1 WHERE confidential_re
 DELETE FROM muse_trust_propagating;
 END;
 
+CREATE INDEX muse_trust_active_vm ON muse_trust_accounts(active_vm_id);
 CREATE INDEX muse_trust_owner_expectation ON muse_trust_accounts(viewer_hash);
 CREATE INDEX muse_trust_vm_expectation ON muse_trust_vms(vm_id);
 
@@ -164,9 +213,33 @@ WITH RECURSIVE edges(owner,vm) AS (
 SELECT kind,identity FROM required;
 
 CREATE TRIGGER muse_trust_observations_inherit_insert BEFORE INSERT ON muse_trust_observations
-WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=NEW.viewer_hash) OR (kind='vm' AND identity=NEW.vm_id))
+WHEN NEW.confidential_required=0 AND EXISTS(WITH RECURSIVE component(kind,identity) AS (
+ SELECT 'owner', NEW.viewer_hash
+ UNION SELECT 'vm', NEW.vm_id WHERE NEW.vm_id IS NOT NULL AND NEW.vm_id!=''
+ UNION SELECT 'vm',a.active_vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity WHERE a.active_vm_id IS NOT NULL
+ UNION SELECT 'vm',v.vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity JOIN muse_trust_vms v USING(provider,account)
+ UNION SELECT 'vm',o.vm_id FROM component r JOIN muse_trust_observations o ON r.kind='owner' AND o.viewer_hash=r.identity WHERE o.vm_id!=''
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_accounts a ON r.kind='vm' AND a.active_vm_id=r.identity
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_vms v ON r.kind='vm' AND v.vm_id=r.identity JOIN muse_trust_accounts a USING(provider,account)
+ UNION SELECT 'owner',o.viewer_hash FROM component r JOIN muse_trust_observations o ON r.kind='vm' AND o.vm_id=r.identity WHERE o.vm_id!=''
+)
+SELECT 1 FROM component r WHERE
+ (r.kind='owner' AND (EXISTS(SELECT 1 FROM muse_trust_accounts a WHERE a.viewer_hash=r.identity AND a.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.viewer_hash=r.identity AND o.confidential_required=1)))
+ OR (r.kind='vm' AND (EXISTS(SELECT 1 FROM muse_trust_vms v WHERE v.vm_id=r.identity AND v.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.vm_id=r.identity AND o.confidential_required=1))) LIMIT 1)
 BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;
 
 CREATE TRIGGER muse_trust_observations_inherit_update BEFORE UPDATE ON muse_trust_observations
-WHEN NEW.confidential_required=0 AND EXISTS(SELECT 1 FROM muse_trust_confidential WHERE (kind='owner' AND identity=NEW.viewer_hash) OR (kind='vm' AND identity=NEW.vm_id))
+WHEN NEW.confidential_required=0 AND EXISTS(WITH RECURSIVE component(kind,identity) AS (
+ SELECT 'owner', NEW.viewer_hash
+ UNION SELECT 'vm', NEW.vm_id WHERE NEW.vm_id IS NOT NULL AND NEW.vm_id!=''
+ UNION SELECT 'vm',a.active_vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity WHERE a.active_vm_id IS NOT NULL
+ UNION SELECT 'vm',v.vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity JOIN muse_trust_vms v USING(provider,account)
+ UNION SELECT 'vm',o.vm_id FROM component r JOIN muse_trust_observations o ON r.kind='owner' AND o.viewer_hash=r.identity WHERE o.vm_id!=''
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_accounts a ON r.kind='vm' AND a.active_vm_id=r.identity
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_vms v ON r.kind='vm' AND v.vm_id=r.identity JOIN muse_trust_accounts a USING(provider,account)
+ UNION SELECT 'owner',o.viewer_hash FROM component r JOIN muse_trust_observations o ON r.kind='vm' AND o.vm_id=r.identity WHERE o.vm_id!=''
+)
+SELECT 1 FROM component r WHERE
+ (r.kind='owner' AND (EXISTS(SELECT 1 FROM muse_trust_accounts a WHERE a.viewer_hash=r.identity AND a.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.viewer_hash=r.identity AND o.confidential_required=1)))
+ OR (r.kind='vm' AND (EXISTS(SELECT 1 FROM muse_trust_vms v WHERE v.vm_id=r.identity AND v.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.vm_id=r.identity AND o.confidential_required=1))) LIMIT 1)
 BEGIN SELECT RAISE(ABORT, 'muse trust inherited confidentiality'); END;

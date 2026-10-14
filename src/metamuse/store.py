@@ -113,6 +113,9 @@ def _muse_storage_error(*, stale=False) -> m.CoreError:
     return m.CoreError(m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message])
 
 
+_MUSE_COMPONENT_SQL = "WITH RECURSIVE component(kind,identity) AS (\n SELECT 'owner', ?1\n UNION SELECT 'vm', ?2 WHERE ?2 IS NOT NULL AND ?2!=''\n UNION SELECT 'vm',a.active_vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity WHERE a.active_vm_id IS NOT NULL\n UNION SELECT 'vm',v.vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND a.viewer_hash=r.identity JOIN muse_trust_vms v USING(provider,account)\n UNION SELECT 'vm',o.vm_id FROM component r JOIN muse_trust_observations o ON r.kind='owner' AND o.viewer_hash=r.identity WHERE o.vm_id!=''\n UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_accounts a ON r.kind='vm' AND a.active_vm_id=r.identity\n UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_vms v ON r.kind='vm' AND v.vm_id=r.identity JOIN muse_trust_accounts a USING(provider,account)\n UNION SELECT 'owner',o.viewer_hash FROM component r JOIN muse_trust_observations o ON r.kind='vm' AND o.vm_id=r.identity WHERE o.vm_id!=''\n)\nSELECT 1 FROM component r WHERE\n (r.kind='owner' AND (EXISTS(SELECT 1 FROM muse_trust_accounts a WHERE a.viewer_hash=r.identity AND a.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.viewer_hash=r.identity AND o.confidential_required=1)))\n OR (r.kind='vm' AND (EXISTS(SELECT 1 FROM muse_trust_vms v WHERE v.vm_id=r.identity AND v.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE o.vm_id=r.identity AND o.confidential_required=1))) LIMIT 1"
+
+
 _MUSE_ENVIRONMENT = {
     sqlite3.SQLITE_IOERR: (
         "Muse security state could not be accessed",
@@ -740,16 +743,7 @@ class Store:
                 or not row["observed_at"]
             ):
                 raise _muse_storage_error()
-        return (
-            conn.execute(
-                (
-                    "SELECT 1 FROM muse_trust_confidential WHERE "
-                    "(kind='owner' AND identity=?) OR (kind='vm' AND identity=?) LIMIT 1"
-                ),
-                (viewer_hash, vm_id),
-            ).fetchone()
-            is not None
-        )
+        return conn.execute(_MUSE_COMPONENT_SQL, (viewer_hash, vm_id)).fetchone() is not None
 
     @_muse_safe
     def muse_freeze(
