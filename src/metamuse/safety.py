@@ -1402,7 +1402,7 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         return match.group(0)
 
     replace(
-        r"""(?P<q>["'])(?P<key>(?:[A-Za-z0-9_.%\-]|\\(?:u[0-9a-fA-F]{4}|[^\r\n]))+)"""
+        r"""(?<!\\)(?P<q>["'])(?P<key>(?:[A-Za-z0-9_.%\-]|\\u[0-9a-fA-F]{4}|\\[^u\r\n]){1,128}+)"""
         r"""(?P=q)(?P<gap>\s*:\s*)"""
         r"""(?P<vq>["'])(?P<value>(?:\\[^\r\n]|(?!(?P=vq))[^\\\r\n])*?)(?P=vq)""",
         "sensitive_field",
