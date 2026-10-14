@@ -3106,7 +3106,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     )
     egress = _active_egress(fb_cfg.allowed_hosts)
     saved = dict(step.checkpoint or {})
-    is_resume = bool(saved)
+    is_resume = int(saved.get("accepted", 0)) > 0
     expected = (
         parse_post_permalink(saved["resolved_permalink"])
         if saved.get("resolved_permalink")

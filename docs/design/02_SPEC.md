@@ -485,7 +485,7 @@ budget again; edits remain revisions of the same accepted identity. Fixture byte
 accounting uses cumulative UTF-8 observation bytes; real sessions use the larger
 of that accounting and relayed wire bytes. Wall-clock fencing remains core-owned.
 
-On resume, weak observations without native IDs are never re-imported. Neither text
+After a committed batch, resumed weak observations without native IDs are never re-imported. Neither text
 nor DOM position is a deduplication key. Previously committed weak items remain; new
 weak observations may be omitted, with weak_identity_resume and partial coverage.
 Reliable identities still support edits and new observations.
@@ -551,3 +551,6 @@ Facebook parent identifiers are stripped and validated against [A-Za-z0-9._:-]{1
 
 
 Facebook comment identifiers use the same stripped nonempty ASCII token validation as parents. An invalid token is absent/weak; distinct weak records are never merged by text or position.
+
+
+Facebook weak-identity resume suppression begins only after an accepted batch has committed. A usage-only checkpoint from a login wall does not suppress a first import of weak comments; cumulative byte/expansion usage still survives.

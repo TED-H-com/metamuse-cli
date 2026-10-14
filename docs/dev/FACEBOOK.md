@@ -187,7 +187,7 @@ locator, resolved permalink and verified permit/account. A new Source's input_sh
 identifies its first contributing snapshot. At most max_items plus one lookahead identity is
 retained, with expansion-bounded revisions; the union consumes the budget. Weak records
 are retained only from the initial snapshot. Later weak records add
-`weak_identity_expansion`. On resume weak records are skipped entirely with
+`weak_identity_expansion`. After a committed batch, resumed weak records are skipped with
 `weak_identity_resume` and partial coverage. Text or position is never a deduplication
 identity. Previously committed weak items remain; newly visible weak data may be omitted.
 No rendered HTML or record bodies enter checkpoints.
@@ -254,3 +254,6 @@ Facebook parent identifiers are stripped and validated against [A-Za-z0-9._:-]{1
 
 
 Facebook comment identifiers use the same stripped nonempty ASCII token validation as parents. An invalid token is absent/weak; distinct weak records are never merged by text or position.
+
+
+Facebook weak-identity resume suppression begins only after an accepted batch has committed. A usage-only checkpoint from a login wall does not suppress a first import of weak comments; cumulative byte/expansion usage still survives.

@@ -192,3 +192,24 @@ def test_r5_n7_weak_comments_do_not_merge_or_abort_batch(tmp_path):
     assert len(comments) == 2
     assert [row["identity_confidence"] for row in comments] == ["weak", "weak"]
     assert all(row["native_id"] is None for row in comments)
+
+
+def test_r5_n8_resume_without_committed_batch_keeps_weak_records(tmp_path):
+    ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
+    facebook.set_driver_factory(
+        lambda: facebook.FixtureBrowserDriver(
+            facebook.PageObservation(url=URL, status_code=401, html="<html>login</html>")
+        )
+    )
+    job_id = submit(ctx, project, permit)
+    assert finish(ctx, job_id)["error"]["code"] == "E_AUTH_REQUIRED"
+    assert not rows(ctx)
+    markup = _synthetic_post_html(comments=[{"text": "Weak one"}, {"text": "Weak two"}])
+    facebook.set_driver_factory(lambda: facebook.FixtureBrowserDriver(observation(markup)))
+    result = app.control_job(
+        ctx, {"job_id": job_id, "operation": "resume", "request_key": "resume-r5"}
+    )
+    assert result.error is None
+    job = finish(ctx, job_id)
+    assert len(rows(ctx)) == 3
+    assert "weak_identity_resume" not in job["missing_fields"]
