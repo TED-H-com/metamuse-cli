@@ -104,3 +104,9 @@ Recovery requires authorized reads and never repeats the external send. This is
 INTEGRATION/OFFLINE/FIXTURE evidence only. AT-043/LIVE remains blocked pending a
 separate authorized environment. B16 still owns broader fault matrices, performance,
 30-run p95/RSS, scaling and capacity measurement; this journey claims no MEASURE.
+
+B16a submit and prepare order is read-only exact-payload receipt replay, credential
+check, then preview/grant checks/persistence/work. Replay preserves accepted requests
+after a rule upgrade. The worker checks frozen text again before issuing a token or
+opening a gateway. Refused frozen bodies have proven `not_submitted` delivery; sends
+close as `abandoned`, cannot block the discussion, and require preparing a new send.

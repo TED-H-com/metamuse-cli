@@ -127,3 +127,83 @@ def test_f5_topic_refusal_before_preview_or_state(fixture_ctx, monkeypatch):
         assert conn.execute("SELECT count(*) FROM jobs").fetchone()[0] == 0
         assert conn.execute("SELECT count(*) FROM discussions").fetchone()[0] == 0
     assert ctx.muse_gateway.calls == []
+
+
+def test_f4_replay_after_upgrade_and_frozen_refusal(fixture_ctx, project, monkeypatch):
+    from test_muse_lifecycle import grant, opened, packet, run
+    from metamuse import app
+    from metamuse import _muse_lifecycle as lifecycle
+
+    ctx = fixture_ctx
+    opening, _ = opened(ctx, project)
+    pkt = packet(ctx, project)
+    marker = f"{ctx._frontend}_MARKER_LEGACY_ONLY"
+    request = m.MuseSendRequest(
+        discussion_id=opening.data["discussion_id"],
+        packet_id=pkt.id,
+        question=f"hatch_sess={marker}",
+        request_key="old-request",
+    )
+    with monkeypatch.context() as old_rules:
+        old_rules.setattr(lifecycle, "_check_question", lambda text: None)
+        prepared = lifecycle.prepare_send(ctx, request)
+        request.share_grant_id = grant(
+            ctx,
+            project,
+            safety.action_digest(prepared.target, prepared.payload),
+            kind="share",
+            packet=pkt,
+        )
+        original = invoke(ctx, "send", request)
+    assert original.status == "accepted"
+    # Even preparation must return the original frozen body before the new detector.
+    assert lifecycle.prepare_send(ctx, request) == prepared
+    with monkeypatch.context() as read_only:
+        read_only.setattr(ctx.store, "transaction", lambda: pytest.fail("Replay must be read-only"))
+        replay = invoke(ctx, "send", request)
+    assert replay.status == "accepted" and replay.data["job_id"] == original.data["job_id"]
+    run(ctx)
+    job = ctx.store.get(m.Job, original.data["job_id"])
+    exchange = ctx.store.get(m.Exchange, original.data["exchange_id"])
+    assert job.remote_state == "not_submitted"
+    assert exchange.state == "closed" and exchange.outcome == "abandoned"
+    assert exchange.bytes_handed_off is False and exchange.delivery_proof.kind == "not_submitted"
+    assert "Prepare a new send" in job.error["next_action"]
+    assert [route for route, _ in ctx.muse_gateway.calls] == ["session.start"]
+    next_request = request.model_copy(
+        update={"question": "List gaps.", "request_key": "new-request", "share_grant_id": None}
+    )
+    result = app.submit_muse_exchange(ctx, next_request)
+    assert result.error.code == m.ErrorCode.SCOPE_REQUIRED and result.approval is not None
+
+
+def test_f4_open_replay_and_frozen_topic_refusal(fixture_ctx, project, monkeypatch):
+    from test_muse_lifecycle import grant, run
+    from metamuse import _muse_lifecycle as lifecycle
+
+    ctx = fixture_ctx
+    marker = f"{ctx._frontend}_MARKER_LEGACY_TOPIC"
+    request = m.MuseOpenRequest(
+        project_id=project, topic=f"hatch_sess={marker}", request_key="old-open"
+    )
+    with monkeypatch.context() as old_rules:
+        old_rules.setattr(lifecycle, "_check_question", lambda text: None)
+        prepared = lifecycle.prepare_open(ctx, request)
+        request.access_grant_id = grant(
+            ctx, project, safety.action_digest(prepared.target, prepared.payload)
+        )
+        original = invoke(ctx, "open", request)
+    assert original.status == "accepted"
+    with monkeypatch.context() as read_only:
+        read_only.setattr(ctx.store, "transaction", lambda: pytest.fail("Replay must be read-only"))
+        assert lifecycle.prepare_open(ctx, request) == prepared
+        assert invoke(ctx, "open", request).data["job_id"] == original.data["job_id"]
+    run(ctx)
+    job = ctx.store.get(m.Job, original.data["job_id"])
+    discussion = ctx.store.get(m.Discussion, original.data["discussion_id"])
+    assert job.remote_state == "not_submitted"
+    assert (
+        discussion.open_bytes_handed_off is False
+        and discussion.open_delivery_proof.kind == "not_submitted"
+    )
+    assert ctx.muse_gateway.calls == []

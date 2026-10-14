@@ -279,3 +279,9 @@ Skill短主檔＋按需references，先查實際工具；只有Skill不代表bac
 參考性能目標（尚未量測）：4vCPU／8GiB／SSD Linux，固定10,000筆樣本，至少30次，submit p95≤1秒、搜尋首50筆p95≤2秒；20MiB匯入core peak RSS≤512MiB，browser/codec另量測。未達列deviation，不捏造數據。
 
 Linux／WSL2為首個執行目標；其他平台按實測列。無憑證離線路線零背景網路。升級須migration/backup restore，不刪庫過關。product tests初始not_run。
+
+B16a submit and prepare order is read-only exact-payload receipt replay, credential
+check, then preview/grant checks/persistence/work. Replay preserves accepted requests
+after a rule upgrade. The worker checks frozen text again before issuing a token or
+opening a gateway. Refused frozen bodies have proven `not_submitted` delivery; sends
+close as `abandoned`, cannot block the discussion, and require preparing a new send.
