@@ -517,3 +517,22 @@ active selections, historical label VMs and label-independent observations.
 Unrelated confidential components are not enumerated. Confidential bulk bind
 and human barrier repair retain the whole-workspace set-wise closure and raw-SQL
 propagation guards. Unreleased migration 005 is amended in place; no 006.
+
+Round 5 storage classification (all paths fail closed before msg3):
+
+| Primary SQLite class / cause | Fixed guidance | Retry class |
+|---|---|---|
+| IOERR family, CANTOPEN, PERM, NOLFS | Check workspace availability and permissions | user_action |
+| READONLY family / lock EROFS | Make the workspace writable | user_action |
+| FULL / lock ENOSPC | Free disk space | user_action |
+| BUSY/LOCKED family including BUSY_SNAPSHOT | Muse security state is busy; retry after writer finishes | safe_read |
+| PROTOCOL, NOMEM, INTERRUPT | Retry after a transient security-state failure | safe_read |
+| CORRUPT, NOTADB, SCHEMA, CONSTRAINT; invalid trust-row type | Repair; restore only a verified backup, losing later expectations | never |
+| Committed propagation barrier | Stop connections; use the documented closure-only maintenance repair, no restore needed | never |
+| ERROR, MISMATCH, TOOBIG, RANGE, FORMAT, INTERNAL, MISUSE, ABORT, EMPTY, NOTFOUND, NOTICE, WARNING, AUTH, unexpected Python exception | Muse security state internal failure; report this failure | never |
+
+Recording paths retain “Muse confidentiality could not be recorded” and the same
+class-specific next action. No SQL, private paths or raw exception text is included.
+Migration 005 checks stored integer generation/version/flags, text ids/hashes and
+nonempty text timestamps. SQLite affinity precedes CHECK, so integer-coercible
+inputs are accepted only as stored integers. Invalid stored row types are damage.

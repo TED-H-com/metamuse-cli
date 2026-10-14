@@ -85,6 +85,7 @@ _MUSE_LISTENERS_LOCK = threading.Lock()
 
 
 _MUSE_STORAGE_ACTIONS = {
+    "Muse security state internal failure": "Report this internal Muse security-state failure",
     "Muse security state could not be accessed": (
         "Check workspace availability and permissions before reconnecting"
     ),
@@ -154,6 +155,15 @@ _MUSE_ENVIRONMENT = {
     ),
 }
 
+# SQLite extended result codes are classified by their primary low byte.
+for _code in (sqlite3.SQLITE_PROTOCOL, sqlite3.SQLITE_NOMEM, sqlite3.SQLITE_INTERRUPT):
+    _MUSE_ENVIRONMENT[_code] = (
+        "Muse security state temporarily unavailable; retry",
+        "Retry the connection after the transient security-state failure",
+        "safe_read",
+    )
+_MUSE_ENVIRONMENT[sqlite3.SQLITE_NOLFS] = _MUSE_ENVIRONMENT[sqlite3.SQLITE_IOERR]
+
 
 def _muse_fixed_storage(exc):
     # Inspect error codes only: SQLite text can contain private SQL or filenames.
@@ -194,6 +204,8 @@ def _muse_fixed_storage(exc):
     if exc.detail.message == "Muse confidentiality could not be recorded":
         # Recording retains its honest failure message and a fixed environment action.
         permitted = {entry[1]: entry[2] for entry in _MUSE_ENVIRONMENT.values()}
+        for action in _MUSE_STORAGE_ACTIONS.values():
+            permitted.setdefault(action, "never")
         permitted[
             _MUSE_STORAGE_ACTIONS["Muse security state has a committed propagation barrier"]
         ] = "never"
@@ -215,10 +227,8 @@ def _muse_fixed_storage(exc):
         )
     if integrity:
         return _muse_storage_error()
-    message, action, retry = _MUSE_ENVIRONMENT[sqlite3.SQLITE_IOERR]
-    result = m.CoreError(m.ErrorCode.STORAGE, message, next_action=action)
-    result.detail.retry_class = retry
-    return result
+    message = "Muse security state internal failure"
+    return m.CoreError(m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message])
 
 
 def _muse_safe(fn):
@@ -661,6 +671,16 @@ class Store:
             refs.append(weakref.WeakMethod(callback))
 
     @staticmethod
+    def _muse_check_types(row):
+        for key in row.keys():
+            value = row[key]
+            expected = int if key in {"version", "generation", "confidential_required"} else str
+            if key == "active_vm_id" and value is None:
+                continue
+            if type(value) is not expected or (key in {"updated_at", "observed_at"} and not value):
+                raise _muse_storage_error()
+
+    @staticmethod
     def _muse_rows(conn, provider, account, vm_id):
         owner = conn.execute(
             "SELECT * FROM muse_trust_accounts WHERE provider=? AND account=?", (provider, account)
@@ -669,6 +689,9 @@ class Store:
             "SELECT * FROM muse_trust_vms WHERE provider=? AND account=? AND vm_id=?",
             (provider, account, vm_id),
         ).fetchone()
+        for row in (owner, vm):
+            if row is not None:
+                Store._muse_check_types(row)
         for row in (owner, vm):
             if row is not None and (
                 row["version"] != 1 or row["confidential_required"] not in (0, 1)
@@ -714,6 +737,8 @@ class Store:
         ).fetchall()
         vms = conn.execute("SELECT * FROM muse_trust_vms WHERE vm_id=?", (vm_id,)).fetchall()
         for row in (*owners, *vms):
+            Store._muse_check_types(row)
+        for row in (*owners, *vms):
             if row["version"] != 1 or row["confidential_required"] not in (0, 1):
                 raise _muse_storage_error()
         for row in owners:
@@ -736,6 +761,7 @@ class Store:
             (viewer_hash, vm_id),
         ).fetchall()
         for row in observations:
+            Store._muse_check_types(row)
             if (
                 row["version"] != 1
                 or row["confidential_required"] not in (0, 1)
@@ -1090,7 +1116,7 @@ class Store:
                 next_action=fixed.detail.next_action
                 if fixed.detail.message in {item[0] for item in _MUSE_ENVIRONMENT.values()}
                 or fixed.detail.message == "Muse security state has a committed propagation barrier"
-                else _MUSE_STORAGE_ACTIONS["Muse confidentiality could not be recorded"],
+                else fixed.detail.next_action,
             )
             failure.detail.retry_class = fixed.detail.retry_class
         if failure is not None:

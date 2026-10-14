@@ -1,24 +1,24 @@
 -- B09: private account/VM trust, independent of rotating auth_ref. No secrets.
 CREATE TABLE muse_trust_accounts (
-    provider TEXT NOT NULL,
-    account TEXT NOT NULL,
-    version INTEGER NOT NULL CHECK(version = 1),
-    viewer_hash TEXT NOT NULL CHECK(length(viewer_hash) = 64 AND viewer_hash NOT GLOB '*[^0-9a-f]*'),
-    session_hash TEXT NOT NULL CHECK(length(session_hash) = 64 AND session_hash NOT GLOB '*[^0-9a-f]*'),
-    active_vm_id TEXT CHECK((active_vm_id IS NULL AND confidential_required = 1) OR (active_vm_id IS NOT NULL AND length(active_vm_id) BETWEEN 1 AND 128 AND active_vm_id = lower(trim(active_vm_id)) AND active_vm_id NOT GLOB '*[^a-z0-9._-]*')),
-    generation INTEGER NOT NULL CHECK(generation >= 1),
-    confidential_required INTEGER NOT NULL CHECK(confidential_required IN (0, 1)),
-    updated_at TEXT NOT NULL,
+    provider TEXT NOT NULL CHECK(typeof(provider)='text'),
+    account TEXT NOT NULL CHECK(typeof(account)='text'),
+    version INTEGER NOT NULL CHECK(typeof(version)='integer' AND version = 1),
+    viewer_hash TEXT NOT NULL CHECK(typeof(viewer_hash)='text' AND length(viewer_hash) = 64 AND viewer_hash NOT GLOB '*[^0-9a-f]*'),
+    session_hash TEXT NOT NULL CHECK(typeof(session_hash)='text' AND length(session_hash) = 64 AND session_hash NOT GLOB '*[^0-9a-f]*'),
+    active_vm_id TEXT CHECK((active_vm_id IS NULL OR typeof(active_vm_id)='text') AND (active_vm_id IS NULL AND confidential_required = 1) OR (active_vm_id IS NOT NULL AND length(active_vm_id) BETWEEN 1 AND 128 AND active_vm_id = lower(trim(active_vm_id)) AND active_vm_id NOT GLOB '*[^a-z0-9._-]*')),
+    generation INTEGER NOT NULL CHECK(typeof(generation)='integer' AND generation >= 1),
+    confidential_required INTEGER NOT NULL CHECK(typeof(confidential_required)='integer' AND confidential_required IN (0, 1)),
+    updated_at TEXT NOT NULL CHECK(typeof(updated_at)='text' AND length(updated_at)>0),
     PRIMARY KEY(provider, account)
 );
 CREATE TABLE muse_trust_vms (
-    provider TEXT NOT NULL,
-    account TEXT NOT NULL,
-    vm_id TEXT NOT NULL CHECK(length(vm_id) BETWEEN 1 AND 128 AND vm_id = lower(trim(vm_id)) AND vm_id NOT GLOB '*[^a-z0-9._-]*'),
-    version INTEGER NOT NULL CHECK(version = 1),
-    confidential_required INTEGER NOT NULL CHECK(confidential_required IN (0, 1)),
-    source TEXT NOT NULL CHECK(source IN ('authenticated_assignment', 'noise_message_2')),
-    observed_at TEXT NOT NULL,
+    provider TEXT NOT NULL CHECK(typeof(provider)='text'),
+    account TEXT NOT NULL CHECK(typeof(account)='text'),
+    vm_id TEXT NOT NULL CHECK(typeof(vm_id)='text' AND length(vm_id) BETWEEN 1 AND 128 AND vm_id = lower(trim(vm_id)) AND vm_id NOT GLOB '*[^a-z0-9._-]*'),
+    version INTEGER NOT NULL CHECK(typeof(version)='integer' AND version = 1),
+    confidential_required INTEGER NOT NULL CHECK(typeof(confidential_required)='integer' AND confidential_required IN (0, 1)),
+    source TEXT NOT NULL CHECK(typeof(source)='text' AND source IN ('authenticated_assignment', 'noise_message_2')),
+    observed_at TEXT NOT NULL CHECK(typeof(observed_at)='text' AND length(observed_at)>0),
     PRIMARY KEY(provider, account, vm_id),
     FOREIGN KEY(provider, account) REFERENCES muse_trust_accounts(provider, account)
 );
@@ -155,12 +155,12 @@ CREATE INDEX muse_trust_vm_expectation ON muse_trust_vms(vm_id);
 -- Remote authenticated observations are independent of local connection labels.
 -- Empty VM id represents owner-only evidence; it is never a wire VM id.
 CREATE TABLE muse_trust_observations (
-    viewer_hash TEXT NOT NULL CHECK(length(viewer_hash)=64 AND viewer_hash NOT GLOB '*[^0-9a-f]*'),
-    vm_id TEXT NOT NULL CHECK(vm_id='' OR (length(vm_id) BETWEEN 1 AND 128 AND vm_id=lower(trim(vm_id)) AND vm_id NOT GLOB '*[^a-z0-9._-]*')),
-    version INTEGER NOT NULL CHECK(version=1),
-    confidential_required INTEGER NOT NULL CHECK(confidential_required IN (0,1)),
-    source TEXT NOT NULL CHECK(source IN ('authenticated_assignment','noise_message_2')),
-    observed_at TEXT NOT NULL,
+    viewer_hash TEXT NOT NULL CHECK(typeof(viewer_hash)='text' AND length(viewer_hash)=64 AND viewer_hash NOT GLOB '*[^0-9a-f]*'),
+    vm_id TEXT NOT NULL CHECK(typeof(vm_id)='text' AND vm_id='' OR (length(vm_id) BETWEEN 1 AND 128 AND vm_id=lower(trim(vm_id)) AND vm_id NOT GLOB '*[^a-z0-9._-]*')),
+    version INTEGER NOT NULL CHECK(typeof(version)='integer' AND version=1),
+    confidential_required INTEGER NOT NULL CHECK(typeof(confidential_required)='integer' AND confidential_required IN (0,1)),
+    source TEXT NOT NULL CHECK(typeof(source)='text' AND source IN ('authenticated_assignment','noise_message_2')),
+    observed_at TEXT NOT NULL CHECK(typeof(observed_at)='text' AND length(observed_at)>0),
     PRIMARY KEY(viewer_hash, vm_id)
 );
 CREATE INDEX muse_trust_observation_vm ON muse_trust_observations(vm_id);

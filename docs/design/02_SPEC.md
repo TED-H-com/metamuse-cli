@@ -303,3 +303,13 @@ active selections, historical label VMs and label-independent observations.
 Unrelated confidential components are not enumerated. Confidential bulk bind
 and human barrier repair retain the whole-workspace set-wise closure and raw-SQL
 propagation guards. Unreleased migration 005 is amended in place; no 006.
+
+Muse trust failures classify SQLite primary codes (including extended codes):
+IOERR/CANTOPEN/PERM/NOLFS/READONLY/FULL are environment/user_action;
+BUSY/LOCKED/PROTOCOL/NOMEM/INTERRUPT are transient/safe_read;
+CORRUPT/NOTADB/SCHEMA/CONSTRAINT and invalid stored types are damage/never.
+Unclassified codes and Python exceptions return a fixed internal failure and
+report action, without restore or permissions advice. Recording retains its
+honest failure prefix and the underlying guidance. A committed barrier uses
+closure-only human repair. Unreleased 005 enforces integer generation/flags,
+text identities/hashes and nonempty text timestamps, also on upgrade and restore.
