@@ -220,6 +220,7 @@ class PageObservation:
     subresources: tuple[SubresourceRequest, ...] = ()
     redirect_chain: tuple[str, ...] = ()
     progress_confirmed: bool = True
+    expansion_failed: bool = False
 
 
 @dataclass(frozen=True)
@@ -1813,6 +1814,9 @@ class _PlaywrightSession:
         self._navigation_responded: set[str] = set()
         self._document_status = 200
         self._expansion_response_status: int | None = None
+        self._active_control: str | None = None
+        self._pending_expansion_urls: list[str] = []
+        self._expansion_requests: set[Any] = set()
 
         def _on_popup(popup: Any) -> None:
             self.popups_blocked += 1
@@ -1854,12 +1858,54 @@ class _PlaywrightSession:
 
         self._page.on("request", note_navigation)
 
+        def note_expansion(source: Any, payload: Any) -> None:
+            if (
+                source.get("frame") == self._page.main_frame
+                and isinstance(payload, dict)
+                and self._active_control is not None
+                and payload.get("control") == self._active_control
+                and isinstance(payload.get("url"), str)
+                and len(self._pending_expansion_urls) < 256
+            ):
+                self._pending_expansion_urls.append(payload["url"])
+
+        def request_started(request: Any) -> None:
+            if request.url in self._pending_expansion_urls:
+                self._pending_expansion_urls.remove(request.url)
+                self._expansion_requests.add(request)
+            elif request.redirected_from in self._expansion_requests:
+                self._expansion_requests.add(request)
+
+        self._context.expose_binding("__metamuseExpansionRequest", note_expansion)
+        self._context.add_init_script("""(() => {
+          const note = url => {
+            const event = window.event;
+            const control = event?.target?.closest?.('[data-expand-id]');
+            if (event?.isTrusted && event.type === 'click' && control) {
+              try { window.__metamuseExpansionRequest({control: control.dataset.expandId,
+                url: new URL(url, document.baseURI).href}); } catch (_) {}
+            }
+          };
+          const originalFetch = window.fetch;
+          window.fetch = function(input, ...args) {
+            note(typeof input === 'string' || input instanceof URL ? input : input.url);
+            return originalFetch.call(this, input, ...args);
+          };
+          const urls = new WeakMap(), open = XMLHttpRequest.prototype.open,
+            send = XMLHttpRequest.prototype.send;
+          XMLHttpRequest.prototype.open = function(method, url, ...args) {
+            urls.set(this, url); return open.call(this, method, url, ...args);
+          };
+          XMLHttpRequest.prototype.send = function(...args) {
+            note(urls.get(this)); return send.apply(this, args);
+          };
+        })()""")
+        self._page.on("request", request_started)
+
         def _on_response(response: Any) -> None:
             req = response.request
             if req.is_navigation_request():
                 self._document_status = response.status
-            elif req.resource_type in ("xhr", "fetch") and response.status >= 400:
-                self._expansion_response_status = response.status
             with self._egress._lock:
                 aborted_err = self._egress.aborted_urls.get(response.url)
             aborted_by_proxy = (
@@ -1878,6 +1924,12 @@ class _PlaywrightSession:
                 return
             if req.is_navigation_request():
                 self._navigation_responded.add(req.url)
+            if (
+                req in self._expansion_requests
+                and req.resource_type in ("xhr", "fetch")
+                and response.status >= 400
+            ):
+                self._expansion_response_status = response.status
             purpose: safety.URLPurpose = (
                 "request"
                 if req.is_navigation_request()
@@ -2092,6 +2144,9 @@ class _PlaywrightSession:
         self._egress.last_proxy_error = None
         self._peer_error = None
         self._expansion_response_status = None
+        self._active_control = control_id
+        self._pending_expansion_urls.clear()
+        self._expansion_requests.clear()
         signature = """() => Array.from(document.querySelectorAll(
           '[data-fb-role="comment"], [data-fb-role="reply"], [data-comment-id]'))
           .map(node => JSON.stringify([node.getAttribute('data-comment-id'), node.textContent]))"""
@@ -2102,9 +2157,14 @@ class _PlaywrightSession:
         except Exception:
             if self._egress.navigation_error is not None:
                 raise self._egress.navigation_error from None
-            raise m.CoreError(
-                m.ErrorCode.SELECTOR_DRIFT, "Comment or reply expansion control failed to respond"
-            ) from None
+            self._active_control = None
+            return PageObservation(
+                url=self._page.url,
+                status_code=self._document_status,
+                html=self._page.content(),
+                progress_confirmed=False,
+                expansion_failed=True,
+            )
         deadline = time.monotonic() + self._timeout_ms / 1000
         progress = False
         while time.monotonic() < deadline:
@@ -2121,12 +2181,14 @@ class _PlaywrightSession:
             if set(self._page.evaluate(signature)) - before:
                 progress = True
                 break
+        self._active_control = None
         return PageObservation(
             url=self._page.url,
-            status_code=self._expansion_response_status or self._document_status,
+            status_code=self._document_status,
             html=self._page.content(),
             server_addr=None,
             progress_confirmed=progress,
+            expansion_failed=self._expansion_response_status is not None,
         )
 
     def close(self) -> None:
@@ -3392,6 +3454,9 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 require_comments_section=require_comments,
             )
             accumulate_page(parsed, obs.html)
+            if obs.expansion_failed:
+                halt = "expansion_failed"
+                break
             if not obs.progress_confirmed:
                 halt = "expansion_timeout"
                 break
@@ -3485,6 +3550,8 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         missing.add("byte_budget_exceeded")
     if halt == "expansion_timeout":
         missing.add("expansion_progress_timeout")
+    if halt == "expansion_failed":
+        missing.add("expansion_failed")
     batch_count = 0
 
     def _flush_checkpoint(processed_count: int) -> None:
@@ -3674,7 +3741,12 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
 
     if has_gaps or rejected:
         coverage: m.CoverageStatus = "partial"
-        if halt in ("limit_reached", "expand_budget_exhausted", "expansion_timeout"):
+        if halt in (
+            "limit_reached",
+            "expand_budget_exhausted",
+            "expansion_timeout",
+            "expansion_failed",
+        ):
             stop_reason = halt
         elif unexpanded_gaps:
             stop_reason = "unexpanded_controls"

@@ -1714,6 +1714,12 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
         def on(self, event: str, handler: Any) -> None:
             del event, handler
 
+        def expose_binding(self, name: str, handler: Any) -> None:
+            pass
+
+        def add_init_script(self, script: str) -> None:
+            pass
+
         def route(self, pattern: str, handler: Any) -> None:
             del pattern, handler
 
