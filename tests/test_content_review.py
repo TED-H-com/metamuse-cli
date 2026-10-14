@@ -319,7 +319,7 @@ def test_f16_all_core_tools_effective_and_stubs_absent(ctx):
     core = [row for row in rows if row["name"] in app.CORE_IMPLEMENTED_TOOLS]
     assert {row["name"] for row in core if row["effective"]} == app.CORE_IMPLEMENTED_TOOLS
     assert all(not row["effective"] for row in rows if row["implementation"] == "absent")
-    assert len(generated_schemas()) == 39
+    assert len(generated_schemas()) == 40
 
 
 def test_cursor_tamper_fields_and_no_per_query_state(ctx, project):

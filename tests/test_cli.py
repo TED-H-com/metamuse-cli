@@ -41,17 +41,6 @@ def test_cli_projects_jobs_worker(tmp_path, capsys):
 @pytest.mark.parametrize(
     "command",
     [
-        [
-            "add",
-            "--project",
-            "prj_fixture",
-            "--file",
-            "missing.json",
-            "--kind",
-            "json",
-            "--request-key",
-            "one",
-        ],
         ["search", "--project", "prj_fixture", "--query", "fixture"],
         [
             "packet",

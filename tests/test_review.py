@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from metamuse import app, cli, jobs
+from metamuse import app, cli, collect, jobs
 from metamuse import models as m
-from metamuse.schemas import design_rollup
+from metamuse.schemas import design_rollup, generated_schemas
 
 
 def configure(ctx, *, live=False, **limits):
@@ -552,6 +552,20 @@ def test_f15_project_created_event_has_project(ctx, project):
     with ctx.store.connection() as conn:
         event = conn.execute("SELECT * FROM events WHERE kind='project.created'").fetchone()
     assert event["object_id"] == event["project_id"] == project
+
+
+def test_f16_all_core_tools_effective_and_stubs_absent(ctx):
+    from metamuse import content
+
+    rows = app.inspect_capabilities(ctx).data["capabilities"]
+    effective = {row["name"] for row in rows if row["effective"]}
+    # B05 declares metamuse_collect. B07/B11 declares the content tools.
+    # Every other feature tool stays absent.
+    assert effective == (
+        app.CORE_IMPLEMENTED_TOOLS | collect.IMPLEMENTED_TOOLS | content.IMPLEMENTED_TOOLS
+    )
+    assert all(not row["effective"] for row in rows if row["implementation"] == "absent")
+    assert len(generated_schemas()) == 40
 
 
 def test_f01_known_job_runs_past_unknown_job(ctx, project):

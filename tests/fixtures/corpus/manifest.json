@@ -76,7 +76,8 @@
       "size_bytes": 551,
       "expected": {
         "format": "plain_text",
-        "lines": 18
+        "lines": 16,
+        "reason": "The file has 16 newline-terminated lines. Import is one weak post, not one item per line."
       }
     },
     "import/comments_tree.jsonl": {
@@ -120,38 +121,35 @@
           "c-tree-self-loop": {
             "expected_parent": null,
             "status": "rejected_self_parent",
-            "error_code": "E_INPUT_INVALID",
-            "notes": "Parent is self"
+            "error_code": "E_REFERENCE_INVALID",
+            "notes": "SPEC §3: a self-parent is a bad reference. The incoming row is rejected and not inserted."
           },
           "c-cycle2-node-a": {
             "expected_parent": null,
-            "status": "rejected_cycle",
-            "error_code": "E_INPUT_INVALID",
-            "notes": "2-node cycle with c-cycle2-node-b"
+            "status": "unresolved",
+            "notes": "SPEC §3: the parent is not obtained yet, so the row stays unresolved. It is not rejected as a cycle."
           },
           "c-cycle2-node-b": {
             "expected_parent": null,
             "status": "rejected_cycle",
-            "error_code": "E_INPUT_INVALID",
-            "notes": "2-node cycle with c-cycle2-node-a"
+            "error_code": "E_REFERENCE_INVALID",
+            "notes": "Linking this row to node A would cycle. Only the incoming row is rejected."
           },
           "c-cycle3-node-a": {
-            "expected_parent": null,
-            "status": "rejected_cycle",
-            "error_code": "E_INPUT_INVALID",
-            "notes": "3-node cycle with B and C"
+            "expected_parent": "c-cycle3-node-b",
+            "status": "resolved",
+            "notes": "Node B is kept. Linking A to B does not yet cycle."
           },
           "c-cycle3-node-b": {
             "expected_parent": null,
-            "status": "rejected_cycle",
-            "error_code": "E_INPUT_INVALID",
-            "notes": "3-node cycle with A and C"
+            "status": "unresolved",
+            "notes": "Node C is the row that would close the cycle, so B's parent stays unresolved."
           },
           "c-cycle3-node-c": {
             "expected_parent": null,
             "status": "rejected_cycle",
-            "error_code": "E_INPUT_INVALID",
-            "notes": "3-node cycle with A and B"
+            "error_code": "E_REFERENCE_INVALID",
+            "notes": "SPEC §3: reject the incoming row that would cycle. Earlier rows stay."
           },
           "c-dup-identical": {
             "expected_parent": "post-tree-root",
@@ -205,8 +203,8 @@
           },
           {
             "line": 6,
-            "error_code": "E_UNSUPPORTED",
-            "reason": "Unknown kind: unsupported_broadcast"
+            "error_code": "E_INPUT_INVALID",
+            "reason": "SPEC §3 kind is post, comment, or reply; an unknown kind is invalid input, not an unsupported capability."
           },
           {
             "line": 8,
@@ -260,27 +258,41 @@
         "valid_rows": 5,
         "cross_project_expectations": {
           "p-b-001": {
-            "status": "resolved",
-            "notes": "Project B root post"
+            "status": "rejected_unknown_field",
+            "notes": "Unknown field project. Cross-project parent resolution is not reached.",
+            "error_code": "E_INPUT_INVALID",
+            "field": "project"
           },
           "c-b-colliding-parent-01": {
-            "status": "rejected_cross_project",
-            "error_code": "E_REFERENCE_INVALID",
-            "notes": "Parent post-tree-root belongs to project A"
+            "status": "rejected_unknown_field",
+            "error_code": "E_INPUT_INVALID",
+            "notes": "Unknown field project. Cross-project parent resolution is not reached.",
+            "field": "project"
           },
           "c-b-colliding-parent-02": {
-            "status": "rejected_cross_project",
-            "error_code": "E_REFERENCE_INVALID",
-            "notes": "Parent c-tree-valid-1 belongs to project A"
+            "status": "rejected_unknown_field",
+            "error_code": "E_INPUT_INVALID",
+            "notes": "Unknown field project. Cross-project parent resolution is not reached.",
+            "field": "project"
           },
           "c-tree-valid-1": {
-            "status": "resolved_in_project_b",
-            "notes": "Same native_id as project A but isolated to project B namespace"
+            "status": "rejected_unknown_field",
+            "notes": "Unknown field project. Cross-project parent resolution is not reached.",
+            "error_code": "E_INPUT_INVALID",
+            "field": "project"
           },
           "c-b-valid-01": {
-            "status": "resolved",
-            "notes": "Normal child of p-b-001"
+            "status": "rejected_unknown_field",
+            "notes": "Unknown field project. Cross-project parent resolution is not reached.",
+            "error_code": "E_INPUT_INVALID",
+            "field": "project"
           }
+        },
+        "importer_rejected": {
+          "rows": 5,
+          "error_code": "E_INPUT_INVALID",
+          "field": "project",
+          "reason": "SPEC §3 has no project field. The extra key is an unknown record field, so the rows are not imported."
         }
       }
     },
@@ -400,9 +412,9 @@
       "size_bytes": 3933,
       "expected": {
         "valid": false,
-        "mime": "application/octet-stream",
-        "error_code": "E_RESOURCE_UNAVAILABLE",
-        "reason": "Damaged/truncated MP4 container"
+        "mime": null,
+        "error_code": "E_INPUT_INVALID",
+        "reason": "A truncated local container is invalid input, not an unavailable resource, and no octet-stream asset is stored."
       }
     },
     "media/zero_bytes.mp4": {
@@ -415,9 +427,9 @@
       "size_bytes": 0,
       "expected": {
         "valid": false,
-        "mime": "application/octet-stream",
-        "error_code": "E_RESOURCE_UNAVAILABLE",
-        "reason": "Zero-byte file"
+        "mime": null,
+        "error_code": "E_INPUT_INVALID",
+        "reason": "An empty file is invalid input, not an unavailable resource, and no octet-stream asset is stored."
       }
     },
     "media/html_as.mp4": {
