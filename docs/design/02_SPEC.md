@@ -512,3 +512,7 @@ counts add rendered_count_conflict; positive counts without sufficient comments 
 controls add missing_comments_controls; absent exhaustion evidence adds
 comments_scope_unverified. Every gap yields partial coverage and incomplete post
 evidence, never scope_satisfied. Counts whose semantics are unknown are not proof.
+
+A reply without a parent identifier adds parent_comment independently of the
+core unresolved_parent field. New reply evidence is incomplete and the job is
+partial; null parent is never interpreted as a proven complete parent tree.

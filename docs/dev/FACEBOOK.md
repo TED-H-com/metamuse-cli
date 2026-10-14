@@ -192,3 +192,7 @@ evidence, never scope_satisfied. Counts whose semantics are unknown are not proo
 Shared workers lack the page opener relation, so a separate browser-level CDP
 auto-attach pause covers them before script execution. Dedicated workers use the
 page-related target pause. Both paths close the target before resuming any script.
+
+A reply without a parent identifier adds parent_comment independently of the
+core unresolved_parent field. New reply evidence is incomplete and the job is
+partial; null parent is never interpreted as a proven complete parent tree.
