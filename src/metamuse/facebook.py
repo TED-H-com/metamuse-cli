@@ -207,6 +207,7 @@ class PageObservation:
     server_addr: dict[str, Any] | None = None
     subresources: tuple[SubresourceRequest, ...] = ()
     redirect_chain: tuple[str, ...] = ()
+    progress_confirmed: bool = True
 
 
 @dataclass(frozen=True)
@@ -1601,6 +1602,8 @@ class _PlaywrightSession:
         self.popups_blocked = 0
         self.downloads_blocked = 0
         self._peer_error: m.CoreError | None = None
+        self._document_status = 200
+        self._expansion_response_status: int | None = None
 
         def _on_popup(popup: Any) -> None:
             self.popups_blocked += 1
@@ -1636,6 +1639,10 @@ class _PlaywrightSession:
 
         def _on_response(response: Any) -> None:
             req = response.request
+            if req.is_navigation_request():
+                self._document_status = response.status
+            elif req.resource_type in ("xhr", "fetch") and response.status >= 400:
+                self._expansion_response_status = response.status
             with self._egress._lock:
                 aborted_err = self._egress.aborted_urls.get(response.url)
                 last_proxy_err = self._egress.last_proxy_error
@@ -1748,31 +1755,42 @@ class _PlaywrightSession:
         self._egress.navigation_error = None
         self._egress.last_proxy_error = None
         self._peer_error = None
+        self._expansion_response_status = None
+        signature = """() => Array.from(document.querySelectorAll(
+          '[data-fb-role="comment"], [data-fb-role="reply"], [data-comment-id]'))
+          .map(node => JSON.stringify([node.getAttribute('data-comment-id'), node.textContent]))"""
+        before = set(self._page.evaluate(signature))
         locator = self._page.locator(f'[data-expand-id="{control_id}"]').first
         try:
             locator.click(timeout=self._timeout_ms)
-            self._page.wait_for_load_state("load", timeout=self._timeout_ms)
-        except Exception as exc:
-            self._raise_if_byte_limit()
+        except Exception:
             if self._egress.navigation_error is not None:
                 raise self._egress.navigation_error from None
-            if self._peer_error is not None:
-                raise self._peer_error from None
             raise m.CoreError(
-                m.ErrorCode.SELECTOR_DRIFT,
-                "Comment or reply expansion control failed to respond",
-                next_action="Inspect the page markup before retrying",
-            ) from exc
-        self._raise_if_byte_limit()
-        if self._egress.navigation_error is not None:
-            raise self._egress.navigation_error
-        if self._peer_error is not None:
-            raise self._peer_error
+                m.ErrorCode.SELECTOR_DRIFT, "Comment or reply expansion control failed to respond"
+            ) from None
+        deadline = time.monotonic() + self._timeout_ms / 1000
+        progress = False
+        while time.monotonic() < deadline:
+            self._page.wait_for_timeout(50)
+            self._raise_if_byte_limit()
+            if self._egress.navigation_error is not None:
+                raise self._egress.navigation_error
+            if self._peer_error is not None:
+                raise self._peer_error
+            self._egress.check_browser_route(self._page.url, is_navigation=True)
+            if self._expansion_response_status is not None:
+                progress = True  # Classified failure response, never an empty-data inference.
+                break
+            if set(self._page.evaluate(signature)) - before:
+                progress = True
+                break
         return PageObservation(
             url=self._page.url,
-            status_code=200,
+            status_code=self._expansion_response_status or self._document_status,
             html=self._page.content(),
             server_addr=None,
+            progress_confirmed=progress,
         )
 
     def close(self) -> None:
@@ -2848,6 +2866,9 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 permalink=permalink,
                 require_comments_section=require_comments,
             )
+            if not obs.progress_confirmed:
+                halt = "expansion_timeout"
+                break
     except m.CoreError as exc:
         # Scrub any secret token from error messages before surfacing
         cleaned_msg = storage_state.redact(exc.detail.message)
@@ -2916,6 +2937,8 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     missing: set[str] = set(saved.get("missing_fields", [])) | set(unexpanded_gaps)
     if byte_limit_error is not None:
         missing.add("byte_budget_exceeded")
+    if halt == "expansion_timeout":
+        missing.add("expansion_progress_timeout")
     batch_count = 0
 
     def _flush_checkpoint(processed_count: int) -> None:
@@ -3079,6 +3102,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         or "uncollected_items_budget" in missing
         or "parent_comment" in missing
         or "weak_identity_resume" in missing
+        or "expansion_progress_timeout" in missing
     )
     comments_observed = sum(1 for r in records[:accepted] if r.kind in ("comment", "reply"))
     comments_empty = (
@@ -3086,11 +3110,12 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         and require_comments
         and len(parsed.comments) == 0
         and len(parsed.expand_controls) == 0
+        and halt != "expansion_timeout"
     )
 
     if has_gaps or rejected:
         coverage: m.CoverageStatus = "partial"
-        if halt in ("limit_reached", "expand_budget_exhausted"):
+        if halt in ("limit_reached", "expand_budget_exhausted", "expansion_timeout"):
             stop_reason = halt
         elif unexpanded_gaps:
             stop_reason = "unexpanded_controls"

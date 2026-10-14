@@ -536,3 +536,42 @@ def test_finding_08_weak_records_never_duplicate_on_resume(tmp_path):
         assert conn.execute("SELECT used FROM permits WHERE id=?", (permit,)).fetchone()[0] == 1
     assert "weak_identity_resume" in job["missing_fields"]
     assert job["coverage_status"] == "partial"
+
+
+@pytest.mark.parametrize("delayed", [True, False])
+def test_finding_09_expansion_waits_for_progress_or_records_uncertainty(
+    tmp_path, monkeypatch, delayed
+):
+    markup = _synthetic_post_html(expand_controls=[{"id": "more"}])
+    action = "this.remove();"
+    if delayed:
+        action += """setTimeout(() => {
+          const node = document.createElement('article'); node.dataset.fbRole = 'comment';
+          node.dataset.commentId = 'delayed';
+          node.innerHTML = '<div data-fb-role=comment-body>Delayed comment</div>';
+          document.querySelector('section').appendChild(node);
+        }, 500);"""
+    import html
+
+    markup = markup.replace(
+        'data-expand-id="more"',
+        'data-expand-id="more" onclick="' + html.escape(action, quote=True) + '"',
+    )
+    with browser_fixture(tmp_path, monkeypatch, {"/synth.lab/posts/pfbid0101synth": markup}) as env:
+        ctx, project, permit, _, _, _, _ = env
+        job = finish(ctx, submit(ctx, project, permit))
+        observed = job["observed_scope"]["steps"][0]
+        if delayed:
+            with ctx.store.connection() as conn:
+                assert (
+                    conn.execute("SELECT COUNT(*) FROM items WHERE native_id='delayed'").fetchone()[
+                        0
+                    ]
+                    == 1
+                )
+            assert observed["comments_observed"] == 1
+            assert "expansion_progress_timeout" not in job["missing_fields"]
+        else:
+            assert "expansion_progress_timeout" in job["missing_fields"]
+            assert job["coverage_status"] == "partial"
+            assert observed["comments_empty"] is False
