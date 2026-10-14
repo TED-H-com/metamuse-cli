@@ -516,3 +516,10 @@ evidence, never scope_satisfied. Counts whose semantics are unknown are not proo
 A reply without a parent identifier adds parent_comment independently of the
 core unresolved_parent field. New reply evidence is incomplete and the job is
 partial; null parent is never interpreted as a proven complete parent tree.
+
+DOM text is decoded once by HTMLParser, preserves edge whitespace and explicit
+empty bodies, and preserves br as newline. Nested block starts/ends introduce
+newline boundaries without adding a second boundary beside an existing newline.
+JSON text is retained as given. No normalization replaces the preserved text;
+revision hashes use canonical JSON {text: preserved_text}, with no Unicode or
+whitespace normalization. Reliable identity uses native tokens, never text hashes.
