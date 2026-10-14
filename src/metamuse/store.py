@@ -28,11 +28,12 @@ from metamuse import models as m
 from metamuse.config import load_config
 from metamuse.paths import WorkspacePaths, private_dir, private_file
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 DATA = Path(__file__).parent / "data"
 MIGRATIONS = {
     1: DATA / "migrations" / "001_initial.sql",
     2: DATA / "migrations" / "002_collect_media.sql",
+    3: DATA / "migrations" / "003_muse_lifecycle.sql",
 }
 CONTENT_CURSOR_KEY = "content.cursor"
 
@@ -64,6 +65,7 @@ TABLE_MODELS = {
     "discussions": m.Discussion,
     "exchanges": m.Exchange,
     "messages": m.Message,
+    "muse_observations": m.MuseObservation,
     "drafts": m.Draft,
     "draft_revisions": m.DraftRevision,
     "exports": m.Export,
@@ -92,8 +94,22 @@ JSON_FIELDS = {
     "preferences",
     "manifest",
     "detail",
+    "open_payload",
+    "open_delivery_proof",
+    "outbound_payload",
+    "delivery_proof",
+    "observation_memory",
+    "raw_event",
 }
-BOOL_FIELDS = {"cancel_requested", "complete", "stale", "revoked", "overlap"}
+BOOL_FIELDS = {
+    "cancel_requested",
+    "complete",
+    "stale",
+    "revoked",
+    "overlap",
+    "bytes_handed_off",
+    "open_bytes_handed_off",
+}
 T = TypeVar("T", bound=m.Model)
 _ACTIVE_WRITES = threading.local()
 
@@ -109,6 +125,16 @@ class TransactionWriter:
 
     def get(self, model: type[T], record_id: str, *, revision: int | None = None) -> T:
         return self._store.get(model, record_id, revision=revision, conn=self._conn)
+
+    def event(
+        self,
+        kind: str,
+        *,
+        job: m.Job | None = None,
+        object_id: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> m.Event:
+        return self._store.event(self._conn, kind, job=job, object_id=object_id, detail=detail)
 
     def append_draft_revision(
         self, record: m.DraftRevision, *, expected_revision: int | None
@@ -292,7 +318,7 @@ class Store:
                     conn.execute("BEGIN IMMEDIATE")
                     try:
                         for version in range(old_version + 1, self.schema_version + 1):
-                            if version not in migrations:
+                            if version not in migrations or not migrations[version].is_file():
                                 raise m.CoreError(m.ErrorCode.STORAGE, "Missing migration")
                             for statement in _statements(migrations[version].read_text()):
                                 conn.execute(statement)
@@ -403,6 +429,11 @@ class Store:
             self.validate_evidence(
                 project, record.selection, conn=conn, source_only=isinstance(record, m.Packet)
             )
+        if isinstance(record, m.MuseObservation):
+            if m.payload_digest(record.raw_event) != record.observation_digest:
+                raise m.CoreError(
+                    m.ErrorCode.REFERENCE_INVALID, "Observation digest differs from raw event"
+                )
         if isinstance(record, m.DraftRevision):
             draft = self.get(m.Draft, record.draft_id, conn=conn)
             self.validate_evidence(draft.project_id, record.facts_refs, conn=conn)
@@ -419,7 +450,7 @@ class Store:
             m.canonical_json(data[c]).decode()
             if c in JSON_FIELDS and data[c] is not None
             else int(data[c])
-            if c in BOOL_FIELDS
+            if c in BOOL_FIELDS and data[c] is not None
             else data[c]
             for c in columns
         ]
@@ -456,7 +487,7 @@ class Store:
         expected_revision: int | None,
         conn: sqlite3.Connection | None = None,
     ) -> m.DraftRevision:
-        """Compare-and-swap and append on the caller's transaction; the trigger advances head."""
+        "Compare-and-swap and append on the caller's transaction; the trigger advances head."
         if conn is None:
             with self.transaction() as tx:
                 return self.append_draft_revision(
@@ -481,8 +512,10 @@ class Store:
             for key, value in data.items():
                 if key in JSON_FIELDS and value is not None:
                     data[key] = json.loads(value)
-                elif key in BOOL_FIELDS:
+                elif key in BOOL_FIELDS and value is not None:
                     data[key] = bool(value)
+                elif key in ("attempt_error_code", "open_error_code") and value is not None:
+                    data[key] = m.ErrorCode(value)
             return model.model_validate(data, context={"stored": True})
         except (ValidationError, ValueError, TypeError):
             raise m.CoreError(m.ErrorCode.STORAGE, "Stored record violates its contract") from None

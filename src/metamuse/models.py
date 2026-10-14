@@ -35,11 +35,12 @@ class Model(BaseModel):
         if (info.context or {}).get("stored"):
             return value  # input policy must not make an older, immutable record unreadable
         limits = (info.context or {}).get("limits")
-        defaults = {"text": 20971520, "rendered_text": 49152, "question": 8192}
+        defaults = {"text": 20971520, "rendered_text": 49152, "question": 8192, "topic": 8192}
         fields = {
             "text": "text_max_bytes",
             "rendered_text": "packet_max_utf8_bytes",
             "question": "question_max_utf8_bytes",
+            "topic": "question_max_utf8_bytes",
         }
         if info.field_name in defaults and isinstance(value, str):
             limit = getattr(limits, fields[info.field_name], defaults[info.field_name])
@@ -563,6 +564,40 @@ class Permit(Model):
     exact_digest: Digest | None = None
 
 
+class MuseBinding(Model):
+    provider: Annotated[str, Field(min_length=1, max_length=128)]
+    account: Annotated[str, Field(min_length=1, max_length=128)]
+    auth_ref: Annotated[str, Field(pattern=r"^(auth_[0-9a-f]{32}|fixture)$")]
+
+
+class MusePayload(Model):
+    route: Literal["session.start", "chat.stream"]
+    verb: Literal["POST"] = "POST"
+    path: Literal["/session/start", "/chat/stream"]
+    marker: Annotated[str, Field(pattern=r"^[A-Za-z0-9._~-]{1,128}$")]
+    node_id: str
+    headers: dict[str, str]
+    body: dict[str, Any]
+    target: dict[str, Any]
+    payload: dict[str, Any]
+
+
+class MuseProof(Model):
+    kind: Literal["ack", "user_echo", "session_marker", "not_submitted"]
+    step_id: ID
+    observation_id: ID | None = None
+    outbound_digest: Digest
+
+
+class MuseMemory(Model):
+    version: Literal[1] = 1
+    ambiguous: bool = False
+    competing: list[list[str | int]] = Field(default_factory=list)
+    disqualified: list[list[str | int]] = Field(default_factory=list)
+    high_water: Annotated[int, Field(ge=0)] = 0
+    association: str = "none"
+
+
 class Discussion(Model):
     id: ID
     project_id: ID
@@ -573,6 +608,19 @@ class Discussion(Model):
     open_attempt_state: str = "prepared"
     last_seq: int = 0
     state: str = "opening"
+    account: str | None = None
+    backend: Literal["live", "fixture"] | None = None
+    open_request_key: RequestKey | None = None
+    open_payload: MusePayload | None = None
+    open_step_id: ID | None = None
+    open_permit_id: ID | None = None
+    open_submitted_at_ms: Annotated[int, Field(ge=0)] | None = None
+    open_stream_id: Annotated[int, Field(ge=1, le=9223372036854775807)] | None = None
+    open_bytes_handed_off: bool | None = None
+    open_verdict: Literal["acked", "app_error", "undecided"] | None = None
+    open_error_code: ErrorCode | None = None
+    open_delivery_proof: MuseProof | None = None
+    quarantine_step_id: ID | None = None
 
 
 class Exchange(Model):
@@ -586,8 +634,28 @@ class Exchange(Model):
     digest: Digest
     permit_id: ID
     baseline: dict[str, Any] = Field(default_factory=dict)
-    state: str = "prepared"
+    state: Literal[
+        "prepared",
+        "submitting",
+        "sent",
+        "send_uncertain",
+        "failed_before_send",
+        "reply_observed",
+        "closed",
+    ] = "prepared"
     outcome: Literal["answered", "needs_more_data", "abandoned"] | None = None
+    request_marker: str | None = None
+    outbound_payload: MusePayload | None = None
+    outbound_digest: Digest | None = None
+    submission_step_id: ID | None = None
+    submitted_at_ms: Annotated[int, Field(ge=0)] | None = None
+    stream_id: Annotated[int, Field(ge=1, le=9223372036854775807)] | None = None
+    bytes_handed_off: bool | None = None
+    attempt_verdict: Literal["acked", "app_error", "undecided"] | None = None
+    attempt_detail: Annotated[str, Field(max_length=512)] | None = None
+    attempt_error_code: ErrorCode | None = None
+    delivery_proof: MuseProof | None = None
+    observation_memory: MuseMemory | None = None
 
 
 class Message(Model):
@@ -602,6 +670,19 @@ class Message(Model):
     text: Text
     association: str = "unassociated"
     observed_at: str
+    backend: Literal["live", "fixture"] | None = None
+    identity_key: str | None = None
+
+
+class MuseObservation(Model):
+    id: ID
+    discussion_id: ID
+    message_id: ID | None = None
+    identity_key: str
+    raw_event: dict[str, Any]
+    observation_digest: Digest
+    observed_at: str
+    backend: Literal["live", "fixture"]
 
 
 class Draft(Model):
@@ -732,8 +813,11 @@ class PacketPrepareRequest(Model):
 
 
 class MuseOpenRequest(Model):
+    discussion_id: ID | None = None
     project_id: ID
-    topic: Text
+    topic: Annotated[
+        str, Field(min_length=1, max_length=8192, json_schema_extra={"x-max-utf8-bytes": 8192})
+    ]
     access_grant_id: ID
     request_key: RequestKey
 

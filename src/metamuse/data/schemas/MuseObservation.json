@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "discussion_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Discussion Id",
+      "type": "string"
+    },
+    "message_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Message Id"
+    },
+    "identity_key": {
+      "title": "Identity Key",
+      "type": "string"
+    },
+    "raw_event": {
+      "additionalProperties": true,
+      "title": "Raw Event",
+      "type": "object"
+    },
+    "observation_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Observation Digest",
+      "type": "string"
+    },
+    "observed_at": {
+      "title": "Observed At",
+      "type": "string"
+    },
+    "backend": {
+      "enum": [
+        "live",
+        "fixture"
+      ],
+      "title": "Backend",
+      "type": "string"
+    }
+  },
+  "required": [
+    "id",
+    "discussion_id",
+    "identity_key",
+    "raw_event",
+    "observation_digest",
+    "observed_at",
+    "backend"
+  ],
+  "title": "MuseObservation",
+  "type": "object"
+}

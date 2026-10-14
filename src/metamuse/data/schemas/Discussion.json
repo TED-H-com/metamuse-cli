@@ -1,5 +1,150 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ErrorCode": {
+      "enum": [
+        "E_INPUT_INVALID",
+        "E_REFERENCE_INVALID",
+        "E_SCOPE_REQUIRED",
+        "E_SCOPE_DENIED",
+        "E_AUTH_REQUIRED",
+        "E_DEPENDENCY_MISSING",
+        "E_UNSUPPORTED",
+        "E_PROTOCOL_MISMATCH",
+        "E_ACCESS_DENIED",
+        "E_CHECKPOINT_REQUIRED",
+        "E_RATE_LIMITED",
+        "E_SELECTOR_DRIFT",
+        "E_NETWORK_TIMEOUT",
+        "E_JOB_BUSY",
+        "E_IDEMPOTENCY_CONFLICT",
+        "E_EXTERNAL_STATE_UNKNOWN",
+        "E_STORAGE",
+        "E_LIMIT_REACHED",
+        "E_DATA_STALE",
+        "E_RESOURCE_UNAVAILABLE"
+      ],
+      "title": "ErrorCode",
+      "type": "string"
+    },
+    "MusePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "enum": [
+            "session.start",
+            "chat.stream"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "verb": {
+          "const": "POST",
+          "default": "POST",
+          "title": "Verb",
+          "type": "string"
+        },
+        "path": {
+          "enum": [
+            "/session/start",
+            "/chat/stream"
+          ],
+          "title": "Path",
+          "type": "string"
+        },
+        "marker": {
+          "pattern": "^[A-Za-z0-9._~-]{1,128}$",
+          "title": "Marker",
+          "type": "string"
+        },
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "body": {
+          "additionalProperties": true,
+          "title": "Body",
+          "type": "object"
+        },
+        "target": {
+          "additionalProperties": true,
+          "title": "Target",
+          "type": "object"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        }
+      },
+      "required": [
+        "route",
+        "path",
+        "marker",
+        "node_id",
+        "headers",
+        "body",
+        "target",
+        "payload"
+      ],
+      "title": "MusePayload",
+      "type": "object"
+    },
+    "MuseProof": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "ack",
+            "user_echo",
+            "session_marker",
+            "not_submitted"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "step_id": {
+          "maxLength": 128,
+          "minLength": 3,
+          "title": "Step Id",
+          "type": "string"
+        },
+        "observation_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 3,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Id"
+        },
+        "outbound_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Outbound Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "step_id",
+        "outbound_digest"
+      ],
+      "title": "MuseProof",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -53,6 +198,179 @@
       "default": "opening",
       "title": "State",
       "type": "string"
+    },
+    "account": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account"
+    },
+    "backend": {
+      "anyOf": [
+        {
+          "enum": [
+            "live",
+            "fixture"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Backend"
+    },
+    "open_request_key": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Open Request Key"
+    },
+    "open_payload": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MusePayload"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "open_step_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Open Step Id"
+    },
+    "open_permit_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Open Permit Id"
+    },
+    "open_submitted_at_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Open Submitted At Ms"
+    },
+    "open_stream_id": {
+      "anyOf": [
+        {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Open Stream Id"
+    },
+    "open_bytes_handed_off": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Open Bytes Handed Off"
+    },
+    "open_verdict": {
+      "anyOf": [
+        {
+          "enum": [
+            "acked",
+            "app_error",
+            "undecided"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Open Verdict"
+    },
+    "open_error_code": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "open_delivery_proof": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MuseProof"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "quarantine_step_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Quarantine Step Id"
     }
   },
   "required": [

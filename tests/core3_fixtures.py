@@ -85,6 +85,7 @@ def records(ctx, project):
             digest=m.payload_digest("e"),
             permit_id=permit.id,
             outcome="answered",
+            state="closed",
         )
     )
     job = ctx.store.insert(

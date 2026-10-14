@@ -1,5 +1,213 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "ErrorCode": {
+      "enum": [
+        "E_INPUT_INVALID",
+        "E_REFERENCE_INVALID",
+        "E_SCOPE_REQUIRED",
+        "E_SCOPE_DENIED",
+        "E_AUTH_REQUIRED",
+        "E_DEPENDENCY_MISSING",
+        "E_UNSUPPORTED",
+        "E_PROTOCOL_MISMATCH",
+        "E_ACCESS_DENIED",
+        "E_CHECKPOINT_REQUIRED",
+        "E_RATE_LIMITED",
+        "E_SELECTOR_DRIFT",
+        "E_NETWORK_TIMEOUT",
+        "E_JOB_BUSY",
+        "E_IDEMPOTENCY_CONFLICT",
+        "E_EXTERNAL_STATE_UNKNOWN",
+        "E_STORAGE",
+        "E_LIMIT_REACHED",
+        "E_DATA_STALE",
+        "E_RESOURCE_UNAVAILABLE"
+      ],
+      "title": "ErrorCode",
+      "type": "string"
+    },
+    "MuseMemory": {
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "const": 1,
+          "default": 1,
+          "title": "Version",
+          "type": "integer"
+        },
+        "ambiguous": {
+          "default": false,
+          "title": "Ambiguous",
+          "type": "boolean"
+        },
+        "competing": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "title": "Competing",
+          "type": "array"
+        },
+        "disqualified": {
+          "items": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "title": "Disqualified",
+          "type": "array"
+        },
+        "high_water": {
+          "default": 0,
+          "minimum": 0,
+          "title": "High Water",
+          "type": "integer"
+        },
+        "association": {
+          "default": "none",
+          "title": "Association",
+          "type": "string"
+        }
+      },
+      "title": "MuseMemory",
+      "type": "object"
+    },
+    "MusePayload": {
+      "additionalProperties": false,
+      "properties": {
+        "route": {
+          "enum": [
+            "session.start",
+            "chat.stream"
+          ],
+          "title": "Route",
+          "type": "string"
+        },
+        "verb": {
+          "const": "POST",
+          "default": "POST",
+          "title": "Verb",
+          "type": "string"
+        },
+        "path": {
+          "enum": [
+            "/session/start",
+            "/chat/stream"
+          ],
+          "title": "Path",
+          "type": "string"
+        },
+        "marker": {
+          "pattern": "^[A-Za-z0-9._~-]{1,128}$",
+          "title": "Marker",
+          "type": "string"
+        },
+        "node_id": {
+          "title": "Node Id",
+          "type": "string"
+        },
+        "headers": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Headers",
+          "type": "object"
+        },
+        "body": {
+          "additionalProperties": true,
+          "title": "Body",
+          "type": "object"
+        },
+        "target": {
+          "additionalProperties": true,
+          "title": "Target",
+          "type": "object"
+        },
+        "payload": {
+          "additionalProperties": true,
+          "title": "Payload",
+          "type": "object"
+        }
+      },
+      "required": [
+        "route",
+        "path",
+        "marker",
+        "node_id",
+        "headers",
+        "body",
+        "target",
+        "payload"
+      ],
+      "title": "MusePayload",
+      "type": "object"
+    },
+    "MuseProof": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "ack",
+            "user_echo",
+            "session_marker",
+            "not_submitted"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "step_id": {
+          "maxLength": 128,
+          "minLength": 3,
+          "title": "Step Id",
+          "type": "string"
+        },
+        "observation_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "minLength": 3,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observation Id"
+        },
+        "outbound_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Outbound Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "step_id",
+        "outbound_digest"
+      ],
+      "title": "MuseProof",
+      "type": "object"
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "id": {
@@ -69,6 +277,15 @@
     },
     "state": {
       "default": "prepared",
+      "enum": [
+        "prepared",
+        "submitting",
+        "sent",
+        "send_uncertain",
+        "failed_before_send",
+        "reply_observed",
+        "closed"
+      ],
       "title": "State",
       "type": "string"
     },
@@ -88,6 +305,158 @@
       ],
       "default": null,
       "title": "Outcome"
+    },
+    "request_marker": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Request Marker"
+    },
+    "outbound_payload": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MusePayload"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "outbound_digest": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Outbound Digest"
+    },
+    "submission_step_id": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Submission Step Id"
+    },
+    "submitted_at_ms": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Submitted At Ms"
+    },
+    "stream_id": {
+      "anyOf": [
+        {
+          "maximum": 9223372036854775807,
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Stream Id"
+    },
+    "bytes_handed_off": {
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Bytes Handed Off"
+    },
+    "attempt_verdict": {
+      "anyOf": [
+        {
+          "enum": [
+            "acked",
+            "app_error",
+            "undecided"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempt Verdict"
+    },
+    "attempt_detail": {
+      "anyOf": [
+        {
+          "maxLength": 512,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Attempt Detail"
+    },
+    "attempt_error_code": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "delivery_proof": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MuseProof"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "observation_memory": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MuseMemory"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [

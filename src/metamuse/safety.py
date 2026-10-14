@@ -968,7 +968,7 @@ def external_action_verifier(
     permit_id: str,
     use: PermitUse,
     load_payload: Callable[[sqlite3.Connection, dict[str, Any]], Any],
-) -> Callable[[sqlite3.Connection, dict[str, Any]], None]:
+) -> Callable[[sqlite3.Connection, dict[str, Any]], str]:
     """Database-only verifier for StepContext.before_external_action.
 
     load_payload must read/rebuild the ACTUAL outbound payload and current destination
@@ -978,7 +978,7 @@ def external_action_verifier(
     use = PermitUse.model_validate(use.model_dump(mode="json"))
     fingerprint = m.payload_digest({"permit_id": permit_id, "use": use.model_dump(mode="json")})
 
-    def verify(conn: sqlite3.Connection, target: dict[str, Any]) -> None:
+    def verify(conn: sqlite3.Connection, target: dict[str, Any]) -> str:
         if not conn.in_transaction:
             _scope_error("External verification requires the caller's transaction")
         row = step.store.get(m.JobStep, step.step.id, conn=conn)
@@ -1046,7 +1046,7 @@ def external_action_verifier(
             if json.loads(reservation["detail"])["fingerprint"] != fingerprint:
                 _scope_error("This step already reserved a different permit use")
             _verify_permit(step.store, permit_id, use, conn=conn, check_remaining=False)
-            return
+            return use.digest
         verify_permit(step.store, permit_id, use, conn=conn, reserve=True)
         step.store.event(
             conn,
@@ -1060,6 +1060,7 @@ def external_action_verifier(
                 "intent_digest": intent_digest,
             },
         )
+        return use.digest
 
     return verify
 

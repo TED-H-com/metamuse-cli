@@ -492,12 +492,13 @@ def test_f10_exchange_outcome_sticky(ctx, project):
             digest=m.payload_digest("q"),
             permit_id="pmt_review",
             outcome="answered",
+            state="closed",
         )
     )
     for outcome in (None, "abandoned"):
         with pytest.raises(m.CoreError):
             with ctx.store.transaction() as conn:
-                conn.execute("UPDATE exchanges SET outcome=?", (outcome,))
+                conn.execute("UPDATE exchanges SET state='closed',outcome=?", (outcome,))
 
 
 def test_f11_availability_never_acquires_worker_flock(ctx, monkeypatch):

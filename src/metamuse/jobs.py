@@ -1,4 +1,4 @@
-"""Durable single-executor jobs. Handlers register operations without editing this module."""
+"Durable single-executor jobs. Handlers register operations without editing this module."
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ def register_operation(
     uncertain_state: UncertainState = "needs_reconcile",
     registry: dict[str, Operation] | None = None,
 ) -> None:
-    """Call once from your module's explicit registration function, before worker startup."""
+    "Call once from your module's explicit registration function, before worker startup."
     if side_effect_class not in ("none", "safe_read", "external_submit"):
         raise ValueError("Invalid side effect class")
     if uncertain_state not in UNCERTAIN:
@@ -61,7 +61,7 @@ class StepSpec:
 
 
 def worker_available(store: Store) -> bool:
-    """Observe Linux FLOCK records without acquiring a lock (fcntl queries don't see flock)."""
+    "Observe Linux FLOCK records without acquiring a lock (fcntl queries don't see flock)."
     with store.connection() as conn:
         owner = conn.execute("SELECT owner_nonce FROM worker_state WHERE singleton=1").fetchone()[0]
     if owner is None:
@@ -98,6 +98,7 @@ def submit_job(
     requested_scope: dict[str, Any] | None = None,
     limits: dict[str, Any] | None = None,
     registry: dict[str, Operation] | None = None,
+    prepare_domain: Callable[[TransactionWriter, m.Job, list[m.JobStep]], None] | None = None,
 ) -> m.Envelope:
     registry = OPERATIONS if registry is None else registry
     try:
@@ -146,18 +147,23 @@ def submit_job(
                     updated_at=now,
                 )
                 store.insert(job, conn=conn)
+                created_steps = []
                 for sequence, spec in enumerate(specs):
-                    store.insert(
-                        m.JobStep(
-                            id=m.new_id("step"),
-                            job_id=job.id,
-                            sequence=sequence,
-                            target=spec.target,
-                            side_effect_class=op.side_effect_class,
-                            uncertain_state=op.uncertain_state,
-                        ),
-                        conn=conn,
+                    created_steps.append(
+                        store.insert(
+                            m.JobStep(
+                                id=m.new_id("step"),
+                                job_id=job.id,
+                                sequence=sequence,
+                                target=spec.target,
+                                side_effect_class=op.side_effect_class,
+                                uncertain_state=op.uncertain_state,
+                            ),
+                            conn=conn,
+                        )
                     )
+                if prepare_domain:
+                    prepare_domain(TransactionWriter(store, conn), job, created_steps)
                 store.event(conn, "job.accepted", job=job)
         if job.state == "awaiting_user" or (
             job.error and job.error.get("retry_class") == "reconcile"
@@ -197,6 +203,34 @@ def submit_job(
 
 class BoundaryStop(BaseException):
     """A persisted cancellation stops at a handler boundary."""
+
+
+class ExternalActionToken:
+    """Opaque committed boundary evidence. Only the issuing executor can mint it."""
+
+    __slots__ = ("_issuer",)
+
+    def __new__(cls, *args, **kwargs):
+        raise TypeError("External action tokens are issuer-created")
+
+    def __repr__(self) -> str:
+        return "<ExternalActionToken>"
+
+    def __reduce__(self):
+        raise TypeError("External action tokens cannot be copied or serialized")
+
+    def consume(self, *, action_digest: str) -> None:
+        self._issuer._consume_token(self, action_digest)
+
+
+class NotSubmittedProof:
+    __slots__ = ()
+
+    def __new__(cls):
+        raise TypeError("Zero-handoff proof is issuer-created")
+
+    def __repr__(self):
+        return "<NotSubmittedProof>"
 
 
 class StepContext:
@@ -242,8 +276,8 @@ class StepContext:
             self._guard(conn)
 
     def before_external_action(
-        self, target: dict[str, Any], *, verify: Callable[[Any, dict[str, Any]], None]
-    ) -> None:
+        self, target: dict[str, Any], *, verify: Callable[[Any, dict[str, Any]], str | None]
+    ) -> ExternalActionToken | None:
         """Verify epoch/job/target and permission in a short transaction, then commit intent.
 
         verify must check current permit/target with this connection and must not wait externally.
@@ -251,9 +285,15 @@ class StepContext:
         """
         with self.store.transaction() as conn:
             self._guard(conn, target)
-            self.executor.require_network()
-            verify(conn, target)
+            self.executor.require_network(operation=self.job.operation, target=target)
             row = self.store.get(m.JobStep, self.step.id, conn=conn)
+            if row.state == "submitting":
+                raise m.CoreError(
+                    m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "External submission intent already exists"
+                )
+            verified_digest = verify(conn, target)
+            if verified_digest is not None:
+                m.MuseProof(kind="ack", step_id=row.id, outbound_digest=verified_digest)
             if row.side_effect_class == "external_submit":
                 if row.state == "submitting":
                     raise m.CoreError(
@@ -262,6 +302,19 @@ class StepContext:
                     )
                 conn.execute("UPDATE job_steps SET state='submitting' WHERE id=?", (row.id,))
                 self.store.event(conn, "step.submitting", job=self.job, object_id=row.id)
+        if row.side_effect_class == "external_submit" and verified_digest is not None:
+            m.MuseProof(kind="ack", step_id=row.id, outbound_digest=verified_digest)
+            token = object.__new__(ExternalActionToken)
+            token._issuer = self.executor
+            self.executor._tokens[token] = (
+                self,
+                verified_digest,
+                self.executor.epoch,
+                self.executor.nonce,
+                False,
+            )
+            return token
+        return None
 
     def commit_checkpoint(
         self,
@@ -293,6 +346,9 @@ class Executor:
         registry: dict[str, Operation] | None = None,
         sleep: Callable[[float], None] = time.sleep,
         non_interactive: bool = False,
+        muse_gateway: Any = None,
+        secret_store: Any = None,
+        muse_resolver: Any = None,
     ):
         self.store = store
         self.registry = OPERATIONS if registry is None else registry
@@ -303,6 +359,12 @@ class Executor:
         self.nonce: str | None = None
         self.handle: Any = None
         self._stop = threading.Event()
+        self.muse_gateway = muse_gateway
+        self.secret_store = secret_store
+        self.muse_resolver = muse_resolver
+        self._tokens: dict[ExternalActionToken, tuple] = {}
+        self._zero_handoff: dict[str, NotSubmittedProof] = {}
+        self._proofs: dict[NotSubmittedProof, tuple[str, m.ErrorCode]] = {}
 
     def __enter__(self) -> Executor:
         if self.handle is not None:
@@ -331,6 +393,9 @@ class Executor:
         return self
 
     def __exit__(self, *args: Any) -> None:
+        self._tokens.clear()
+        self._zero_handoff.clear()
+        self._proofs.clear()
         if self.handle is not None:
             try:
                 with self.store.transaction() as conn:
@@ -343,6 +408,48 @@ class Executor:
                 fcntl.flock(self.handle, fcntl.LOCK_UN)
                 self.handle.close()
                 self.handle = None
+
+    def _consume_token(self, token: ExternalActionToken, digest: str) -> None:
+        with self.store.transaction() as conn:
+            entry = self._tokens.get(token)
+            if entry is None:
+                raise m.CoreError(m.ErrorCode.SCOPE_DENIED, "Unknown external action token")
+            step, expected, epoch, nonce, consumed = entry
+            if consumed or digest != expected or epoch != self.epoch or nonce != self.nonce:
+                raise m.CoreError(
+                    m.ErrorCode.SCOPE_DENIED,
+                    "External action token does not authorize this request",
+                )
+            step._guard(conn, step.target)
+            current = self.store.get(m.JobStep, step.step.id, conn=conn)
+            if current.state != "submitting" or current.side_effect_class != "external_submit":
+                raise m.CoreError(
+                    m.ErrorCode.SCOPE_DENIED, "External submission boundary is absent"
+                )
+            self._tokens[token] = (step, expected, epoch, nonce, True)
+
+    def record_not_submitted(self, step: StepContext, attempt: Any) -> NotSubmittedProof:
+        # No boolean API: require the transport's concrete zero-handoff accounting.
+        from metamuse.muse import MuseNotSubmitted, StreamAttempt
+
+        valid = (
+            isinstance(attempt, StreamAttempt)
+            and attempt.state == "failed_before_send"
+            and attempt.bytes_handed_off is False
+        ) or isinstance(attempt, MuseNotSubmitted)
+        if not valid or not any(entry[0] is step and entry[4] for entry in self._tokens.values()):
+            raise m.CoreError(
+                m.ErrorCode.INPUT_INVALID, "Affirmative in-process zero-handoff evidence required"
+            )
+        proof = object.__new__(NotSubmittedProof)
+        code = (
+            attempt.detail.code
+            if isinstance(attempt, MuseNotSubmitted)
+            else m.ErrorCode(attempt.error_code or "E_NETWORK_TIMEOUT")
+        )
+        self._proofs[proof] = (step.step.id, code)
+        self._zero_handoff[step.step.id] = proof
+        return proof
 
     def _guard(self, conn: Any) -> None:
         row = conn.execute("SELECT * FROM worker_state WHERE singleton=1").fetchone()
@@ -463,7 +570,7 @@ class Executor:
                 return job, self.store.get(m.JobStep, step.id, conn=conn)
             if step.side_effect_class != "none":
                 try:
-                    self.require_network()
+                    self.require_network(operation=job.operation, target=step.target)
                 except m.CoreError as exc:
                     self._fail(conn, job, step, exc)
                     return job, self.store.get(m.JobStep, step.id, conn=conn)
@@ -557,8 +664,18 @@ class Executor:
             )
         self.store.event(conn, "step.completed", job=job, object_id=step.id)
 
-    def require_network(self) -> None:
-        if load_config(self.store.paths.root).app.network_mode == "offline":
+    def require_network(self, *, operation: str | None = None, target: dict | None = None) -> None:
+        policy = load_config(self.store.paths.root)
+        if (
+            operation in ("muse.open", "muse.send", "muse.history", "muse.sessions")
+            and target
+            and target.get("backend") == "fixture"
+        ):
+            if (policy.muse.enabled and policy.muse.backend == "fixture") or getattr(
+                self.muse_gateway, "backend", None
+            ) == "fixture":
+                return
+        if policy.app.network_mode == "offline":
             raise m.CoreError(
                 m.ErrorCode.SCOPE_DENIED,
                 "External operations are disabled in offline mode",
@@ -595,14 +712,16 @@ class Executor:
         verify: Callable[[Any, dict[str, Any]], None],
         result: m.JobResult | None = None,
         error: m.CoreError | None = None,
+        not_submitted: NotSubmittedProof | None = None,
         write_batch: Callable[[TransactionWriter], None] | None = None,
     ) -> m.Job:
         """Settle proven delivery/refusal under this executor's epoch; never requeue/send.
 
         Read remote evidence before this call, outside transactions. verify is database-only
-        and must establish the original target and proof. Exactly one of result/error is required.
+        and must establish the original target and proof. Exactly one of result/error or
+        issuer-registered not_submitted proof is required.
         """
-        if (result is None) == (error is None) or (
+        if sum(value is not None for value in (result, error, not_submitted)) != 1 or (
             error and error.detail.retry_class in ("reconcile", "safe_read")
         ):
             raise m.CoreError(
@@ -618,6 +737,13 @@ class Executor:
                 )
             if step.target != expected_target:
                 raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Settlement target changed")
+            if (
+                not_submitted is not None
+                and self._proofs.get(not_submitted, (None, None))[0] != step_id
+            ):
+                raise m.CoreError(
+                    m.ErrorCode.INPUT_INVALID, "Missing in-process zero-handoff proof"
+                )
             verify(conn, expected_target)
             if write_batch:
                 write_batch(TransactionWriter(self.store, conn))
@@ -639,14 +765,36 @@ class Executor:
                 ).fetchone():
                     conn.execute("UPDATE jobs SET state='queued',error=NULL WHERE id=?", (job.id,))
             else:
-                self._fail(conn, job, step, error)
+                self._fail(
+                    conn,
+                    job,
+                    step,
+                    error
+                    or m.CoreError(
+                        self._proofs[not_submitted][1]
+                        if not_submitted
+                        else m.ErrorCode.NETWORK_TIMEOUT,
+                        "Request failed before frame handoff; use a new request key and grant",
+                    ),
+                )
                 conn.execute("UPDATE jobs SET state='failed' WHERE id=?", (job.id,))
             conn.execute(
                 "UPDATE jobs SET remote_state=?,worker_epoch=? WHERE id=?",
-                ("confirmed" if result is not None else "refused", self.epoch, job.id),
+                (
+                    "not_submitted"
+                    if not_submitted is not None
+                    else "confirmed"
+                    if result is not None
+                    else "refused",
+                    self.epoch,
+                    job.id,
+                ),
             )
             if job.cancel_requested:
                 self._cancel(conn, self.store.get(m.Job, job.id, conn=conn))
+            if not_submitted is not None:
+                self._proofs.pop(not_submitted)
+                self._zero_handoff.pop(step_id, None)
             self.store.event(conn, "step.settled", job=job, object_id=step.id)
             return self.store.get(m.Job, job.id, conn=conn)
 
@@ -715,9 +863,31 @@ class Executor:
                     retry_delay = min(error.retry_after, 30, self.limits.read_timeout_seconds)
                 else:
                     self._fail(conn, job, step, error)
+            if current.state == "submitting" and current.id in self._zero_handoff:
+
+                def zero_proof(conn, target):
+                    row = self.store.get(m.JobStep, current.id, conn=conn)
+                    if row.checkpoint.get("not_submitted") is not True:
+                        raise m.CoreError(
+                            m.ErrorCode.EXTERNAL_STATE_UNKNOWN,
+                            "Zero-handoff accounting was not saved",
+                        )
+
+                self.settle_uncertain(
+                    current.id,
+                    expected_target=current.target,
+                    verify=zero_proof,
+                    not_submitted=self._zero_handoff[current.id],
+                )
             if retry_delay is not None:
                 # No transaction is held during Retry-After; still own the OS lock.
                 self._retry_wait(job.id, retry_delay)
+        for token, entry in tuple(self._tokens.items()):
+            if entry[0] is ctx:
+                del self._tokens[token]
+        remaining = self._zero_handoff.pop(step.id, None)
+        if remaining is not None:
+            self._proofs.pop(remaining, None)
         return True
 
     def request_stop(self) -> None:

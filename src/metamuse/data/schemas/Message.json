@@ -85,6 +85,34 @@
     "observed_at": {
       "title": "Observed At",
       "type": "string"
+    },
+    "backend": {
+      "anyOf": [
+        {
+          "enum": [
+            "live",
+            "fixture"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Backend"
+    },
+    "identity_key": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Identity Key"
     }
   },
   "required": [

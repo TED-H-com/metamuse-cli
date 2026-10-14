@@ -24,11 +24,16 @@ class EnabledConfig(m.Model):
     enabled: bool = False
 
 
+class MuseConfig(EnabledConfig):
+    backend: Literal["live", "fixture"] = "live"
+    binding: m.MuseBinding | None = None
+
+
 class Config(m.Model):
     app: AppPolicy = Field(default_factory=AppPolicy)
     worker: WorkerConfig = Field(default_factory=WorkerConfig)
     limits: m.Limits = Field(default_factory=m.Limits)
-    muse: EnabledConfig = Field(default_factory=EnabledConfig)
+    muse: MuseConfig = Field(default_factory=MuseConfig)
     publishing: EnabledConfig = Field(default_factory=EnabledConfig)
 
 
@@ -63,9 +68,11 @@ def load_config(root: Path) -> Config:
     path = root / "metamuse.toml"
     if not path.exists():
         return Config()
+    error = None
     try:
         return Config.model_validate(tomllib.loads(path.read_text(encoding="utf-8")))
     except ValidationError as exc:
-        raise m.validation_error(exc) from exc
-    except (ValueError, UnicodeError) as exc:
-        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid workspace configuration") from exc
+        error = m.validation_error(exc)
+    except (ValueError, UnicodeError):
+        error = m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid workspace configuration")
+    raise error
