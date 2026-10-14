@@ -476,3 +476,11 @@ B13 classifies login URLs as E_AUTH_REQUIRED and checkpoint/challenge URLs as
 E_CHECKPOINT_REQUIRED from observed main-frame navigations and the final URL,
 before parsing any underlying post container. All browser barriers stop without
 retry; no synthetic DOM marker is needed for an encrypted redirect barrier.
+
+Resume checkpoints persist cumulative expansion, byte and accepted-item consumption.
+Clicks are charged before execution; observations persist consumption before parsing.
+A fresh proxy receives only remaining bytes. Accepted reliable identities are stored
+as bounded digests so unchanged re-observation does not refill or consume the item
+budget again; edits remain revisions of the same accepted identity. Fixture byte
+accounting uses cumulative UTF-8 observation bytes; real sessions use the larger
+of that accounting and relayed wire bytes. Wall-clock fencing remains core-owned.
