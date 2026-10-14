@@ -1530,6 +1530,7 @@
           },
           "query": {
             "maxLength": 1000000,
+            "minLength": 1,
             "title": "Query",
             "type": "string"
           }
@@ -2952,6 +2953,43 @@
       "inputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "DraftPreferences": {
+            "additionalProperties": false,
+            "description": "Short explicit values for this draft; no permanent policy is learned.",
+            "properties": {
+              "language": {
+                "default": "und",
+                "maxLength": 35,
+                "minLength": 1,
+                "title": "Language",
+                "type": "string"
+              },
+              "emoji": {
+                "default": "unspecified",
+                "maxLength": 32,
+                "minLength": 1,
+                "title": "Emoji",
+                "type": "string"
+              },
+              "format": {
+                "default": "plain_text",
+                "enum": [
+                  "plain_text",
+                  "markdown"
+                ],
+                "title": "Format",
+                "type": "string"
+              },
+              "scope": {
+                "const": "this_draft",
+                "default": "this_draft",
+                "title": "Scope",
+                "type": "string"
+              }
+            },
+            "title": "DraftPreferences",
+            "type": "object"
+          },
           "EvidenceRef": {
             "additionalProperties": false,
             "properties": {
@@ -3045,6 +3083,23 @@
             "title": "Facts Refs",
             "type": "array"
           },
+          "assets": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 3,
+              "type": "string"
+            },
+            "title": "Assets",
+            "type": "array"
+          },
+          "variant": {
+            "additionalProperties": true,
+            "title": "Variant",
+            "type": "object"
+          },
+          "preferences": {
+            "$ref": "#/$defs/DraftPreferences"
+          },
           "request_key": {
             "maxLength": 128,
             "minLength": 1,
@@ -3056,7 +3111,6 @@
           "project_id",
           "text",
           "platform",
-          "facts_refs",
           "request_key"
         ],
         "title": "DraftSaveRequest",
