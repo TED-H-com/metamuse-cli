@@ -68,7 +68,7 @@ from metamuse import jobs, safety
 from metamuse import media as media_mod
 from metamuse import models as m
 from metamuse._muse_http import _ca_bundle, _options, load_curl
-from metamuse.config import load_config
+from metamuse.config import RemoteApproval, load_config
 from metamuse.jobs import StepContext, StepSpec, submit_job
 from metamuse.store import TransactionWriter
 
@@ -778,10 +778,33 @@ def _select(url: str, approvals: list[Any]) -> tuple[type, Any]:
     raise _extractor_denied()
 
 
+def _canonical_approvals(approvals: Iterable[Any]) -> list[dict[str, Any]]:
+    entries = [
+        {
+            "extractor": approval.extractor,
+            "hosts": sorted(_hosts(approval.hosts)),
+            "auth_ref": approval.auth_ref,
+        }
+        for approval in approvals
+    ]
+    return sorted(
+        entries, key=lambda entry: (entry["extractor"], entry["hosts"], entry["auth_ref"] or "")
+    )
+
+
+def _bound_approvals(target: dict[str, Any]) -> list[RemoteApproval]:
+    return [RemoteApproval.model_validate(entry) for entry in target.get("approvals", [])]
+
+
 def action_parts(
-    request: m.CollectRequest, provider: str, account: str, extractors: list[str]
+    request: m.CollectRequest,
+    provider: str,
+    account: str,
+    extractors: list[str],
+    *,
+    approvals: Iterable[Any] = (),
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Original URLs, resources, extractors and requested limits bind the exact action."""
+    """Bind original request bytes and the entire canonical operator approval table."""
 
     urls = [item.url for item in request.inputs if item.kind == "url"]
     resources = sorted(request.resources)
@@ -793,6 +816,7 @@ def action_parts(
         "urls": urls,
         "resources": resources,
         "extractors": list(extractors),
+        "approvals": _canonical_approvals(approvals),
     }
     payload = {
         "urls": urls,
@@ -836,13 +860,28 @@ def prepare_remote_media(
     _check_limits(request, workspace)
     if workspace.app.network_mode == "offline":
         raise _offline_error()
-    approvals = list(workspace.remote_media.approvals)
+    configured = workspace.remote_media.approvals
+    priority = {
+        key: index for index, key in enumerate(dict.fromkeys(a.extractor for a in configured))
+    }
+    # Extractor priority remains operator-owned and the selected keys are bound.
+    # Entries within one key have canonical order, including cookie bindings.
+    approvals = [
+        RemoteApproval.model_validate(entry)
+        for entry in sorted(
+            _canonical_approvals(configured), key=lambda e: priority[e["extractor"]]
+        )
+    ]
     if not approvals:
         raise _allowlist_required()
     matched = [_select(item.url, approvals) for item in request.inputs if item.kind == "url"]
     keys = [cls.ie_key() for cls, _approval in matched]
     target, payload = action_parts(
-        request, workspace.remote_media.provider, workspace.remote_media.account, keys
+        request,
+        workspace.remote_media.provider,
+        workspace.remote_media.account,
+        keys,
+        approvals=approvals,
     )
     limits = request.limits.model_dump(mode="json")
     for name in ("safe_read_retries", "read_timeout_seconds", "media_max_bytes", "text_max_bytes"):
@@ -876,17 +915,29 @@ def preview_remote_media(ctx: Any, request: m.CollectRequest) -> m.ApprovalPrevi
         "Project: " + safe_request["project_id"],
         "Action digest: " + digest,
     ]
-    for cls, approval in prepared.matched:
+    first_entries = {
+        m.canonical_json(approval.model_dump(mode="json")) for _cls, approval in prepared.matched
+    }
+    for approval in _bound_approvals(prepared.target):
+        first = m.canonical_json(approval.model_dump(mode="json")) in first_entries
+        role = "first hop; may also serve later hops" if first else "may serve later hops"
         details.append(
             "Extractor/allowed hosts: "
-            + _safe_display(cls.ie_key())
+            + _safe_display(approval.extractor)
             + "/"
             + ", ".join(_safe_display(approval.hosts))
+            + " ("
+            + role
+            + ")"
         )
         if approval.auth_ref:
             details.append(
                 "Cookie binding: " + _safe_display(approval.auth_ref) + "; account: " + account
             )
+    details.append(
+        "The digest binds every configured remote-media approval, including later-hop entries. "
+        "Editing even an unrelated approval requires a fresh preview and grant."
+    )
     details.append(
         "Limits: " + "; ".join(f"{key}={value}" for key, value in prepared.limits.items())
     )
@@ -2568,7 +2619,7 @@ def run_remote_media(step: StepContext) -> m.JobResult:
     request = m.CollectRequest.model_validate(step.payload)
     prepared = prepare_remote_media(step, request)
     workspace = prepared.workspace
-    approvals = list(workspace.remote_media.approvals)
+    approvals = _bound_approvals(step.target)
     urls = [item.url for item in request.inputs if item.kind == "url"]
     keys = list(step.target.get("extractors") or [])
     if len(keys) != len(urls):

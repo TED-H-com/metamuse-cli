@@ -373,7 +373,9 @@ def remote_request(project, url, resources, **extra):
 
 
 def issue(ctx, project, req, keys):
-    target, payload = remote_media.action_parts(req, PROVIDER, ACCOUNT, keys)
+    target, payload = remote_media.action_parts(
+        req, PROVIDER, ACCOUNT, keys, approvals=remote_media._workspace(ctx).remote_media.approvals
+    )
     digest = safety.action_digest(target, payload)
     expires = (datetime_from(ctx) + timedelta(days=1)).isoformat()
     created = safety.create_permit(
