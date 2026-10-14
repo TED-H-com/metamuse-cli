@@ -580,9 +580,14 @@ per-provider/account/VM的version、source/time、sticky confidential_required�
 active selection、viewer/session hash與generation；不以可輪替auth_ref作security identity。
 第一次authenticated bootstrap綁viewer；衝突owner不重綁。authenticated hatch_cvm/CVM_*與
 valid RV observation即使不支援也先持久化confidential requirement，standard不得清除。
-connect/retry不重新選VM、不reset trust。standard observation以generation CAS及account file lock
-commit後才handoff msg3，selection/session變更關閉本process舊socket；每次call再檢查durable
-currentness。corrupt/unavailable state或failed CAS回E_STORAGE（never），無memory fallback。
+effective expectation OR local account/VM、同provider/viewer_hash全部account、同provider/normalized VM
+全部VM rows；新row繼承，SQL guards/propagation不容許matching row降為0。無usable VM id的CVM hint
+只record owner/account expectation；auth_ref輪替或新local label不得downgrade。005未merge，round 2
+原地amend、不新增006。connect/retry不重新選VM、不reset trust。standard observation以generation CAS
+及provider/account trust lock commit後才handoff msg3；commit後先release maintenance.lock再network。
+每次call用同transaction重查effective expectation，再比generation；confidential transition回
+E_PROTOCOL_MISMATCH（never），corrupt/unavailable state或failed CAS回E_STORAGE（never）。Store只做
+一次canonical schema verify，每boundary比actual signature檢出schema變更，無memory fallback。
 
 ### Session建立
 

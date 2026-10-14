@@ -275,7 +275,7 @@ def test_sql_guards_reject_downgrade_delete_and_owner_rebinding(ctx):
                 conn.execute(sql)
 
 
-def test_final_handoff_also_excludes_workspace_maintenance(ctx):
+def test_final_handoff_allows_workspace_maintenance_after_commit(ctx):
     from metamuse.store import file_lock
 
     snapshot = freeze(ctx.store)
@@ -300,7 +300,7 @@ def test_final_handoff_also_excludes_workspace_maintenance(ctx):
     one.start()
     assert entered.wait(3)
     two.start()
-    assert not maintenance.wait(0.05)
+    assert maintenance.wait(3)
     release.set()
     one.join(3)
     two.join(3)
@@ -314,3 +314,132 @@ def test_vm_identity_is_normalized_across_restart(ctx):
     assert freeze(restarted, vm_id="vm1").confidential_required
     with restarted.connection() as conn:
         assert conn.execute("SELECT count(*) FROM muse_trust_vms").fetchone()[0] == 1
+
+
+@pytest.mark.parametrize("identity", ["owner", "vm"])
+def test_r2_f1_cross_label_confidentiality_cannot_downgrade(ctx, identity):
+    freeze(ctx.store, account="first", confidential=True)
+    snap = freeze(
+        ctx.store,
+        account="alias",
+        vm_id="other" if identity == "owner" else " VM1 ",
+        viewer_id="viewer" if identity == "owner" else "another-owner",
+    )
+    assert snap.confidential_required
+    for check in (
+        ctx.store.muse_assert_current,
+        lambda value: ctx.store.muse_standard_handoff(value, lambda: pytest.fail("msg3")),
+    ):
+        with pytest.raises(CoreError) as exc:
+            check(snap)
+        assert exc.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+        assert exc.value.detail.retry_class == "never"
+    with ctx.store.connection() as conn:
+        assert (
+            conn.execute(
+                "SELECT confidential_required FROM muse_trust_accounts WHERE account=?", ("alias",)
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT confidential_required FROM muse_trust_vms WHERE account=?", ("alias",)
+            ).fetchone()[0]
+            == 1
+        )
+
+
+@pytest.mark.parametrize("identity", ["owner", "vm"])
+def test_r2_f1_existing_alias_inherits_confidential_transition(ctx, identity):
+    old = freeze(
+        ctx.store,
+        account="alias",
+        vm_id="other" if identity == "owner" else "vm1",
+        viewer_id="viewer" if identity == "owner" else "another-owner",
+    )
+    freeze(ctx.store, account="first", confidential=True)
+    with pytest.raises(CoreError) as exc:
+        ctx.store.muse_assert_current(old)
+    assert exc.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+
+
+def test_r2_f7_maintenance_released_but_trust_lock_retained_at_msg3(ctx):
+    from metamuse.models import payload_digest
+    from metamuse.store import file_lock
+
+    snap = freeze(ctx.store)
+
+    def handoff():
+        with file_lock(ctx.paths.runtime / "maintenance.lock", blocking=False):
+            pass
+        digest = payload_digest([snap.provider, snap.account])
+        with pytest.raises(CoreError) as exc:
+            with file_lock(ctx.paths.runtime / f"muse-trust-{digest}.lock", blocking=False):
+                pass
+        assert exc.value.detail.code == ErrorCode.JOB_BUSY
+
+    ctx.store.muse_standard_handoff(snap, handoff)
+    ctx.store.muse_record_confidential(snap)
+    for check in (
+        ctx.store.muse_assert_current,
+        lambda value: ctx.store.muse_standard_handoff(value, lambda: pytest.fail("msg3")),
+    ):
+        with pytest.raises(CoreError) as exc:
+            check(snap)
+        assert exc.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+
+
+def test_r2_f7_schema_verified_once_but_changed_schema_detected(ctx, monkeypatch):
+    snap = freeze(ctx.store)
+    calls = []
+    original = core._verify_schema
+
+    def verify(*args):
+        calls.append(True)
+        return original(*args)
+
+    monkeypatch.setattr(core, "_verify_schema", verify)
+    for _ in range(4):
+        ctx.store.muse_assert_current(snap)
+    assert len(calls) <= 1
+    with ctx.store.connection() as conn:
+        conn.execute("DROP TRIGGER muse_trust_vm_retention")
+    with pytest.raises(CoreError) as exc:
+        ctx.store.muse_assert_current(snap)
+    assert exc.value.detail.code == ErrorCode.STORAGE
+
+
+def test_r2_f8_backup_restore_keeps_confidential_expectation(ctx, tmp_path):
+    freeze(ctx.store, confidential=True)
+    backup = tmp_path / "confidential-backup"
+    ctx.store.backup(backup)
+    paths = WorkspacePaths.resolve(tmp_path / "restored")
+    Store.restore(backup, paths)
+    restored = Store(paths)
+    snap = freeze(restored, account="alias", vm_id="different-vm")
+    assert snap.confidential_required
+    with pytest.raises(CoreError) as exc:
+        restored.muse_assert_current(snap)
+    assert exc.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+
+
+@pytest.mark.parametrize("identity", ["owner", "vm"])
+def test_r2_f1_sql_refuses_zero_beside_matching_confidential_row(ctx, identity):
+    import sqlite3
+
+    freeze(ctx.store, account="first", confidential=True)
+    if identity == "vm":
+        freeze(ctx.store, account="other", viewer_id="other-owner", vm_id="vm2")
+    table = "muse_trust_accounts" if identity == "owner" else "muse_trust_vms"
+    with ctx.store.connection() as conn:
+        row = dict(conn.execute(f"SELECT * FROM {table} WHERE account='first'").fetchone())
+        row.update(
+            account="other-alias" if identity == "owner" else "other", confidential_required=0
+        )
+        columns = list(row)
+        with pytest.raises(sqlite3.IntegrityError, match="inherited confidentiality"):
+            conn.execute(
+                f"INSERT INTO {table} ({','.join(columns)}) "
+                f"VALUES ({','.join('?' for _ in columns)})",
+                list(row.values()),
+            )

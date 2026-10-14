@@ -105,8 +105,11 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    explicit `hatch_vm`, consistent VM ID/name/endpoint and known state. Reject replacement
    context/provisioning pins. `hatch_cvm` or `CVM_*` records sticky confidentiality then stops, including authenticated selected CVM hints with contradictory metadata.
    `DISABLED`, `DELETING`, `ERROR` stop before wake. Missing/contradictory metadata fails closed.
-3. Freeze owner/session/active-selection generation in the private Store. Both VM and active
-   account expectations must allow standard. A standard observation cannot clear either.
+3. Freeze owner/session/active-selection generation in the private Store. The effective
+   expectation is the OR of the local account/VM, every same-provider viewer hash and every
+   same-provider normalized VM ID. New rows inherit confidentiality; existing matching rows
+   propagate it monotonically. A different local account label cannot clear either identity.
+   A standard observation cannot clear the expectation.
    Connect/retry cannot reselect a different VM. Storage corruption, missing backing state,
    unsupported provenance/version or failed CAS blocks with `E_STORAGE`, retry class `never`.
 4. Mint POST `/api/hatch/token` with exactly `{vmAddress: <row endpoint_url>, vmName: <row name>}`.
@@ -133,7 +136,8 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    low-order DH and mismatches stop with `E_PROTOCOL_MISMATCH`, `never`. Valid RV first
    records confidential expectation and stops. CVM/unknown/delegation have no fallback.
 7. Commit standard-observation provenance with generation CAS immediately before empty msg3,
-   holding the per-account file lock across commit and msg3 handoff. Split only through the
+   holding provider/per-account trust locks across commit and msg3 handoff. Release the shared
+   maintenance lock after commit and before network handoff. Split only through the
    mature library. Generation changes invalidate local sockets; each call rechecks durable
    currentness. No standard enrollment-health or capability-registration gate is added.
 
@@ -194,8 +198,10 @@ After a mutation handoff, a read failure does not use safe-read retry guidance. 
 
 ## Schema
 
-B09 migration `005_muse_trust.sql` adds private account/VM trust tables and six monotonic,
-identity and retention guards. Owner/session hashes, version, source/time, active VM and
+B09 migration `005_muse_trust.sql` adds private account/VM trust tables and fourteen
+monotonic, identity, retention, inheritance and propagation guards. Round 2 amends this
+unmerged migration in place; no 006 is added. An older development-v5 workspace is refused
+as noncanonical rather than silently resetting its trust. Owner/session hashes, version, source/time, active VM and
 generation are private internal rows, with no public model/schema change. It uses the core
 pre-upgrade backup and atomic migration. Restore a verified schema-4 backup into a fresh
 workspace for rollback; never erase security state in place to make standard connect.

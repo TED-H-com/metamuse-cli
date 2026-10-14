@@ -20,11 +20,15 @@ GUARDED = {
     "job_steps": {"state": "queued", "attempts": 0},
     "workspace_keys": {"key_material": bytes(32), "status": "active"},
     "exports": {"artifact": "exports/tampered", "format": "csv"},
+    "muse_trust_accounts": {"viewer_hash": "b" * 64},
+    "muse_trust_vms": {"observed_at": "rewritten"},
 }
 PRIMARY = {
     "item_revisions": ["item_id", "revision"],
     "draft_revisions": ["draft_id", "revision"],
     "workspace_keys": ["name", "version"],
+    "muse_trust_accounts": ["provider", "account"],
+    "muse_trust_vms": ["provider", "account", "vm_id"],
 }
 
 
@@ -39,10 +43,31 @@ MESSAGES = {
     "job_steps": "step replacement is forbidden",
     "workspace_keys": "workspace key replacement is forbidden",
     "exports": "export replacement is forbidden",
+    "muse_trust_accounts": "muse trust account replacement",
+    "muse_trust_vms": "muse trust VM replacement",
 }
 
 
 def unreferenced_row(ctx, records, table):
+    if table.startswith("muse_trust_"):
+        ctx.store.muse_freeze(
+            provider="synthetic",
+            account="unreferenced",
+            vm_id=None if table == "muse_trust_accounts" else "vm1",
+            viewer_id="review-owner",
+            session_binding_id="review-session",
+            confidential=True,
+        )
+        with ctx.store.connection() as conn:
+            row = dict(
+                conn.execute(f"SELECT * FROM {table} WHERE account='unreferenced'").fetchone()
+            )
+            if os.environ.get("METAMUSE_TEST_DROP_GUARDS") == "1":
+                for trigger in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name=?", (table,)
+                ).fetchall():
+                    conn.execute(f"DROP TRIGGER {trigger[0]}")
+        return row
     ctx.store.insert(m.Project(id="prj_other", name="Other", created_at=ctx.clock()))
     # Clone a row under a new identity and add only its parents, never child references.
     with ctx.store.connection() as conn:
@@ -184,14 +209,17 @@ def test_r2_f1_rowid_conflicts_and_identity_updates_are_guarded(ctx, records, ta
             0
         ]
         if verb == "UPDATE OR REPLACE":
-            with pytest.raises(sqlite3.IntegrityError, match="identity is immutable"):
+            message = "immutable" if table.startswith("muse_trust_") else "identity is immutable"
+            with pytest.raises(sqlite3.IntegrityError, match=message):
                 conn.execute(
                     f"UPDATE OR REPLACE {table} SET rowid=rowid+1000 WHERE rowid=?", (victim,)
                 )
         else:
             incoming = {**row, "rowid": victim}
             if table in PRIMARY:
-                if table == "workspace_keys":
+                if table.startswith("muse_trust_"):
+                    incoming["account"] = "fresh-account"
+                elif table == "workspace_keys":
                     incoming["name"] = "fresh.key"
                 else:
                     incoming["revision"] += 1
@@ -247,3 +275,13 @@ def test_r2_f1_auto_assigned_rowid_before_insert_is_minus_one():
         conn.execute("INSERT INTO probe VALUES('auto')")
         conn.execute("INSERT INTO probe(rowid,id) VALUES(42,'explicit')")
         assert conn.execute("SELECT value FROM observed").fetchall() == [(-1,), (42,)]
+
+
+@pytest.mark.parametrize("table", ["muse_trust_accounts", "muse_trust_vms"])
+def test_r2_f8_trust_rows_cannot_be_deleted(ctx, records, table):
+    unreferenced_row(ctx, records, table)
+    with ctx.store.connection() as conn:
+        before = [dict(row) for row in conn.execute(f"SELECT * FROM {table}")]
+        with pytest.raises(sqlite3.IntegrityError, match="retention"):
+            conn.execute(f"DELETE FROM {table}")
+        assert [dict(row) for row in conn.execute(f"SELECT * FROM {table}")] == before
