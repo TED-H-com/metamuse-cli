@@ -27,6 +27,8 @@ metadata:
 - 僅挑選本輪需要且可分享的資料建立 packet；
 - 接著開啟 Muse 主題、送出問題並讀回回答；
 - 完整保存與傳遞 job、discussion 與 exchange IDs。
+- Muse read的每個observation帶`evidence_ref`（muse_observation、revision=1）；草稿受其影響時引用host實際讀到的immutable observation，不能只引用mutable message或自填backend/mock。
+- fixture是操作者明示選擇的離線backend；保留mock=true與research_complete=false到草稿、預覽及每種匯出，不宣稱LIVE。Packet不接受Muse refs，引用不授權亦不重分享。
 
 ## 4. 識別碼與非同步語意
 

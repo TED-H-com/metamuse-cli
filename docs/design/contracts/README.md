@@ -2,6 +2,11 @@
 
 十五個工具都是待實作application契約，不是已運行MCP。恢復版提供自包含inputSchema及共同output envelope；細項成功data依02_SPEC/03_SDS在實作模型補齊後產生專屬outputSchema。不要宣稱外層schema通過就驗證了資料內容、權限或平台能力。
 
+EvidenceRef新增muse_observation：id指向immutable observation、revision固定1（schema條件及runtime驗證）。
+草稿／匯出只接受同project的真實stored observation；backend/mock不由input供應。read回evidence_ref。
+Derived draft preview、payload members及manifest附backend/mock/research_complete:false與muse_evidence；
+fixture的mock=true，transitive refs不得丟標記。Packet拒絕Muse refs；引用不授權亦不重分享。
+
 EvidenceRef為kind/id/revision的統一識別。Packet只允許item_revision和transcript_segment；draft_revision可匯出但不能冒充原始來源。此語義需在app層明確驗證。
 
 UUID等ID由實作建立，示例使用固定假ID。JSON Schema不能證明同project、grant有效性、來源真實性、parent無循環、UTF-8 bytes或副作用結果。這些是產品測試，不是文件驗證。

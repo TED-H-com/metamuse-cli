@@ -119,6 +119,14 @@ Question也是分享資料。去姓名不代表匿名，URL和原文仍可能識
 
 Draft save只保存host提供文字；更新必須expected_revision，不默默覆蓋。預設language=und、emoji=unspecified、plain_text、this_draft；使用者明示才改。沒有作者人設或策略。
 
+AT-042引用補充：EvidenceRef新增`muse_observation`，id為host讀回的immutable observation，revision固定1。
+Store驗證同project的discussion與observation，不接受host自填backend/mock。Draft save、preview及所有export
+（bundle/jsonl/markdown/text/csv）的Muse-derived records保留`backend`、`mock`、`research_complete:false`
+及`muse_evidence`（exact ref、stored digest、discussion、observed_at）；transitive draft引用也保留。
+fixture的mock固定true；live的backend照實保存，不憑內容升級verification。Export manifest亦保留同樣attribution。
+Text在原文前加Muse evidence notice；Markdown/CSV的source攜帶attribution；JSONL保真text欄位。
+Packet只接受原始item/transcript，不接受Muse observation或draft；引用Muse不授權、不重分享、不證明研究完成。
+
 Preview檢查客觀格式、素材可用、引用存在、日期/數字衝突候選。引用存在不代表語義被支持。Export生成本地文件與manifest，不發布或上傳。
 
 ## 8. CLI

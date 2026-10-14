@@ -1,4 +1,4 @@
-# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 3)
+# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 4)
 
 B02–B04 owns `app.py`, `cli.py`, `models.py`, `store.py`, `jobs.py`, migration SQL and
 generated schemas. Other tasks must build against these APIs without editing them.
@@ -16,7 +16,8 @@ typed feature seams. B07/B11 implements the five content functions; see
 files and pasted text and declares `metamuse_collect`. Remote URL collection stays
 `E_UNSUPPORTED` until B12/B13. `media.py` provides local media and subtitle helpers and
 registers no operation. `safety.py` owns the local input reader that collect uses.
-Record formats are in `docs/dev/COLLECT.md`. `muse.py` still raises `E_UNSUPPORTED`.
+Record formats are in `docs/dev/COLLECT.md`. `muse.py` implements the B10 lifecycle;
+see [MUSE.md](MUSE.md).
 
 ```python
 from metamuse.app import AppContext, create_project
@@ -49,8 +50,8 @@ All fifteen SDS functions exist. Core implements `inspect_capabilities`, `create
 `get_job`, `list_jobs`, `control_job`; B07/B11 implements `search_evidence`, `prepare_packet`,
 `save_draft`, `preview_draft`, `export_objects`. Local `submit_collect` accepts files and
 pasted text. Remote URLs stay `E_UNSUPPORTED` until B12/B13, and `next_action` names those
-tasks and LIVE. The four Muse functions validate their typed requests and return
-`E_UNSUPPORTED` / `not implemented in this build`. `TOOL_FUNCTIONS` maps the fifteen
+tasks and LIVE. The four Muse functions use the B10 durable lifecycle and explicit
+fixture/live binding. `TOOL_FUNCTIONS` maps the fifteen
 contract names to their functions; MCP should use it rather than shelling out.
 
 Every wrapper accepts its model or a Python dictionary. `@application(RequestModel)`
@@ -654,7 +655,7 @@ B08 owns verification and atomic consumption on the verifier's supplied connecti
 adds no competing permit API. New scope/expiry/use budgets require a new human grant.
 Ready object reads/inserts verify SHA-256; put_object can repair a corrupt occupant only
 with newly measured/hash-verified bytes and rejects a conflicting MIME classification.
-Failed backups remove only their newly created partial destination. Schema is 3;
+Failed backups remove only their newly created partial destination. Schema is 4;
 001 and 002 are amended pre-release. Canonical v1 workspaces upgrade through 002;
 older development workspaces missing amendments in 001 must be recreated.
 Core still owns all migrations and generated schemas.
@@ -690,3 +691,14 @@ False. Original delivery proof and host outcome stay separate. No direct boolean
 constructor supplies authority. Executor accepts explicit fixture gateway, secret-store
 and resolver DI; fixture network exemption applies only to registered Muse operations and
 an explicitly selected fixture target/backend.
+
+
+## AT-042 core extension
+
+Migration 004 adds draft Muse evidence and packet no-reshare guards without new columns
+or tables. `EvidenceRef.kind="muse_observation"` refers to the immutable observation ID
+with revision=1. `validate_evidence` checks its discussion's project and rejects it with
+source_only=True. Existing append-only, retention, rowid/no-replace and identity guards
+are unchanged. App content functions resolve stored raw_event and backend, propagate
+verified attribution transitively, and never copy model-provided authority.
+See [CONTENT_API.md](CONTENT_API.md) and [OFFLINE_SLICE.md](OFFLINE_SLICE.md).

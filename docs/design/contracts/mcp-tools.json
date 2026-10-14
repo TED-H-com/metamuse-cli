@@ -1837,12 +1837,31 @@
         "$defs": {
           "EvidenceRef": {
             "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "muse_observation"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "revision": {
+                      "const": 1
+                    }
+                  }
+                }
+              }
+            ],
             "properties": {
               "kind": {
                 "enum": [
                   "item_revision",
                   "transcript_segment",
-                  "draft_revision"
+                  "draft_revision",
+                  "muse_observation"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -3102,12 +3121,31 @@
           },
           "EvidenceRef": {
             "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "muse_observation"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "revision": {
+                      "const": 1
+                    }
+                  }
+                }
+              }
+            ],
             "properties": {
               "kind": {
                 "enum": [
                   "item_revision",
                   "transcript_segment",
-                  "draft_revision"
+                  "draft_revision",
+                  "muse_observation"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -3646,12 +3684,31 @@
         "$defs": {
           "EvidenceRef": {
             "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "muse_observation"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "revision": {
+                      "const": 1
+                    }
+                  }
+                }
+              }
+            ],
             "properties": {
               "kind": {
                 "enum": [
                   "item_revision",
                   "transcript_segment",
-                  "draft_revision"
+                  "draft_revision",
+                  "muse_observation"
                 ],
                 "title": "Kind",
                 "type": "string"

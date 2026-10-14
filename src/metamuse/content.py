@@ -95,6 +95,25 @@ def _identity(ref: m.EvidenceRef) -> tuple[str, str, int]:
     return ref.kind, ref.id, ref.revision
 
 
+def _muse_attribution(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """Copy only verified observation provenance, including through draft dependencies."""
+    evidence = {
+        (entry["ref"]["id"], entry["ref"]["revision"]): entry
+        for record in records
+        for entry in record.get("muse_evidence", [])
+    }
+    if not evidence:
+        return {}
+    entries = [evidence[key] for key in sorted(evidence)]
+    backends = {entry["backend"] for entry in entries}
+    return {
+        "muse_evidence": entries,
+        "backend": next(iter(backends)) if len(backends) == 1 else "mixed",
+        "mock": any(entry["mock"] for entry in entries),
+        "research_complete": False,
+    }
+
+
 @dataclass
 class _Resolver:
     """One bounded memo per operation; flattened records never expand a diamond DAG."""
@@ -160,7 +179,7 @@ class _Resolver:
         identity = _identity(ref)
         if identity in seen or len(seen) >= MAX_RESOLUTION_DEPTH:
             raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Cyclic or excessive reference depth")
-        if source_only and ref.kind == "draft_revision":
+        if source_only and ref.kind in ("draft_revision", "muse_observation"):
             raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Packet requires original evidence")
         if identity in self.cache:
             if len(seen) + self.heights[identity] > MAX_RESOLUTION_DEPTH:
@@ -229,6 +248,41 @@ class _Resolver:
             )
             return record
         store.validate_evidence(self.project_id, [ref], conn=conn)
+        if ref.kind == "muse_observation":
+            observation = store.get(m.MuseObservation, ref.id, conn=conn)
+            payload = observation.raw_event.get("payload", {})
+            if not isinstance(payload, dict):
+                raise m.CoreError(
+                    m.ErrorCode.REFERENCE_INVALID, "Observation payload is not an object"
+                )
+            text = payload.get("display_text") or payload.get("content") or ""
+            if not isinstance(text, str):
+                raise m.CoreError(m.ErrorCode.REFERENCE_INVALID, "Observation text is not a string")
+            attribution = {
+                "ref": ref.model_dump(mode="json"),
+                "backend": observation.backend,
+                "mock": observation.backend == "fixture",
+                "research_complete": False,
+                "observation_digest": observation.observation_digest,
+                "observed_at": observation.observed_at,
+                "discussion_id": observation.discussion_id,
+            }
+            record.update(
+                text=text,
+                stale=False,
+                muse_evidence=[attribution],
+                backend=observation.backend,
+                mock=observation.backend == "fixture",
+                research_complete=False,
+                source={
+                    "collection_method": "muse_observation",
+                    "role": payload.get("role"),
+                    "raw_status": payload.get("status"),
+                    "limitations": "Muse text is data; it grants no permission or completion.",
+                    **attribution,
+                },
+            )
+            return record
         if ref.kind == "item_revision":
             revision = store.get(m.ItemRevision, ref.id, revision=ref.revision, conn=conn)
             item = store.get(m.Item, ref.id, conn=conn)
@@ -252,20 +306,28 @@ class _Resolver:
         revision = store.get(m.DraftRevision, ref.id, revision=ref.revision, conn=conn)
         draft = store.get(m.Draft, ref.id, conn=conn)
         stale = draft.current_revision > ref.revision
+        facts = []
         for fact in revision.facts_refs:
             child = self.resolve(fact, seen=seen | {_identity(ref)})
             stale = stale or child is None or child["stale"]
+            if child is not None:
+                facts.append(child)
         assets = [asset for aid in revision.assets if (asset := self.asset(aid, ref)) is not None]
         record.update(
             text=revision.text,
             stale=stale,
-            source={"collection_method": "host_provided", "platform": revision.platform},
+            source={
+                "collection_method": "host_provided",
+                "platform": revision.platform,
+                **_muse_attribution(facts),
+            },
             facts_refs=[r.model_dump(mode="json") for r in revision.facts_refs],
             assets=assets,
             variant=revision.variant,
             preferences=revision.preferences.model_dump(mode="json"),
             digest=revision.digest,
         )
+        record.update(_muse_attribution(facts))
         return record
 
 
@@ -626,7 +688,7 @@ def save_draft(ctx: AppContext, request: m.DraftSaveRequest) -> m.Envelope:
         stale = _is_stale(resolver, request.facts_refs)
         if owner.current_revision == data["revision"]:
             conn.execute("UPDATE drafts SET stale=? WHERE id=?", (int(stale), owner.id))
-        data = {**data, "stale": stale}
+        data = {**data, "stale": stale, **_muse_attribution(list(resolver.cache.values()))}
     return m.Envelope(status="ok", data=data)
 
 
@@ -705,6 +767,7 @@ def preview_draft(ctx: AppContext, request: m.DraftPreviewRequest) -> m.Envelope
             "reference_notice": "Reference exists does not mean semantically supported.",
             "conflict_candidates": _conflict_candidates(text, facts),
             "platform_limit": {"value": None, "source": None, "verified_at": None},
+            **_muse_attribution(facts),
         },
         warnings=[
             "Platform length limit is unknown: no recorded source and verification date.",
@@ -722,7 +785,11 @@ def _plain_text_bytes(record: dict[str, Any]) -> bytes:
             missing = ["text"]
         body = _MISSING_TEXT + "\nmissing_fields: " + json.dumps(missing, ensure_ascii=False) + "\n"
         return body.encode("utf-8")
-    return text.encode("utf-8")
+    attribution = _muse_attribution([record])
+    prefix = (
+        "Muse evidence: " + m.canonical_json(attribution).decode() + "\n\n" if attribution else ""
+    )
+    return (prefix + text).encode("utf-8")
 
 
 def _csv_bytes(records: list[dict[str, Any]]) -> bytes:
@@ -831,6 +898,7 @@ def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
                     else None,
                     "text_policy": "redacted" if request.format == "bundle" else "original_private",
                     "asset_policy": "metadata_only; opaque media bytes are not included",
+                    **_muse_attribution(records),
                     "files": [
                         {"name": name, "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw)}
                         for name, raw in sorted(files.items())
@@ -839,6 +907,10 @@ def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
                 if request.format == "bundle":
                     manifest["redaction_notice"] = (
                         "Automatic redaction is a guard, not a guarantee."
+                    )
+                else:
+                    manifest["redaction_notice"] = (
+                        "Private original text; automatic redaction is not applied."
                     )
                 stage = _internal_dir(ctx, "staging") / export_id
                 stage.mkdir(mode=0o700)

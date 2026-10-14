@@ -362,9 +362,25 @@ class CollectLimits(Model):
 
 
 class EvidenceRef(Model):
-    kind: Literal["item_revision", "transcript_segment", "draft_revision"]
+    model_config = ConfigDict(
+        json_schema_extra={
+            "allOf": [
+                {
+                    "if": {"properties": {"kind": {"const": "muse_observation"}}},
+                    "then": {"properties": {"revision": {"const": 1}}},
+                }
+            ]
+        }
+    )
+    kind: Literal["item_revision", "transcript_segment", "draft_revision", "muse_observation"]
     id: ID
     revision: Revision
+
+    @model_validator(mode="after")
+    def immutable_observation(self) -> EvidenceRef:
+        if self.kind == "muse_observation" and self.revision != 1:
+            raise ValueError("An immutable Muse observation has revision 1")
+        return self
 
 
 class Capability(Model):

@@ -9,13 +9,13 @@
     },
     {
       "path": "02_SPEC.md",
-      "bytes": 17028,
-      "sha256": "bc3d6de009077707af0e52704901d920326ae65130a2e0674d87a4c99a4c93be"
+      "bytes": 17875,
+      "sha256": "aa421cd1f3810263c792f2a4041aa7b487a7a3f13ee7ce10ba1759f702608b1f"
     },
     {
       "path": "03_SDS.md",
-      "bytes": 28502,
-      "sha256": "57cb53927cb077452b05a64429a9cebff3981dd35fa139948cd0c6e68bebd3e0"
+      "bytes": 29503,
+      "sha256": "9bdc9e72063e8d9fea7d3e02f29dcc2024140a652e30611c7a779bba4a16fc74"
     },
     {
       "path": "04_BACKLOG.md",
@@ -49,8 +49,8 @@
     },
     {
       "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
-      "bytes": 54647,
-      "sha256": "ec5f873c40b298c329abf83c6ee3548449ddda25078a62c9b8075609d77f3ecb"
+      "bytes": 56495,
+      "sha256": "ee3a2d81532dc0010c83c30efb69f77ecaa5e6b7ce3f6165fb152ad359c387ff"
     },
     {
       "path": "README.md",
@@ -64,8 +64,8 @@
     },
     {
       "path": "contracts/README.md",
-      "bytes": 2012,
-      "sha256": "4ba5d54f2de68270723a1226ea9fa976e456a5afb7842a8ec4c67095cbe4f00f"
+      "bytes": 2475,
+      "sha256": "8b0b51e5ff4117c184bf86f27adf06b4090b2fe878a215fa3808ca29e8278cbe"
     },
     {
       "path": "contracts/acceptance-cases.json",
@@ -84,8 +84,8 @@
     },
     {
       "path": "contracts/mcp-tools.json",
-      "bytes": 100982,
-      "sha256": "2e61dd5d1256f075358181b959cf8578a3c3cdddeebc38fca90ae50abe155b84"
+      "bytes": 102464,
+      "sha256": "857244b9b2b99693254bcbaced7bb58cf5e986ac13e6be74b4357625b94650a1"
     },
     {
       "path": "contracts/requirements.json",
@@ -119,8 +119,8 @@
     },
     {
       "path": "skills/metamuse/SKILL.md",
-      "bytes": 3195,
-      "sha256": "6908b19f3617d338c1b52bbd8eef7b0c742ed3d95f291706480ebbd79653bdb0"
+      "bytes": 3612,
+      "sha256": "bd177fbddcf539036622ec83b4a7310e344be5b8c37a710a71ee9e5b769613d9"
     },
     {
       "path": "validate_design_pack.py",

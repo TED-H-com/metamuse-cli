@@ -56,7 +56,7 @@
 ## 4. 背景 Worker 缺席語意（Worker Absent）
 
 當 `metamuse_inspect` 回報 `worker_available: false` 時：
-- 所有非同步提交（如 `metamuse_collect`、`metamuse_export`）在回傳狀態為 `accepted` 後，僅是將 job 寫入本機 SQLite 資料庫之佇列。
+- 所有非同步提交（如 `metamuse_collect`、`metamuse_muse_open`、`metamuse_muse_send`）在回傳狀態為 `accepted` 後，僅是將 job 寫入本機 SQLite 資料庫之佇列。
 - **語意誠實**：絕不可向使用者宣稱「工作正在背景執行中」或「稍後背景完成」。
 - **操作指引**：應明確告知使用者背景無 worker 運作，提示使用者可於終端機執行 `metamuse worker run` 推動佇列。
 
@@ -69,3 +69,5 @@
 - **`safe_read`**：唯讀操作在網路瞬斷或頻率限制緩解後可嘗試讀取，應尊重重試間隔。
 - **`reconcile`**：外部狀態未知（如 `E_EXTERNAL_STATE_UNKNOWN`），嚴禁盲目重新發送相同請求；應先查詢歷史紀錄（`metamuse_job_get` 或 `metamuse_muse_read`）進行對帳。
 - **`user_action`**：需要人類介入，應明確向使用者提示 `next_action` 所指示之手動命令。
+
+`metamuse_export`目前同步回`ok`及ready artifact，不需要worker。明示fixture backend的真實回應需保留mock/research_complete標記；模型不能因backend缺席自行製造fixture結果。

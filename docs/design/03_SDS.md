@@ -185,6 +185,17 @@ send boundary持久化write-once submitted_observation_high_water；history關�
 live send先有已完成、授權的history baseline；已mapped discussion_id的open走history read，不做第二次create。
 open boundary在reservation與token之前重查未解create；拒絕時transaction rollback，不接觸remote、不標uncertain。
 
+### AT-042 immutable evidence link（schema 4）
+
+EvidenceRef(kind=muse_observation,id=observation.id,revision=1)重用003的append-only、retained observation，
+不引用mutable Message.text，也不增加table/column。Resolver從固定raw_event取得本次文字，從stored backend
+取得mock標記；later enrichment必須新observation，不改舊引用。Store經discussion驗證project。
+004_muse_evidence.sql只追加draft JSON引用的存在/project/revision guard及packet禁止Muse引用guard；
+001–003不改。既有rowid-aware no-replace與identity freeze保留，fresh/upgrade-v3/restore-v3 canonical一致。
+來源與host文字不mint grant；packets不重分享Muse。Draft save/preview和transitive exports附muse_evidence、
+backend、mock、research_complete:false；每格式的payload及manifest都有attribution。Text保留正文並加notice，
+CSV在source JSON附標記且維持formula-safe，JSONL text原文不變。Bundle redacted，其他格式original_private。
+
 ## 9. Grant與packet
 
 Grant由可信人類本地流程建立：kind、project/provider/account、可用snapshot或packet digests、expiry、max_uses、issuer。MCP無自我批准工具。對已展示snapshot可預先授權有界討論，不必每句打斷；新增來源／帳號不繼承。

@@ -126,6 +126,30 @@ Conflict candidates include transitive facts and compare written date/number tok
 without interpreting claims, converting dates, or asserting contradiction. Matched dates
 are removed before number-token extraction. The host must review candidates.
 
+## Immutable Muse evidence (AT-042)
+
+`facts_refs` may include `{kind: "muse_observation", id: <read observation ID>, revision: 1}`.
+Muse read supplies `evidence_ref` for each observation. The store checks existence and the
+owning discussion's project. Observations are retained and append-only; enrichment creates
+a new observation. Export reads that observation's fixed raw event, never mutable Message
+text. Backend and observation digest come from storage, never host input. The reference
+cannot carry extra `backend`, `mock`, permission or completion claims.
+
+Save, preview and exports propagate `muse_evidence` through draft dependencies. Each entry
+contains the exact ref, backend, mock, research_complete=false, stored observation digest,
+discussion_id and observed_at. Derived records also expose backend/mock/research_complete;
+backend is `mixed` only when multiple stored backend types occur, with each entry retaining
+its own backend. Fixture entries always have mock=true; live entries remain labelled live
+without claiming LIVE verification or completed research. No external operation is involved.
+
+JSONL records and manifests carry these fields. Markdown and CSV source metadata include
+them; text adds a `Muse evidence: <JSON>` notice before its unchanged body. Private formats
+retain original text and have an explicit unredacted notice in their manifest. Bundle
+redaction does not remove attribution. Packets reject both draft and Muse observation
+refs, so citing a reply cannot re-share it. Muse text cannot create a grant or instruction.
+Schema 4 only adds reference guards; the schema-3 observation identity/rowid guards remain.
+The process-level walkthrough is [OFFLINE_SLICE.md](OFFLINE_SLICE.md).
+
 ## Exports and recovery
 
 `export_objects` supports text, markdown, jsonl, csv and bundle. All selections and the

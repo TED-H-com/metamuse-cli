@@ -28,12 +28,13 @@ from metamuse import models as m
 from metamuse.config import load_config
 from metamuse.paths import WorkspacePaths, private_dir, private_file
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 DATA = Path(__file__).parent / "data"
 MIGRATIONS = {
     1: DATA / "migrations" / "001_initial.sql",
     2: DATA / "migrations" / "002_collect_media.sql",
     3: DATA / "migrations" / "003_muse_lifecycle.sql",
+    4: DATA / "migrations" / "004_muse_evidence.sql",
 }
 CONTENT_CURSOR_KEY = "content.cursor"
 
@@ -582,6 +583,13 @@ class Store:
             elif ref.kind == "draft_revision" and not source_only:
                 self.get(m.DraftRevision, ref.id, revision=ref.revision, conn=conn)
                 owner = self.get(m.Draft, ref.id, conn=conn).project_id
+            elif ref.kind == "muse_observation" and not source_only:
+                observation = self.get(m.MuseObservation, ref.id, conn=conn)
+                if ref.revision != 1:
+                    raise m.CoreError(
+                        m.ErrorCode.REFERENCE_INVALID, "Observation revision must be 1"
+                    )
+                owner = self.get(m.Discussion, observation.discussion_id, conn=conn).project_id
             elif ref.kind == "transcript_segment":
                 segment = self.get(m.TranscriptSegment, ref.id, revision=ref.revision, conn=conn)
                 owner = segment.project_id

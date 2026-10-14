@@ -311,3 +311,13 @@ AT-042's host must carry the mock attribution into its resulting draft/bundle. B
 exercise real process kill at every boundary, restore and key rotation, epoch takeover
 refusal, hydration limits, and repeated uncertain settlement. LIVE/AT-038 remains blocked:
 no operator-authorized account; fixture success is not service verification.
+
+
+## AT-042 read evidence
+
+Every local read observation includes `evidence_ref` with kind `muse_observation`, its
+immutable ID and revision 1, plus backend/mock/research_complete=false. Cite the specific
+observation the host read, including progress; later enrichment is a different ID.
+Content resolves that stored raw event and digest, not the current Message view. Drafts
+and all exports preserve fixture attribution transitively; packets reject Muse refs.
+[OFFLINE_SLICE.md](OFFLINE_SLICE.md) proves the fixture-only CLI/MCP process journey.

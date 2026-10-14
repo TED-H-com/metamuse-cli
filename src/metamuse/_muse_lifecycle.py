@@ -1466,9 +1466,14 @@ def read_muse_exchange(ctx, request):
         "exchange": exchange.model_dump(mode="json"),
         "messages": messages,
         "observations": [
-            ctx.store.decode(
-                m.MuseObservation, {key: row[key] for key in row.keys() if key != "rowid"}
-            ).model_dump(mode="json")
+            {
+                **ctx.store.decode(
+                    m.MuseObservation, {key: row[key] for key in row.keys() if key != "rowid"}
+                ).model_dump(mode="json"),
+                "evidence_ref": {"kind": "muse_observation", "id": row["id"], "revision": 1},
+                "mock": row["backend"] == "fixture",
+                "research_complete": False,
+            }
             for row in page
         ],
         "backend": discussion.backend,

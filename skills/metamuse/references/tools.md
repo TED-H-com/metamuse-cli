@@ -96,7 +96,7 @@
 - **使用者意圖**：將選定素材與草稿匯出為本地檔案製品（不發布）。
 - **對應 CLI 命令**：`metamuse export`
 - **必要識別碼**：`project_id`、`request_key`。
-- **成功語意**：`accepted`。本地匯出工作已建立。
+- **成功語意**：`ok`。同步產出並驗證本地artifact／manifest；fixture-derived內容保留backend/mock/research_complete=false。
 
 ---
 

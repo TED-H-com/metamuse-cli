@@ -92,7 +92,7 @@ def add_legacy(store):
 
 
 def test_fresh_v3_matches_canonical_and_retains_every_prior_guard(tmp_path):
-    current = core.Store(WorkspacePaths.resolve(tmp_path / "fresh"))
+    current = versioned_store(tmp_path / "fresh", 3)
     assert current.schema_version == 3
     actual = signature(current)
     assert "muse_observations" in {name for kind, name, _, _ in actual if kind == "table"}
@@ -119,12 +119,15 @@ def test_fresh_v3_matches_canonical_and_retains_every_prior_guard(tmp_path):
 )
 def test_later_migration_cannot_drop_v3_guards(ctx, tmp_path, guard):
     before = signature(ctx.store)
-    migration = tmp_path / "004_drop_guard.sql"
+    target = core.SCHEMA_VERSION + 1
+    migration = tmp_path / f"{target:03}_drop_guard.sql"
     migration.write_text(f"DROP TRIGGER {guard};\n")
     with pytest.raises(m.CoreError, match="Migration drops required schema guards"):
-        core.Store(ctx.paths, schema_version=4, migrations={**core.MIGRATIONS, 4: migration})
+        core.Store(
+            ctx.paths, schema_version=target, migrations={**core.MIGRATIONS, target: migration}
+        )
     with ctx.store.connection() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 3
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == core.SCHEMA_VERSION
     assert signature(ctx.store) == before
 
 
@@ -136,7 +139,7 @@ def test_real_upgrades_have_fresh_canonical_objects_and_unknown_legacy_delivery(
     for version in versions[1:]:
         current = versioned_store(paths.root, version)
         assert current.schema_version == version
-    fresh = core.Store(WorkspacePaths.resolve(tmp_path / "fresh"))
+    fresh = versioned_store(tmp_path / "fresh", versions[-1])
     assert signature(current) == signature(fresh)
     assert current.get(m.Project, project["id"]).name == "Synthetic upgrade"
     exchange = current.get(m.Exchange, "exc_legacy")
@@ -155,7 +158,7 @@ def tree_snapshot(root):
     }
 
 
-def test_v2_archive_restores_to_v3_with_receipt_replay_and_untouched_original(tmp_path):
+def test_v2_archive_restores_to_current_with_receipt_replay_and_untouched_original(tmp_path):
     original = versioned_store(tmp_path / "original-v2", 2)
     ctx = app.AppContext(original.paths, original)
     project_request = {"name": "Synthetic archive", "request_key": "project"}
@@ -179,10 +182,10 @@ def test_v2_archive_restores_to_v3_with_receipt_replay_and_untouched_original(tm
     assert isinstance(archive, core.BackupResult) and archive.status == "complete"
     archive_before = tree_snapshot(archive.path)
     original_before = tree_snapshot(original.paths.root)
-    result = core.Store.restore(archive.path, WorkspacePaths.resolve(tmp_path / "restored-v3"))
+    result = core.Store.restore(archive.path, WorkspacePaths.resolve(tmp_path / "restored-current"))
     assert isinstance(result, core.RestoreResult) and result.status == "complete"
     restored = result.store
-    assert restored.schema_version == 3
+    assert restored.schema_version == core.SCHEMA_VERSION
     assert signature(restored) == signature(core.Store(WorkspacePaths.resolve(tmp_path / "fresh")))
     restored_ctx = app.AppContext.open(result.path)
     assert app.create_project(restored_ctx, project_request).data == project.data

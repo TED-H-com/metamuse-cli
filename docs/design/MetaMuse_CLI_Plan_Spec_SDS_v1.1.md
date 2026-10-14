@@ -210,6 +210,14 @@ Question也是分享資料。去姓名不代表匿名，URL和原文仍可能識
 
 Draft save只保存host提供文字；更新必須expected_revision，不默默覆蓋。預設language=und、emoji=unspecified、plain_text、this_draft；使用者明示才改。沒有作者人設或策略。
 
+AT-042引用補充：EvidenceRef新增`muse_observation`，id為host讀回的immutable observation，revision固定1。
+Store驗證同project的discussion與observation，不接受host自填backend/mock。Draft save、preview及所有export
+（bundle/jsonl/markdown/text/csv）的Muse-derived records保留`backend`、`mock`、`research_complete:false`
+及`muse_evidence`（exact ref、stored digest、discussion、observed_at）；transitive draft引用也保留。
+fixture的mock固定true；live的backend照實保存，不憑內容升級verification。Export manifest亦保留同樣attribution。
+Text在原文前加Muse evidence notice；Markdown/CSV的source攜帶attribution；JSONL保真text欄位。
+Packet只接受原始item/transcript，不接受Muse observation或draft；引用Muse不授權、不重分享、不證明研究完成。
+
 Preview檢查客觀格式、素材可用、引用存在、日期/數字衝突候選。引用存在不代表語義被支持。Export生成本地文件與manifest，不發布或上傳。
 
 ## 8. CLI
@@ -479,6 +487,17 @@ echo比較對prepared text與stored observation套用同一sanitize_document，w
 send boundary持久化write-once submitted_observation_high_water；history關聯排除prepared/zero-handoff，並要求訊息首次observation在此高水位之後。多個同文exchange共享markerless echo時保持ambiguous，不按rowid先後認領。user_echo SQL guard也檢查已提交與首次observation；transport首結果保留既有history proof、另存真實ack/verdict，不reopen closed。
 live send先有已完成、授權的history baseline；已mapped discussion_id的open走history read，不做第二次create。
 open boundary在reservation與token之前重查未解create；拒絕時transaction rollback，不接觸remote、不標uncertain。
+
+### AT-042 immutable evidence link（schema 4）
+
+EvidenceRef(kind=muse_observation,id=observation.id,revision=1)重用003的append-only、retained observation，
+不引用mutable Message.text，也不增加table/column。Resolver從固定raw_event取得本次文字，從stored backend
+取得mock標記；later enrichment必須新observation，不改舊引用。Store經discussion驗證project。
+004_muse_evidence.sql只追加draft JSON引用的存在/project/revision guard及packet禁止Muse引用guard；
+001–003不改。既有rowid-aware no-replace與identity freeze保留，fresh/upgrade-v3/restore-v3 canonical一致。
+來源與host文字不mint grant；packets不重分享Muse。Draft save/preview和transitive exports附muse_evidence、
+backend、mock、research_complete:false；每格式的payload及manifest都有attribution。Text保留正文並加notice，
+CSV在source JSON附標記且維持formula-safe，JSONL text原文不變。Bundle redacted，其他格式original_private。
 
 ## 9. Grant與packet
 
