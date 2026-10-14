@@ -11,10 +11,11 @@ import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import threading
 import tomllib
 import traceback
-from datetime import timedelta
+from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -93,9 +94,12 @@ class Resolver:
         self.calls: list[str] = []
         self.rebind = False
         self._flipped = False
+        self.extra: dict[str, list[str]] = {}
 
     def __call__(self, host: str) -> list[str]:
         self.calls.append(host)
+        if host in self.extra:
+            return self.extra[host]
         if host == "rebind.fixture.test":
             return ["10.1.2.3"]
         if host == "media.fixture.test":
@@ -443,11 +447,24 @@ def test_ytdlp_params_are_fixed(tmp_path):
     assert params["geo_bypass"] is False
     assert params["postprocessors"] == []
     assert params["fixup"] == "never"
-    assert params["ffmpeg_location"] is None
+    assert params["ffmpeg_location"] == str(tmp_path / ".no-ffmpeg")
+    assert not Path(params["ffmpeg_location"]).exists()
     assert params["external_downloader"] is None
     assert params["proxy"] == ""
     assert params["cookiefile"] is None
     assert params["cookiesfrombrowser"] is None
+    assert params["cachedir"] is False
+    assert params["usenetrc"] is False
+    assert params["netrc_location"] is None
+    assert params["netrc_cmd"] is None
+    assert params["username"] is None
+    assert params["password"] is None
+    assert params["videopassword"] is None
+    assert params["ap_username"] is None
+    assert params["ap_password"] is None
+    assert params["client_certificate"] is None
+    assert params["client_certificate_key"] is None
+    assert params["client_certificate_password"] is None
     assert params["source_address"] is None
     assert params["retries"] == params["fragment_retries"] == params["extractor_retries"] == 0
     assert params["skip_download"] is True
@@ -885,14 +902,19 @@ def test_missing_or_unusable_subtitles_are_partial_and_not_asr(ctx, project, ori
     assert unusable.state == "partial"
     assert "subtitles" in unusable.missing_fields
     assert q(ctx, "SELECT COUNT(*) AS n FROM transcript_segments")[0]["n"] == 0
-    denied, _permit = prepare(ctx, project, origin, "sub403", ["media_metadata", "subtitles"])
+    denied, _permit = prepare(
+        ctx, project, origin, "sub403", ["media_metadata", "subtitles", "media_file"]
+    )
     denied = denied.model_copy(update={"request_key": "sub403"})
-    partial = finish(ctx, denied)
-    assert partial.state == "partial" and partial.state != "awaiting_user"
-    assert partial.error is None
-    assert "subtitles" in partial.missing_fields
+    stopped = finish(ctx, denied)
+    assert stopped.state == "awaiting_user"
+    assert stopped.error["code"] == m.ErrorCode.ACCESS_DENIED.value
+    assert stopped.error["message"] == "Upstream refused the request"
+    assert "/sub403/provided.vtt" in paths(origin)
+    assert "/sub403/auto.vtt" not in paths(origin)
+    assert "/sub403/media.wav" not in paths(origin)
     methods = [row["method"] for row in q(ctx, "SELECT method FROM transcript_segments")]
-    assert methods == ["auto"]
+    assert methods == []
     assert "asr" not in methods and "manual" not in methods
 
 
@@ -1238,3 +1260,544 @@ def test_revoked_host_does_not_consume_the_permit(ctx, project, origin):
     assert job.error["code"] == m.ErrorCode.SCOPE_DENIED.value
     assert ctx.store.get(m.Permit, permit_id).used == 0
     assert origin.hits == []
+
+
+def _open_with_dial(tmp_path, monkeypatch, dial, ie=MetamuseFixtureIE, budget=1000):
+    monkeypatch.setattr(remote_media, "_dial", dial)
+
+    def check(url, *, purpose):
+        return safety.check_url(url, purpose=purpose, resolver=lambda _host: ["8.8.8.8"])
+
+    net = remote_media._Net(
+        checker=check,
+        budget=remote_media._Budget(0, budget),
+        media_max=1000,
+        timeout=2,
+    )
+    params = remote_media.ytdlp_params(
+        tmp_path,
+        max_items=5,
+        socket_timeout=2,
+        max_filesize=1000,
+        extractor=ie.ie_key(),
+    )
+    return remote_media._open_ydl(params, ie, net), net
+
+
+def test_redirect_bodies_and_errors_spend_the_byte_budget(tmp_path, monkeypatch):
+    transferred = []
+
+    def dial(method, url, headers, body, checked, timeout, limit):
+        del method, headers, body, checked, timeout
+        if url.endswith("/start"):
+            status, payload = 302, b"x" * 90
+            headers_out = {"Location": "/end"}
+        elif url.endswith("/error"):
+            status, payload = 403, b"x" * 90
+            headers_out = {}
+        else:
+            status, payload = 200, b"y" * 10
+            headers_out = {}
+        assert len(payload) <= limit
+        transferred.append(len(payload))
+        return status, headers_out, payload, "8.8.8.8"
+
+    ydl, net = _open_with_dial(tmp_path, monkeypatch, dial, budget=100)
+    try:
+        assert ydl.urlopen("https://media.fixture.test/start").read() == b"y" * 10
+        with pytest.raises(RequestError):
+            ydl.urlopen("https://media.fixture.test/error")
+    finally:
+        ydl.close()
+    assert transferred == [90, 10]
+    assert net.budget.used == 100
+
+
+def test_https_downgrade_is_refused(tmp_path, monkeypatch):
+    sent = []
+
+    def dial(method, url, headers, body, checked, timeout, limit):
+        del timeout, limit
+        sent.append((method, checked.url, headers.get("Authorization"), body))
+        if checked.url.startswith("https://"):
+            return 307, {"Location": "http://media.fixture.test/landing"}, b"", "8.8.8.8"
+        return 200, {}, b"ok", "8.8.8.8"
+
+    ydl, _net = _open_with_dial(tmp_path, monkeypatch, dial)
+    try:
+        with pytest.raises(RequestError) as caught:
+            ydl.urlopen(
+                Request(
+                    "https://media.fixture.test/start",
+                    data=b"SYNTHETIC_CREDENTIAL",
+                    headers={"authorization": "Bearer SYNTHETIC_TOKEN"},
+                )
+            )
+    finally:
+        ydl.close()
+    assert caught.value.cause.detail.code == m.ErrorCode.SCOPE_DENIED
+    assert "HTTPS redirect to HTTP" in caught.value.cause.detail.message
+    assert [item[1] for item in sent] == ["https://media.fixture.test/start"]
+
+
+def test_cross_host_307_does_not_forward_the_body(tmp_path, monkeypatch):
+    sent = []
+
+    def dial(method, url, headers, body, checked, timeout, limit):
+        del method, url, timeout, limit
+        sent.append((checked.hostname, headers.get("Authorization"), body))
+        if len(sent) == 1:
+            return 307, {"Location": "https://cdn.fixture.test/landing"}, b"", "8.8.8.8"
+        return 200, {}, b"ok", "8.8.8.8"
+
+    ydl, _net = _open_with_dial(tmp_path, monkeypatch, dial)
+    try:
+        with pytest.raises(RequestError) as caught:
+            ydl.urlopen(
+                Request(
+                    "https://media.fixture.test/start",
+                    data=b"SYNTHETIC_PASSWORD",
+                    headers={"authorization": "Bearer SYNTHETIC_TOKEN"},
+                )
+            )
+    finally:
+        ydl.close()
+    assert caught.value.cause.detail.code == m.ErrorCode.SCOPE_DENIED
+    assert "request body" in caught.value.cause.detail.message
+    assert sent == [("media.fixture.test", "Bearer SYNTHETIC_TOKEN", b"SYNTHETIC_PASSWORD")]
+
+
+def test_port_change_drops_authorization(tmp_path, monkeypatch):
+    sent = []
+
+    def check(url, *, purpose):
+        parts = urlsplit(url)
+        return safety.CheckedURL(
+            url, parts.hostname or "", parts.port or 443, ("8.8.8.8",), purpose
+        )
+
+    def dial(method, url, headers, body, checked, timeout, limit):
+        del timeout, limit
+        sent.append((method, checked.url, headers.get("Authorization"), body))
+        if len(sent) == 1:
+            return 302, {"Location": "https://media.fixture.test:8443/landing"}, b"", "8.8.8.8"
+        return 200, {}, b"ok", "8.8.8.8"
+
+    monkeypatch.setattr(remote_media, "_dial", dial)
+    net = remote_media._Net(
+        checker=check,
+        budget=remote_media._Budget(0, 1000),
+        media_max=1000,
+        timeout=2,
+    )
+    params = remote_media.ytdlp_params(
+        tmp_path,
+        max_items=5,
+        socket_timeout=2,
+        max_filesize=1000,
+        extractor="MetamuseFixture",
+    )
+    ydl = remote_media._open_ydl(params, MetamuseFixtureIE, net)
+    try:
+        assert (
+            ydl.urlopen(
+                Request(
+                    "https://media.fixture.test/start",
+                    headers={"authorization": "Bearer SYNTHETIC_TOKEN"},
+                )
+            ).read()
+            == b"ok"
+        )
+    finally:
+        ydl.close()
+    assert sent[0][2] == "Bearer SYNTHETIC_TOKEN"
+    assert sent[1][0] == "GET"
+    assert sent[1][1].endswith(":8443/landing")
+    assert sent[1][2] is None
+    assert sent[1][3] is None
+
+
+def test_iq_extractor_cannot_launch_a_process(ctx, project, resolver, tmp_path, monkeypatch):
+    from yt_dlp.extractor import openload
+    from yt_dlp.extractor.iqiyi import IqIE
+
+    resolver.extra["www.iq.com"] = ["127.0.0.1"]
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setattr(openload, "check_executable", lambda *_args, **_kwargs: "phantomjs")
+    script = (
+        ",function(a,b,c){var _qda=1;"
+        'var x=new XMLHttpRequest();x.open("GET","http://127.0.0.1/private",false);'
+        "x.send();_qdc()},"
+    )
+    monkeypatch.setattr(IqIE, "_extract_vms_player_js", lambda self, webpage, video_id: script)
+    html = (
+        '<script id="__NEXT_DATA__" type="application/json">'
+        + json.dumps(
+            {"props": {"initialState": {"play": {"curVideoInfo": {"tvId": "1", "vid": "2"}}}}}
+        )
+        + "</script>"
+    )
+    dials = []
+
+    def dial(method, url, headers, body, checked, timeout, limit):
+        del method, url, headers, body, checked, timeout, limit
+        dials.append(True)
+        return 200, {"Content-Type": "text/html"}, html.encode(), "127.0.0.1"
+
+    monkeypatch.setattr(remote_media, "_dial", dial)
+    attempted: list[object] = []
+    launched: list[object] = []
+    real_init = openload.Popen.__init__
+
+    def init(self, args, *pos, **kwargs):
+        attempted.append(args)
+        real_init(self, args, *pos, **kwargs)
+        launched.append(args)
+
+    monkeypatch.setattr(openload.Popen, "__init__", init)
+    configure(ctx, [("Iq", ["www.iq.com"])])
+    req = remote_request(project, "https://www.iq.com/play/synthetic-123", ["media_metadata"])
+    permit = issue(ctx, project, req, ["Iq"])
+    job = finish(ctx, req.model_copy(update={"access_grant_id": permit}))
+    assert dials
+    assert attempted and launched == []
+    assert job.state == "failed"
+    assert job.error["code"] == m.ErrorCode.UNSUPPORTED.value
+    assert job.error["message"] == "extractor requires an external process"
+    assert q(ctx, "SELECT COUNT(*) AS n FROM sources")[0]["n"] == 0
+    assert q(ctx, "SELECT COUNT(*) AS n FROM items")[0]["n"] == 0
+
+
+def test_cached_token_under_xdg_is_not_used(tmp_path, monkeypatch):
+    from yt_dlp.extractor.vimeo import VimeoBaseInfoExtractor, VimeoIE
+
+    cache = tmp_path / "cache" / "yt-dlp" / "vimeo"
+    cache.mkdir(parents=True)
+    (cache / "oauth-token-android.json").write_text(
+        json.dumps({"yt-dlp_version": "2026.08.19", "data": "SYNTHETIC_OTHER_ACCOUNT_TOKEN"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "cache"))
+    monkeypatch.setattr(VimeoBaseInfoExtractor, "_oauth_tokens", {})
+
+    def dial(*_args, **_kwargs):
+        pytest.fail("a cached token must not be sent")
+
+    ydl, _net = _open_with_dial(tmp_path, monkeypatch, dial, ie=VimeoIE)
+    try:
+        ie = ydl.get_info_extractor("Vimeo")
+        ie.initialize()
+        assert ydl.cache.enabled is False
+        assert ie._DEFAULT_CLIENT != "android"
+        assert "SYNTHETIC_OTHER_ACCOUNT_TOKEN" not in json.dumps(ie._oauth_tokens)
+        with pytest.raises(ExtractorError):
+            ie._fetch_oauth_token("android")
+        assert ydl.params["username"] is None
+        assert ydl.params["password"] is None
+        assert ydl.params["cookiefile"] is None
+    finally:
+        ydl.close()
+
+
+def test_each_input_uses_only_its_extractor_hosts(ctx, project, origin, resolver, monkeypatch):
+    class SecondFixtureIE(MetamuseFixtureIE):
+        _VALID_URL = r"https?://media\.fixture\.test(?::\d+)?/(?P<id>second)"
+
+        def _real_extract(self, url):
+            self._downloader.urlopen("https://cdn.fixture.test/from-second").read()
+            return {"id": "second", "title": "second", "url": url, "ext": "mp4"}
+
+    resolver.extra["cdn.fixture.test"] = ["127.0.0.1"]
+    hits = []
+
+    def dial(method, url, headers, body, checked, timeout, limit):
+        del method, url, headers, body, timeout, limit
+        hits.append(checked.hostname)
+        return 200, {}, b"ok", "127.0.0.1"
+
+    remote_media.register_test_extractor(SecondFixtureIE)
+    monkeypatch.setattr(remote_media, "_dial", dial)
+    original = MetamuseFixtureIE._real_extract
+
+    def first_extract(self, url):
+        self._downloader.urlopen("https://cdn.fixture.test/not-approved-for-first").read()
+        return {"id": "clip", "title": "clip", "url": url, "ext": "mp4"}
+
+    monkeypatch.setattr(MetamuseFixtureIE, "_real_extract", first_extract)
+    try:
+        configure(
+            ctx,
+            [
+                ("SecondFixture", ["media.fixture.test", "cdn.fixture.test"]),
+                ("MetamuseFixture", ["media.fixture.test"]),
+            ],
+        )
+        req = remote_request(project, url_for(origin, "clip"), ["media_metadata"])
+        req = req.model_copy(
+            update={
+                "inputs": [
+                    req.inputs[0],
+                    m.URLInput(kind="url", url=url_for(origin, "second")),
+                ]
+            }
+        )
+        permit = issue(ctx, project, req, ["MetamuseFixture", "SecondFixture"])
+        denied = finish(ctx, req.model_copy(update={"access_grant_id": permit}))
+        assert denied.state == "awaiting_user"
+        assert denied.error["code"] == m.ErrorCode.SCOPE_DENIED.value
+        assert hits == []
+        monkeypatch.setattr(MetamuseFixtureIE, "_real_extract", original)
+        alone = remote_request(project, url_for(origin, "second"), ["media_metadata"])
+        alone_permit = issue(ctx, project, alone, ["SecondFixture"])
+        allowed = finish(ctx, alone.model_copy(update={"access_grant_id": alone_permit}))
+        assert allowed.state == "succeeded"
+        assert hits == ["cdn.fixture.test"]
+    finally:
+        remote_media.unregister_test_extractor(SecondFixtureIE)
+
+
+def test_wall_clock_is_checked_before_every_dial(ctx, project, origin, monkeypatch):
+    now = datetime.fromisoformat(ctx.clock())
+    elapsed = [0]
+    calls = []
+    monkeypatch.setattr(
+        ctx.store, "clock", lambda: (now + timedelta(seconds=elapsed[0])).isoformat()
+    )
+
+    def extract(self, url):
+        for _ in range(5):
+            self._downloader.urlopen(url).read()
+        return {"id": "clip", "title": "t", "url": url, "ext": "mp4"}
+
+    def dial(method, url, headers, body, checked, timeout, limit):
+        del method, url, headers, body, checked, limit
+        calls.append((elapsed[0], timeout))
+        elapsed[0] += 1
+        return 200, {}, b"ok", "127.0.0.1"
+
+    monkeypatch.setattr(MetamuseFixtureIE, "_real_extract", extract)
+    monkeypatch.setattr(remote_media, "_dial", dial)
+    req, _permit = prepare(
+        ctx, project, origin, "clip", ["media_metadata"], limits={"wall_clock_seconds": 1}
+    )
+    job = finish(ctx, req)
+    assert len(calls) == 1 and calls[0][0] == 0
+    assert 0 < calls[0][1] <= 1
+    assert job.state == "failed"
+    assert job.error["code"] == m.ErrorCode.LIMIT_REACHED.value
+    assert job.error["message"] == "Job wall clock limit reached"
+    assert q(ctx, "SELECT COUNT(*) AS n FROM items")[0]["n"] == 0
+
+
+def test_multi_entry_playlist_is_refused_and_one_entry_is_unwrapped(ctx, project, origin):
+    port = origin.server_address[1]
+    entries = [info_dict(port, native) for native in ("first", "second", "third")]
+    origin.routes["playlist"] = {
+        "status": 200,
+        "body": dump(
+            {
+                "_type": "playlist",
+                "id": "playlist",
+                "title": "Synthetic playlist",
+                "entries": entries,
+                "playlist_count": 3,
+            }
+        ),
+    }
+    refused = finish(
+        ctx,
+        prepare(ctx, project, origin, "playlist", ["media_metadata"], limits={"max_items": 3})[0],
+    )
+    assert refused.state == "failed"
+    assert refused.error["code"] == m.ErrorCode.UNSUPPORTED.value
+    assert refused.error["next_action"] == "submit the individual media URL"
+    assert q(ctx, "SELECT native_id FROM items") == []
+    assert q(ctx, "SELECT native_id FROM sources") == []
+    origin.routes["single"] = {
+        "status": 200,
+        "body": dump(
+            {
+                "_type": "playlist",
+                "id": "single",
+                "title": "Synthetic playlist",
+                "entries": [info_dict(port, "only", title="Only clip")],
+                "playlist_count": 1,
+            }
+        ),
+    }
+    kept = finish(
+        ctx,
+        prepare(ctx, project, origin, "single", ["media_metadata"])[0].model_copy(
+            update={"request_key": "single-playlist"}
+        ),
+    )
+    assert kept.state == "succeeded"
+    assert kept.coverage_status == "scope_satisfied"
+    assert [row["native_id"] for row in q(ctx, "SELECT native_id FROM items")] == ["only"]
+
+
+def test_changed_subtitle_bytes_append_a_revision(ctx, project, origin):
+    first = finish(ctx, prepare(ctx, project, origin, "clip", ["media_metadata", "subtitles"])[0])
+    assert first.state == "succeeded"
+    revised = VTT.replace(b"synthetic cue", b"CORRECTED_CUE")
+    origin.subtitles[("clip", "provided")] = revised
+    second_req, _permit = prepare(ctx, project, origin, "clip", ["media_metadata", "subtitles"])
+    second = finish(ctx, second_req.model_copy(update={"request_key": "revised-subs"}))
+    assert second.state == "succeeded"
+    rows = q(
+        ctx,
+        "SELECT t.id, t.text, t.revision, s.use_basis FROM transcript_segments t "
+        "JOIN sources s ON t.source_id=s.id WHERE t.method='provided' ORDER BY t.revision",
+    )
+    assert [row["text"] for row in rows] == ["synthetic cue", "CORRECTED_CUE"]
+    assert [row["revision"] for row in rows] == [1, 2]
+    assert rows[0]["id"] == rows[1]["id"]
+    basis = json.loads(rows[0]["use_basis"])
+    new_sha = remote_media._subtitle_sha(revised.decode())
+    old_sha = remote_media._subtitle_sha(VTT.decode())
+    assert basis["file_sha256"] == new_sha
+    by_revision = {item["revision"]: item["file_sha256"] for item in basis["revisions"]}
+    assert by_revision[1] == old_sha
+    assert by_revision[2] == new_sha
+    assert (
+        q(ctx, "SELECT COUNT(*) AS n FROM sources WHERE native_id LIKE '%:subtitle:en:provided'")[
+            0
+        ]["n"]
+        == 1
+    )
+    ref = {"kind": "transcript_segment", "id": rows[0]["id"], "revision": 1}
+    packet = app.prepare_packet(
+        ctx, {"project_id": project, "selection": [ref], "request_key": "cue-packet"}
+    )
+    draft = app.save_draft(
+        ctx,
+        {
+            "project_id": project,
+            "text": "host",
+            "platform": "generic",
+            "facts_refs": [ref],
+            "request_key": "cue-draft",
+        },
+    )
+    assert packet.data["stale"] is True
+    assert draft.data["stale"] is True
+
+
+def test_resume_rejects_a_changed_upstream_identity(ctx, project, origin, monkeypatch):
+    req, permit = prepare(ctx, project, origin, "clip", ["media_metadata", "subtitles"])
+
+    def crash(step):
+        if (step.checkpoint or {}).get("phase") == "metadata":
+            raise SystemExit(7)
+
+    monkeypatch.setattr(remote_media, "_note", crash)
+    env = app.submit_collect(ctx, req)
+    with pytest.raises(SystemExit):
+        with jobs.Executor(ctx.store) as executor:
+            executor.run_once()
+    port = origin.server_address[1]
+    origin.routes["clip"] = {"status": 200, "body": dump(info_dict(port, "other"))}
+    origin.subtitles[("other", "provided")] = VTT.replace(b"synthetic cue", b"OTHER_VIDEO_CUE")
+    monkeypatch.setattr(remote_media, "_note", lambda step: None)
+    with jobs.Executor(ctx.store) as executor:
+        assert executor.run_once()
+    job = ctx.store.get(m.Job, env.data["job_id"])
+    assert job.state == "partial"
+    assert job.error is None
+    assert job.coverage_status == "partial"
+    assert job.stop_reason == "data_stale"
+    assert step_data(job)["code"] == m.ErrorCode.DATA_STALE.value
+    assert step_data(job)["rows"][0]["code"] == m.ErrorCode.DATA_STALE.value
+    assert q(ctx, "SELECT native_id FROM items")[0]["native_id"] == "clip"
+    assert q(ctx, "SELECT COUNT(*) AS n FROM item_revisions")[0]["n"] == 1
+    assert q(ctx, "SELECT COUNT(*) AS n FROM transcript_segments")[0]["n"] == 0
+    assert "OTHER_VIDEO_CUE" not in json.dumps(
+        [dict(row) for row in q(ctx, "SELECT text FROM transcript_segments")]
+    )
+    assert "/other/provided.vtt" not in paths(origin)
+    assert ctx.store.get(m.Permit, permit).used == 1
+
+
+def test_malformed_cue_keeps_the_track_incomplete(ctx, project, origin):
+    origin.subtitles[("clip", "provided")] = VTT + b"\n00:00:03.000 --> 00:00:02.000\nBAD_CUE\n"
+    job = finish(ctx, prepare(ctx, project, origin, "clip", ["media_metadata", "subtitles"])[0])
+    assert job.state == "partial"
+    assert "subtitles" in job.missing_fields
+    bases = [
+        json.loads(row["use_basis"])
+        for row in q(
+            ctx, "SELECT use_basis FROM sources WHERE native_id LIKE '%:subtitle:en:provided'"
+        )
+    ]
+    assert bases[0]["complete"] == 0
+    assert q(ctx, "SELECT text FROM transcript_segments WHERE method='provided'")[0]["text"] == (
+        "synthetic cue"
+    )
+    again_req, _permit = prepare(ctx, project, origin, "clip", ["media_metadata", "subtitles"])
+    again = finish(ctx, again_req.model_copy(update={"request_key": "bad-again"}))
+    assert again.state == "partial"
+    assert "subtitles" in again.missing_fields
+    provided = q(ctx, "SELECT text, revision FROM transcript_segments WHERE method='provided'")
+    assert len(provided) == 1
+    refreshed = json.loads(
+        q(ctx, "SELECT use_basis FROM sources WHERE native_id LIKE '%:subtitle:en:provided'")[0][
+            "use_basis"
+        ]
+    )
+    assert refreshed["complete"] == 0
+
+
+def test_changed_timestamp_is_observed_without_a_new_revision(ctx, project, origin):
+    first = finish(ctx, prepare(ctx, project, origin, "clip", ["media_metadata"])[0])
+    assert first.state == "succeeded"
+    old = q(ctx, "SELECT raw_time FROM item_revisions")[0]["raw_time"]
+    port = origin.server_address[1]
+    payload = info_dict(port, "clip")
+    payload["timestamp"] = 1700000099
+    origin.routes["clip"] = {"status": 200, "body": dump(payload)}
+    second_req, _permit = prepare(ctx, project, origin, "clip", ["media_metadata"])
+    second = finish(ctx, second_req.model_copy(update={"request_key": "time-change"}))
+    rows = q(ctx, "SELECT raw_time FROM item_revisions")
+    basis = json.loads(
+        q(ctx, "SELECT use_basis FROM sources WHERE native_id='clip'")[0]["use_basis"]
+    )
+    assert len(rows) == 1
+    assert rows[0]["raw_time"] == old == "1700000000"
+    assert basis["upstream_timestamp"] == "1700000099"
+    assert step_data(second)["rows"][0]["status"] == "unchanged"
+
+
+def test_fractional_timestamp_keeps_its_text(ctx, project, origin):
+    record = remote_media._normalize(
+        {"id": "clip", "title": "t", "timestamp": 1700000000.125},
+        "https://media.fixture.test/clip",
+        "Fixture",
+        10,
+    )
+    assert record["raw_time"] == "1700000000.125"
+    port = origin.server_address[1]
+    payload = info_dict(port, "clip")
+    payload["timestamp"] = 1700000000.125
+    origin.routes["fraction"] = {"status": 200, "body": dump(payload)}
+    job = finish(ctx, prepare(ctx, project, origin, "fraction", ["media_metadata"])[0])
+    assert job.state == "succeeded"
+    assert q(ctx, "SELECT raw_time FROM item_revisions")[0]["raw_time"] == "1700000000.125"
+
+
+def test_fabricated_title_is_stored_as_null(ctx, project, origin):
+    payload = info_dict(origin.server_address[1], "clip")
+    payload.pop("title")
+    origin.routes["clip"] = {"status": 200, "body": dump(payload)}
+    job = finish(ctx, prepare(ctx, project, origin, "clip", ["media_metadata"])[0])
+    row = q(ctx, "SELECT text, complete, missing_fields FROM item_revisions")[0]
+    assert job.state == "partial"
+    assert job.coverage_status == "partial"
+    assert "title" in job.missing_fields
+    assert row["text"] is None
+    assert row["complete"] == 0
+    assert json.loads(row["missing_fields"]) == ["title"]
+    assert row["text"] != "MetamuseFixture video #clip"
+    again_req, _permit = prepare(ctx, project, origin, "clip", ["media_metadata"])
+    again = finish(ctx, again_req.model_copy(update={"request_key": "title-again"}))
+    assert again.state == "partial"
+    assert q(ctx, "SELECT COUNT(*) AS n FROM item_revisions")[0]["n"] == 1
