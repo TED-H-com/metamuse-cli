@@ -81,6 +81,48 @@ def test_r6_proxy_byte_cutoff_closes_registered_sockets():
                 sock.close()
 
 
+def test_r6_byte_cutoff_closes_connecting_upstream(monkeypatch):
+    import socket
+    import threading
+
+    from test_facebook import _allow_loopback_sockets
+
+    from metamuse import _browser_egress, facebook
+
+    _allow_loopback_sockets(monkeypatch)
+    entered, release = threading.Event(), threading.Event()
+    candidates = []
+    target = socket.socket()
+    target.bind(("127.0.0.1", 0))
+    destination = target.getsockname()
+    connect = socket.socket.connect
+
+    def stalled(sock, address):
+        if address == destination:
+            candidates.append(sock)
+            entered.set()
+            release.wait(timeout=600)
+            raise OSError("synthetic interrupted connect")
+        return connect(sock, address)
+
+    monkeypatch.setattr(socket.socket, "connect", stalled)
+    guard = facebook.EgressGuard.for_fixture_test(
+        allowed_hosts=("allowed.test",), resolver=lambda _: ["127.0.0.1"]
+    )
+    proxy = _browser_egress.BrowserEgressProxy(guard, max_bytes=1, idle_timeout_s=300)
+    client = socket.create_connection(("127.0.0.1", proxy.port), timeout=300)
+    try:
+        client.sendall(f"CONNECT allowed.test:{destination[1]} HTTP/1.1\r\n\r\n".encode())
+        assert entered.wait(timeout=30)
+        assert not proxy._charge_bytes(2)
+        assert candidates[0].fileno() == -1
+    finally:
+        release.set()
+        proxy.close()
+        client.close()
+        target.close()
+
+
 @browser_deadline
 def test_r6_byte_limit_interrupts_policy_wait(tmp_path, monkeypatch):
     import threading

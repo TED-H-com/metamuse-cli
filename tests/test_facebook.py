@@ -1816,19 +1816,20 @@ def test_egress_proxy_refuses_connect_to_private_ip_without_dialing(
     _allow_loopback_sockets(monkeypatch)
     dial_attempts: list[Any] = []
     real_create_connection = socket.create_connection
+    real_socket_connect = socket.socket.connect
 
-    def spy_create_connection(address: Any, *args: Any, **kwargs: Any) -> socket.socket:
+    def spy_connect(sock: socket.socket, address: Any) -> None:
         # Record any upstream dial attempt made by BrowserEgressProxy
         if address != ("127.0.0.1", proxy.port):
             dial_attempts.append(address)
-        return real_create_connection(address, *args, **kwargs)
+        return real_socket_connect(sock, address)
 
     guard = facebook.EgressGuard(
         allowed_hosts=config.DEFAULT_FACEBOOK_ALLOWED_HOSTS,
         resolver=lambda _host: ["93.184.216.34"],
     )
     proxy = _browser_egress.BrowserEgressProxy(guard, idle_timeout_s=5.0)
-    monkeypatch.setattr(socket, "create_connection", spy_create_connection)
+    monkeypatch.setattr(socket.socket, "connect", spy_connect)
     try:
         with real_create_connection(("127.0.0.1", proxy.port), timeout=5.0) as client:
             client.sendall(b"CONNECT 10.1.2.3:443 HTTP/1.1\r\nHost: 10.1.2.3:443\r\n\r\n")
