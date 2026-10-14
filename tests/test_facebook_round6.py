@@ -27,6 +27,12 @@ def reset_seams():
         ('<head><meta data-fb-state="login_wall"></head>', False, "E_AUTH_REQUIRED"),
         ('<div hidden><form id="login_form"></form></div>', True, "E_AUTH_REQUIRED"),
         ('<form hidden id="checkpoint_Form"></form>', True, "E_CHECKPOINT_REQUIRED"),
+        ('<form id="login_form"></form><div data-fb-state="ready"></div>', True, "E_AUTH_REQUIRED"),
+        (
+            '<div hidden data-fb-state="ready" data-page-state="challenge"></div>',
+            True,
+            "E_CHECKPOINT_REQUIRED",
+        ),
     ],
     ids=[
         "meta-login",
@@ -35,6 +41,8 @@ def reset_seams():
         "head-only",
         "login-form",
         "checkpoint-form",
+        "later-ready-state",
+        "both-state-attributes",
     ],
 )
 def test_r6_barrier_markers_ignore_visibility(tmp_path, monkeypatch, marker, post, code):

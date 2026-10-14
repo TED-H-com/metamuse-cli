@@ -2872,15 +2872,25 @@ class _DOMExtractor(HTMLParser):
         attr_map = {k.lower(): (v or "") for k, v in attrs}
         tag = tag.lower()
         # Stop evidence is independent of rendering, including head/void elements.
-        fb_state = attr_map.get("data-fb-state") or attr_map.get("data-page-state")
-        if fb_state:
-            self.meta_state = fb_state.strip().lower()
+        states = [attr_map.get("data-fb-state"), attr_map.get("data-page-state")]
         if tag == "form" and (
             attr_map.get("id") == "login_form" or attr_map.get("data-testid") == "royal_login_form"
         ):
-            self.meta_state = self.meta_state or "login_wall"
+            states.append("login_wall")
         if attr_map.get("data-checkpoint") == "true" or attr_map.get("id") == "checkpoint_Form":
-            self.meta_state = self.meta_state or "checkpoint"
+            states.append("checkpoint")
+        # Match classification priority; later benign state cannot erase a stop.
+        priority = {
+            "rate_limited": 0,
+            "checkpoint": 1,
+            "challenge": 1,
+            "login_wall": 2,
+            "access_denied": 3,
+        }
+        for raw_state in states:
+            state = (raw_state or "").strip().lower()
+            if priority.get(state, 99) < priority.get(self.meta_state, 99):
+                self.meta_state = state
         # Structural JSON evidence is independent of rendered-body visibility.
         if (
             tag == "script"
