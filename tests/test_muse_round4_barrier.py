@@ -19,6 +19,11 @@ def test_r4_3_committed_barrier_has_safe_repair(ctx):
         )
         assert "whole workspace" in caught.value.detail.next_action
         assert "no restore is needed" in caught.value.detail.next_action
+    with pytest.raises(CoreError) as caught:
+        ctx.store.muse_record_confidential(snapshot)
+    assert caught.value.detail.message == "Muse confidentiality could not be recorded"
+    assert "whole workspace" in caught.value.detail.next_action
+    assert "no restore is needed" in caught.value.detail.next_action
     # Human maintenance, with Muse connections stopped. No reset or trust deletion.
     with ctx.store.transaction() as conn:
         conn.execute(

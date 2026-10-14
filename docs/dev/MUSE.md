@@ -229,7 +229,7 @@ After a mutation handoff, a read failure does not use safe-read retry guidance. 
 
 ## Schema
 
-B09 migration `005_muse_trust.sql` is amended in place for round 3, with no 006.
+B09 migration `005_muse_trust.sql` is amended in place for round 4, with no 006.
 Local account/VM tables retain frozen connection currentness; label-independent
 `muse_trust_observations` records authenticated owner hashes and normalized VM IDs.
 One fixed-upstream trust domain spans all provider/account labels. Its recursive closure
@@ -484,3 +484,5 @@ Round 4 hint scan walks the authenticated session object iteratively, once, to d
 Round 4 amends unreleased migration 005 again, with no 006: muse_trust_accounts now checks lower-case hexadecimal viewer/session hashes and normalized nonempty active VM ids, or NULL only with confidentiality set. The same constraints are verified on fresh v5, v4→v5 and confidential backup→restore. Noncanonical development v5 databases still fail schema verification.
 
 Round 4 provenance design: source and observed_at are frozen once an observation or label VM row has confidential_required=1, including later direct evidence. A direct hint/RV may stamp a prior cr=0 observation during its transition to 1; a standard freeze never restamps a cr=1 row. Inherited propagation retains the association’s prior provenance, rather than claiming direct CVM evidence. Existing immutable guards enforce this metadata rule; no first-cause column is needed because nothing overwrites confidential provenance.
+
+Unclassified operational I/O failures (including SQLite IOERR/CANTOPEN/PERM) identify workspace access, use user_action and never advise restore. ENOSPC/EROFS filesystem failures use the full-disk/read-only mapping. Restore guidance is reserved for integrity/schema validation failures. The final fixture measurement with the nested scanner was 0.575 s CPU and 1.642 s elapsed for 52,420 ids in exactly 1 MiB; the bulk domain lock held 1.529 s and the post-commit label check 0.005 s, with schema verification warmed.

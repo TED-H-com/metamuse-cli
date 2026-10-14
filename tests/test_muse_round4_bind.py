@@ -71,7 +71,7 @@ def test_r4_1_maximum_session_body_records_all_ids(tmp_path, monkeypatch):
     from contextlib import contextmanager
 
     from metamuse import store as store_module
-    from metamuse._muse_http import HttpResponse, SESSION_RESPONSE_MAX_BYTES
+    from metamuse._muse_http import SESSION_RESPONSE_MAX_BYTES, HttpResponse
     from metamuse.models import canonical_json
 
     store = Store(WorkspacePaths.resolve(tmp_path / "maximum"))

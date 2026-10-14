@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import hashlib
 import json
@@ -84,9 +85,13 @@ _MUSE_LISTENERS_LOCK = threading.Lock()
 
 
 _MUSE_STORAGE_ACTIONS = {
+    "Muse security state could not be accessed": (
+        "Check workspace availability and permissions before reconnecting"
+    ),
     "Muse security state has a committed propagation barrier": (
         "Stop Muse connections; in one maintenance transaction insert or retain the barrier, "
-        "rerun the owner/VM closure over the whole workspace, then remove the marker and commit; no restore is needed"
+        "rerun the owner/VM closure over the whole workspace, "
+        "then remove the marker and commit; no restore is needed"
     ),
     "Muse connection context changed": "Retry the connection with a fresh authenticated context",
     "Muse security state is unavailable or damaged": (
@@ -109,6 +114,21 @@ def _muse_storage_error(*, stale=False) -> m.CoreError:
 
 
 _MUSE_ENVIRONMENT = {
+    sqlite3.SQLITE_IOERR: (
+        "Muse security state could not be accessed",
+        "Check workspace availability and permissions before reconnecting",
+        "user_action",
+    ),
+    sqlite3.SQLITE_CANTOPEN: (
+        "Muse security state could not be accessed",
+        "Check workspace availability and permissions before reconnecting",
+        "user_action",
+    ),
+    sqlite3.SQLITE_PERM: (
+        "Muse security state could not be accessed",
+        "Check workspace availability and permissions before reconnecting",
+        "user_action",
+    ),
     sqlite3.SQLITE_BUSY: (
         "Muse security state is busy; retry",
         "Retry the connection after the workspace writer finishes",
@@ -136,8 +156,23 @@ def _muse_fixed_storage(exc):
     # Inspect error codes only: SQLite text can contain private SQL or filenames.
     cause = exc
     environment = None
+    integrity = (
+        exc.detail.code in (m.ErrorCode.PROTOCOL_MISMATCH, m.ErrorCode.REFERENCE_INVALID)
+        or exc.detail.message == "Canonical migration schema is unavailable"
+    )
     for _ in range(8):
         code = getattr(cause, "sqlite_errorcode", 0) & 0xFF
+        integrity = integrity or code in (
+            sqlite3.SQLITE_CORRUPT,
+            sqlite3.SQLITE_NOTADB,
+            sqlite3.SQLITE_SCHEMA,
+            sqlite3.SQLITE_CONSTRAINT,
+        )
+        os_reason = {errno.ENOSPC: sqlite3.SQLITE_FULL, errno.EROFS: sqlite3.SQLITE_READONLY}.get(
+            getattr(cause, "errno", None)
+        )
+        if os_reason is not None:
+            code = os_reason
         if code in _MUSE_ENVIRONMENT:
             environment = _MUSE_ENVIRONMENT[code]
             break
@@ -156,6 +191,9 @@ def _muse_fixed_storage(exc):
     if exc.detail.message == "Muse confidentiality could not be recorded":
         # Recording retains its honest failure message and a fixed environment action.
         permitted = {entry[1]: entry[2] for entry in _MUSE_ENVIRONMENT.values()}
+        permitted[
+            _MUSE_STORAGE_ACTIONS["Muse security state has a committed propagation barrier"]
+        ] = "never"
         action = exc.detail.next_action
         result = m.CoreError(
             m.ErrorCode.STORAGE,
@@ -172,7 +210,12 @@ def _muse_fixed_storage(exc):
             exc.detail.message,
             next_action=_MUSE_STORAGE_ACTIONS[exc.detail.message],
         )
-    return _muse_storage_error()
+    if integrity:
+        return _muse_storage_error()
+    message, action, retry = _MUSE_ENVIRONMENT[sqlite3.SQLITE_IOERR]
+    result = m.CoreError(m.ErrorCode.STORAGE, message, next_action=action)
+    result.detail.retry_class = retry
+    return result
 
 
 def _muse_safe(fn):
@@ -585,8 +628,10 @@ class Store:
                 if validated and exc.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
                 else _muse_fixed_storage(exc)
             )
-        except Exception:
-            failure = _muse_storage_error()
+        except Exception as exc:
+            unknown = m.CoreError(m.ErrorCode.STORAGE, "Muse storage access failed")
+            unknown.__cause__ = exc
+            failure = _muse_fixed_storage(unknown)
         if failure is not None:
             raise failure
 
@@ -949,7 +994,8 @@ class Store:
         existing = {
             row["vm_id"]: row
             for row in conn.execute(
-                "SELECT vm_id,confidential_required FROM muse_trust_observations WHERE viewer_hash=?",
+                "SELECT vm_id,confidential_required FROM muse_trust_observations "
+                "WHERE viewer_hash=?",
                 (viewer_hash,),
             )
         }
@@ -966,7 +1012,8 @@ class Store:
         if confidential:
             conn.executemany(
                 "UPDATE muse_trust_observations SET confidential_required=1, "
-                "source=?,observed_at=? WHERE viewer_hash=? AND vm_id=? AND confidential_required=0",
+                "source=?,observed_at=? WHERE viewer_hash=? AND vm_id=? "
+                "AND confidential_required=0",
                 (
                     (source, observed, viewer_hash, identity)
                     for identity in identities
@@ -1048,6 +1095,7 @@ class Store:
                 "Muse confidentiality could not be recorded",
                 next_action=fixed.detail.next_action
                 if fixed.detail.message in {item[0] for item in _MUSE_ENVIRONMENT.values()}
+                or fixed.detail.message == "Muse security state has a committed propagation barrier"
                 else _MUSE_STORAGE_ACTIONS["Muse confidentiality could not be recorded"],
             )
             failure.detail.retry_class = fixed.detail.retry_class

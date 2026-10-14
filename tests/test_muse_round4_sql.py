@@ -18,7 +18,8 @@ def test_r4_10_raw_edges_visible_only_to_recursive_view(ctx, edge):
         target = freeze(ctx.store, account="C", viewer_id="W", vm_id="y")
         with ctx.store.transaction() as conn:
             conn.execute(
-                "INSERT INTO muse_trust_observations VALUES (?, 'y',1,0,'authenticated_assignment','t')",
+                "INSERT INTO muse_trust_observations VALUES "
+                "(?, 'y',1,0,'authenticated_assignment','t')",
                 (h("V"),),
             )
             conn.execute("INSERT INTO muse_trust_propagating VALUES (1)")
@@ -32,11 +33,13 @@ def test_r4_10_raw_edges_visible_only_to_recursive_view(ctx, edge):
         target = freeze(ctx.store, account="C", viewer_id="W", vm_id="y")
         with ctx.store.transaction() as conn:
             conn.execute(
-                "INSERT INTO muse_trust_vms VALUES ('synthetic','A','y',1,0,'authenticated_assignment','t')"
+                "INSERT INTO muse_trust_vms VALUES "
+                "('synthetic','A','y',1,0,'authenticated_assignment','t')"
             )
             conn.execute("INSERT INTO muse_trust_propagating VALUES (1)")
             conn.execute(
-                "UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE account='A'"
+                "UPDATE muse_trust_accounts SET confidential_required=1,"
+                "generation=generation+1 WHERE account='A'"
             )
             conn.execute("DELETE FROM muse_trust_propagating")
     called = []
@@ -53,7 +56,8 @@ def test_r4_10_qb_transaction_effective_before_physical_flags(ctx):
     with ctx.store.transaction() as conn:
         conn.execute("INSERT INTO muse_trust_propagating VALUES (1)")
         conn.execute(
-            "UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE account='A'"
+            "UPDATE muse_trust_accounts SET confidential_required=1,"
+            "generation=generation+1 WHERE account='A'"
         )
         conn.execute("DELETE FROM muse_trust_propagating")
     snapshot = freeze(ctx.store, account="C", viewer_id="W", vm_id="y")
@@ -81,7 +85,8 @@ def test_r4_10_raw_insert_propagates_physical_flags(ctx, trigger):
                 (h("V"), h("s")),
             )
             conn.execute(
-                "INSERT INTO muse_trust_vms VALUES ('alias','A','x',1,0,'authenticated_assignment','t')"
+                "INSERT INTO muse_trust_vms VALUES "
+                "('alias','A','x',1,0,'authenticated_assignment','t')"
             )
             conn.execute(
                 "INSERT INTO muse_trust_vms VALUES ('alias','A','y',1,1,'noise_message_2','t')"
