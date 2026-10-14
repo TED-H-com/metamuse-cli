@@ -371,3 +371,34 @@ def test_finding_04_approved_wss_and_worker_wss_closed_before_handshake(tmp_path
             assert guard.summary()["aborted"] >= 2
         finally:
             session.close()
+
+
+@pytest.mark.parametrize(
+    "barrier,code",
+    [
+        ("login", "E_AUTH_REQUIRED"),
+        ("checkpoint", "E_CHECKPOINT_REQUIRED"),
+        ("challenge", "E_CHECKPOINT_REQUIRED"),
+    ],
+)
+def test_finding_05_encrypted_barrier_redirect_is_distinct(tmp_path, monkeypatch, barrier, code):
+    pages = {
+        "/synth.lab/posts/pfbid0101synth": (302, f"/{barrier}/"),
+        f"/{barrier}/": _synthetic_post_html(),
+    }
+    with browser_fixture(tmp_path, monkeypatch, pages) as env:
+        ctx, project, permit, _, _, _, _ = env
+        job_id = submit(ctx, project, permit)
+        job = finish(ctx, job_id)
+        assert job["error"]["code"] == code
+        assert job["state"] == "awaiting_user"
+        assert job["limits"]["safe_read_retries"] == 0
+        with ctx.store.connection() as conn:
+            assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 0
+    with pytest.raises(m.CoreError) as error:
+        facebook.classify_and_parse_observation(
+            observation(_synthetic_post_html(), f"https://www.facebook.com/{barrier}/"),
+            permalink=facebook.parse_post_permalink(URL),
+            require_comments_section=True,
+        )
+    assert error.value.detail.code.value == code

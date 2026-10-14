@@ -472,3 +472,7 @@ the extractor. Every body block checks the cheap deadline; durable scan guards a
 paced at 250 ms plus first/last. Changed subtitle bytes retire omitted cue indexes
 atomically, including changed zero-valid-cue replacements. Failed fetches and listing
 omissions do not imply removal. See COLLECT.md for bounds and measured costs.
+B13 classifies login URLs as E_AUTH_REQUIRED and checkpoint/challenge URLs as
+E_CHECKPOINT_REQUIRED from observed main-frame navigations and the final URL,
+before parsing any underlying post container. All browser barriers stop without
+retry; no synthetic DOM marker is needed for an encrypted redirect barrier.
