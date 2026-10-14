@@ -202,7 +202,7 @@ events只記必要去秘密狀態，完整來源和對話留私人store。診斷
 
 刪除先預覽影響→批准→刪內容／索引、撤銷未用grants、標記派生stale；別的source仍引用同asset時保留bytes。audit不保留被刪原文。SQLite WAL與備份可能仍含資料，說明保留與compaction，不保證鑑識抹除或遠端Muse清除。
 
-備份用SQLite一致backup加ready object manifest；在新workspace做FK/hash/schema檢查。migration維護鎖＋升級前備份；不能只複製live DB主檔或刪庫假成功。舊版程式遇新schema拒絕寫入。
+備份用SQLite一致backup加ready object及ready export manifests；每個export保留manifest與payload，驗bytes/hash並拒unexpected members；在新workspace做FK/hash/schema檢查。migration維護鎖＋升級前備份；不能只複製live DB主檔或刪庫假成功。舊版程式遇新schema拒絕寫入。
 
 ## 13. 驗收與決策
 
@@ -287,9 +287,9 @@ Automatic redaction is a guard, not a guarantee. A full media archive remains pe
 Manifest payload members have hashes/sizes; the manifest excludes its own hash and is
 verified against exact stored bytes. Ready state follows fsync and rename. No export
 publishes/uploads; handled failures clean owned artifacts and crashes may leave orphans.
-Core backups exclude export directories: missing restored artifacts return
-E_RESOURCE_UNAVAILABLE with recovery guidance, never a successful replay. Export archive
-support and orphan cleanup remain pending. Legacy search-marker files are no longer read
+Core backups include every ready export directory and manifest, verifying exact membership,
+manifest bytes and member hashes/sizes at backup and restore. Restored receipts replay the
+original artifact; missing/corrupt artifacts fail honestly. Orphan cleanup remains pending. Legacy search-marker files are no longer read
 or created; cleanup of files from older development builds remains an operator task.
 
 Schema-1 transcript visibility requires a current item/asset link in the requested

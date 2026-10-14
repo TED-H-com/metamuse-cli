@@ -693,6 +693,7 @@ class Store:
             _configure(snapshot)
             version = snapshot.execute("PRAGMA user_version").fetchone()[0]
             objects = []
+            exports = []
             if version:
                 for row in snapshot.execute("SELECT * FROM assets WHERE state='ready'"):
                     asset = self.decode(m.Asset, row)
@@ -703,7 +704,13 @@ class Store:
                     shutil.copyfile(path, copied)
                     copied.chmod(0o600)
                     objects.append({"sha256": asset.sha256, "actual_bytes": asset.actual_bytes})
-        manifest = {"schema_version": version, "objects": objects}
+                for row in snapshot.execute(
+                    "SELECT * FROM exports WHERE state='ready' ORDER BY id"
+                ):
+                    export = self.decode(m.Export, row)
+                    _copy_export(export, self.paths.root, destination)
+                    exports.append(_export_manifest_entry(export))
+        manifest = {"schema_version": version, "objects": objects, "exports": exports}
         file = destination / "manifest.json"
         file.write_bytes(m.canonical_json(manifest))
         file.chmod(0o600)
@@ -712,6 +719,10 @@ class Store:
     def backup(self, destination: Path) -> Path:
         with self.connection() as conn:
             return self._backup(conn, destination)
+
+    def verify_export(self, export: m.Export) -> Path:
+        """Verify ready artifact membership, exact manifest bytes and each size/hash."""
+        return _verify_export(export, self.paths.root)
 
     @classmethod
     def restore(cls, backup: Path, paths: WorkspacePaths) -> Store:
@@ -742,6 +753,10 @@ class Store:
             rows = conn.execute(
                 "SELECT sha256,actual_bytes,object_path FROM assets WHERE state='ready'"
             ).fetchall()
+            exports = [
+                cls.decode(m.Export, row)
+                for row in conn.execute("SELECT * FROM exports WHERE state='ready' ORDER BY id")
+            ]
         expected = {row["sha256"]: row["actual_bytes"] for row in rows}
         if expected != {obj["sha256"]: obj["actual_bytes"] for obj in manifest["objects"]}:
             raise m.CoreError(m.ErrorCode.STORAGE, "Backup manifest mismatch")
@@ -754,6 +769,17 @@ class Store:
             source = backup / relative
             if source.stat().st_size != row["actual_bytes"] or _hash_file(source) != sha:
                 raise m.CoreError(m.ErrorCode.STORAGE, "Restore object hash mismatch")
+        if manifest.get("exports", []) != [_export_manifest_entry(export) for export in exports]:
+            raise m.CoreError(m.ErrorCode.STORAGE, "Backup export manifest mismatch")
+        export_root = backup / "exports"
+        if export_root.exists() and (
+            export_root.is_symlink()
+            or not export_root.is_dir()
+            or {path.name for path in export_root.iterdir()} != {export.id for export in exports}
+        ):
+            raise m.CoreError(m.ErrorCode.STORAGE, "Backup contains unexpected export artifacts")
+        for export in exports:
+            _verify_export(export, backup)
         paths.initialize()
         shutil.copyfile(backup / "state.sqlite3", paths.database)
         paths.database.chmod(0o600)
@@ -762,10 +788,100 @@ class Store:
             private_dir((paths.root / relative).parent)
             shutil.copyfile(backup / relative, paths.root / relative)
             (paths.root / relative).chmod(0o600)
+        for export in exports:
+            _copy_export(export, backup, paths.root)
         store = cls(paths)
         with store.transaction() as conn:
             conn.execute("UPDATE worker_state SET owner_nonce=NULL,heartbeat=NULL")
         return store
+
+
+def _export_manifest_entry(export: m.Export) -> dict[str, Any]:
+    return {
+        "id": export.id,
+        "artifact": export.artifact,
+        "manifest_sha256": hashlib.sha256(m.canonical_json(export.manifest) + b"\n").hexdigest(),
+    }
+
+
+def _verify_export(export: m.Export, root: Path) -> Path:
+    if (
+        export.state != "ready"
+        or re.fullmatch(r"[A-Za-z0-9_-]{3,128}", export.id, flags=re.ASCII) is None
+        or export.artifact != f"exports/{export.id}"
+    ):
+        raise m.CoreError(m.ErrorCode.STORAGE, "Invalid stored export artifact")
+    directory = root / export.artifact
+    unavailable = m.CoreError(
+        m.ErrorCode.RESOURCE_UNAVAILABLE,
+        "Export artifact is unavailable or changed",
+        next_action="Restore a verified backup containing the artifact, or use a new request key",
+    )
+    try:
+        if directory.resolve() != directory or not directory.is_dir():
+            raise unavailable
+        manifest = export.manifest
+        if (
+            manifest["export_id"] != export.id
+            or manifest["format"] != export.format
+            or manifest["selection"] != [ref.model_dump(mode="json") for ref in export.selection]
+            or not isinstance(manifest["files"], list)
+        ):
+            raise ValueError
+        manifest_path = directory / "manifest.json"
+        expected_manifest = m.canonical_json(manifest) + b"\n"
+        if (
+            manifest_path.is_symlink()
+            or not manifest_path.is_file()
+            or manifest_path.stat().st_size != len(expected_manifest)
+            or manifest_path.read_bytes() != expected_manifest
+        ):
+            raise unavailable
+        names = {"manifest.json"}
+        for entry in manifest["files"]:
+            if (
+                not isinstance(entry, dict)
+                or set(entry) != {"name", "sha256", "bytes"}
+                or not isinstance(entry["name"], str)
+                or re.fullmatch(
+                    r"(?:records\.(?:csv|jsonl)|object-\d{4,}\.(?:txt|md))",
+                    entry["name"],
+                    flags=re.ASCII,
+                )
+                is None
+                or entry["name"] in names
+                or not isinstance(entry["sha256"], str)
+                or re.fullmatch(r"[0-9a-f]{64}", entry["sha256"], flags=re.ASCII) is None
+                or type(entry["bytes"]) is not int
+                or entry["bytes"] < 0
+            ):
+                raise ValueError
+            path = directory / entry["name"]
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or path.stat().st_size != entry["bytes"]
+                or _hash_file(path) != entry["sha256"]
+            ):
+                raise unavailable
+            names.add(entry["name"])
+        if {path.name for path in directory.iterdir()} != names:
+            raise unavailable
+        return directory
+    except OSError as exc:
+        raise unavailable from exc
+    except (ValueError, KeyError, TypeError) as exc:
+        raise m.CoreError(m.ErrorCode.STORAGE, "Invalid stored export manifest") from exc
+
+
+def _copy_export(export: m.Export, source_root: Path, target_root: Path) -> None:
+    source = _verify_export(export, source_root)
+    target = private_dir(target_root / export.artifact)
+    for name in ["manifest.json", *(entry["name"] for entry in export.manifest["files"])]:
+        shutil.copyfile(source / name, target / name)
+        (target / name).chmod(0o600)
+    # Detect changes between source verification and copying before declaring success.
+    _verify_export(export, target_root)
 
 
 def _hash_file(path: Path) -> str:
