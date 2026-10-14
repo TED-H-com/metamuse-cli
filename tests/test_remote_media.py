@@ -137,6 +137,17 @@ class FixtureHandler(BaseHTTPRequestHandler):
         if path.endswith("/media.wav"):
             self._send(200, self.server.media, "audio/wav")
             return
+        if path.endswith("/media-redirect"):
+            port = self.server.server_address[1]
+            self.send_response(302)
+            self.send_header("Location", f"http://media.fixture.test:{port}/jump/fat-body")
+            self.send_header("Content-Length", "0")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            return
+        if path.endswith("/fat-body"):
+            self._send(200, self.server.fat, "application/octet-stream")
+            return
         if path.endswith("/index.m3u8"):
             self._send(200, b"#EXTM3U\n", "application/vnd.apple.mpegurl")
             return
@@ -264,6 +275,7 @@ def origin():
     server = ThreadingHTTPServer(("127.0.0.1", 0), FixtureHandler)
     server.hits = []
     server.media = wav_bytes()
+    server.fat = b""
     server.subtitles = {}
     server.denied_subs = set()
     server.titles = {"clip": "Synthetic clip"}
@@ -312,11 +324,13 @@ def origin():
         server.server_close()
 
 
-def configure(ctx, approvals, *, live=True, timeout=2):
+def configure(ctx, approvals, *, live=True, timeout=2, media_max=None):
     text = app.DEFAULT_CONFIG
     if live:
         text = text.replace('network_mode = "offline"', 'network_mode = "live"', 1)
     text = text.replace("read_timeout_seconds = 30", f"read_timeout_seconds = {timeout}", 1)
+    if media_max is not None:
+        text = text.replace("media_max_bytes = 536870912", f"media_max_bytes = {media_max}", 1)
     lines = [text.rstrip("\n")]
     for extractor, hosts in approvals:
         lines.append("[[remote_media.approvals]]")
@@ -379,8 +393,14 @@ def url_for(origin, video, query=""):
     return f"http://media.fixture.test:{port}/{video}{suffix}"
 
 
-def prepare(ctx, project, origin, video, resources, *, approvals=None, limits=None, query=""):
-    configure(ctx, approvals or [("MetamuseFixture", ["media.fixture.test"])])
+def prepare(
+    ctx, project, origin, video, resources, *, approvals=None, limits=None, query="", media_max=None
+):
+    configure(
+        ctx,
+        approvals or [("MetamuseFixture", ["media.fixture.test"])],
+        media_max=media_max,
+    )
     req = remote_request(project, url_for(origin, video, query), resources, limits=limits)
     permit_id = issue(ctx, project, req, ["MetamuseFixture"])
     return req.model_copy(update={"access_grant_id": permit_id}), permit_id
@@ -907,6 +927,53 @@ def test_redirect_to_a_rebound_name_is_not_dialed(ctx, project, origin):
     assert job.error["code"] == m.ErrorCode.SCOPE_DENIED.value
     assert "/landed" not in paths(origin)
     assert paths(origin) == ["/rebind"]
+
+
+def test_redirected_media_keeps_the_media_byte_cap(ctx, project, origin):
+    port = origin.server_address[1]
+    fat = b"Q" * 200
+
+    def body() -> bytes:
+        payload = info_dict(port, "jump")
+        payload["formats"] = [
+            {
+                "url": f"http://media.fixture.test:{port}/jump/media-redirect",
+                "ext": "bin",
+                "protocol": "http",
+            }
+        ]
+        payload["subtitles"] = {}
+        payload["automatic_captions"] = {}
+        return dump(payload)
+
+    origin.routes["jump"] = {"status": 200, "body": body}
+    origin.fat = fat
+    req, _permit = prepare(
+        ctx,
+        project,
+        origin,
+        "jump",
+        ["media_metadata", "media_file"],
+        media_max=64,
+    )
+    job = finish(ctx, req)
+    assert job.state == "partial"
+    assert job.stop_reason == "limit_reached"
+    assert step_data(job)["code"] == m.ErrorCode.LIMIT_REACHED.value
+    assert step_data(job)["bytes_used"] == len(body())
+    assert paths(origin).count("/jump") == 1
+    assert paths(origin).count("/jump/media-redirect") == 1
+    assert paths(origin).count("/jump/fat-body") == 1
+    assert q(ctx, "SELECT COUNT(*) AS n FROM assets")[0]["n"] == 0
+    assert q(ctx, "SELECT COUNT(*) AS n FROM sources")[0]["n"] == 1
+    leftover = []
+    for directory in (ctx.paths.root / "staging", ctx.paths.root / "objects"):
+        if not directory.exists():
+            continue
+        for path in directory.rglob("*"):
+            if path.is_file():
+                leftover.append(path.read_bytes())
+    assert all(fat not in blob for blob in leftover)
 
 
 def test_oversize_response_is_limit_reached(ctx, project, origin):
