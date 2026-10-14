@@ -745,8 +745,9 @@ proxy does not resolve a different address between the browser check and its
 validated dial. Redirect destinations on new authorities get independent checks.
 
 
-A disconnected browser transport is not proof that a download or browser process
-is gone. Failed download cancellation and context/browser teardown therefore
+A disconnected browser transport is not proof that a route, download or browser
+process is gone. A failed route action is ignorable only with an observed request
+failure or a closed page observed while the browser remains connected. Failed download cancellation and context/browser teardown therefore
 fail closed even when CDP is disconnected; a page close exception may be ignored
 only when the page's closed event proves that target has already disappeared.
 
@@ -1669,8 +1670,9 @@ proxy does not resolve a different address between the browser check and its
 validated dial. Redirect destinations on new authorities get independent checks.
 
 
-A disconnected browser transport is not proof that a download or browser process
-is gone. Failed download cancellation and context/browser teardown therefore
+A disconnected browser transport is not proof that a route, download or browser
+process is gone. A failed route action is ignorable only with an observed request
+failure or a closed page observed while the browser remains connected. Failed download cancellation and context/browser teardown therefore
 fail closed even when CDP is disconnected; a page close exception may be ignored
 only when the page's closed event proves that target has already disappeared.
 

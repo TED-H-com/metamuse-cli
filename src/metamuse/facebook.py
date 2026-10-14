@@ -2247,7 +2247,11 @@ class _PlaywrightSession:
                 try:
                     await self._page._impl_obj.close()
                 except Exception:
-                    if not self._page.is_closed():
+                    try:
+                        gone = self._browser.is_connected() and self._page.is_closed()
+                    except Exception:
+                        gone = False
+                    if not gone:
                         self._guard_failed()
                 return
             await asyncio.sleep(0.05)
@@ -2272,7 +2276,9 @@ class _PlaywrightSession:
                 route.continue_()
         except Exception:
             try:
-                gone = self._page.is_closed() or route.request.failure is not None
+                gone = route.request.failure is not None or (
+                    self._browser.is_connected() and self._page.is_closed()
+                )
             except Exception:
                 gone = False
             if not gone:
