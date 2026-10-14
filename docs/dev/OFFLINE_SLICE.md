@@ -166,7 +166,7 @@ that packet previews, all exports, logs and envelopes contain neither marker nor
 The integration test repeats Muse → draft → all five exports through actual MCP stdio:
 
 ```bash
-pytest-disktmp uv run pytest -q tests/test_at042_slice.py tests/test_at042_evidence.py
+pytest-disktmp uv run pytest -q tests/test_at042_slice.py tests/test_at042_evidence.py tests/test_at042_review_fixes.py
 uv run metamuse --workspace /path/to/operator-offline-workspace --non-interactive mcp
 ```
 
@@ -175,8 +175,19 @@ The test starts that installed entry point using `mcp.client.stdio.stdio_client`
 `metamuse_muse_send`, `metamuse_muse_read`, `metamuse_muse_close_exchange`,
 `metamuse_draft_save`, `metamuse_draft_preview` and `metamuse_export` tools. Fixture
 operator grants and worker execution remain CLI operations. CLI replays MCP exports
-and compares read/preview results, excluding only per-request IDs. A negative test
-removes a derived bundle label and repairs its hashes; attribution verification still fails.
+and compares read/preview results, excluding only per-request IDs. The product verifier
+(`Store.verify_export`, implemented by `_verify_export`) resolves immutable citations
+from SQLite and checks bundle manifest attribution, JSONL records and Markdown source
+headers against it. The review regressions strip or alter labels and rebuild consistent
+hashes and manifest bytes; the product verifier still returns the fixed
+`E_RESOURCE_UNAVAILABLE` export error. CLI and MCP receipt replay use this verifier too.
+
+Known limitation: shared redaction currently misses a bare Muse session-cookie pair
+(`hatch_sess=` followed by synthetic marker text). Such text can leak into a bundle
+whose policy is `redacted`. The strict xfail in `tests/test_at042_review_fixes.py` pins
+that leak; B16a owns the shared redaction fix and must remove the xfail when it passes.
+The original journey tests a Cookie-header form, so its passing privacy check does not
+prove that the bare form is safe. Review input before sharing any generated bundle.
 
 B16 should measure per-step and total latency, 30-run p95 and peak RSS, import/search/
 resolver/export scaling, serialized bytes and disk growth, worker queue/lock wait, and
