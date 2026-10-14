@@ -679,6 +679,7 @@ def _gateway(step, discussion):
         provider=discussion.provider, account=discussion.account, auth_ref=discussion.auth_ref
     )
     return MuseTransport(
+        store=step.store,
         network_mode=policy.app.network_mode,
         auth_ref=discussion.auth_ref,
         credentials=BoundMuseCredentials(binding, getattr(step.executor, "secret_store", None)),

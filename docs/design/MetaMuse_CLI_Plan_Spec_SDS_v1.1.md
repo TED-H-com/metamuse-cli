@@ -557,8 +557,14 @@ Browser context一個控制者，原生登入／2FA由人類處理。人接手�
 2026-10-14 primary standard transport：authenticated session以GET /api/session?vm_state=live
 選唯一一致hatch_vm row，mint body用row endpoint_url及name；WSS query固定vm_id/auth_token/
 optional non-delegation notary_token/app_id=hatch-web/fresh request UUID4，Origin固定Muse。
-access/hatch token grammar分開；s0 opaque不改寫、不冒稱驗signature；delegation不支援。
-msg1帶fresh 32-byte challenge；bounded msg2先辨識valid RV並record confidential後拒絕。
+access/hatch token grammar分開；legacy hatch不含dot；s0 opaque不改寫、不冒稱驗signature。每個
+token/notary_token/notaryToken/noiseNotaryToken/endorsement alias先驗；case-insensitive delegation./
+endorsement.及malformed s0回protocol/never，不silent drop。
+payload/全部vms先normalize VM id、scan hatch_cvm/CVM_*/truthy cvm_required/cvmReplacementEnabled，
+即使unassigned/ambiguous/invalid也先record sticky，再stop；無VM id只record account。wire保留server
+exact id，與storage id只可差case/外側whitespace。msg1帶fresh 32-byte challenge；握手varint minimal
+uint64；RV field 1必須nonempty bytes。bounded authenticated msg2見canonical field-2/varint tag即先
+record permanent confidential，再拒絕malformed/unsupported state/fields/chip；無reset tool。
 只有strict NON_TEE subset（outer field 2，optional explicit platform=0，nested key/nonce各32 bytes）
 且key等於成熟Noise responder static、nonce等於本attempt challenge才可empty msg3/split。
 unknown/malformed/evidence/CVM、bad AEAD/low-order DH或不等式回E_PROTOCOL_MISMATCH（never）。
@@ -570,7 +576,11 @@ POST /api/hatch/vm/wake {vm_id,retry_count:0}後dial。upgrade 502/503/504在每
 {vm_id,retry_count:n,connect_attempt_id:UUID4}，delay=max(2s,min(0.2s×1.5^(n−1),8s))，最多20
 redials或240s，超界E_RESOURCE_UNAVAILABLE並請操作者VM尚未running、稍後再試。
 401/403→E_AUTH_REQUIRED；429→E_RATE_LIMITED；connect/DNS/TLS→E_NETWORK_TIMEOUT，guard refusal
-→E_SCOPE_REQUIRED。offline/fixture gateway不wake、不network；不call lease/reset/chip-selection/
+→E_SCOPE_REQUIRED。bootstrap只收200（spike§2/5）；wake 200（S1 Finding 3）或operator round-2
+contract的202/204（非本task LIVE observation）不要求JSON。session/wake 404/409/410 unavailable，
+其他unexpected 2xx/4xx protocol，只有401/403 auth。每次wake/dial/handshake前重查remaining budget；
+耗盡回resource unavailable、不傳nonpositive curl timeout、不send msg1。offline/fixture gateway
+不wake、不network；不call lease/reset/chip-selection/
 enrollment/recovery/fallback-notary/capability registration。upgrade URL/query/body不入exception/log。
 request選identity encoding；duplicate/unsupported response encoding拒絕，single consumer和完整性caps
 不變。握手／token失敗不改B10先前handoff的不明送達、不重送、不false failed_before_send。

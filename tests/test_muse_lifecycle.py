@@ -882,3 +882,47 @@ def test_live_baseline_refuses_unknown_history_before_any_send(fixture_ctx, proj
         _history_baseline(ctx.store, discussion.model_copy(update={"backend": "live"}))
     assert caught.value.detail.code == m.ErrorCode.EXTERNAL_STATE_UNKNOWN
     assert [route for route, _ in ctx.muse_gateway.calls] == ["session.start"]
+
+
+def test_r2_lifecycle_factory_wires_store_and_reaches_currentness(ctx, monkeypatch):
+    from types import SimpleNamespace
+
+    from test_muse_transport import PEER, Credentials, FakeHttp, Guard
+
+    from metamuse import _muse_lifecycle as lifecycle
+    from metamuse.models import CoreError, ErrorCode
+    from metamuse.muse import MuseTransport
+
+    policy = SimpleNamespace(
+        muse=SimpleNamespace(enabled=True), app=SimpleNamespace(network_mode="live")
+    )
+    monkeypatch.setattr(lifecycle, "load_config", lambda root: policy)
+    monkeypatch.setattr(lifecycle, "BoundMuseCredentials", lambda *args: Credentials())
+    monkeypatch.setattr(lifecycle, "MuseURLGuard", lambda *args: Guard(addresses=(PEER,)))
+    http = FakeHttp()
+
+    class Connector:
+        def connect(self, *args, **kwargs):
+            pytest.fail("currentness must stop before dial")
+
+    def transport_factory(**kwargs):
+        return MuseTransport(**kwargs, http=http, connector=Connector())
+
+    monkeypatch.setattr(lifecycle, "MuseTransport", transport_factory)
+    checks = []
+
+    def stop_at_currentness(snapshot):
+        checks.append(snapshot)
+        raise CoreError(ErrorCode.STORAGE, "synthetic stale context")
+
+    monkeypatch.setattr(ctx.store, "muse_assert_current", stop_at_currentness)
+    step = SimpleNamespace(store=ctx.store, executor=SimpleNamespace(muse_gateway=None))
+    discussion = SimpleNamespace(
+        backend="live", provider="synthetic", account="synthetic", auth_ref="auth_" + "a" * 32
+    )
+    transport = lifecycle._gateway(step, discussion)
+    assert transport._trust.store is ctx.store
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == ErrorCode.STORAGE
+    assert len(checks) == 1 and len(http.calls) == 2

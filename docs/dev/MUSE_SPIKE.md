@@ -306,6 +306,34 @@ OFFLINE/FIXTURE results establish implementation behavior only. AT-038 and AT-04
 unproven until the orchestrator's authorized full connect/read, exchange/echo/reply/follow-up
 and source-to-Muse-to-draft/export runs. Questions 1–8, 10–11 above remain LIVE questions.
 
+### 9.2 Independent-review corrections (2026-10-14)
+
+Round 2 supersedes §9.1's narrower persistence description without rewriting that history.
+Remote viewer hash and normalized VM identity join expectations across local labels.
+Migration 005 is amended before merge with inherited/propagated confidentiality and guards;
+owner-only hints are persistent even without a usable VM. Every authenticated session row
+is scanned before assignment/uniqueness checks, including CVM replacement indicators.
+Storage identity is trimmed/lowercased; the exact server ID is retained on the wire.
+
+A canonical field-2/varint tag identifies Noise-authenticated RV-shaped msg2; persist the
+permanent confidential tier before refusing even malformed/unsupported RV fields. All
+accepted handshake varints are minimal uint64 and RV attestation is nonempty bytes. Both
+standard equalities and mature Noise/TLS remain mandatory. No reset tool exists.
+
+All credential aliases are validated. Case-insensitive delegation/endorsement prefixes,
+malformed/oversized s0 and conflicting notary aliases refuse with protocol/never; legacy
+opaque tokens no longer admit dots. Nonpositive budgets stop before wake/dial/msg1. Only
+endpoint-specific success statuses are admitted: bootstrap 200 from the spike contract,
+wake 200 from S1, plus operator-authorized 202/204 (not LIVE observed here).
+
+Shared maintenance.lock ends at commit before msg3 I/O; provider/account trust locks remain.
+Confidential expectation precedes generation equality. Actual schema signatures are compared
+without replaying migrations at every check. Lifecycle Store wiring is now applied.
+Raw/encoded query/JSON aliases, embedded wakes, nonce encodings, request IDs and dataclass
+reprs are scrubbed. Regressions cover all five currentness boundaries, cross-process changes,
+SQL replacement/rowid/deletion, backup/restore and cross-label refusal; mutation evidence is
+recorded in the task report. OFFLINE/FIXTURE only; AT-038/AT-043 remain unproven LIVE.
+
 ## 10. Historical inputs for B09 (2026-10-13; current handshake/wake in §9.1)
 
 - Pin `noiseprotocol==0.3.1` and use `cryptography` only through it. Pattern `Noise_XX_25519_AESGCM_SHA256`, empty handshake payloads, `verify=True`, Chrome impersonation via `curl_cffi==0.16.3`. Do not add the `websockets` package for this gateway.

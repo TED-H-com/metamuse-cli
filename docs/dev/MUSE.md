@@ -95,15 +95,20 @@ An optional `clock() -> float` is the monotonic deadline. The default is `time.m
 
 ## Connection
 
-The lifecycle must pass `store=step.store` to `MuseTransport`, along with its existing
+The lifecycle passes `store=step.store` to `MuseTransport`, along with its existing
 bound credentials, guard and network policy. Direct adapters may instead inject the typed
 `StoreMuseTrust`; absence of authoritative persistence blocks with `E_STORAGE`.
 
 1. POST `/api/auth/check`: require usable access token, authenticated `ok=true`, current
    `viewer_id` and `session_binding_id`. Bind the viewer hash to configured provider/account.
-2. GET `/api/session?vm_state=live`: require `status=assigned`, exactly one matching row,
-   explicit `hatch_vm`, consistent VM ID/name/endpoint and known state. Reject replacement
-   context/provisioning pins. `hatch_cvm` or `CVM_*` records sticky confidentiality then stops, including authenticated selected CVM hints with contradictory metadata.
+2. GET `/api/session?vm_state=live`: normalize payload and every row VM ID before matching.
+   Scan the payload and all rows first: any `hatch_cvm`, `CVM_*`, truthy `cvm_required` or
+   `cvmReplacementEnabled` persists sticky confidentiality then stops, even if unassigned,
+   ambiguous or otherwise invalid. No usable VM ID records the owner/account expectation.
+   Only after that scan require assigned status, one matching `hatch_vm` row, consistent
+   VM ID/name/endpoint and known state, and reject replacement context/provisioning pins.
+   The storage ID and exact server ID on wake/WSS may differ only in case and surrounding
+   whitespace. Mint retains the row endpoint/name verbatim.
    `DISABLED`, `DELETING`, `ERROR` stop before wake. Missing/contradictory metadata fails closed.
 3. Freeze owner/session/active-selection generation in the private Store. The effective
    expectation is the OR of the local account/VM, every same-provider viewer hash and every
@@ -113,10 +118,14 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    Connect/retry cannot reselect a different VM. Storage corruption, missing backing state,
    unsupported provenance/version or failed CAS blocks with `E_STORAGE`, retry class `never`.
 4. Mint POST `/api/hatch/token` with exactly `{vmAddress: <row endpoint_url>, vmName: <row name>}`.
-   Access tokens retain the legacy bounded grammar. Hatch accepts a bounded legacy token or
+   Access tokens retain their separate bounded grammar. Hatch legacy tokens are single
+   opaque segments (`A-Z`, `a-z`, digits, `_~+/=-`; no dots), or accept
    `s0:<base64url>.<base64url>.<base64url>` verbatim. A present non-delegation notary must have
    six nonempty base64url segments after trimming; pass it unchanged. Missing/blank omits it.
-   Delegation and unsupported present credentials stop, rather than being silently dropped.
+   Every present `token`, `notary_token`, `notaryToken`, `noiseNotaryToken` and `endorsement`
+   is validated. Case-insensitive delegation./endorsement. prefixes and malformed/oversized
+   s0 envelopes stop with `E_PROTOCOL_MISMATCH` (`never`); aliases are never silently dropped.
+   Conflicting nonempty notary aliases also stop.
    No local signature/expiry verification is claimed. A first parseable positive finite
    `timeout:` restriction is only a cache hint: mint at most twice if within 60 seconds.
    Credentials are minted anew per connection, held only in memory for connection-lifetime redaction and never cached durably.
@@ -127,14 +136,20 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    `max(2s, min(0.2s × 1.5^(n−1), 8s))`. Stop after 20 redials or 240 seconds, whichever
    comes first, with `E_RESOURCE_UNAVAILABLE` and an operator action to retry later because
    the VM is not running yet. Each redial rechecks captured currentness and uses a fresh
-   request ID. Other failures do not enter this redial loop.
+   request ID. Remaining budget is checked immediately before each wake, dial and handshake,
+   including after guard/peer validation. Exhaustion never passes a nonpositive curl timeout
+   or sends msg1; it returns `E_RESOURCE_UNAVAILABLE` with an operator retry action.
+   Other failures do not enter this redial loop.
 6. Mature `Noise_XX_25519_AESGCM_SHA256`, empty prologue: fresh CSPRNG 32-byte challenge
    in msg1 bytes field 1. Msg2 must classify strictly as outer bytes field 2 (optional
    platform field 1/varint=0), containing exactly two nested bytes fields, key and nonce,
    each 32 bytes. Require key == mature-library responder static and nonce == this attempt's
    challenge. Duplicates, unknown fields/evidence, malformed/oversized input, bad AEAD,
-   low-order DH and mismatches stop with `E_PROTOCOL_MISMATCH`, `never`. Valid RV first
-   records confidential expectation and stops. CVM/unknown/delegation have no fallback.
+   low-order DH and mismatches stop with `E_PROTOCOL_MISMATCH`, `never`. All handshake
+   varints must be minimal uint64. Valid RV field 1 is nonempty bytes. A canonical outer
+   field-2/varint tag identifies RV even if its state, following fields or chip binding are
+   malformed/unsupported. Every such Noise-authenticated shape records permanent owner/VM
+   confidentiality before stopping; there is no reset tool. CVM/unknown/delegation have no fallback.
 7. Commit standard-observation provenance with generation CAS immediately before empty msg3,
    holding provider/per-account trust locks across commit and msg3 handoff. Release the shared
    maintenance lock after commit and before network handoff. Split only through the
@@ -156,21 +171,31 @@ A protocol error, an authentication failure, or a failed encrypted write poisons
 
 ## HTTP status
 
+Success status is endpoint-specific: auth/check, session and hatch/token accept exactly
+200 (spike §2/§5 bootstrap); wake accepts 200 (supplied S1 Finding 3), plus 202 and 204 as
+explicitly authorized in the round-2 operator contract. 202/204 indicate accepted/no-content
+activation, not a running VM. They were not observed LIVE by this task. Wake success needs
+no JSON body. Read/mint success still requires bounded valid JSON and its own field checks.
+
 | Status | Code | retry_class |
 |---|---|---|
-| 401, 403, other 4xx on the auth chain | `E_AUTH_REQUIRED` | `user_action` |
+| 401, 403 | `E_AUTH_REQUIRED` | `user_action` |
 | 429, integer `Retry-After` of 1 to 6 digits only | `E_RATE_LIMITED` | `safe_read` |
 | 3xx | `E_SCOPE_REQUIRED` | `user_action` |
 | HTTPS 5xx; WSS 5xx after its bounded redial (only 502/503/504 redial) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
-| 200 session JSON without `vm_id` | `E_RESOURCE_UNAVAILABLE` | `user_action` |
-| 200 with malformed JSON/assignment, unknown/CVM/delegation/crypto or key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
+| 404, 409, 410 on session or wake | `E_RESOURCE_UNAVAILABLE` | `user_action` |
+| Other unexpected 2xx/4xx or unsupported response shape | `E_PROTOCOL_MISMATCH` | `never` |
+| 200 unassigned session without confidential hints | `E_RESOURCE_UNAVAILABLE` | `user_action` |
+| CVM/RV/delegation/endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
 
 Upgrade 401/403 is `E_AUTH_REQUIRED`, 429 is `E_RATE_LIMITED`; DNS/connect/TLS failure
 is `E_NETWORK_TIMEOUT`, with `E_SCOPE_REQUIRED` when the guard refuses. Corrupt/stale trust
 or failed commit/CAS is `E_STORAGE` (`never`). The upgrade URL, query, response body and raw
 curl exception are never copied into any exception, envelope or log. Redaction covers
-notary aliases, raw/encoded s0 and delegation envelopes, nonce/proof material, connection
-attempt IDs and wake bodies, including unknown nested JSON keys and ephemeral known values.
+all nonce/proof/recovery/RV/notary/endorsement/wake/attempt aliases in snake, camel and hyphen
+forms, raw/encoded envelopes, embedded wake bodies and known values under unknown keys.
+Handshake nonce hex/base64/base64url and WSS request IDs are held per connection for scrubbing.
+Credential/binding/header/body dataclass reprs suppress those fields.
 The response body is not copied into these errors. Unavailable VM is not an auth failure. Provider and guard exceptions are replaced with a fixed message. The public error is raised outside the handler, so its chain does not carry the original text.
 
 ## Attempt evidence

@@ -23,12 +23,27 @@ _EXTRA_KEYS = frozenset(
         "endorsement",
     }
 )
-_QUERY = re.compile(
-    r"(?i)\b(auth_token|access_token|notary_token|connect_attempt_id|hatch_sess)=([^&\s\"']+)"
+# One alias grammar for query assignments and raw/truncated JSON. Compact keys
+# accept snake_case, camelCase and hyphenated forms without a second key list.
+_NAMES = "|".join(
+    "[-_]*".join(name) for name in sorted(_EXTRA_KEYS | {"authtoken", "accesstoken", "hatchsess"})
 )
-_JSON_SECRET = re.compile(
-    r'(?i)("(?:notary_token|notaryToken|noiseNotaryToken|connect_attempt_id|client_nonce|nonce|proof|recovery_key)"\s*:\s*)"(?:[^"\\]|\\.)*"'
-)
+_QUERY = re.compile(rf"(?i)\b({_NAMES})=([^&\s\"']+)")
+_JSON_SECRET = re.compile(rf'(?i)("(?:{_NAMES})"\s*:\s*)(?:"(?:[^"\\]|\\.)*"|[^,}}\s]+)')
+_WAKE_OBJECT = re.compile(r"\{[^{}]*\}")
+
+
+def _embedded_wake(match):
+    try:
+        document = json.loads(match[0])
+    except (ValueError, RecursionError):
+        return match[0]
+    if isinstance(document, dict) and {"vmid", "retrycount"} <= {
+        re.sub(r"[^a-z0-9]", "", key.lower()) for key in document
+    }:
+        return "[REDACTED]"
+    return match[0]
+
 
 _ENVELOPE = re.compile(r"(?i)\b(?:s0:|delegation\.|endorsement\.)[A-Za-z0-9_.~+/=-]+")
 _NOTARY = re.compile(r"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_-]+\.){5}[A-Za-z0-9_-]+(?![A-Za-z0-9_.-])")
@@ -52,13 +67,7 @@ def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
     for secret in known:
         if len(secret) >= 4:
             value = value.replace(secret, "redacted")
-    if '"retry_count"' in value and '"vm_id"' in value:
-        try:
-            document = json.loads(value)
-        except (ValueError, RecursionError):
-            document = None
-        if isinstance(document, dict) and "vm_id" in document and "retry_count" in document:
-            return "[REDACTED]"
+    value = _WAKE_OBJECT.sub(_embedded_wake, value)
     value = _JSON_SECRET.sub(lambda match: match[1] + '"redacted"', value)
     value = _QUERY.sub(lambda match: match[1] + "=redacted", value)
     value = _ENVELOPE.sub("redacted", value)

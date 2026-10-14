@@ -375,7 +375,9 @@ def test_hatch_malformed_tokens_never_wake_or_dial(token):
     )
     with pytest.raises(CoreError) as caught:
         transport.sessions_list()
-    assert caught.value.detail.code == ErrorCode.AUTH_REQUIRED
+    assert caught.value.detail.code == (
+        ErrorCode.PROTOCOL_MISMATCH if token.startswith("s0:") else ErrorCode.AUTH_REQUIRED
+    )
     assert len(http.calls) == 3 and not connector.urls
 
 
@@ -829,3 +831,429 @@ def test_missing_mature_responder_key_api_blocks_as_dependency(monkeypatch):
 def test_redaction_preserves_nonsecret_percent_encoded_source_text(text):
     assert sanitize_text(text) == text
     assert sanitize_document({"content": text}) == {"content": text}
+
+
+# Round-2 independent review probes, converted to permanent safety assertions.
+@pytest.mark.parametrize(
+    "payload",
+    [
+        assignment(vm_type="hatch_cvm", vm_state="CVM_RUNNING", vms=[]),
+        assignment(status="provisioning", vm_type="hatch_cvm", vm_state="CVM_PROVISIONING"),
+        assignment(cvm_required=True),
+        assignment(cvmReplacementEnabled=True),
+        assignment(vms=[assignment(), assignment(vm_id=" VM1 ", vm_type="hatch_cvm")]),
+        assignment(vms=[assignment(vm_id="other", vm_type="hatch_cvm")]),
+        {"status": "unavailable", "vm_id": None, "cvm_required": True},
+    ],
+)
+def test_r2_f2_any_authenticated_cvm_hint_persists_before_selection(payload):
+    http = FakeHttp({"/api/session": response(payload)})
+    connector = Connecting()
+    transport, _, _, _ = build(handler=ok_frames([]), http=http, connector=connector)
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    with transport._trust.store.connection() as conn:
+        assert (
+            conn.execute("SELECT confidential_required FROM muse_trust_accounts").fetchone()[0] == 1
+        )
+    http.responses["/api/session"] = response(assignment())
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    assert not connector.urls
+    assert len(http.calls) == 4  # auth/session twice; no mint/wake
+
+
+@pytest.mark.parametrize(
+    "key", ["token", "notary_token", "notaryToken", "noiseNotaryToken", "endorsement"]
+)
+@pytest.mark.parametrize(
+    "value",
+    [
+        "delegation.aa.bb.cc.dd.ee",
+        "Delegation.aa.bb.cc.dd.ee",
+        "endorsement.aa.bb.cc.dd.ee",
+        "Endorsement.aa.bb.cc.dd.ee",
+        "s0:malformed",
+    ],
+)
+def test_r2_f3_every_credential_field_refuses_unsupported_shapes(key, value):
+    connector = Connecting()
+    transport, http, _, _ = build(
+        handler=ok_frames([]),
+        connector=connector,
+        http=FakeHttp({"/api/hatch/token": response({"token": "synthetic", key: value})}),
+    )
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    assert exc.value.detail.retry_class == "never"
+    assert not connector.urls
+    assert not any("/wake" in call["url"] for call in http.calls)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        b"\x88\x00\x00" + standard(),
+        b"\x08\x80\x00" + standard(),
+        b"\x92\x00\x44" + bf(1, b"k" * 32) + bf(2, b"n" * 32),
+        b"\x12\xc4\x00" + bf(1, b"k" * 32) + bf(2, b"n" * 32),
+        bf(2, b"\x8a\x00\x20" + b"k" * 32 + bf(2, b"n" * 32)),
+        b"\x08" + b"\x80" * 9 + b"\x02" + standard(),
+        bf(1, b"") + vf(2, 1) + bf(3, b"n" * 32),
+    ],
+)
+def test_r2_f4_handshake_varints_are_minimal_uint64_and_rv_attestation_nonempty(payload):
+    with pytest.raises(ProtocolMismatch):
+        classify_payload(payload)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        rv(3),
+        rv(1, bf(1, b"only-one-chip-field")),
+        bf(1, b"") + vf(2, 1),
+        vf(2, 1) + b"\x1a\x80",
+        rv() + bf(2, b"ambiguous"),
+    ],
+)
+def test_r2_f4_malformed_rv_shape_is_permanent_confidentiality(payload):
+    connector = Connecting(transform=lambda key, nonce: payload)
+    transport, _, _, _ = build(handler=ok_frames([]), connector=connector)
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    assert len(connector.peers[0].sent) == 1
+    with transport._trust.store.connection() as conn:
+        assert (
+            conn.execute("SELECT confidential_required FROM muse_trust_accounts").fetchone()[0] == 1
+        )
+        assert conn.execute("SELECT confidential_required FROM muse_trust_vms").fetchone()[0] == 1
+    connector.kwargs.clear()
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    assert len(connector.peers) == 1
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "nonce",
+        "client_nonce",
+        "proof",
+        "recovery_key",
+        "rv_key",
+        "endorsement",
+        "notaryToken",
+        "noiseNotaryToken",
+        "connectAttemptId",
+        "connect_attempt_id",
+        "wakeBody",
+        "handshake",
+    ],
+)
+@pytest.mark.parametrize("shape", ["query", "json"])
+def test_r2_f5_query_and_raw_json_aliases_scrub(key, shape):
+    sentinel = "synthetic-value-for-review-42"
+    value = (
+        f"wss://example.invalid/?{key}={sentinel}"
+        if shape == "query"
+        else f'prefix {{"{key}": "{sentinel}"'
+    )
+    assert sentinel not in sanitize_text(value)
+    assert sentinel not in sanitize_text(quote(value, safe=""))
+
+
+def test_r2_f5_embedded_wake_body_scrubbed():
+    sentinel = "synthetic-vm-review-42"
+    assert sentinel not in sanitize_text(
+        f'prefix POST wake {{"vm_id":"{sentinel}","retry_count":0}} suffix'
+    )
+
+
+def test_r2_f5_dataclass_reprs_hide_binding_headers_and_body():
+    from dataclasses import is_dataclass
+
+    from metamuse._muse_adapters import BoundMuseCredentials
+    from metamuse._muse_codec import ApplicationRequest, BodyChunk, NoiseTransportFrame, Reset
+    from metamuse._muse_http import HttpResponse
+    from metamuse.models import MuseBinding
+
+    sentinel = "synthetic-review-secret-42"
+    samples = [
+        HttpResponse(200, sentinel.encode(), {"Set-Cookie": sentinel}, PEER),
+        BoundMuseCredentials(
+            MuseBinding(provider="synthetic", account="account", auth_ref="auth_" + "a" * 32)
+        ),
+        Header("Cookie", sentinel),
+        ApplicationRequest("POST", "/safe", [Header("Cookie", sentinel)], sentinel.encode()),
+        ApplicationResponse(200, [Header("X", sentinel)], sentinel.encode()),
+        BodyChunk(sentinel.encode()),
+        Reset(1, sentinel),
+        NoiseTransportFrame(1, 0, 1, sentinel.encode()),
+        mutation("session.start", {"title": sentinel}),
+    ]
+    for sample in samples:
+        assert is_dataclass(sample)
+        assert sentinel not in repr(sample)
+        assert "auth_" + "a" * 32 not in repr(sample)
+
+
+def test_r2_f5_connection_remembers_nonce_encodings_and_request_id():
+    class EchoPeer(Responder):
+        def send(self, data):
+            if len(self.sent) < 2:
+                return super().send(data)
+            self.sent.append(data)
+            _, frame = decode_client_frame(self.party.decrypt(data))
+            values = [
+                self.nonce.hex(),
+                base64.b64encode(self.nonce).decode(),
+                base64.urlsafe_b64encode(self.nonce).decode(),
+                base64.urlsafe_b64encode(self.nonce).decode().rstrip("="),
+                self.request_id,
+            ]
+            self.values = values
+            self.incoming.append(
+                self.party.encrypt(
+                    encode_server_frame(
+                        ServiceFrame(
+                            frame.stream_id,
+                            "response",
+                            response=ApplicationResponse(
+                                200, [], canonical_json({"unknown": values}), True
+                            ),
+                        )
+                    )
+                )
+            )
+
+    class EchoConnecting(Connecting):
+        def connect(self, url, *, checked, timeout):
+            self.urls.append(url)
+            peer = EchoPeer()
+            peer.request_id = parse_qs(urlsplit(url).query)["request_id"][0]
+            self.peers.append(peer)
+            return peer
+
+    connector = EchoConnecting()
+    transport, _, _, _ = build(handler=ok_frames([]), connector=connector)
+    with transport:
+        for _ in range(2):
+            result = transport.sessions_list()
+            for value in connector.peers[0].values:
+                assert value.encode() not in result.body
+
+
+@pytest.mark.parametrize("phase", ["wake", "dial", "handshake"])
+def test_r2_f6_deadline_exhaustion_never_reaches_next_io(phase):
+    from test_muse_transport import Guard
+
+    now = [0.0]
+
+    class ExpiringGuard(Guard):
+        def check(self, url, *, purpose):
+            checked = super().check(url, purpose=purpose)
+            if (phase == "wake" and purpose == "hatch.wake") or (
+                phase == "dial" and purpose == "wss.noise"
+            ):
+                now[0] += 250
+            return checked
+
+        def verify_peer(self, checked, peer_address):
+            super().verify_peer(checked, peer_address)
+            if phase == "handshake" and checked.url.startswith("wss://"):
+                now[0] += 250
+
+    connector = Connecting()
+    transport, http, _, _ = build(
+        handler=ok_frames([]), guard=ExpiringGuard(), connector=connector, clock=lambda: now[0]
+    )
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == ErrorCode.RESOURCE_UNAVAILABLE
+    assert all(call["timeout"] > 0 for call in http.calls)
+    if phase == "wake":
+        assert not any("/wake" in call["url"] for call in http.calls)
+    if phase != "handshake":
+        assert not connector.urls
+    else:
+        assert not connector.peers[0].sent
+
+
+@pytest.mark.parametrize("status", [202, 204])
+def test_r2_f6_wake_accepts_authorized_success_statuses(status):
+    transport, _, _, _ = build(
+        handler=ok_frames([]),
+        connector=Connecting(),
+        http=FakeHttp({"/api/hatch/vm/wake": response({}, status)}),
+    )
+    with transport:
+        assert transport.sessions_list().status == 200
+
+
+@pytest.mark.parametrize(
+    "path,status,code",
+    [
+        ("/api/session", 404, ErrorCode.RESOURCE_UNAVAILABLE),
+        ("/api/session", 409, ErrorCode.RESOURCE_UNAVAILABLE),
+        ("/api/session", 410, ErrorCode.RESOURCE_UNAVAILABLE),
+        ("/api/hatch/vm/wake", 409, ErrorCode.RESOURCE_UNAVAILABLE),
+        ("/api/hatch/token", 202, ErrorCode.PROTOCOL_MISMATCH),
+        ("/api/auth/check", 204, ErrorCode.PROTOCOL_MISMATCH),
+        ("/api/session", 408, ErrorCode.PROTOCOL_MISMATCH),
+    ],
+)
+def test_r2_f6_unexpected_http_status_is_not_auth(path, status, code):
+    transport, _, _, _ = build(handler=ok_frames([]), http=FakeHttp({path: response({}, status)}))
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == code
+
+
+def _r2_external_session_change(store):
+    import sqlite3
+
+    with sqlite3.connect(store.paths.database) as conn:
+        conn.execute(
+            "UPDATE muse_trust_accounts SET session_hash=?, generation=generation+1", ("a" * 64,)
+        )
+
+
+@pytest.mark.parametrize("phase", ["before_mint", "before_dial", "before_retry_wake", "before_app"])
+def test_r2_f8_each_new_connection_currentness_check_stops_next_effect(phase, monkeypatch):
+    connector = Connecting()
+    transport, http, _, _ = build(
+        handler=ok_frames([]), connector=connector, sleep=lambda value: None
+    )
+    store = transport._trust.store
+    if phase == "before_mint":
+        original = store.muse_freeze
+
+        def freeze_then_change(**kwargs):
+            snap = original(**kwargs)
+            _r2_external_session_change(store)
+            return snap
+
+        monkeypatch.setattr(store, "muse_freeze", freeze_then_change)
+    elif phase == "before_dial":
+        original = http.request
+
+        def wake_then_change(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if "/wake" in args[1]:
+                _r2_external_session_change(store)
+            return result
+
+        monkeypatch.setattr(http, "request", wake_then_change)
+    elif phase == "before_retry_wake":
+
+        def fail_then_change(*args, **kwargs):
+            _r2_external_session_change(store)
+            raise UpgradeFailure(503)
+
+        monkeypatch.setattr(connector, "connect", fail_then_change)
+    else:
+        original = store.muse_watch
+
+        def watch_then_change(*args):
+            original(*args)
+            _r2_external_session_change(store)
+
+        monkeypatch.setattr(store, "muse_watch", watch_then_change)
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == ErrorCode.STORAGE
+    wakes = [call for call in http.calls if "/wake" in call["url"]]
+    if phase == "before_mint":
+        assert len(http.calls) == 2 and not connector.urls
+    elif phase == "before_dial":
+        assert not connector.urls
+    elif phase == "before_retry_wake":
+        assert len(wakes) == 1
+    else:
+        assert not connector.peers[0].frames and connector.peers[0].closed
+
+
+def test_r2_f8_connected_cross_process_staleness_stops_before_app_frame():
+    connector = Connecting()
+    transport, _, _, _ = build(handler=ok_frames([]), connector=connector)
+    with transport:
+        transport.sessions_list()
+        peer = connector.peers[0]
+        _r2_external_session_change(transport._trust.store)
+        assert not transport._trust_invalidated
+        with pytest.raises(CoreError) as exc:
+            transport.sessions_list()
+        assert exc.value.detail.code == ErrorCode.STORAGE
+        assert len(peer.frames) == 1 and peer.closed
+
+
+def test_r2_f2_wire_id_exact_and_storage_id_normalized():
+    http = FakeHttp({"/api/session": response(assignment(vm_id=" VM1 ", vm_name="VM1"))})
+    connector = Connecting()
+    transport, _, _, _ = build(handler=ok_frames([]), http=http, connector=connector)
+    with transport:
+        assert transport.sessions_list().status == 200
+        assert transport._snapshot.vm_id == "vm1"
+    assert parse_qs(urlsplit(connector.urls[0]).query)["vm_id"] == [" VM1 "]
+    wake = next(json.loads(call["body"]) for call in http.calls if "/wake" in call["url"])
+    assert wake["vm_id"] == " VM1 "
+    mint = next(json.loads(call["body"]) for call in http.calls if "/token" in call["url"])
+    assert mint == {"vmAddress": "wss://vm1.metaaivm.com/", "vmName": "VM1"}
+
+
+@pytest.mark.parametrize("timeout", [0.0, -1.0])
+def test_r2_f6_handshake_deadline_checked_before_msg1(timeout):
+    from metamuse._muse_link import IncompleteBody, ScriptedLink
+    from metamuse._muse_noise import handshake_standard
+
+    link = ScriptedLink()
+    with pytest.raises(IncompleteBody):
+        handshake_standard(
+            NoiseParty("initiator"),
+            link,
+            timeout=timeout,
+            clock=lambda: 0.0,
+            confidential=lambda: pytest.fail("confidential"),
+            standard_handoff=lambda fn: pytest.fail("handoff"),
+        )
+    assert not link.sent
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "client-nonce",
+        "clientNonce",
+        "recovery-key",
+        "recoveryKey",
+        "rv-key",
+        "rvKey",
+        "noise-notary-token",
+        "connect-attempt-id",
+    ],
+)
+def test_r2_f5_all_key_styles_scrub(key):
+    sentinel = "synthetic-review-secret-42"
+    for value in (f"{key}={sentinel}", f'prefix {{"{key}":"{sentinel}"}}'):
+        assert sentinel not in sanitize_text(value)
+
+
+@pytest.mark.parametrize(
+    "key", ["token", "notary_token", "notaryToken", "noiseNotaryToken", "endorsement"]
+)
+def test_r2_f3_oversized_s0_is_protocol_never(key):
+    token = "s0:" + "a" * 4096 + ".b.c"
+    transport, _, _, _ = build(
+        handler=ok_frames([]),
+        http=FakeHttp({"/api/hatch/token": response({"token": "synthetic", key: token})}),
+    )
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    assert exc.value.detail.retry_class == "never"

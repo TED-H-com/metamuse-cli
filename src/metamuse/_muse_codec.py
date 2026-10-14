@@ -128,36 +128,36 @@ class IncompleteBody(CoreError):
 @dataclass
 class Header:
     key: str
-    value: str
+    value: str = field(repr=False)
 
 
 @dataclass
 class ApplicationRequest:
     verb: str
-    path: str
-    headers: list[Header] = field(default_factory=list)
-    body: bytes = b""
+    path: str = field(repr=False)
+    headers: list[Header] = field(default_factory=list, repr=False)
+    body: bytes = field(default=b"", repr=False)
     end_body: bool = True
 
 
 @dataclass
 class ApplicationResponse:
     status: int
-    headers: list[Header] = field(default_factory=list)
-    body: bytes = b""
+    headers: list[Header] = field(default_factory=list, repr=False)
+    body: bytes = field(default=b"", repr=False)
     end_body: bool = False
 
 
 @dataclass
 class BodyChunk:
-    data: bytes = b""
+    data: bytes = field(default=b"", repr=False)
     end_body: bool = False
 
 
 @dataclass
 class Reset:
     code: int = 0
-    reason: str = ""
+    reason: str = field(default="", repr=False)
 
 
 @dataclass
@@ -175,7 +175,7 @@ class NoiseTransportFrame:
     chunk_id: int
     chunk_index: int
     total_chunks: int
-    payload: bytes
+    payload: bytes = field(repr=False)
 
 
 _INT64_MAX = (1 << 63) - 1
@@ -212,7 +212,7 @@ def _decode_varint(buf: bytes, index: int) -> tuple[int, int]:
             raise ProtocolMismatch("varint out of range")
         value |= (byte & 0x7F) << shift
         if byte < 0x80:
-            if value >= 1 << 64:
+            if (shift > 0 and byte == 0) or value >= 1 << 64:
                 raise ProtocolMismatch("varint out of range")
             return value, index
         shift += 7

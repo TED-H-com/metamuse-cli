@@ -24,7 +24,7 @@ def _unique_object(pairs):
 
 @dataclass(frozen=True)
 class BoundMuseCredentials:
-    binding: m.MuseBinding
+    binding: m.MuseBinding = field(repr=False)
     secret_store: Any = field(default=None, repr=False)
 
     def cookies(self, auth_ref: str) -> str:

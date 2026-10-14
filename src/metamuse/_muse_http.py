@@ -20,7 +20,7 @@ import ipaddress
 import select
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from metamuse._muse_link import ByteLink, SendUncertain
@@ -37,8 +37,8 @@ _WS_PIECE_MAX = 64
 @dataclass(frozen=True)
 class HttpResponse:
     status: int
-    body: bytes
-    headers: Mapping[str, str]
+    body: bytes = field(repr=False)
+    headers: Mapping[str, str] = field(repr=False)
     peer: str
 
 

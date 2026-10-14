@@ -28,7 +28,7 @@ import time
 import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -148,6 +148,9 @@ _QUESTION_KEYS = ("question", "text")
 _PACKET_KEYS = ("packet_text", "rendered_text")
 
 _VM_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+# Legacy opaque alphabet: MUSE_SPIKE §2 / REPORT-2 §6.2; S1 uses s0 JWS,
+# not a dotted legacy credential. Access grammar is kept separate.
+_HATCH_LEGACY = re.compile(r"^[A-Za-z0-9_~+/=-]{1,4096}$")
 _TOKEN = re.compile(r"^[A-Za-z0-9._~+/=-]{1,4096}$")
 _MARKER = re.compile(r"^[A-Za-z0-9._~-]{1,128}$")
 _HTTP_TIMEOUT_S = 20.0
@@ -170,8 +173,6 @@ _REPLACEMENT_KEYS = (
     "replacement_context",
     "replacement",
     "provisioning_pins",
-    "cvm_required",
-    "cvmReplacementEnabled",
 )
 _CONNECT_MAX_REDIALS = 20
 _CONNECT_MAX_SECONDS = 240.0
@@ -427,9 +428,9 @@ class PreparedMuseRequest:
     verb: str
     path: str
     marker: str
-    body: bytes
-    target: Mapping[str, Any]
-    payload: Mapping[str, Any]
+    body: bytes = field(repr=False)
+    target: Mapping[str, Any] = field(repr=False)
+    payload: Mapping[str, Any] = field(repr=False)
 
     def __post_init__(self) -> None:
         spec = ROUTES.get(self.route)
@@ -744,15 +745,29 @@ def _wss_url(vm_id: str, token: str, notary: str | None = None) -> str:
     return HATCH_WSS_BASE + "?" + urllib.parse.urlencode(query)
 
 
+def _credential_shape(value: Any) -> None:
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if trimmed.lower().startswith(("delegation.", "endorsement.")):
+            raise protocol_stop()
+        if trimmed.lower().startswith("s0:") and (
+            len(value) > 4096
+            or re.fullmatch(r"s0:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", value) is None
+        ):
+            raise protocol_stop()
+
+
 def _hatch_token(value: Any) -> bool:
+    _credential_shape(value)
     if not isinstance(value, str) or len(value) > 4096:
         return False
     if value.startswith("s0:"):
         return re.fullmatch(r"s0:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", value) is not None
-    return _TOKEN.fullmatch(value) is not None
+    return _HATCH_LEGACY.fullmatch(value) is not None
 
 
 def _notary_token(value: Any) -> str | None:
+    _credential_shape(value)
     if value is None:
         return None
     if (
@@ -765,7 +780,7 @@ def _notary_token(value: Any) -> str | None:
     if not value:
         return None
     if (
-        value.startswith("delegation.")
+        value.lower().startswith(("delegation.", "endorsement.", "s0:"))
         or re.fullmatch(r"(?:[A-Za-z0-9_-]+\.){5}[A-Za-z0-9_-]+", value) is None
     ):
         raise protocol_stop()
@@ -1203,6 +1218,7 @@ class MuseTransport:
         purpose: str,
         bearer: str | None = None,
         timeout: float = _HTTP_TIMEOUT_S,
+        connect_deadline: float | None = None,
     ) -> dict[str, Any]:
         url = MUSE_ORIGIN + path
         checked = self._check_url(url, purpose)
@@ -1220,6 +1236,8 @@ class MuseTransport:
             headers["Authorization"] = f"Bearer {bearer}"
         failure: CoreError | None = None
         response: HttpResponse | None = None
+        if connect_deadline is not None:
+            timeout = self._remaining_connect_budget(connect_deadline, timeout)
         try:
             response = self._http.request(
                 method,
@@ -1261,27 +1279,32 @@ class MuseTransport:
                 next_action="Wait and retry this read. Do not resend a handed-off chat.",
                 retry_after=_retry_after(response.headers),
             )
-        if status in (401, 403) or status != 200 and status < 500:
+        if status in (401, 403):
             raise _error(
                 ErrorCode.AUTH_REQUIRED,
                 "Muse authentication failed",
                 next_action="Refresh the operator cookie jar for this auth_ref",
             )
-        if status == 503 or status >= 500:
+        if status >= 500 or (
+            status in (404, 409, 410)
+            and path in ("/api/session?vm_state=live", "/api/hatch/vm/wake")
+        ):
             raise _error(
                 ErrorCode.RESOURCE_UNAVAILABLE,
                 "The Muse HTTPS endpoint is unavailable",
                 next_action="Retry later. This is not an authentication failure.",
             )
-        if status != 200:
-            raise _error(
-                ErrorCode.AUTH_REQUIRED,
-                "Muse authentication failed",
-                next_action="Refresh the operator cookie jar for this auth_ref",
-            )
+        # Success: spike §2/§5 bootstrap 200; S1 §Finding 3 wake 200.
+        # Wake 202/204 are explicitly admitted by the round-2 operator contract;
+        # they indicate accepted/no-content activation, not a running VM.
+        accepted = {200, 202, 204} if path == "/api/hatch/vm/wake" else {200}
+        if status not in accepted:
+            raise protocol_stop()
+        if path == "/api/hatch/vm/wake":
+            return {}
         payload = _json_object(response.body)
         if path == "/api/session?vm_state=live":
-            return self._session_payload(payload)
+            return payload
         if path == "/api/auth/check":
             token = payload.get("access_token")
             if not isinstance(token, str) or _TOKEN.fullmatch(token) is None:
@@ -1308,74 +1331,108 @@ class MuseTransport:
                 context[key] = value
             return {"access_token": token, **context}
         if path == "/api/hatch/token":
+            fields = ("token", "notary_token", "notaryToken", "noiseNotaryToken", "endorsement")
+            for key in fields:
+                if key in payload:
+                    self._remember(payload[key])
+                    _credential_shape(payload[key])
             token = payload.get("token")
-            self._remember(token)
-            self._remember(payload.get("notary_token"))
             if not _hatch_token(token):
                 raise _error(
                     ErrorCode.AUTH_REQUIRED,
                     "Muse hatch response did not include a usable token",
                     next_action="Refresh the operator cookie jar for this auth_ref",
                 )
-            self._remember(token)
-            return {"token": token, "notary_token": _notary_token(payload.get("notary_token"))}
-        if path == "/api/hatch/vm/wake":
-            return {}
+            aliases = [_notary_token(payload[key]) for key in fields[1:] if key in payload]
+            present = {value for value in aliases if value is not None}
+            if len(present) > 1:
+                raise protocol_stop()
+            return {"token": token, "notary_token": next(iter(present), None)}
         raise MuseProgrammingError("unexpected Muse HTTPS path")
 
-    def _session_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def _session_payload(self, payload: dict[str, Any], auth: dict[str, Any]) -> dict[str, Any]:
+        rows = payload.get("vms")
+        items = [payload] + (
+            [item for item in rows if isinstance(item, dict)] if isinstance(rows, list) else []
+        )
+
+        def identity(item):
+            value = item.get("vm_id")
+            return (
+                value.strip().lower()
+                if isinstance(value, str) and _VM_ID.fullmatch(value.strip())
+                else None
+            )
+
+        # Scan every authenticated row before status, uniqueness or routing checks.
+        ids = [identity(item) for item in items]
+        confidential = any(
+            item.get("vm_type") == "hatch_cvm"
+            or isinstance(item.get("vm_state"), str)
+            and item["vm_state"].startswith("CVM_")
+            or item.get("cvm_required")
+            or item.get("cvmReplacementEnabled")
+            for item in items
+        )
+        if confidential:
+            usable = tuple(sorted({value for value in ids if value is not None}))
+            self._trust.store.muse_freeze(
+                provider=self._trust.provider,
+                account=self._trust.account,
+                vm_id=ids[0] or (usable[0] if usable else None),
+                viewer_id=auth["viewer_id"],
+                session_binding_id=auth["session_binding_id"],
+                confidential=True,
+                confidential_vm_ids=usable,
+            )
+            raise protocol_stop()
         vm_id = payload.get("vm_id")
+        normalized = ids[0]
         if payload.get("status") != "assigned" or vm_id is None:
             raise _error(
                 ErrorCode.RESOURCE_UNAVAILABLE,
                 "The Muse VM is unavailable",
                 next_action="Retry later",
             )
-        if not isinstance(vm_id, str) or _VM_ID.fullmatch(vm_id) is None:
+        if normalized is None:
             raise protocol_stop()
-        rows = payload.get("vms")
         row = payload
         if rows is not None:
             if not isinstance(rows, list) or any(not isinstance(item, dict) for item in rows):
                 raise protocol_stop()
-            matches = [item for item in rows if item.get("vm_id") == vm_id]
+            matches = [item for item in rows if identity(item) == normalized]
             if len(matches) != 1:
                 raise protocol_stop()
             row = matches[0]
-        # An authenticated selected CVM hint is monotonic even when other metadata
-        # contradicts it. It can only persist a refusal, never enable standard.
-        confidential = any(
-            item.get("vm_type") == "hatch_cvm"
-            or isinstance(item.get("vm_state"), str)
-            and item["vm_state"].startswith("CVM_")
-            for item in (payload, row)
-        )
-        if confidential:
-            return {
-                "selected": SelectedVM(
-                    vm_id,
-                    str(row.get("name", row.get("vm_name", ""))),
-                    str(row.get("endpoint_url", "")),
-                    str(row.get("vm_type", "")),
-                    str(row.get("vm_state", "")),
-                    False,
-                    confidential_hint=True,
-                )
-            }
+        # Retain exact server ID on the wire; equality uses its normalized identity.
         if rows is not None:
             for key in ("vm_type", "vm_state", "endpoint_url"):
                 if key in payload and key in row and payload[key] != row[key]:
                     raise protocol_stop()
         name = row.get("name", row.get("vm_name"))
-        if "name" in row and "vm_name" in row and row["name"] != row["vm_name"]:
+        if (
+            "name" in row
+            and "vm_name" in row
+            and (
+                not isinstance(row["name"], str)
+                or not isinstance(row["vm_name"], str)
+                or row["name"].strip().lower() != row["vm_name"].strip().lower()
+            )
+        ):
             raise protocol_stop()
-        if "vm_name" in payload and payload["vm_name"] != name:
+        if "vm_name" in payload and (
+            not isinstance(payload["vm_name"], str)
+            or not isinstance(name, str)
+            or payload["vm_name"].strip().lower() != name.strip().lower()
+        ):
             raise protocol_stop()
         endpoint = row.get("endpoint_url")
         vm_type, state = row.get("vm_type"), row.get("vm_state")
         if (
-            name != vm_id
-            or endpoint != VM_ADDRESS_TEMPLATE.format(vm_id=vm_id)
+            not isinstance(name, str)
+            or name.strip().lower() != normalized
+            or not isinstance(endpoint, str)
+            or endpoint.lower() != VM_ADDRESS_TEMPLATE.format(vm_id=normalized)
             or vm_type not in ("hatch_vm", "hatch_cvm")
             or not isinstance(state, str)
             or (state not in _VM_STATES and not state.startswith("CVM_"))
@@ -1385,8 +1442,30 @@ class MuseTransport:
         replacement = any(item.get(key) for item in (payload, row) for key in _REPLACEMENT_KEYS)
         return {"selected": SelectedVM(vm_id, name, endpoint, vm_type, state, replacement)}
 
+    def _remaining_connect_budget(self, deadline: float, cap: float) -> float:
+        remaining = deadline - self._clock()
+        if remaining <= 0:
+            raise UpgradeFailure(503)
+        return min(cap, remaining)
+
+    def _remember_nonce(self, nonce: bytes) -> None:
+        for value in (
+            nonce.hex(),
+            base64.b64encode(nonce).decode(),
+            base64.urlsafe_b64encode(nonce).decode(),
+            base64.urlsafe_b64encode(nonce).decode().rstrip("="),
+        ):
+            self._remember(value)
+
     def _wake(
-        self, selected: SelectedVM, jar: str, access: str, retry: int, timeout: float
+        self,
+        selected: SelectedVM,
+        jar: str,
+        access: str,
+        retry: int,
+        timeout: float,
+        *,
+        deadline: float,
     ) -> None:
         document = {"vm_id": selected.vm_id, "retry_count": retry}
         if retry:
@@ -1400,6 +1479,7 @@ class MuseTransport:
             cookies=jar,
             body=body,
             purpose="hatch.wake",
+            connect_deadline=deadline,
             bearer=access,
             timeout=timeout,
         )
@@ -1432,14 +1512,14 @@ class MuseTransport:
 
     def _connect(self) -> None:
         if self._loop is not None:
-            if self._trust_invalidated:
-                self._close_locked()
-                raise storage_stop()
             try:
                 self._trust.assert_current(self._snapshot)
             except CoreError:
                 self._close_locked()
                 raise
+            if self._trust_invalidated:
+                self._close_locked()
+                raise storage_stop()
             return
         jar = self._cookie_jar()
         if self._trust is None:
@@ -1449,7 +1529,7 @@ class MuseTransport:
         session = self._https(
             "GET", "/api/session?vm_state=live", cookies=jar, body=None, purpose="session"
         )
-        selected = session["selected"]
+        selected = self._session_payload(session, auth)["selected"]
         snapshot = self._trust.freeze(auth, selected)
         if snapshot.confidential_required or selected.replacement:
             raise protocol_stop()
@@ -1462,7 +1542,14 @@ class MuseTransport:
         self._trust.assert_current(snapshot)
         hatch = self._mint(selected, jar, access)
         deadline = self._clock() + _CONNECT_MAX_SECONDS
-        self._wake(selected, jar, access, 0, min(_HTTP_TIMEOUT_S, deadline - self._clock()))
+        self._wake(
+            selected,
+            jar,
+            access,
+            0,
+            self._remaining_connect_budget(deadline, _HTTP_TIMEOUT_S),
+            deadline=deadline,
+        )
         raw: Any = None
         loop: ReceiveLoop | None = None
         failure: CoreError | None = None
@@ -1472,13 +1559,16 @@ class MuseTransport:
                 if self._clock() >= deadline:
                     raise UpgradeFailure(503)
                 url = _wss_url(selected.vm_id, hatch["token"], hatch.get("notary_token"))
+                self._remember(
+                    urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["request_id"][0]
+                )
                 checked = self._check_url(url, "wss.noise")
                 upgrade = None
                 try:
                     raw = self._connector.connect(
                         checked.url,
                         checked=checked,
-                        timeout=min(_HTTP_TIMEOUT_S, deadline - self._clock()),
+                        timeout=self._remaining_connect_budget(deadline, _HTTP_TIMEOUT_S),
                     )
                 except UpgradeFailure as exc:
                     upgrade = exc
@@ -1493,7 +1583,14 @@ class MuseTransport:
                 if attempt >= _CONNECT_MAX_REDIALS or self._clock() + delay >= deadline:
                     raise UpgradeFailure(upgrade.status)
                 self._trust.assert_current(snapshot)
-                self._wake(selected, jar, access, n, min(_HTTP_TIMEOUT_S, deadline - self._clock()))
+                self._wake(
+                    selected,
+                    jar,
+                    access,
+                    n,
+                    self._remaining_connect_budget(deadline, _HTTP_TIMEOUT_S),
+                    deadline=deadline,
+                )
                 if self._clock() + delay >= deadline:
                     raise UpgradeFailure(upgrade.status)
                 self._sleep(delay)
@@ -1505,7 +1602,8 @@ class MuseTransport:
             handshake_standard(
                 party,
                 owned,
-                timeout=min(DEFAULT_COLLECT_TIMEOUT_S, deadline - self._clock()),
+                timeout=self._remaining_connect_budget(deadline, DEFAULT_COLLECT_TIMEOUT_S),
+                remember_nonce=self._remember_nonce,
                 clock=self._clock,
                 confidential=lambda: self._trust.confidential(snapshot),
                 standard_handoff=lambda handoff: self._trust.standard_handoff(snapshot, handoff),
@@ -1516,10 +1614,14 @@ class MuseTransport:
             self._trust.store.muse_watch(snapshot, self._invalidate_trust)
             self._trust.assert_current(snapshot)
         except IncompleteBody:
-            failure = _error(
-                ErrorCode.NETWORK_TIMEOUT,
-                "Muse handshake timed out",
-                next_action="Retry the connection; no application frame was sent",
+            failure = (
+                UpgradeFailure(503)
+                if self._clock() >= deadline
+                else _error(
+                    ErrorCode.NETWORK_TIMEOUT,
+                    "Muse handshake timed out",
+                    next_action="Retry the connection; no application frame was sent",
+                )
             )
         except ProtocolMismatch:
             failure = protocol_stop()

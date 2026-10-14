@@ -15,6 +15,7 @@ The MIT notice is in ``THIRD_PARTY_NOTICES.md``.
 from __future__ import annotations
 
 import hmac
+import math
 import os
 from collections.abc import Callable
 from typing import Any
@@ -31,6 +32,7 @@ from metamuse._muse_handshake_payloads import (
     ConfidentialChallenge,
     classify_payload,
     client_challenge,
+    rv_shaped,
 )
 from metamuse.models import CoreError, ErrorCode
 
@@ -188,17 +190,28 @@ def handshake_standard(
     clock: Callable[[], float],
     confidential: Callable[[], None],
     standard_handoff: Callable[[Callable[[], None]], None],
+    remember_nonce: Callable[[bytes], None] | None = None,
 ) -> None:
     """Strict standard subset: fresh msg1, classified/equal msg2, committed context, empty msg3."""
     deadline = clock() + timeout
+    if not math.isfinite(timeout) or timeout <= 0 or clock() >= deadline:
+        raise IncompleteBody("handshake deadline exhausted")
     nonce = os.urandom(32)
-    link.send(party.write(client_challenge(nonce)))
+    if remember_nonce is not None:
+        remember_nonce(nonce)
+    message = party.write(client_challenge(nonce))
+    if clock() >= deadline:
+        raise IncompleteBody("handshake deadline exhausted")
+    link.send(message)
     if clock() >= deadline:
         raise IncompleteBody("receive deadline exhausted")
     data = link.recv(max(0.0, deadline - clock()))
     if not data or clock() >= deadline:
         raise IncompleteBody("receive deadline exhausted")
     reply = party.read(data)
+    if rv_shaped(reply):
+        confidential()
+        raise ProtocolMismatch("confidential handshake requires a supported verifier")
     result = classify_payload(reply)
     if isinstance(result, ConfidentialChallenge):
         confidential()

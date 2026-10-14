@@ -6,7 +6,7 @@ schema, descriptor, parser or cryptographic implementation is incorporated.
 
 from dataclasses import dataclass, field
 
-from metamuse._muse_codec import ProtocolMismatch, _bytes_field, _iter_fields
+from metamuse._muse_codec import ProtocolMismatch, _bytes_field, _decode_varint, _iter_fields
 
 HANDSHAKE_PAYLOAD_MAX_BYTES = 8192
 
@@ -39,6 +39,37 @@ def client_challenge(nonce: bytes) -> bytes:
     return _bytes_field(1, nonce)
 
 
+def rv_shaped(data: bytes) -> bool:
+    """Recognize the canonical field-2/varint tag before decoding unsupported RV data.
+
+    Recognition can only record a refusal, never accept an RV payload. Even an
+    invalid/truncated state after this discriminator is permanent confidential evidence.
+    """
+    if not data or len(data) > HANDSHAKE_PAYLOAD_MAX_BYTES:
+        return False
+    offset = 0
+    try:
+        while offset < len(data):
+            tag, offset = _decode_varint(data, offset)
+            number, wire = tag >> 3, tag & 7
+            if not number:
+                return False
+            if number == 2 and wire == 0:
+                return True
+            if wire == 0:
+                _, offset = _decode_varint(data, offset)
+            elif wire == 2:
+                size, offset = _decode_varint(data, offset)
+                offset += size
+                if offset > len(data):
+                    return False
+            else:
+                return False
+    except ProtocolMismatch:
+        return False
+    return False
+
+
 def classify_payload(data: bytes) -> StandardBundle | ConfidentialChallenge:
     outer = _fields(data)
     # RV is recognized first. Incomplete or malformed RV cannot become standard.
@@ -46,6 +77,7 @@ def classify_payload(data: bytes) -> StandardBundle | ConfidentialChallenge:
         state = outer[2][1]
         if (
             outer.get(1, (None,))[0] != 2
+            or not outer[1][1]
             or state not in (1, 2)
             or outer.get(3, (None,))[0] != 2
             or len(outer[3][1]) != 32
