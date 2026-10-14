@@ -966,6 +966,8 @@ class _State:
     message: str | None = None
 
     def checkpoint(self) -> dict[str, Any]:
+        # get_job returns this document. Upstream media and subtitle URLs stay
+        # in memory for this process and are fetched again after a resume.
         return {
             "next_input": self.next_input,
             "phase": self.phase,
@@ -973,7 +975,7 @@ class _State:
             "rows": self.rows,
             "missing_fields": self.missing,
             "halt": self.halt,
-            "current": self.current,
+            "current": _durable_current(self.current),
             "retry_after": self.retry_after,
             "code": self.code,
             "message": self.message,
@@ -993,6 +995,39 @@ class _State:
             code=payload.get("code"),
             message=payload.get("message"),
         )
+
+
+def _durable_current(current: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Ids, revision, hashes, and counts. No upstream URL is copied."""
+
+    if not current:
+        return None
+    tracks = current.get("subtitles") if isinstance(current.get("subtitles"), list) else []
+    durable: dict[str, Any] = {
+        "source_id": current.get("source_id"),
+        "item_id": current.get("item_id"),
+        "revision": current.get("revision"),
+        "native_id": current.get("native_id"),
+        "platform": current.get("platform"),
+        "scope": current.get("scope"),
+        "extractor": current.get("extractor"),
+        "text_hash": current.get("text_hash"),
+        "subtitles_truncated": bool(current.get("subtitles_truncated")),
+        "subtitle_count": len(tracks),
+    }
+    return {key: value for key, value in durable.items() if value is not None}
+
+
+def _remember_urls(state: _State, record: dict[str, Any]) -> None:
+    """Keep discovered URLs in this process only. The checkpoint drops them."""
+
+    current = dict(state.current or {})
+    current["subtitles"] = record["subtitles"]
+    current["subtitles_truncated"] = bool(record["subtitles_truncated"])
+    current["media_url"] = record["media_url"]
+    current["media_ext"] = record["media_ext"]
+    current["urls_ready"] = True
+    state.current = current
 
 
 def _marker_payload(path: Path) -> dict[str, Any] | None:
@@ -1155,6 +1190,8 @@ def _store_metadata(
         "platform": platform,
         "scope": scope,
         "extractor": record["extractor"],
+        "text_hash": digest,
+        "urls_ready": True,
     }
     state.rows.append(
         {
@@ -1640,6 +1677,28 @@ def run_remote_media(step: StepContext) -> m.JobResult:
                 if state.halt:
                     break
             if state.phase == "metadata":
+                if "subtitles" in resources and not (state.current or {}).get("urls_ready"):
+                    if budget.remaining <= 0:
+                        state.halt = "limit_reached"
+                        state.code = m.ErrorCode.LIMIT_REACHED.value
+                        if "subtitles" not in state.missing:
+                            state.missing.append("subtitles")
+                        if "media_file" in resources and "media_file" not in state.missing:
+                            state.missing.append("media_file")
+                        break
+                    _ensure_urls(
+                        state,
+                        urls[index],
+                        classes[index],
+                        keys[index],
+                        net,
+                        staging,
+                        request.limits.max_items,
+                        timeout,
+                        media_max,
+                    )
+                    if state.halt:
+                        break
                 if budget.remaining <= 0 and "subtitles" in resources:
                     state.halt = "limit_reached"
                     state.code = m.ErrorCode.LIMIT_REACHED.value
@@ -1672,7 +1731,27 @@ def run_remote_media(step: StepContext) -> m.JobResult:
                     if "media_file" not in state.missing:
                         state.missing.append("media_file")
                     break
-                else:
+                elif not (state.current or {}).get("urls_ready"):
+                    _ensure_urls(
+                        state,
+                        urls[index],
+                        classes[index],
+                        keys[index],
+                        net,
+                        staging,
+                        request.limits.max_items,
+                        timeout,
+                        media_max,
+                    )
+                    if state.halt:
+                        break
+                    if budget.remaining <= 0:
+                        state.halt = "limit_reached"
+                        state.code = m.ErrorCode.LIMIT_REACHED.value
+                        if "media_file" not in state.missing:
+                            state.missing.append("media_file")
+                        break
+                if state.phase == "subtitles" and "media_file" in resources:
                     params = ytdlp_params(
                         staging,
                         max_items=request.limits.max_items,
@@ -1718,6 +1797,81 @@ def _still_approved(url: str, key: str, approvals: list[Any]) -> bool:
     )
 
 
+def _read_info(
+    state: _State,
+    url: str,
+    ie_cls: type,
+    key: str,
+    net: _Net,
+    staging: Path,
+    max_items: int,
+    timeout: int,
+    media_max: int,
+) -> dict[str, Any] | None:
+    """Fetch one page. None means this input stopped; the body still counts."""
+
+    params = ytdlp_params(
+        staging,
+        max_items=max_items,
+        socket_timeout=timeout,
+        max_filesize=media_max,
+        extractor=key,
+    )
+    ydl = _open_ydl(params, ie_cls, net)
+    try:
+        try:
+            info = ydl.extract_info(url, download=False)
+        except m.CoreError:
+            raise
+        except Exception as exc:
+            kind, value = _classify(exc)
+            if kind == "empty":
+                state.halt = "empty"
+                return None
+            if kind == "rate":
+                state.halt = "rate_limited"
+                state.retry_after = value
+                state.code = m.ErrorCode.RATE_LIMITED.value
+                state.message = "Upstream rate limit"
+                return None
+            if kind == "core":
+                raise value from exc
+            raise value from exc
+    finally:
+        ydl.close()
+    if not isinstance(info, dict):
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Upstream response could not be parsed")
+    record = _normalize(info, url, key, max_items)
+    if record is None:
+        state.halt = "empty"
+        return None
+    if str(record["extractor"]).lower() == "manual":
+        raise m.CoreError(m.ErrorCode.UNSUPPORTED, "Extractor failed")
+    state.bytes_used = net.budget.used
+    return record
+
+
+def _ensure_urls(
+    state: _State,
+    url: str,
+    ie_cls: type,
+    key: str,
+    net: _Net,
+    staging: Path,
+    max_items: int,
+    timeout: int,
+    media_max: int,
+) -> None:
+    """Re-read the page after a resume. Signed URLs are not stored on the step."""
+
+    if state.current is None or state.current.get("urls_ready"):
+        return
+    record = _read_info(state, url, ie_cls, key, net, staging, max_items, timeout, media_max)
+    if record is None:
+        return
+    _remember_urls(state, record)
+
+
 def _extract_one(
     step: StepContext,
     state: _State,
@@ -1739,43 +1893,8 @@ def _extract_one(
         state.halt = "limit_reached"
         state.code = m.ErrorCode.LIMIT_REACHED.value
         return
-    params = ytdlp_params(
-        staging,
-        max_items=max_items,
-        socket_timeout=timeout,
-        max_filesize=media_max,
-        extractor=key,
-    )
-    ydl = _open_ydl(params, ie_cls, net)
-    try:
-        try:
-            info = ydl.extract_info(url, download=False)
-        except m.CoreError:
-            raise
-        except Exception as exc:
-            kind, value = _classify(exc)
-            if kind == "empty":
-                state.halt = "empty"
-                return
-            if kind == "rate":
-                state.halt = "rate_limited"
-                state.retry_after = value
-                state.code = m.ErrorCode.RATE_LIMITED.value
-                state.message = "Upstream rate limit"
-                return
-            if kind == "core":
-                raise value from exc
-            raise value from exc
-    finally:
-        ydl.close()
-    if not isinstance(info, dict):
-        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Upstream response could not be parsed")
-    record = _normalize(info, url, key, max_items)
+    record = _read_info(state, url, ie_cls, key, net, staging, max_items, timeout, media_max)
     if record is None:
-        state.halt = "empty"
         return
-    if record["extractor"] == "manual" or record["extractor"].lower() == "manual":
-        raise m.CoreError(m.ErrorCode.UNSUPPORTED, "Extractor failed")
-    state.bytes_used = net.budget.used
     _store_metadata(step, state, record, url, text_max)
     state.bytes_used = net.budget.used

@@ -1044,12 +1044,71 @@ def test_resume_after_each_checkpoint(ctx, project, origin, monkeypatch, phase):
         assert executor.run_once()
     job = ctx.store.get(m.Job, env.data["job_id"])
     assert job.state == "succeeded"
-    assert paths(origin).count("/clip") == 1
     assert paths(origin).count("/clip/provided.vtt") == 1
     assert paths(origin).count("/clip/auto.vtt") == 1
     assert paths(origin).count("/clip/media.wav") == 1
+    # A resume re-reads the page because the checkpoint no longer holds URLs.
+    assert paths(origin).count("/clip") == (1 if phase == "media" else 2)
     assert ctx.store.get(m.Permit, permit_id).used == 1
     assert q(ctx, "SELECT COUNT(*) AS n FROM item_revisions")[0]["n"] == 1
+
+
+def test_resume_does_not_publish_signed_upstream_urls(ctx, project, origin, monkeypatch, caplog):
+    port = origin.server_address[1]
+    query = "sig=SIGNEDMARK&expire=1"
+
+    def body() -> bytes:
+        payload = info_dict(port, "signed")
+        payload["formats"][1]["url"] += "?" + query
+        payload["subtitles"]["en"][0]["url"] += "?" + query
+        payload["automatic_captions"]["en"][0]["url"] += "?" + query
+        return dump(payload)
+
+    origin.routes["signed"] = {"status": 200, "body": body}
+
+    def crash_once(step):
+        if (step.checkpoint or {}).get("phase") == "metadata":
+            raise SystemExit(7)
+
+    monkeypatch.setattr(remote_media, "_note", crash_once)
+    caplog.set_level(logging.DEBUG)
+    req, _permit = prepare(
+        ctx, project, origin, "signed", ["media_metadata", "subtitles", "media_file"]
+    )
+    env = app.submit_collect(ctx, req)
+    assert env.status == "accepted", env.error
+    with pytest.raises(SystemExit):
+        with jobs.Executor(ctx.store) as executor:
+            executor.run_once()
+    rendered = json.dumps(app.get_job(ctx, {"job_id": env.data["job_id"]}).model_dump(mode="json"))
+    assert "SIGNEDMARK" not in rendered
+    details = [row["detail"] for row in q(ctx, "SELECT detail FROM events")]
+    assert details
+    assert all("SIGNEDMARK" not in detail for detail in details)
+    assert "SIGNEDMARK" not in caplog.text
+    checkpoint = json.loads(q(ctx, "SELECT checkpoint FROM job_steps")[0]["checkpoint"])
+    assert checkpoint["phase"] == "metadata"
+    assert checkpoint["bytes_used"] == len(body())
+    assert checkpoint["current"]["source_id"]
+    assert checkpoint["current"]["text_hash"]
+    assert "url" not in json.dumps(checkpoint["current"])
+    with jobs.Executor(ctx.store) as executor:
+        assert executor.run_once()
+    job = ctx.store.get(m.Job, env.data["job_id"])
+    assert job.state == "succeeded"
+    finished = json.dumps(app.get_job(ctx, {"job_id": job.id}).model_dump(mode="json"))
+    assert "SIGNEDMARK" not in finished
+    assert all("SIGNEDMARK" not in row["detail"] for row in q(ctx, "SELECT detail FROM events"))
+    assert "SIGNEDMARK" not in caplog.text
+    assert step_data(job)["bytes_used"] > checkpoint["bytes_used"]
+    assert paths(origin).count("/signed") == 2
+    assert paths(origin).count("/signed/provided.vtt") == 1
+    assert paths(origin).count("/signed/auto.vtt") == 1
+    assert paths(origin).count("/signed/media.wav") == 1
+    assert any(query in hit["query"] for hit in origin.hits)
+    assert q(ctx, "SELECT COUNT(*) AS n FROM item_revisions")[0]["n"] == 1
+    assert q(ctx, "SELECT COUNT(*) AS n FROM transcript_segments")[0]["n"] == 2
+    assert q(ctx, "SELECT COUNT(*) AS n FROM sources WHERE native_id='signed'")[0]["n"] == 1
 
 
 def test_same_text_does_not_add_a_revision(ctx, project, origin):
