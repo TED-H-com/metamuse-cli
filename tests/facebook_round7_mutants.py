@@ -27,9 +27,25 @@ def apply_mutant(monkeypatch, mutant):
     elif mutant == "NM2":
         monkeypatch.setattr(facebook, "_verify_popup_control", lambda *args: None)
     elif mutant == "NM3":
-        monkeypatch.setattr(
-            facebook._PlaywrightSession, "_snapshot_html", lambda self: self._page.content()
-        )
+        snapshot = facebook._PlaywrightSession._snapshot_html
+
+        def keep_page_marker(self):
+            evaluate = self._page.evaluate
+
+            def preserve(script):
+                old = "if (attr.name.startsWith('data-metamuse-'))"
+                new = (
+                    "if (attr.name.startsWith('data-metamuse-') && "
+                    "attr.name !== 'data-metamuse-invisible')"
+                )
+                assert old in script
+                return evaluate(script.replace(old, new))
+
+            with monkeypatch.context() as patch:
+                patch.setattr(self._page, "evaluate", preserve)
+                return snapshot(self)
+
+        monkeypatch.setattr(facebook._PlaywrightSession, "_snapshot_html", keep_page_marker)
         start = facebook._DOMExtractor.handle_starttag
 
         def trust_page(self, tag, attrs):
