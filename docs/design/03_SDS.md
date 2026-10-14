@@ -884,7 +884,9 @@ ordinary WebSocket routing; it is not the popup or socket boundary.
 
 
 A Facebook proxy byte cutoff immediately shuts down both client and upstream
-sockets for all active tunnels and refuses subsequent dials/registrations. A
+sockets for all active tunnels and refuses subsequent dials/registrations.
+Upstream candidates are registered before connect can block; teardown closes
+them before waiting for the dial barrier, so pending connects are included. A
 50 ms browser-loop watcher reacts to byte cutoff and latched socket/guard
 failures, closing the affected page to interrupt in-flight
 navigation, click and expansion operations, instead of waiting for the full

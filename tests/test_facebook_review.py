@@ -441,6 +441,7 @@ def test_finding_06_close_cancels_waiting_resolution_and_prevents_late_dial(monk
     entered, release, finished = threading.Event(), threading.Event(), threading.Event()
     dials = []
     real_connect = socket.create_connection
+    real_socket_connect = socket.socket.connect
 
     def slow_resolver(_):
         entered.set()
@@ -456,12 +457,12 @@ def test_finding_06_close_cancels_waiting_resolution_and_prevents_late_dial(monk
     target.listen()
     port = target.getsockname()[1]
 
-    def spy_connect(address, *args, **kwargs):
+    def spy_connect(sock, address):
         if address[1] == port:
             dials.append(address)
-        return real_connect(address, *args, **kwargs)
+        return real_socket_connect(sock, address)
 
-    monkeypatch.setattr(socket, "create_connection", spy_connect)
+    monkeypatch.setattr(socket.socket, "connect", spy_connect)
     proxy = _browser_egress.BrowserEgressProxy(guard, idle_timeout_s=0.5)
     client = real_connect(("127.0.0.1", proxy.port), timeout=2)
     try:

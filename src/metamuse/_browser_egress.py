@@ -515,13 +515,18 @@ class BrowserEgressProxy:
             with self._dial_lock:
                 if self._closed.is_set() or self.byte_limit_exceeded:
                     return
-                upstream_sock = socket.create_connection(
-                    (dial_ip, checked.port),
-                    timeout=self.idle_timeout_s,
+                family = (
+                    socket.AF_INET6
+                    if ipaddress.ip_address(dial_ip).version == 6
+                    else socket.AF_INET
                 )
+                upstream_sock = socket.socket(family, socket.SOCK_STREAM)
+                upstream_sock.settimeout(self.idle_timeout_s)
                 if not self._register_socket(upstream_sock):
                     return
-            upstream_sock.settimeout(self.idle_timeout_s)
+                # Track the candidate before connect can block. Budget cutoff
+                # and teardown must close it as well as established tunnels.
+                upstream_sock.connect((dial_ip, checked.port))
 
             peer_raw = upstream_sock.getpeername()
             peer_ip = str(ipaddress.ip_address(peer_raw[0]))
@@ -706,14 +711,14 @@ class BrowserEgressProxy:
         if self._closed.is_set():
             return
         self._closed.set()
-        with self._dial_lock:
-            pass  # Any dial that entered before closure has finished and cannot recur.
         self._close_socket(self._server_sock)
         with self._lock:
             active = list(self._active_sockets)
             workers = list(self._worker_threads)
         for sock in active:
             self._close_socket(sock)
+        with self._dial_lock:
+            pass  # Closing registered candidates interrupts in-flight connects.
         if self._started:
             self._accept_thread.join(timeout=2.0)
         for worker in workers:
