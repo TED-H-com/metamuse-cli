@@ -216,6 +216,12 @@ canonical sorted extractor keys, normalized sorted hosts and opaque auth_ref or 
 The review identifies first-hop and later-hop entries and shows each cookie label/account.
 Selection uses those bound entries; even an unrelated approval edit invalidates an
 outstanding grant before consumption or egress and requires a fresh review.
+Remote URL display is structural: scheme, normalized host, non-default port, complete
+path including semicolon parameters, and query; mask only known secret query values
+using the shared url_token key rules. Request echo and permit-approve stderr agree.
+Refuse trailing-dot hosts or URLs whose display would still lose other structure to
+free-text redaction with fixed E_INPUT_INVALID and no preview or URL echo. Exact digests
+bind original bytes even when the displayed request is normalized or masked.
 The preview's operator command uses the next unused digest-based approval key, so a
 fresh review cannot replay an exhausted/revoked/expired grant. Repeating a previously
 submitted approval command still replays its original permit and mutable use state.

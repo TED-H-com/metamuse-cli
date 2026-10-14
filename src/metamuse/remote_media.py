@@ -62,7 +62,7 @@ from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urljoin, urlsplit
+from urllib.parse import parse_qs, unquote, urljoin, urlsplit, urlunsplit
 
 from metamuse import jobs, safety
 from metamuse import media as media_mod
@@ -463,6 +463,36 @@ def _host_of(url: str) -> str:
 
 def _hosts(values: Iterable[str]) -> set[str]:
     return {safety.normalize_hostname(item) for item in values}
+
+
+def _secret_query_key(key: str) -> bool:
+    # Ask the shared url_token rule about the key only, never the destination/value.
+    # This includes its signed-URL keys without maintaining another key list.
+    _display, audit = safety.redact_text("?" + key + "=synthetic")
+    return any(entry["kind"] == "url_token" for entry in audit)
+
+
+def _display_url(url: str) -> str:
+    """Display fetched URL structure, masking only known secret query values."""
+    parsed = urlsplit(url)
+    host = _host_of(url)
+    authority = f"[{host}]" if ":" in host else host
+    if parsed.port is not None and parsed.port != (443 if parsed.scheme == "https" else 80):
+        authority += ":" + str(parsed.port)
+    parameters = []
+    for part in parsed.query.split("&"):
+        key, equal, value = part.partition("=")
+        if equal and _secret_query_key(key):
+            value = "[REDACTED]"
+        parameters.append(key + equal + value)
+    return urlunsplit((parsed.scheme.lower(), authority, parsed.path, "&".join(parameters), ""))
+
+
+def _require_reviewable_url(url: str) -> None:
+    _host_of(url)
+    display = _display_url(url)
+    if urlsplit(url).hostname.endswith(".") or safety.redact_text(display)[0] != display:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Remote URL cannot be reviewed safely")
 
 
 def _share_parts(url: str) -> tuple[str, str, str] | None:
@@ -874,6 +904,9 @@ def prepare_remote_media(
     ]
     if not approvals:
         raise _allowlist_required()
+    for item in request.inputs:
+        if item.kind == "url":
+            _require_reviewable_url(item.url)
     matched = [_select(item.url, approvals) for item in request.inputs if item.kind == "url"]
     keys = [cls.ie_key() for cls, _approval in matched]
     target, payload = action_parts(
@@ -892,6 +925,8 @@ def prepare_remote_media(
 def _safe_display(value: Any) -> Any:
     """Redact every raw text field before JSON encoding can hide credentials."""
     if isinstance(value, str):
+        if value.startswith(("http://", "https://")):
+            return _display_url(value)
         return safety.redact_text(value)[0]
     if isinstance(value, list):
         return [_safe_display(item) for item in value]
