@@ -352,6 +352,11 @@ Fresh previews choose the next unused approval key without writing a receipt, so
 displayed command cannot replay an expired, revoked or exhausted permit. Offline mode,
 disabled backend, missing extra and invalid/unsupported URLs keep their actual errors
 without a preview. A failed preview or approval creates no grant.
+Receipt lookup precedes permit verification. An exact accepted request, including its
+grant ID, replays the original job even after consumption or a workspace-cap edit.
+Any payload difference, including another grant, is E_IDEMPOTENCY_CONFLICT. Workspace
+caps are outside both the action digest and job identity; B12 stores their acceptance
+snapshot in `remote_media_caps` in the step checkpoint.
 Use a new collection request key for a new run; an accepted key replays its original
 job and cannot be reused with a different grant or payload. Pre-round-6 permits need
 a fresh review because the action digest now also binds the requested limits. Existing

@@ -71,13 +71,14 @@ from metamuse import models as m
 from metamuse._muse_http import _ca_bundle, _options, load_curl
 from metamuse.config import RemoteApproval, load_config
 from metamuse.jobs import StepContext, StepSpec, submit_job
-from metamuse.store import TransactionWriter
+from metamuse.store import TransactionWriter, _json_loads
 
 OPERATION = "collect.remote_media"
 PERMIT_OPERATION = "collect.remote"
 YTDLP_VERSION = "2026.08.19"
 YTDLP_REQUIREMENT = "yt-dlp==2026.8.19"
 RESOURCES = frozenset({"media_metadata", "subtitles", "media_file"})
+_WORKSPACE_CAPS = ("safe_read_retries", "read_timeout_seconds", "media_max_bytes", "text_max_bytes")
 REJECTED_EXTRACTORS = frozenset({"generic", "unsupported", "end"})
 # These extractors compute or submit an anti-bot, rate-limit, or captcha answer.
 # Player signature and nsig deciphering are not on this list. See COLLECT.md.
@@ -1024,7 +1025,7 @@ def prepare_remote_media(
                 ref, workspace.remote_media.provider, workspace.remote_media.account, secret_store
             )
     limits = request.limits.model_dump(mode="json")
-    for name in ("safe_read_retries", "read_timeout_seconds", "media_max_bytes", "text_max_bytes"):
+    for name in _WORKSPACE_CAPS:
         limits[name] = getattr(workspace.limits, name)
     return _PreparedRemote(workspace, matched, target, payload, limits)
 
@@ -1136,9 +1137,56 @@ def preview_remote_media(ctx: Any, request: m.CollectRequest) -> m.ApprovalPrevi
     )
 
 
+def _replay_remote(ctx: Any, request: m.CollectRequest) -> m.Envelope | None:
+    payload = request.model_dump(mode="json")
+    with ctx.store.connection() as conn:
+        receipt = conn.execute(
+            "SELECT * FROM request_receipts WHERE operation=? AND request_key=?",
+            (OPERATION, request.request_key),
+        ).fetchone()
+        if receipt:
+            if receipt["payload_digest"] != m.payload_digest(payload):
+                raise m.CoreError(
+                    m.ErrorCode.IDEMPOTENCY_CONFLICT, "Request key has a different payload"
+                )
+            job = ctx.store.get(m.Job, _json_loads(receipt["response"])["job_id"], conn=conn)
+        else:
+            # Pre-receipt B12 jobs retain their original core identity on replay.
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE operation=? AND request_key=?",
+                (OPERATION, request.request_key),
+            ).fetchone()
+            if row is None:
+                return None
+            job = ctx.store.decode(m.Job, row)
+        if job.payload != payload:
+            raise m.CoreError(
+                m.ErrorCode.IDEMPOTENCY_CONFLICT, "Request key has a different payload"
+            )
+        targets = [
+            ctx.store.decode(m.JobStep, row).target
+            for row in conn.execute(
+                "SELECT * FROM job_steps WHERE job_id=? ORDER BY sequence", (job.id,)
+            )
+        ]
+    return submit_job(
+        ctx.store,
+        OPERATION,
+        job.request_key,
+        job.payload,
+        project_id=job.project_id,
+        steps=[StepSpec(target=target) for target in targets],
+        requested_scope=job.requested_scope,
+        limits=job.limits,
+    )
+
+
 def submit_remote_media(ctx: Any, request: m.CollectRequest) -> m.Envelope:
     """Refuse before a job exists unless preparation and the configured grant pass."""
     register_operations()
+    replay = _replay_remote(ctx, request)
+    if replay is not None:
+        return replay
     prepared = prepare_remote_media(ctx, request)
     target, payload = prepared.target, prepared.payload
     use = safety.PermitUse(
@@ -1151,6 +1199,23 @@ def submit_remote_media(ctx: Any, request: m.CollectRequest) -> m.Envelope:
     )
     with ctx.store.transaction() as conn:
         safety.verify_permit(ctx.store, request.access_grant_id, use, conn=conn, reserve=False)
+
+    def accept(writer: TransactionWriter, job: m.Job, steps: list[m.JobStep]) -> None:
+        snapshot = {name: prepared.limits[name] for name in _WORKSPACE_CAPS}
+        writer.execute(
+            "UPDATE job_steps SET checkpoint=? WHERE id=?",
+            (m.canonical_json({"remote_media_caps": snapshot}).decode(), steps[0].id),
+        )
+        writer.execute(
+            "INSERT INTO request_receipts VALUES(?,?,?,?)",
+            (
+                OPERATION,
+                request.request_key,
+                m.payload_digest(request.model_dump(mode="json")),
+                m.canonical_json({"job_id": job.id}).decode(),
+            ),
+        )
+
     return submit_job(
         ctx.store,
         OPERATION,
@@ -1162,7 +1227,8 @@ def submit_remote_media(ctx: Any, request: m.CollectRequest) -> m.Envelope:
             "resources": sorted(request.resources),
             "input_count": len(request.inputs),
         },
-        limits=prepared.limits,
+        limits=request.limits.model_dump(mode="json"),
+        prepare_domain=accept,
     )
 
 
@@ -2015,11 +2081,13 @@ class _State:
     retry_after: int | None = None
     code: str | None = None
     message: str | None = None
+    caps: dict[str, int] = field(default_factory=dict)
 
     def checkpoint(self) -> dict[str, Any]:
         # get_job returns this document. Upstream media and subtitle URLs stay
         # in memory for this process and are fetched again after a resume.
         return {
+            "remote_media_caps": self.caps,
             "next_input": self.next_input,
             "phase": self.phase,
             "bytes_used": self.bytes_used,
@@ -2035,6 +2103,7 @@ class _State:
     @classmethod
     def load(cls, payload: dict[str, Any]) -> _State:
         return cls(
+            caps=dict(payload.get("remote_media_caps") or {}),
             next_input=int(payload.get("next_input") or 0),
             phase=str(payload.get("phase") or "start"),
             bytes_used=int(payload.get("bytes_used") or 0),
