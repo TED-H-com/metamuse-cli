@@ -26,6 +26,7 @@ Wildcard, IP, local, invalid and empty allowlist entries fail config loading wit
 fixed `E_INPUT_INVALID: Invalid Facebook host allowlist`; entries never disappear
 silently and an empty set never means unrestricted. Default hosts are explicitly
 listed in `config.DEFAULT_FACEBOOK_ALLOWED_HOSTS`. Unknown configuration keys fail.
+Entries are bare hostnames; query/fragment delimiters are refused, never stripped.
 There is no operator fixture/loopback mode. Browser exceptions cannot come from job
 payloads, MCP arguments, permits or source content.
 

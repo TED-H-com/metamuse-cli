@@ -193,6 +193,8 @@ def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL):
         [""],
         ["bad host"],
         ["www.facebook.com", "bad/host"],
+        ["www.facebook.com?synthetic=query"],
+        ["www.facebook.com#synthetic-fragment"],
     ],
 )
 def test_finding_01_invalid_allowlist_is_fixed_config_error(tmp_path: Path, hosts):

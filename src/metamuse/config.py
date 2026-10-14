@@ -74,7 +74,7 @@ def validate_facebook_hosts(values: object) -> list[str]:
         raise invalid()
     hosts: list[str] = []
     for value in values:
-        if not isinstance(value, str) or not value or any(c in value for c in "*:/@[]\\"):
+        if not isinstance(value, str) or not value or any(c in value for c in "*:/@[]\\?#"):
             raise invalid()
         try:
             checked = safety.check_url(

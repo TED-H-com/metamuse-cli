@@ -1346,6 +1346,8 @@ and durable guard pacing: first, at most every 250 ms, and after last.
 Facebook uses a nonempty exact host allowlist validated at configuration load.
 Wildcard, IP, local, invalid and empty entries fail with a fixed E_INPUT_INVALID
 without reflecting the operator value; B08's generic optional allowlist is unchanged.
+Entries must be bare hostnames: URL query/fragment delimiters are invalid, never
+parsed away before validation.
 
 B13 egress diagnostics expose fixed reason/purpose counts only; denied destination
 strings never enter job results, checkpoints, events or errors (AT-028).
