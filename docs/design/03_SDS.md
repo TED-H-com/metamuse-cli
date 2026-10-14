@@ -240,7 +240,7 @@ per-provider/account/VM的version、source/time、sticky confidential_required�
 active selection、viewer/session hash與generation；不以可輪替auth_ref作security identity。
 第一次authenticated bootstrap綁viewer；衝突owner不重綁。authenticated hatch_cvm/CVM_*與
 valid RV observation即使不支援也先持久化confidential requirement，standard不得清除。
-effective expectation OR local account/VM、同provider/viewer_hash全部account、同provider/normalized VM
+effective expectation OR local account/VM、同viewer_hash全部account、同normalized VM
 全部VM rows；新row繼承，SQL guards/propagation不容許matching row降為0。無usable VM id的CVM hint
 只record owner/account expectation；auth_ref輪替或新local label不得downgrade。005未merge，round 2
 原地amend、不新增006。connect/retry不重新選VM、不reset trust。standard observation以generation CAS
@@ -484,3 +484,5 @@ recomputed digest is required before the existing create_permit API. MCP cannot 
 permits. Model text cannot select provider/account or expand the action. Packet preview
 reads its immutable text; MCP packet_prepare replay returns the same fixed pre-share
 preview. No schema migration or separate approval store is needed.
+
+Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and account are local connection labels; neither partitions owner or VM expectations. The shared trust-domain lock serializes all labels.

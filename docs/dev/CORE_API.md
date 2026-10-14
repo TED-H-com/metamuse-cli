@@ -902,3 +902,5 @@ guards. Fresh-v5, v4→v5 and backup/restore checks include them. Upgrade uses t
 verified pre-upgrade v4 backup and atomic migration. Rollback restores that backup into a
 fresh workspace, never erases security rows. Earlier development-v5 schemas fail canonical
 validation and have no implicit in-place upgrade/reset. Public schemas/contracts are unchanged.
+
+Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and account are local connection labels; neither partitions owner or VM expectations. The shared trust-domain lock serializes all labels.

@@ -111,8 +111,8 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    whitespace. Mint retains the row endpoint/name verbatim.
    `DISABLED`, `DELETING`, `ERROR` stop before wake. Missing/contradictory metadata fails closed.
 3. Freeze owner/session/active-selection generation in the private Store. The effective
-   expectation is the OR of the local account/VM, every same-provider viewer hash and every
-   same-provider normalized VM ID. New rows inherit confidentiality; existing matching rows
+   expectation is the OR of the local account/VM, every fixed-upstream viewer hash and every
+   fixed-upstream normalized VM ID. New rows inherit confidentiality; existing matching rows
    propagate it monotonically. A different local account label cannot clear either identity.
    A standard observation cannot clear the expectation.
    Connect/retry cannot reselect a different VM. Storage corruption, missing backing state,
@@ -441,3 +441,5 @@ step ID, exact target/body digest, handed-off bytes and ack verdict, then settle
 original step. It does not require a newly created echo proof, increase attempts or send
 again. The same verifier still validates immutable observations for stored user-echo
 proofs. This checkpoint boundary is exercised by the real subprocess worker tests.
+
+Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and account are local connection labels; neither partitions owner or VM expectations. The shared trust-domain lock serializes all labels.

@@ -466,14 +466,13 @@ class Store:
     def _muse_boundary(self, provider: str, account: str):
         """Selection writes and final msg3 share an account file lock across Store instances."""
         digest = m.payload_digest([provider, account])
-        provider_digest = m.payload_digest([provider])
         failure = None
         validated = False
         try:
             if not self.paths.database.is_file():
                 raise _muse_storage_error()
             with (
-                file_lock(self.paths.runtime / f"muse-trust-provider-{provider_digest}.lock"),
+                file_lock(self.paths.runtime / "muse-trust-domain.lock"),
                 file_lock(self.paths.runtime / f"muse-trust-{digest}.lock"),
                 ExitStack() as maintenance,
             ):
@@ -569,12 +568,10 @@ class Store:
     def _muse_effective(conn, provider, account, viewer_hash, vm_id):
         # Read matching expectations inside the freeze/currentness/CAS transaction.
         owners = conn.execute(
-            "SELECT * FROM muse_trust_accounts WHERE provider=? AND (account=? OR viewer_hash=?)",
-            (provider, account, viewer_hash),
+            "SELECT * FROM muse_trust_accounts WHERE viewer_hash=?",
+            (viewer_hash,),
         ).fetchall()
-        vms = conn.execute(
-            "SELECT * FROM muse_trust_vms WHERE provider=? AND vm_id=?", (provider, vm_id)
-        ).fetchall()
+        vms = conn.execute("SELECT * FROM muse_trust_vms WHERE vm_id=?", (vm_id,)).fetchall()
         for row in (*owners, *vms):
             if row["version"] != 1 or row["confidential_required"] not in (0, 1):
                 raise _muse_storage_error()
