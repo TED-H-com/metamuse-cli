@@ -474,7 +474,6 @@ Trust is monotonic in place. Restoring an older backup, or rolling back to the d
 
 2026-10-14 round 4: an authenticated hint bind inserts its transaction-local barrier, bulk-inserts all observation and label VM rows, materializes the recursive closure once, updates the three tables set-wise, removes the barrier and commits. There is no per-id closure or recording cap. A separate small transaction checks the label after this independent evidence commit. Raw-SQL propagation and inherit guards remain active outside that batch.
 
-OFFLINE/FIXTURE measurement (2026-10-14, shared host): the exact 1 MiB session body carried 52,420 seven-character ids; all were committed confidential and no dial occurred. Bind CPU was 0.531 s, elapsed 14.284 s and bulk trust-domain lock hold 14.212 s (post-commit label check 0.006 s). CPU for 625/1,250/2,500/5,000 ids was 0.0217/0.0278/0.0377/0.0665 s; doubling ratios were 1.28/1.36/1.77. These are fixture measurements, not a wall-time guarantee.
 
 Round 4 storage mapping: SQLITE_BUSY/LOCKED past busy_timeout returns E_STORAGE / safe_read, “Muse security state is busy; retry”. READONLY identifies a read-only workspace and FULL a full disk, both user_action. Recording failures retain “Muse confidentiality could not be recorded” with the same fixed environment guidance, and stop before msg3. Integrity/schema failures alone advise verified restore with the later-expectations loss warning.
 
@@ -482,13 +481,11 @@ A committed muse_trust_propagating marker is always invalid and has a specific E
 
 HTTP 200 session status must be exactly `assigned` or documented `unavailable`. A missing, renamed, upper-case, non-string or other status with a VM id is interface drift: protocol_stop(), E_PROTOCOL_MISMATCH / never. A missing VM id remains E_RESOURCE_UNAVAILABLE. Non-object responses name session, hatch or auth in their stop action.
 
-Round 4 hint scan walks the authenticated session object iteratively, once, to depth 32 within the 1 MiB body. Compact/casefold key family: vm_type, type, vm_state, state, kind, vm_kind, vm_resolution_issue, cvm_required, cvm_replacement_enabled. A compact string containing cvm or confidentialvm is a marker; the two boolean keys also count any truthy value. Nested metadata and nested vms containers are scanned. A marker within a VM row records the row’s first usable id (including compact vmId aliases); nested metadata cannot redirect that id, and a nested vms container starts a new row scope; a marker outside rows records the owner seed and all usable ids. With no id, owner-only evidence is committed. A false positive permanently refuses standard for the connected owner/VM component: this deliberately errs toward confidentiality. Invalid depth or an oversized body is refused before dialing.
 
 Round 4 amends unreleased migration 005 again, with no 006: muse_trust_accounts now checks lower-case hexadecimal viewer/session hashes and normalized nonempty active VM ids, or NULL only with confidentiality set. The same constraints are verified on fresh v5, v4→v5 and confidential backup→restore. Noncanonical development v5 databases still fail schema verification.
 
 Round 4 provenance design: source and observed_at are frozen once an observation or label VM row has confidential_required=1, including later direct evidence. A direct hint/RV may stamp a prior cr=0 observation during its transition to 1; a standard freeze never restamps a cr=1 row. Inherited propagation retains the association’s prior provenance, rather than claiming direct CVM evidence. Existing immutable guards enforce this metadata rule; no first-cause column is needed because nothing overwrites confidential provenance.
 
-Unclassified operational I/O failures (including SQLite IOERR/CANTOPEN/PERM) identify workspace access, use user_action and never advise restore. ENOSPC/EROFS filesystem failures use the full-disk/read-only mapping. Restore guidance is reserved for integrity/schema validation failures. The final fixture measurement with the nested scanner was 0.575 s CPU and 1.642 s elapsed for 52,420 ids in exactly 1 MiB; the bulk domain lock held 1.529 s and the post-commit label check 0.005 s, with schema verification warmed.
 
 Session and selected-row keys whose compact form is `vmid` must all be valid and
 normalize to one VM identity, independently of key order. Name, endpoint and the
@@ -555,3 +552,10 @@ re-entry into the core's ordinary-pair pattern with a large assignment stream.
 The strict CPU doubling regression covers 128 KiB–1 MiB for text and body. The
 ordinary-pair core path remains a strict xfail until the shared safety owner
 makes it linear; no safety.py change is included here.
+
+MEASURE (2026-10-14, shared host, warmed schema): an exactly 1 MiB authenticated
+session containing 52,420 ids bound in 0.625 s CPU / 0.640 s elapsed; bulk trust
+domain lock held 0.499 s, post-commit check 0.005 s. Host load near this run was
+5.39/4.26/7.30 (1/5/15 minutes). This is one offline fixture measurement, not a
+wall-time guarantee. The component-cost regression separately measures unrelated
+freeze cycles after one, two and four maximum binds.

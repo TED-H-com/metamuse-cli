@@ -266,15 +266,12 @@ HTTP 200 session: status=unavailable或missing vm_id回resource；其他非assig
 
 Confidential write後notify全部workspace live listeners，跨local labels立即close sockets；下一call仍重查durable state。
 
-Round 4 hint scan walks the authenticated session object iteratively, once, to depth 32 within the 1 MiB body. Compact/casefold key family: vm_type, type, vm_state, state, kind, vm_kind, vm_resolution_issue, cvm_required, cvm_replacement_enabled. A compact string containing cvm or confidentialvm is a marker; the two boolean keys also count any truthy value. Nested metadata and nested vms containers are scanned. A marker within a VM row records the row’s first usable id (including compact vmId aliases); nested metadata cannot redirect that id, and a nested vms container starts a new row scope; a marker outside rows records the owner seed and all usable ids. With no id, owner-only evidence is committed. A false positive permanently refuses standard for the connected owner/VM component: this deliberately errs toward confidentiality. Invalid depth or an oversized body is refused before dialing.
 
-Redaction uses the tested compact secret-key family in text and JSON without matching generic ids or the exact association keys request_marker, x-request-id and client_request_id; remembered secrets are still removed from their values. It accepts prefix/suffix aliases, =/:/=> and XML delimiters. It percent-decodes up to two levels before longest-first matching and merging overlapping known spans; quote_plus and lowercase escapes are covered. Alias scanning covers full WSS queries even after an ordinary URL scheme. Non-sensitive text retains its original percent encoding. This is a specific tested encoding scope, not a claim about every possible representation.
 
 Round 4 amends unreleased migration 005 again, with no 006: muse_trust_accounts now checks lower-case hexadecimal viewer/session hashes and normalized nonempty active VM ids, or NULL only with confidentiality set. The same constraints are verified on fresh v5, v4→v5 and confidential backup→restore. Noncanonical development v5 databases still fail schema verification.
 
 Round 4 provenance design: source and observed_at are frozen once an observation or label VM row has confidential_required=1, including later direct evidence. A direct hint/RV may stamp a prior cr=0 observation during its transition to 1; a standard freeze never restamps a cr=1 row. Inherited propagation retains the association’s prior provenance, rather than claiming direct CVM evidence. Existing immutable guards enforce this metadata rule; no first-cause column is needed because nothing overwrites confidential provenance.
 
-Operational SQLite IOERR/CANTOPEN/PERM回workspace access/user_action，無restore advice；ENOSPC/EROFS回full-disk/read-only。Restore只適用明確integrity/schema failures。
 
 Session and selected-row keys whose compact form is `vmid` must all be valid and
 normalize to one VM identity, independently of key order. Name, endpoint and the

@@ -261,8 +261,7 @@ The fake gateway is `FakeGateway` on `InProcessLink`. It never listens on a port
 
 ### 9.1 Standard transport update, 2026-10-14
 
-The original spike above remains a historical record. One orchestrator-authorized LIVE
-An operator LIVE probe (evidence kept outside this repository) confirmed msg1 nonce field 1 (32 bytes), msg2 outer bytes field 2 (68 bytes),
+The original spike above remains a historical record. An operator LIVE probe (evidence kept outside this repository) confirmed msg1 nonce field 1 (32 bytes), msg2 outer bytes field 2 (68 bytes),
 and exactly nested fields 1/2 (32 bytes each): key equals responder Noise static and nonce
 equals this attempt's fresh challenge. Msg3 and application frames were not sent. This is
 one observation, not LIVE lifecycle acceptance. The independently documented protocol facts
