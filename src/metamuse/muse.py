@@ -737,7 +737,7 @@ def _retry_after(headers: Mapping[str, str]) -> float:
     return 0
 
 
-def _json_object(body: bytes, *, session: bool = False) -> dict[str, Any]:
+def _json_object(body: bytes, *, session: bool = False, kind: str = "auth") -> dict[str, Any]:
     if len(body) > (SESSION_RESPONSE_MAX_BYTES if session else AUTH_RESPONSE_MAX_BYTES):
         raise _error(
             ErrorCode.LIMIT_REACHED,
@@ -753,7 +753,7 @@ def _json_object(body: bytes, *, session: bool = False) -> dict[str, Any]:
         raise _error(
             ErrorCode.PROTOCOL_MISMATCH,
             "Muse HTTPS response was not an object",
-            next_action="Stop. Do not retry a damaged auth response.",
+            next_action=f"Stop. Do not retry a damaged {kind} response.",
         )
     return value
 
@@ -1347,7 +1347,15 @@ class MuseTransport:
             raise protocol_stop()
         if path == "/api/hatch/vm/wake":
             return {}
-        payload = _json_object(response.body, session=path == "/api/session?vm_state=live")
+        payload = _json_object(
+            response.body,
+            session=path == "/api/session?vm_state=live",
+            kind="session"
+            if path == "/api/session?vm_state=live"
+            else "hatch"
+            if path == "/api/hatch/token"
+            else "auth",
+        )
         if path == "/api/session?vm_state=live":
             return payload
         if path == "/api/auth/check":
@@ -1432,13 +1440,13 @@ class MuseTransport:
             raise protocol_stop()
         vm_id = payload.get("vm_id")
         normalized = ids[0]
-        if payload.get("status") != "assigned" or vm_id is None:
+        if payload.get("status") == "unavailable" or vm_id is None:
             raise _error(
                 ErrorCode.RESOURCE_UNAVAILABLE,
                 "The Muse VM is unavailable",
                 next_action="Retry later",
             )
-        if normalized is None:
+        if payload.get("status") != "assigned" or normalized is None:
             raise protocol_stop()
         row = payload
         if rows is not None:

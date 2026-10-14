@@ -187,7 +187,7 @@ no JSON body. Read/mint success still requires bounded valid JSON and its own fi
 | Other unexpected 2xx/4xx or unsupported response shape | `E_PROTOCOL_MISMATCH` | `never` |
 | 200 explicit `ok: false` on auth | `E_AUTH_REQUIRED` | `user_action` |
 | Twice-stale notary after one remint (spike §6.2 unavailable guidance) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
-| 200 unassigned session without confidential hints | `E_RESOURCE_UNAVAILABLE` | `user_action` |
+| 200 session status `unavailable`, or missing `vm_id`, without confidential hints | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | CVM/RV/delegation/endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
 
 Upgrade 401/403 is `E_AUTH_REQUIRED`, 429 is `E_RATE_LIMITED`; DNS/connect/TLS failure
@@ -472,3 +472,5 @@ OFFLINE/FIXTURE measurement (2026-10-14, shared host): the exact 1 MiB session b
 Round 4 storage mapping: SQLITE_BUSY/LOCKED past busy_timeout returns E_STORAGE / safe_read, “Muse security state is busy; retry”. READONLY identifies a read-only workspace and FULL a full disk, both user_action. Recording failures retain “Muse confidentiality could not be recorded” with the same fixed environment guidance, and stop before msg3. Integrity/schema failures alone advise verified restore with the later-expectations loss warning.
 
 A committed muse_trust_propagating marker is always invalid and has a specific E_STORAGE message. Safe human repair, after stopping Muse connections: acquire exclusive maintenance.lock, BEGIN IMMEDIATE, retain the barrier, rerun the recursive owner/VM closure and the three set-wise flag updates across the whole workspace, DELETE the marker, then COMMIT. This retains every observation and expectation; no restore is needed. There is no automatic repair/reset command.
+
+HTTP 200 session status must be exactly `assigned` or documented `unavailable`. A missing, renamed, upper-case, non-string or other status with a VM id is interface drift: protocol_stop(), E_PROTOCOL_MISMATCH / never. A missing VM id remains E_RESOURCE_UNAVAILABLE. Non-object responses name session, hatch or auth in their stop action.
