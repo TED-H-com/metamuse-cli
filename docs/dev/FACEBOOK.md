@@ -104,6 +104,33 @@ MITM TLS, and Playwright routing omits redirect hops. Nothing from a mismatched
 page is stored or reported. Login URLs become `E_AUTH_REQUIRED`; checkpoint/challenge
 URLs become `E_CHECKPOINT_REQUIRED`, even with an underlying valid post container.
 
+## Post share links
+
+Inputs also accept `/share/p/<code>/` on primary Facebook hosts, with code matching
+`[A-Za-z0-9]{1,64}`, exactly one trailing slash, and no query/fragment. They normalize
+to `https://www.facebook.com/share/p/<code>/`. B08's access digest binds that normalized
+share URL and resources; the page type remains post_permalink. Other share kinds,
+reels, watch/videos and group posts return E_UNSUPPORTED; next_action names the
+remote-media (B12) path for Reels/videos and explicitly says group posts are unsupported.
+The B12 implementation is unchanged.
+
+Share navigation uses the same proxy, URL barriers and bounded deadline. A 302 or
+immediate JS/meta-refresh hop can resolve to an accepted single-post permalink.
+Path-permalink tracking queries/fragments are removed before authorization; the
+semantic id/story_fbid query is parsed for the accepted PHP permalink forms and the
+canonical result is the query-free actor/posts/token URL. Any other final page type,
+including an unresolved share page, is unsupported and produces no extraction.
+The first observed supported post becomes the authorized identity; subsequent
+main-frame changes must match it. Source actor/id must also match before import.
+
+Step data/observed scope record requested_locator and resolved_permalink. Sources
+record the same pair in use_basis, requested input in original_url and resolved
+canonical post in canonical_url. Checkpoints retain the resolved canonical identity.
+Resume navigates through the original share URL again and requires that same actor
+and post token. Mismatch stops with distinct E_DATA_STALE before importing the new
+page; previously committed items remain and no second permit use is consumed.
+Encrypted redirects retain the previously stated pre-request visibility limitation.
+
 ## Egress and secret handling
 
 The session-local proxy listens on `127.0.0.1:0`, validates CONNECT authority and

@@ -523,3 +523,14 @@ newline boundaries without adding a second boundary beside an existing newline.
 JSON text is retained as given. No normalization replaces the preserved text;
 revision hashes use canonical JSON {text: preserved_text}, with no Unicode or
 whitespace normalization. Reliable identity uses native tokens, never text hashes.
+
+B13 post share inputs accept primary-host /share/p/<1..64 ASCII alphanumerics>/ with
+no query/fragment and normalize to https://www.facebook.com/share/p/<code>/. B08's
+access digest binds the normalized share URL/resources; page type remains
+post_permalink. The browser resolves through the proxy/barrier boundary to one
+supported post; other final kinds, including group posts, return E_UNSUPPORTED
+with remote-media (B12) guidance for Reels/videos. Step data/observed scope and
+Source.use_basis contain requested_locator/resolved_permalink; source original_url
+is the requested input and canonical_url is the resolved query-free post URL.
+Resume resolves the share again and requires the saved actor/token; a different
+identity is E_DATA_STALE, preserves committed data and imports no new target.

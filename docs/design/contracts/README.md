@@ -35,3 +35,9 @@ not a second hand-synchronized copy of their clarifications.
 packaged Skill into that directory and is not a sixteenth MCP tool. The fifteen tool
 contracts are unchanged. Installation is documented in
 [SKILL.md](../../dev/SKILL.md).
+
+B13 backend data uses existing open JSON result/provenance fields, documented in
+[Facebook collection](../../dev/FACEBOOK.md): step data includes browser_sandbox,
+requested_locator and resolved_permalink; Source.use_basis includes both locators.
+Capability retains its existing three status fields. The unsandboxed-operator
+warning belongs to Envelope.warnings, never a new Capability schema field.

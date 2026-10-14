@@ -764,3 +764,10 @@ A bounded cached headless launch without navigation/state verifies required sand
 readiness; an unavailable sandbox never yields environment=ready without the opt-in.
 The risk and generic AppArmor template are in docs/dev/FACEBOOK.md. Renderer compromise
 under the opt-in has operator UID access, so separate OS isolation is recommended.
+
+B13 share resolution never widens a permit: target/action payload bind the normalized
+share URL while browser navigation/extraction bind its first observed single-post
+actor/token. A resumed session compares against the persisted resolved identity
+before import; no numeric-token/pfbid or actor-alias equivalence is inferred.
+requested_locator and resolved_permalink use existing freeform result/provenance
+fields; no core model, migration or schema extension is required.
