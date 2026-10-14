@@ -3005,10 +3005,15 @@ def test_share_double_dot_host_is_refused_at_submit(ctx, project):
     req = remote_request(
         project, "https://www.facebook.com../share/r/Ab12token/", ["media_metadata"]
     )
-    permit = issue(ctx, project, req, ["FacebookReel"])
+    reviewable = remote_request(
+        project, "https://www.facebook.com/share/r/Ab12token/", ["media_metadata"]
+    )
+    permit = issue(ctx, project, reviewable, ["FacebookReel"])
     env = app.submit_collect(ctx, req.model_copy(update={"access_grant_id": permit}))
     assert env.status != "accepted"
     assert env.error.code == m.ErrorCode.SCOPE_DENIED
+    assert env.approval is None
+    assert safety.list_permits(ctx, project_id=project).data["permits"][0]["used"] == 0
     assert jobs_count(ctx) == before
 
 
