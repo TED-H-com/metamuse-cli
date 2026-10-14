@@ -655,6 +655,9 @@ Facebook navigation failures use only the main-document request/redirect chain a
 
 Only a fetch/XHR synchronously initiated by the trusted expansion click can classify an expansion response failure. Background and proxy-aborted responses are ignored. Such a failure imports observed data with expansion_failed and partial coverage; document auth/access/barrier outcomes remain distinct. Asynchronous endpoints without click provenance are treated conservatively as progress uncertainty, not guessed failure attribution.
 
+
+Facebook navigation barriers, page shapes and identity adoption apply only to the main frame. All network subframe document requests are aborted with blocked_subframe without setting navigation_error. A share identity is adopted only from the main frame.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -1384,7 +1387,7 @@ strings never enter job results, checkpoints, events or errors (AT-028).
 Authorized post identity requires exact, case-sensitive actor and post-token equality.
 Primary-host aliases and accepted permalink syntaxes with those same tokens are
 equivalent; numeric story_fbid and pfbid tokens are never inferred equivalent.
-Main-frame routes, every observed frame navigation and the final URL are checked
+Main-frame routes, every observed main-frame navigation and the final URL are checked
 before extraction; extracted actor/id mismatch stops with E_REFERENCE_INVALID.
 New document requests are aborted where Playwright routing (or the plaintext
 fixture proxy) exposes them. HTTPS 302 paths inside CONNECT can already have been
@@ -1435,7 +1438,7 @@ The risk and generic AppArmor template are in docs/dev/FACEBOOK.md. Renderer com
 under the opt-in has operator UID access, so separate OS isolation is recommended.
 
 B13 share resolution never widens a permit: target/action payload bind the normalized
-share URL while browser navigation/extraction bind its first observed single-post
+share URL while browser navigation/extraction bind its first observed main-frame single-post
 actor/token. A resumed session compares against the persisted resolved identity
 before import; no numeric-token/pfbid or actor-alias equivalence is inferred.
 requested_locator and resolved_permalink use existing freeform result/provenance
@@ -1470,6 +1473,9 @@ Facebook navigation failures use only the main-document request/redirect chain a
 
 
 Only a fetch/XHR synchronously initiated by the trusted expansion click can classify an expansion response failure. Background and proxy-aborted responses are ignored. Such a failure imports observed data with expansion_failed and partial coverage; document auth/access/barrier outcomes remain distinct. Asynchronous endpoints without click provenance are treated conservatively as progress uncertainty, not guessed failure attribution.
+
+
+Facebook navigation barriers, page shapes and identity adoption apply only to the main frame. All network subframe document requests are aborted with blocked_subframe without setting navigation_error. A share identity is adopted only from the main frame.
 
 ---
 

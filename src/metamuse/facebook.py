@@ -1834,14 +1834,19 @@ class _PlaywrightSession:
 
         def _on_route(route: Any) -> None:
             req = route.request
+            main_navigation = req.is_navigation_request() and req.frame == self._page.main_frame
+            if req.is_navigation_request() and not main_navigation:
+                self._egress.record_browser_refusal("blocked_subframe")
+                route.abort("blockedbyclient")
+                return
             redirected_from = req.redirected_from.url if req.redirected_from else None
-            if req.is_navigation_request():
+            if main_navigation:
                 self._navigation_urls.append(req.url)
             try:
                 self._egress.check_browser_route(
                     req.url,
                     resource_type=req.resource_type,
-                    is_navigation=req.is_navigation_request(),
+                    is_navigation=main_navigation,
                     redirected_from=redirected_from,
                 )
             except m.CoreError:
@@ -1853,7 +1858,7 @@ class _PlaywrightSession:
             route.continue_()
 
         def note_navigation(request: Any) -> None:
-            if request.is_navigation_request():
+            if request.is_navigation_request() and request.frame == self._page.main_frame:
                 self._navigation_urls.append(request.url)
 
         self._page.on("request", note_navigation)
@@ -1904,7 +1909,8 @@ class _PlaywrightSession:
 
         def _on_response(response: Any) -> None:
             req = response.request
-            if req.is_navigation_request():
+            main_navigation = req.is_navigation_request() and req.frame == self._page.main_frame
+            if main_navigation:
                 self._document_status = response.status
             with self._egress._lock:
                 aborted_err = self._egress.aborted_urls.get(response.url)
@@ -1912,7 +1918,7 @@ class _PlaywrightSession:
                 response.headers.get("x-metamuse-proxy-aborted") == "1" or aborted_err is not None
             )
             if aborted_by_proxy:
-                if req.is_navigation_request() and self._egress.navigation_error is None:
+                if main_navigation and self._egress.navigation_error is None:
                     self._egress.navigation_error = (
                         aborted_err
                         or self._egress.navigation_proxy_error([req.url])
@@ -1922,7 +1928,7 @@ class _PlaywrightSession:
                         )
                     )
                 return
-            if req.is_navigation_request():
+            if main_navigation:
                 self._navigation_responded.add(req.url)
             if (
                 req in self._expansion_requests
@@ -1932,7 +1938,7 @@ class _PlaywrightSession:
                 self._expansion_response_status = response.status
             purpose: safety.URLPurpose = (
                 "request"
-                if req.is_navigation_request()
+                if main_navigation
                 else ("media" if req.resource_type in ("image", "media", "font") else "subresource")
             )
             try:
@@ -1943,7 +1949,7 @@ class _PlaywrightSession:
                     server_addr=response.server_addr(),
                 )
             except m.CoreError as exc:
-                if self._peer_error is None:
+                if main_navigation and self._peer_error is None:
                     self._peer_error = exc
 
         def _on_frame_navigated(frame: Any) -> None:
