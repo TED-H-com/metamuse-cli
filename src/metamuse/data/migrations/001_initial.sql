@@ -168,6 +168,19 @@ CREATE TABLE request_receipts (
  operation TEXT NOT NULL, request_key TEXT NOT NULL, payload_digest TEXT NOT NULL, response TEXT NOT NULL,
  PRIMARY KEY(operation,request_key)
 );
+CREATE TABLE workspace_keys (
+ name TEXT NOT NULL, version INTEGER NOT NULL CHECK(version>=1),
+ key_material BLOB NOT NULL CHECK(typeof(key_material)='blob' AND length(key_material)=32),
+ created_at TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('active','retired')),
+ PRIMARY KEY(name,version)
+);
+CREATE UNIQUE INDEX workspace_key_active ON workspace_keys(name) WHERE status='active';
+CREATE TRIGGER workspace_key_immutable BEFORE UPDATE ON workspace_keys
+WHEN NEW.name<>OLD.name OR NEW.version<>OLD.version OR NEW.key_material<>OLD.key_material
+ OR NEW.created_at<>OLD.created_at OR (OLD.status='retired' AND NEW.status<>'retired')
+BEGIN SELECT RAISE(ABORT,'workspace key identity is immutable'); END;
+CREATE TRIGGER workspace_key_retained BEFORE DELETE ON workspace_keys
+BEGIN SELECT RAISE(ABORT,'workspace verification keys must be retained'); END;
 CREATE TRIGGER external_step_no_requeue BEFORE UPDATE OF state ON job_steps
 WHEN OLD.side_effect_class='external_submit' AND OLD.attempts>0 AND NEW.state='queued'
 BEGIN SELECT RAISE(ABORT,'entered external step cannot be replayed'); END;

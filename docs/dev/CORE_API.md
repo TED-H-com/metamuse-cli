@@ -323,10 +323,18 @@ and stored DraftRevision: language/emoji are nonempty bounded strings (35/32 cod
 points), format plain_text/markdown, scope this_draft. The content-owner/core-owner task
 explicitly authorizes these additive contracts; generated schemas come from models.py.
 See [CONTENT_API.md](CONTENT_API.md) for content resolution budgets and replay behavior.
-Content currently persists one workspace cursor-signing key through existing SQLite
-request receipts (operation content.cursor_key, request key v1), with no per-query state.
-Formal signing-key lifecycle and export-artifact backup support remain core change
-requests; core backup currently preserves the key/receipts, but excludes export files.
+`workspace_keys` holds internal 32-byte signing material. Store initialization provisions
+`content.cursor` before any search. `get_workspace_key(name, version=None)` reads the
+active or exact retained version; `workspace_verification_keys(name)` reads all versions.
+`get_or_create_workspace_key(name, conn=None)` is for initialization/mutation boundaries;
+read-only tools must use the read methods. `rotate_workspace_key(name)` atomically retires
+the active version and creates the next; retired material remains verifiable and immutable.
+WorkspaceKey hides material from repr, but callers must never serialize it to envelopes,
+logs, events or exports. SQLite backups contain these keys and are private sensitive data.
+Initialization imports and removes the legacy content.cursor_key/v1 receipt once; old
+stateless cursors still verify. Pre-release schema-1 databases missing the table get the
+001 key amendment under maintenance/worker locks with a pre-amendment backup. No schema
+version bump or key-management CLI is introduced. Export-artifact backup remains pending.
 
 `put_object(binary_stream, mime=..., max_bytes=..., duration_ms=None)` measures/hash-streams
 actual bytes into staging, fsyncs, atomically renames to the SHA-256 path, then commits a
@@ -381,6 +389,7 @@ All JSON column values are text; timestamp values are UTC ISO strings.
 | events | `id`, `object_id`, `job_id`, `project_id`, `kind`, `detail`, `created_at` |
 | worker_state | `singleton`, `owner_nonce`, `worker_epoch`, `heartbeat` |
 | request_receipts | `operation`, `request_key`, `payload_digest`, `response` |
+| workspace_keys | `name`, `version`, `key_material` (private BLOB), `created_at`, `status` (active/retired) |
 
 
 `item_revisions.text` is nullable. SQL NULL is the stored form of a JSON null and is the

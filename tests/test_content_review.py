@@ -365,7 +365,7 @@ def test_cursor_tamper_fields_and_no_per_query_state(ctx, project):
     with ctx.store.connection() as conn:
         assert (
             conn.execute(
-                "SELECT count(*) FROM request_receipts WHERE operation='content.cursor_key'"
+                "SELECT count(*) FROM workspace_keys WHERE name='content.cursor'"
             ).fetchone()[0]
             == 1
         )
