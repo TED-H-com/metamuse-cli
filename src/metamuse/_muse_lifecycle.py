@@ -549,6 +549,8 @@ def _millis(clock):
 
 
 def _exchange_view(store, discussion, exchange, conn=None):
+    from metamuse._muse_redact import sanitize_document
+
     def unresolved(db):
         return bool(
             db.execute(
@@ -571,7 +573,7 @@ def _exchange_view(store, discussion, exchange, conn=None):
     return Exchange(
         discussion.remote_session,
         exchange.baseline.get("seq", 0),
-        exchange.outbound_payload.body["text"],
+        sanitize_document(exchange.outbound_payload.body["text"]),
         exchange.request_marker,
         exchange.submitted_at_ms,
         earlier,
