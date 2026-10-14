@@ -382,7 +382,7 @@ class BrowserEgressProxy:
 
     def _register_socket(self, sock: socket.socket) -> bool:
         with self._lock:
-            if self._closed.is_set():
+            if self._closed.is_set() or self.byte_limit_exceeded:
                 sock.close()
                 return False
             self._active_sockets.add(sock)
@@ -411,12 +411,17 @@ class BrowserEgressProxy:
         with self._lock:
             self.bytes_relayed += count
             self.egress.bytes_relayed = self.bytes_relayed
-            if self.max_bytes is not None and self.bytes_relayed > self.max_bytes:
-                if not self.byte_limit_exceeded:
-                    self.byte_limit_exceeded = True
-                    self.egress.mark_byte_limit_exceeded()
-                return False
-            return True
+            if self.max_bytes is None or self.bytes_relayed <= self.max_bytes:
+                return not self.byte_limit_exceeded
+            if not self.byte_limit_exceeded:
+                self.byte_limit_exceeded = True
+                self.egress.mark_byte_limit_exceeded()
+            sockets = list(self._active_sockets)
+        # Cut both sides of every active tunnel immediately, including a client
+        # awaiting headers and other requests sharing the session budget.
+        for sock in sockets:
+            self._close_socket(sock)
+        return False
 
     def _accept_loop(self) -> None:
         while not self._closed.is_set():
@@ -508,7 +513,7 @@ class BrowserEgressProxy:
             dial_ip = checked.addresses[0]
             # Serialize the closed-state check and dial with shutdown completion.
             with self._dial_lock:
-                if self._closed.is_set():
+                if self._closed.is_set() or self.byte_limit_exceeded:
                     return
                 upstream_sock = socket.create_connection(
                     (dial_ip, checked.port),

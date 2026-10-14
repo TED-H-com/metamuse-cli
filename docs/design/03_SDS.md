@@ -881,3 +881,14 @@ Native WebSocket creation or handshake responses in any attached target stop
 with the existing fixed `E_PROTOCOL_MISMATCH` before import. Workers never resume.
 The `WebSocketStream` init shim is defense in depth alongside Playwright's
 ordinary WebSocket routing; it is not the popup or socket boundary.
+
+
+A Facebook proxy byte cutoff immediately shuts down both client and upstream
+sockets for all active tunnels and refuses subsequent dials/registrations. A
+50 ms browser-loop watcher closes the affected page to interrupt in-flight
+navigation, click and expansion operations, instead of waiting for the full
+`read_timeout_seconds`. All browser operation exceptions recheck the byte latch
+and return `E_LIMIT_REACHED` with partial coverage; already observed data remains
+available. The watcher uses the pinned Playwright implementation loop, as does
+the existing async WebSocket close adapter. Tests bound hangs at an independent
+90-second subprocess deadline, with 300-second read and job budgets.

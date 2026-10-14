@@ -289,7 +289,11 @@ def test_r5_n1_unrelated_refusal_cannot_reclassify_navigation_timeout(
         "</body>", '<img src="/slow.png"><script>' + scripts[refusal] + "</script></body>"
     )
     with browser_fixture(
-        tmp_path, monkeypatch, {POST_PATH: markup, "/slow.png": ""}, delays={"/slow.png": 4}
+        tmp_path,
+        monkeypatch,
+        {POST_PATH: markup, "/slow.png": ""},
+        delays={"/slow.png": 4},
+        read_timeout=2,
     ) as env:
         ctx, project, permit, _, _, _, _ = env
         job = finish(ctx, submit(ctx, project, permit))

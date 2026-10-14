@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from browser_deadline import browser_deadline
 
 from metamuse import _browser_egress, app, config, facebook, jobs, safety
 from metamuse import models as m
@@ -408,7 +409,7 @@ def test_loopback_and_private_urls_refused_on_production_path_before_job_exists(
                     "max_urls": 1,
                     "max_items": 50,
                     "max_bytes": 1_000_000,
-                    "wall_clock_seconds": 60,
+                    "wall_clock_seconds": 300,
                 },
                 "access_grant_id": permit_id,
                 "request_key": f"req-direct-{bad_url}",
@@ -429,7 +430,7 @@ def test_loopback_and_private_urls_refused_on_production_path_before_job_exists(
                     "max_urls": 1,
                     "max_items": 50,
                     "max_bytes": 1_000_000,
-                    "wall_clock_seconds": 60,
+                    "wall_clock_seconds": 300,
                 },
                 "access_grant_id": permit_id,
                 "request_key": f"req-app-{bad_url}",
@@ -451,7 +452,7 @@ def test_loopback_and_private_urls_refused_on_production_path_before_job_exists(
                     "max_urls": 1,
                     "max_items": 50,
                     "max_bytes": 1_000_000,
-                    "wall_clock_seconds": 60,
+                    "wall_clock_seconds": 300,
                 },
                 "access_grant_id": permit_id,
                 "request_key": f"req-dns-{bad_ip}",
@@ -486,7 +487,7 @@ def test_narrow_dispatch_routes_only_facebook_post_and_comment_requests(tmp_path
                     "max_urls": 1,
                     "max_items": 50,
                     "max_bytes": 1_000_000,
-                    "wall_clock_seconds": 60,
+                    "wall_clock_seconds": 300,
                 },
                 "access_grant_id": permit_id,
                 "request_key": f"req-media-{'-'.join(media_resources)}",
@@ -512,7 +513,7 @@ def test_narrow_dispatch_routes_only_facebook_post_and_comment_requests(tmp_path
                     "max_urls": 1,
                     "max_items": 50,
                     "max_bytes": 1_000_000,
-                    "wall_clock_seconds": 60,
+                    "wall_clock_seconds": 300,
                 },
                 "access_grant_id": permit_id,
                 "request_key": f"req-other-{other_url}",
@@ -543,7 +544,7 @@ def test_pre_job_refusals_leave_no_job_in_store(tmp_path: Path):
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-unsupported-shape",
@@ -566,7 +567,7 @@ def test_pre_job_refusals_leave_no_job_in_store(tmp_path: Path):
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-disabled",
@@ -587,7 +588,7 @@ def test_pre_job_refusals_leave_no_job_in_store(tmp_path: Path):
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": None,
             "request_key": "req-no-permit",
@@ -705,7 +706,7 @@ def test_capability_backend_row_states_and_tool_row_unchanged(
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-missing-dep",
@@ -912,7 +913,7 @@ def test_parent_tree_unresolved_parent_revisions_and_provenance(tmp_path: Path):
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-obs-1",
@@ -1003,7 +1004,7 @@ def test_parent_tree_unresolved_parent_revisions_and_provenance(tmp_path: Path):
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-obs-2",
@@ -1089,7 +1090,7 @@ def test_expansion_budget_and_unexpanded_gaps_produce_partial(tmp_path: Path):
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-expand-budget",
@@ -1185,7 +1186,7 @@ def test_distinct_failure_classes_stop_without_retry(
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": f"req-fail-{scenario}",
@@ -1231,7 +1232,7 @@ def test_navigation_redirects_to_login_or_checkpoint_stop_and_proxies_refused(
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-redir-cp",
@@ -1310,7 +1311,7 @@ def test_embedded_json_payload_and_secret_redaction_on_error(tmp_path: Path):
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-json-payload",
@@ -1344,7 +1345,7 @@ def test_genuinely_empty_comments_succeeds_distinct_from_parser_failure(tmp_path
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-empty-comments",
@@ -1399,7 +1400,7 @@ def test_content_is_stored_as_inert_data_only(tmp_path: Path):
                 "max_urls": 1,
                 "max_items": 50,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-at032",
@@ -1459,7 +1460,7 @@ def test_resume_after_crash_completes_without_duplicates_or_extra_permit_use(tmp
                 "max_urls": 1,
                 "max_items": 100,
                 "max_bytes": 1_000_000,
-                "wall_clock_seconds": 60,
+                "wall_clock_seconds": 300,
             },
             "access_grant_id": permit_id,
             "request_key": "req-crash-resume",
@@ -1909,7 +1910,7 @@ def test_playwright_integration_against_local_synthetic_server(
                     "max_urls": 1,
                     "max_items": 50,
                     "max_bytes": 1_000_000,
-                    "wall_clock_seconds": 60,
+                    "wall_clock_seconds": 300,
                 },
                 "access_grant_id": permit_id,
                 "request_key": "req-pw-local-integration",
@@ -2047,7 +2048,7 @@ def test_playwright_egress_proxy_blocks_navigation_and_subresource_redirects_to_
                     "max_urls": 1,
                     "max_items": 50,
                     "max_bytes": 1_000_000,
-                    "wall_clock_seconds": 60,
+                    "wall_clock_seconds": 300,
                 },
                 "access_grant_id": permit_nav,
                 "request_key": "req-nav-302-to-b",
@@ -2082,7 +2083,7 @@ def test_playwright_egress_proxy_blocks_navigation_and_subresource_redirects_to_
                     "max_urls": 1,
                     "max_items": 50,
                     "max_bytes": 1_000_000,
-                    "wall_clock_seconds": 60,
+                    "wall_clock_seconds": 300,
                 },
                 "access_grant_id": permit_sub,
                 "request_key": "req-sub-302-to-b",
@@ -2208,7 +2209,7 @@ def test_playwright_egress_proxy_dials_only_first_checked_resolver_address(
                     "max_urls": 1,
                     "max_items": 10,
                     "max_bytes": 1_000_000,
-                    "wall_clock_seconds": 60,
+                    "wall_clock_seconds": 300,
                 },
                 "access_grant_id": permit_id,
                 "request_key": "req-dns-pinned-dial",
@@ -2230,6 +2231,7 @@ def test_playwright_egress_proxy_dials_only_first_checked_resolver_address(
         server_b.server_close()
 
 
+@browser_deadline
 def test_playwright_egress_proxy_byte_budget_stops_oversized_response(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -2276,6 +2278,13 @@ def test_playwright_egress_proxy_byte_budget_stops_oversized_response(
             pacing_ms=0,
             allow_unsandboxed_browser=True,  # Explicit synthetic test exception on this host.
         )
+        config_path = ctx.paths.root / "metamuse.toml"
+        config_path.write_text(
+            config_path.read_text().replace(
+                "read_timeout_seconds = 30", "read_timeout_seconds = 300"
+            )
+        )
+        ctx = app.AppContext.open(ctx.paths.root)
         facebook.set_egress_factory(
             lambda _hosts: facebook.EgressGuard.for_fixture_test(
                 allowed_hosts=("www.facebook.com", "127.0.0.1"),
@@ -2296,7 +2305,7 @@ def test_playwright_egress_proxy_byte_budget_stops_oversized_response(
                     "max_urls": 1,
                     "max_items": 50,
                     "max_bytes": 2048,
-                    "wall_clock_seconds": 60,
+                    "wall_clock_seconds": 300,
                 },
                 "access_grant_id": permit_id,
                 "request_key": "req-pw-byte-budget",
@@ -2307,6 +2316,8 @@ def test_playwright_egress_proxy_byte_budget_stops_oversized_response(
             ex.run(once=True)
 
         job = app.get_job(ctx, {"job_id": sub.data["job_id"]}).data["job"]
+        step_res = job["result"]["data"]["steps"][0]
+        assert step_res["data"]["error"]["code"] == m.ErrorCode.LIMIT_REACHED.value
         assert job["state"] == "partial"
         assert job["coverage_status"] == "partial"
         assert job["stop_reason"] == "limit_reached"
