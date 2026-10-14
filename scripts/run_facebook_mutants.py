@@ -1,4 +1,4 @@
-"""Run the independent B13 review mutants and round-6 removals, one pytest at a time."""
+"""Run the independent B13 review mutants and round-6/7 removals, one pytest at a time."""
 
 import argparse
 import json
@@ -26,6 +26,21 @@ CASES = {
     "G1": ["tests/test_facebook_byte_stop.py", "-k", "closes_registered_sockets"],
 }
 
+CASES.update(
+    {
+        "NM1": ["tests/test_facebook_popups.py", "-k", "popup_creation_refused"],
+        "NM2": ["tests/test_facebook_popups.py", "-k", "missing_popup_control"],
+        "NM3": ["tests/test_facebook_visibility.py", "-k", "page_cannot_hide"],
+        "NM4": ["tests/test_facebook_byte_stop.py", "-k", "connecting_upstream"],
+        "NM5": ["tests/test_facebook_round6.py", "-k", "policy_precedes or denied_navigation"],
+        "NM6": ["tests/test_facebook_guard_failures.py", "-k", "worker_shutdown"],
+        "NM7": ["tests/test_facebook_popups.py", "-k", "iframe_only"],
+        "R7F1": ["tests/test_facebook_visibility.py", "-k", "visible-child"],
+        "R7F2": ["tests/test_facebook_target_shutdown.py", "-k", "false_close_waits"],
+        "R7F3": ["tests/test_facebook_cutoff_precedence.py", "-k", "fatal_stop_identical"],
+    }
+)
+
 OPTIONAL_CASES = {
     "G1_WATCH": [
         "tests/test_facebook.py::test_playwright_egress_proxy_byte_budget_stops_oversized_response"
@@ -48,8 +63,12 @@ def main():
             "UV_OFFLINE=1",
             "METAMUSE_REQUIRE_BROWSER_TESTS=1",
             "PYTHONPATH=tests",
-            "PYTEST_PLUGINS=facebook_mutants",
-            f"METAMUSE_FACEBOOK_MUTANT={name}",
+            "PYTEST_PLUGINS=facebook_mutants,facebook_round7_mutants",
+            (
+                f"METAMUSE_FACEBOOK_ROUND7_MUTANT={name}"
+                if name.startswith(("NM", "R7"))
+                else f"METAMUSE_FACEBOOK_MUTANT={name}"
+            ),
             "uv",
             "run",
             "pytest",
