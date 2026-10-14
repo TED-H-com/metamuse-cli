@@ -1,0 +1,81 @@
+"""Prompt byte cutoff, with production deadlines far beyond the independent test deadline."""
+
+from browser_deadline import browser_deadline
+from test_facebook import _synthetic_post_html
+from test_facebook_review import browser_fixture, finish
+from test_facebook_round5 import POST_PATH, submit
+from test_facebook_round6 import reset_seams  # noqa: F401
+
+from metamuse import app
+
+
+def run_byte_stop(tmp_path, monkeypatch, expansion):
+    markup = _synthetic_post_html(
+        comments=[{"id": "c_1", "text": "First"}],
+        expand_controls=[{"id": "more"}] if expansion else [],
+    )
+    if expansion:
+        markup = markup.replace(
+            "</body>",
+            """<script>
+          document.querySelector('button').onclick=() => fetch('/oversize');
+          </script></body>""",
+        )
+    else:
+        markup = markup.replace("Synthetic announcement post body.", "X" * 100_000)
+    with browser_fixture(
+        tmp_path, monkeypatch, {POST_PATH: markup, "/oversize": "X" * 100_000}, unsandboxed=False
+    ) as (ctx, project, permit, *_):
+        config = ctx.paths.root / "metamuse.toml"
+        config.write_text(
+            config.read_text().replace("read_timeout_seconds = 30", "read_timeout_seconds = 300")
+        )
+        ctx = app.AppContext.open(ctx.paths.root)
+        job = finish(ctx, submit(ctx, project, permit, max_bytes=24_000))
+        error = job["result"]["data"]["steps"][0]["data"]["error"]
+        assert error and error["code"] == "E_LIMIT_REACHED", error
+        assert job["state"] == "partial"
+        assert job["coverage_status"] == "partial"
+        assert job["stop_reason"] == "limit_reached"
+        assert "byte_budget_exceeded" in job["missing_fields"]
+
+
+@browser_deadline
+def test_r6_byte_limit_interrupts_navigation(tmp_path, monkeypatch):
+    run_byte_stop(tmp_path, monkeypatch, False)
+
+
+@browser_deadline
+def test_r6_byte_limit_interrupts_expansion(tmp_path, monkeypatch):
+    run_byte_stop(tmp_path, monkeypatch, True)
+
+
+def test_r6_proxy_byte_cutoff_closes_registered_sockets():
+    import socket
+
+    from metamuse import _browser_egress, facebook
+
+    guard = facebook.EgressGuard.for_fixture_test(
+        allowed_hosts=("www.facebook.com",), resolver=lambda _: ["127.0.0.1"]
+    )
+    proxy = _browser_egress.BrowserEgressProxy(guard, max_bytes=1, idle_timeout_s=300)
+    sockets = [socket.socketpair() for _ in range(2)]
+    try:
+        for client, upstream in sockets:
+            assert proxy._register_socket(client)
+            assert proxy._register_socket(upstream)
+        assert not proxy._charge_bytes(2)
+        assert proxy.byte_limit_exceeded
+        assert all(sock.fileno() == -1 for pair in sockets for sock in pair)
+        refused, peer = socket.socketpair()
+        try:
+            assert not proxy._register_socket(refused)
+            assert refused.fileno() == -1
+        finally:
+            refused.close()
+            peer.close()
+    finally:
+        proxy.close()
+        for pair in sockets:
+            for sock in pair:
+                sock.close()

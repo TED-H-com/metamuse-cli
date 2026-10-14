@@ -69,7 +69,9 @@ def finish(ctx, job_id):
 
 
 @contextmanager
-def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL, delays=None, unsandboxed=True):
+def browser_fixture(
+    tmp_path, monkeypatch, pages, *, url=URL, delays=None, unsandboxed=True, read_timeout=30
+):
     """Synthetic config with explicit sandbox choice; test-only TLS exemption."""
     if facebook.find_playwright_browser() is None:
         pytest.skip("Playwright or Chromium is not installed")
@@ -87,7 +89,9 @@ def browser_fixture(tmp_path, monkeypatch, pages, *, url=URL, delays=None, unsan
     )
     config_path = ctx.paths.root / "metamuse.toml"
     config_path.write_text(
-        config_path.read_text().replace("read_timeout_seconds = 30", "read_timeout_seconds = 2")
+        config_path.read_text().replace(
+            "read_timeout_seconds = 30", f"read_timeout_seconds = {read_timeout}"
+        )
     )
     ctx = app.AppContext.open(ctx.paths.root)
     cert, key = tmp_path / "cert.pem", tmp_path / "key.pem"
@@ -383,7 +387,7 @@ def test_finding_04_approved_wss_and_worker_wss_closed_before_handshake(
             if "allow_unsandboxed_browser" in config.FacebookConfig.model_fields
             else {}
         )
-        session = driver.open_session(state, guard, timeout_ms=2000, **options)
+        session = driver.open_session(state, guard, timeout_ms=30000, **options)
         try:
             session.goto_post(URL)
             session._page.wait_for_function("window.states.includes('closed')", timeout=2000)

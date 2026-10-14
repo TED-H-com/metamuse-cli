@@ -33,6 +33,7 @@ Third-party provenance:
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import ipaddress
 import json
@@ -2215,6 +2216,24 @@ class _PlaywrightSession:
             },
         )
 
+        # The sync Playwright API pumps this pinned implementation loop during
+        # goto/click/evaluate. A proxy-thread latch must interrupt the page while
+        # a routed navigation is still awaiting its full production read timeout.
+        self._byte_watch = page._impl_obj._loop.create_task(self._watch_byte_limit())
+
+    async def _watch_byte_limit(self) -> None:
+        while not self._page.is_closed():
+            if self._egress.byte_limit_exceeded or (
+                self._proxy is not None and self._proxy.byte_limit_exceeded
+            ):
+                try:
+                    await self._page._impl_obj.close()
+                except Exception:
+                    if not self._page.is_closed():
+                        self._guard_failed()
+                return
+            await asyncio.sleep(0.05)
+
     def _note_popup_attempt(self) -> None:
         self.popups_blocked += 1
         self._egress.record_browser_refusal("popup_blocked")
@@ -2350,9 +2369,6 @@ class _PlaywrightSession:
                 self._guard_failed()
 
     def _raise_if_byte_limit(self) -> None:
-        self._verify_target_shutdown()
-        if self._transport_error is not None:
-            raise self._transport_error
         if self._egress.byte_limit_exceeded or (
             self._proxy is not None and self._proxy.byte_limit_exceeded
         ):
@@ -2361,6 +2377,10 @@ class _PlaywrightSession:
                 "Facebook page response exceeded max_bytes budget",
                 next_action="Increase limits.max_bytes or narrow the requested resources",
             )
+
+        self._verify_target_shutdown()
+        if self._transport_error is not None:
+            raise self._transport_error
 
     def _snapshot_html(self) -> str:
         return self._page.evaluate("""() => {
@@ -2379,6 +2399,14 @@ class _PlaywrightSession:
         }""")
 
     def goto_post(self, url: str) -> PageObservation:
+        try:
+            self._raise_if_byte_limit()
+            return self._goto_post(url)
+        except Exception:
+            self._raise_if_byte_limit()
+            raise
+
+    def _goto_post(self, url: str) -> PageObservation:
         target_url = url
         if self._test_origin is not None:
             parsed = urlsplit(url)
@@ -2445,6 +2473,14 @@ class _PlaywrightSession:
         )
 
     def expand_next(self, control_id: str) -> PageObservation:
+        try:
+            self._raise_if_byte_limit()
+            return self._expand_next(control_id)
+        except Exception:
+            self._raise_if_byte_limit()
+            raise
+
+    def _expand_next(self, control_id: str) -> PageObservation:
         if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", control_id):
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid expand control identifier")
         self._egress.navigation_error = None
@@ -2499,6 +2535,7 @@ class _PlaywrightSession:
         )
 
     def close(self) -> None:
+        self._byte_watch.cancel()
         for obj in (self._page, self._context, self._browser):
             try:
                 obj.close()
