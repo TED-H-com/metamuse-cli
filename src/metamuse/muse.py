@@ -1404,15 +1404,29 @@ class MuseTransport:
         def compact(value):
             return re.sub(r"[^a-z0-9]", "", value.casefold())
 
+        def identities(item):
+            return [value for key, value in item.items() if compact(key) == "vmid"]
+
+        def usable_identities(item):
+            return {
+                value.strip().lower()
+                for value in identities(item)
+                if isinstance(value, str) and _VM_ID.fullmatch(value.strip())
+            }
+
         def identity(item):
-            for key, value in item.items():
-                if compact(key) == "vmid":
-                    return (
-                        value.strip().lower()
-                        if isinstance(value, str) and _VM_ID.fullmatch(value.strip())
-                        else None
-                    )
-            return None
+            values = identities(item)
+            normalized = usable_identities(item)
+            if (
+                not values
+                or len(normalized) != 1
+                or any(
+                    not isinstance(value, str) or not _VM_ID.fullmatch(value.strip())
+                    for value in values
+                )
+            ):
+                raise protocol_stop()
+            return next(iter(normalized))
 
         marker_keys = {
             "vmtype",
@@ -1446,18 +1460,17 @@ class MuseTransport:
             if depth > _JSON_DEPTH:
                 raise protocol_stop()
             if isinstance(node, dict):
-                node_id = identity(node)
-                if node_id is not None:
-                    usable.add(node_id)
-                    if in_rows and row_id is None:
-                        row_id = node_id
+                node_ids = usable_identities(node)
+                usable.update(node_ids)
+                if node_ids and in_rows and row_id is None:
+                    row_id = node_ids
                 for key, value in node.items():
                     if confidential_marker(key, value):
                         confidential = True
                         if not in_rows:
                             outside_marker = True
                         elif row_id is not None:
-                            marked.add(row_id)
+                            marked.update(row_id)
                     if isinstance(value, (dict, list)):
                         stack.append(
                             (
@@ -1482,15 +1495,15 @@ class MuseTransport:
             )
             raise protocol_stop()
         vm_id = payload.get("vm_id")
-        normalized = identity(payload)
         if payload.get("status") == "unavailable" or vm_id is None:
             raise _error(
                 ErrorCode.RESOURCE_UNAVAILABLE,
                 "The Muse VM is unavailable",
                 next_action="Retry later",
             )
-        if payload.get("status") != "assigned" or normalized is None:
+        if payload.get("status") != "assigned":
             raise protocol_stop()
+        normalized = identity(payload)
         row = payload
         if rows is not None:
             if not isinstance(rows, list) or any(not isinstance(item, dict) for item in rows):
@@ -1535,7 +1548,11 @@ class MuseTransport:
         ):
             raise protocol_stop()
         replacement = any(item.get(key) for item in (payload, row) for key in _REPLACEMENT_KEYS)
-        return {"selected": SelectedVM(vm_id, name, endpoint, vm_type, state, replacement)}
+        return {
+            "selected": SelectedVM(
+                vm_id, name, endpoint, vm_type, state, replacement, identity=normalized
+            )
+        }
 
     def _remaining_connect_budget(self, deadline: float, cap: float) -> float:
         remaining = deadline - self._clock()

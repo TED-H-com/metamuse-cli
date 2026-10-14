@@ -489,3 +489,10 @@ Round 4 amends unreleased migration 005 again, with no 006: muse_trust_accounts 
 Round 4 provenance design: source and observed_at are frozen once an observation or label VM row has confidential_required=1, including later direct evidence. A direct hint/RV may stamp a prior cr=0 observation during its transition to 1; a standard freeze never restamps a cr=1 row. Inherited propagation retains the association’s prior provenance, rather than claiming direct CVM evidence. Existing immutable guards enforce this metadata rule; no first-cause column is needed because nothing overwrites confidential provenance.
 
 Unclassified operational I/O failures (including SQLite IOERR/CANTOPEN/PERM) identify workspace access, use user_action and never advise restore. ENOSPC/EROFS filesystem failures use the full-disk/read-only mapping. Restore guidance is reserved for integrity/schema validation failures. The final fixture measurement with the nested scanner was 0.575 s CPU and 1.642 s elapsed for 52,420 ids in exactly 1 MiB; the bulk domain lock held 1.529 s and the post-commit label check 0.005 s, with schema verification warmed.
+
+Session and selected-row keys whose compact form is `vmid` must all be valid and
+normalize to one VM identity, independently of key order. Name, endpoint and the
+persistent trust key use that identity. The exact server `vm_id` may be retained
+on the wire only after that agreement check (case and surrounding whitespace
+are the only permitted differences). A confidential hint records every usable
+identity alias before any disagreement is refused, before mint, wake or dial.

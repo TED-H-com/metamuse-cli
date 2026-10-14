@@ -16,6 +16,7 @@ class SelectedVM:
     vm_state: str
     replacement: bool
     confidential_hint: bool = False
+    identity: str | None = None
 
 
 def storage_stop() -> CoreError:
@@ -46,7 +47,7 @@ class StoreMuseTrust:
         return self.store.muse_freeze(
             provider=self.provider,
             account=self.account,
-            vm_id=selected.vm_id,
+            vm_id=selected.identity or selected.vm_id,
             viewer_id=auth["viewer_id"],
             session_binding_id=auth["session_binding_id"],
             confidential=selected.confidential_hint
