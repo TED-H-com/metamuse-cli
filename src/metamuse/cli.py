@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from metamuse import app
 from metamuse import models as m
 from metamuse.jobs import TERMINAL, Executor, worker_available
+from metamuse.safe_log import log_safe_exception
 
 
 class Parser(argparse.ArgumentParser):
@@ -500,12 +501,25 @@ def render(result: m.Envelope, *, as_json: bool) -> None:
         print(json.dumps(result.data, ensure_ascii=False, indent=2), file=sys.stdout)
 
 
+def _cli_operation(args: argparse.Namespace | None) -> str:
+    if args is None:
+        return "cli"
+    command = getattr(args, "command", None)
+    action = getattr(args, "action", None)
+    if isinstance(command, str) and isinstance(action, str):
+        return f"{command} {action}"
+    if isinstance(command, str) and command:
+        return command
+    return "cli"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     logging.basicConfig(
         stream=sys.stderr, level=logging.WARNING, format="%(levelname)s: %(message)s"
     )
     as_json = "--json" in argv
+    args = None
     try:
         with redirect_stdout(sys.stderr) if as_json else nullcontext():
             args = parser().parse_args(argv)
@@ -528,6 +542,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
     except OSError:
         result = m.failure(m.CoreError(m.ErrorCode.STORAGE, "Workspace I/O failed"))
+    except Exception as exc:
+        result = m.failure(m.CoreError(m.ErrorCode.STORAGE, "Command execution failed"))
+        log_safe_exception(
+            logging.getLogger("metamuse"),
+            exc,
+            operation=_cli_operation(args),
+            code=m.ErrorCode.STORAGE.value,
+            request_id=result.request_id,
+        )
     except KeyboardInterrupt:
         result = m.Envelope(
             status="partial",

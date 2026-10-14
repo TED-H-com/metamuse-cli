@@ -84,3 +84,9 @@ The MCP stdio transport requires that `stdout` carry **only** newline-delimited 
 - **Attached background worker**: `metamuse mcp` does not start an attached background worker loop yet; operations that enqueue jobs return `status="accepted"` with `worker_available: false` and `state: "queued"` honestly when no worker is active.
 - **MCP resources**: Resource endpoints (`resources/list`, `resources/read`) are not registered; all P0 interactions go through the 15 tools.
 - **External MCP host pairing**: Live host configuration and pairing with Claude Code, Codex, Grok, or Antigravity are deferred to a separately authorized round.
+
+---
+
+## 7. Safe exception logs
+
+`call_tool` still returns a fixed `E_STORAGE` envelope for workspace I/O errors and for any other unexpected exception. Both branches log through `safe_log.log_safe_exception`. The line names the tool, `E_STORAGE`, the envelope request id, a `job_id` argument only when it already matches `job_` plus 32 hex characters, the exception class names along `__cause__` and `__context__`, and stack frames as `file:line:function`. It does not log `str(exc)`, `repr(exc)`, exception arguments, locals, or source lines. `logger.exception` and `exc_info=True` are not used.

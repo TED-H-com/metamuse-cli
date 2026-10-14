@@ -79,7 +79,11 @@ message, retry_class and optional nullable next_action (populated from
 `DEFAULT_NEXT_ACTIONS[code]` whenever `ErrorDetail`/`CoreError`/`failure`/`validation_error`
 is constructed without an explicit `next_action`, keeping CLI and MCP envelopes identical).
 Never include credentials, raw transport exceptions or unrestricted source content in
-error/log/event text.
+error/log/event text. Unexpected CLI failures and the `mcp.call_tool` OSError and
+unexpected-exception branches log through `safe_log.log_safe_exception`: the operation,
+error code, request id or job id when it is already a public id, exception class names,
+and `file:line:function` frames. That log does not include exception text, arguments,
+locals, or source lines, and it does not use `exc_info`.
 `Envelope` enforces error/null-data consistency; JSON schemas enforce the same condition.
 `canonical_json(value)` returns UTF-8 bytes with sorted keys, compact separators, no
 string normalization, and rejects nonfinite numbers/non-string object keys.

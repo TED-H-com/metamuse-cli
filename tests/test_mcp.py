@@ -538,11 +538,16 @@ def test_mcp_raw_pipe_stdout_cleanliness_with_logs_and_warnings(tmp_path: Path) 
         "synthetic-stray-stdout-print",
         "synthetic-sys-stdout-write",
         "synthetic-fd1-write",
-        "synthetic-unhandled-exception",
     )
     for marker in noise_markers:
         assert marker not in stdout_text
         assert marker in stderr_text
+    # The exception text stays off both streams. The safe log still names the tool.
+    assert "synthetic-unhandled-exception" not in stdout_text
+    assert "synthetic-unhandled-exception" not in stderr_text
+    assert "operation=metamuse_search" in stderr_text
+    assert "code=E_STORAGE" in stderr_text
+    assert "RuntimeError" in stderr_text
     assert (
         "synthetic-envelope-warning"
         in parsed_messages[2]["result"]["structuredContent"]["warnings"]

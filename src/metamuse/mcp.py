@@ -21,6 +21,7 @@ from pydantic import ValidationError
 
 from metamuse import app
 from metamuse import models as m
+from metamuse.safe_log import known_job_id, log_safe_exception
 
 if TYPE_CHECKING:
     from metamuse.app import AppContext
@@ -104,6 +105,7 @@ def call_tool(
     except (ValueError, TypeError):
         envelope = m.failure(m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid request"))
     else:
+        job_id = known_job_id(raw_args if isinstance(raw_args, Mapping) else None)
         try:
             envelope = fn(ctx, validated)
         except m.CoreError as exc:
@@ -112,12 +114,26 @@ def call_tool(
             envelope = m.failure(m.validation_error(exc))
         except (ValueError, TypeError):
             envelope = m.failure(m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid request"))
-        except OSError:
-            ctx.logger.exception("Workspace I/O error in %s", name)
+        except OSError as exc:
             envelope = m.failure(m.CoreError(m.ErrorCode.STORAGE, "Workspace I/O failed"))
-        except Exception:
-            ctx.logger.exception("Unhandled exception in %s", name)
+            log_safe_exception(
+                ctx.logger,
+                exc,
+                operation=name,
+                code=m.ErrorCode.STORAGE.value,
+                request_id=envelope.request_id,
+                job_id=job_id,
+            )
+        except Exception as exc:
             envelope = m.failure(m.CoreError(m.ErrorCode.STORAGE, "Tool execution failed"))
+            log_safe_exception(
+                ctx.logger,
+                exc,
+                operation=name,
+                code=m.ErrorCode.STORAGE.value,
+                request_id=envelope.request_id,
+                job_id=job_id,
+            )
 
     return _envelope_to_result(ctx, envelope)
 
