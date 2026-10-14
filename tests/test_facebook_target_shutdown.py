@@ -60,9 +60,11 @@ def test_r7_worker_shutdown_twenty_consecutive_runs(tmp_path, monkeypatch):
     # fetch/socket, concurrently with a SharedWorker. None may execute.
     script = """<script>
       const inner = "fetch('/escape-inner'); new WebSocketStream('wss://'+location.host+'/escape-ws')";
-      const outer = "new Worker(URL.createObjectURL(new Blob(["+JSON.stringify(inner)+"],{type:'text/javascript'})));fetch('/escape-outer')";
+      const outer = "new Worker(URL.createObjectURL(new Blob(["+JSON.stringify(inner)+
+        "],{type:'text/javascript'})));fetch('/escape-outer')";
       new Worker(URL.createObjectURL(new Blob([outer],{type:'text/javascript'})));
-      new SharedWorker(URL.createObjectURL(new Blob(["onconnect=()=>fetch('/escape-shared')"],{type:'text/javascript'})));
+      new SharedWorker(URL.createObjectURL(new Blob([
+        "onconnect=()=>fetch('/escape-shared')"],{type:'text/javascript'})));
       </script>"""
     markup = _synthetic_post_html().replace("</body>", script + '<img src="/hold"></body>')
     for index in range(20):
@@ -76,7 +78,7 @@ def test_r7_worker_shutdown_twenty_consecutive_runs(tmp_path, monkeypatch):
             original = driver.open_session
             sessions = []
 
-            def opened(*args, **kwargs):
+            def opened(*args, original=original, sessions=sessions, **kwargs):
                 session = original(*args, **kwargs)
                 session._worker_cdp.send("Security.setIgnoreCertificateErrors", {"ignore": True})
                 sessions.append(session)
