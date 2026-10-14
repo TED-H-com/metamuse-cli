@@ -1438,9 +1438,9 @@ def _url_redaction_spans(text: str) -> list[tuple[int, int]]:
         "skv",
     }
     spans = []
-    for match in parameters.finditer(text):
-        if spans and match.end() <= spans[-1][1]:
-            continue
+    position = 0
+    while match := parameters.search(text, position):
+        position = match.end()
         name = match["key"]
         decoded_name = name
         for _ in range(3):
@@ -1460,6 +1460,7 @@ def _url_redaction_spans(text: str) -> list[tuple[int, int]]:
             "token" if decoded_name.lower() in signed else name, value
         ):
             spans.append((match.end(), end))
+            position = end
     return spans
 
 
@@ -1494,6 +1495,51 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
                     else "sensitive_field"
                 )
                 add(*match.span("value"), kind)
+
+    space = r"(?:[ \t]|%(?:25){0,2}(?:20|09))"
+    if "%" in text:
+        encoded_fields = re.compile(
+            r"(?P<q>%(?:25){0,2}22)(?P<key>[A-Za-z0-9_.%\-]{1,384}?)(?P=q)"
+            + space
+            + "*+"
+            + _encoded_separator(":")
+            + space
+            + "*+"
+            + r"(?P<vq>%(?:25){0,2}22)(?P<value>(?:(?!(?P=vq))[^\r\n])*+)(?P=vq)",
+            re.ASCII | re.IGNORECASE,
+        )
+        for match in encoded_fields.finditer(text):
+            if redaction_sensitive_value(match["key"], match["value"]):
+                add(*match.span("value"), "sensitive_field")
+
+    bearer = re.compile(
+        r"(?i)(?<![A-Za-z0-9_.-])bearer" + space + r"++(?P<token>[A-Za-z0-9._~+/%=\-]{8,}+)",
+        re.ASCII,
+    )
+    for match in bearer.finditer(text):
+        if match["token"].lower() not in {"preferred", "token", "tokens", "header"}:
+            add(*match.span("token"), "authorization")
+
+    userinfo = re.compile(
+        r"https?"
+        + _encoded_separator(":")
+        + _encoded_separator("/") * 2
+        + r"[A-Za-z0-9._~%+\-]{1,384}?"
+        + _encoded_separator(":"),
+        re.ASCII | re.IGNORECASE,
+    )
+    authority_end = re.compile(r"[\s/\"'<>{}]", re.ASCII)
+    at = re.compile(_encoded_separator("@"), re.ASCII | re.IGNORECASE)
+    position = 0
+    while match := userinfo.search(text, position):
+        boundary = authority_end.search(text, match.end())
+        finish = boundary.start() if boundary else len(text)
+        separator = at.search(text, match.end(), finish)
+        position = separator.end() if separator else finish
+        if separator and redaction_sensitive_value(
+            "password", text[match.end() : separator.start()]
+        ):
+            add(match.end(), separator.start(), "url_token")
 
     # Atomic bodies preserve quoted cookie pairs and JSON closing delimiters.
     header_body = (
@@ -1535,28 +1581,52 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         add(start, end, "url_token")
 
     assignments = re.compile(
-        r"(?i)(?<![A-Za-z0-9_.%?&#-])(?P<key>[A-Za-z_][A-Za-z0-9_.%\-]{0,383}?)[ \t]*=[ \t]*",
+        r"(?i)(?<![A-Za-z0-9_.%?&#-])(?P<key>[A-Za-z_][A-Za-z0-9_.%\-]{0,383}?)"
+        + space
+        + "*+"
+        + r"(?P<sep>"
+        + _encoded_separator("=")
+        + "|"
+        + _encoded_separator(":")
+        + ")"
+        + space
+        + "*+",
         re.ASCII,
     )
     values = re.compile("(?:" + value + ")", re.ASCII)
-    if "=" in text:
-        for match in assignments.finditer(text):
-            key = match["key"]
-            if not redaction_sensitive_key(key):
-                continue
-            found = values.match(text, match.end())
-            if (
-                found
-                and text[found.end() : found.end() + 1] != "("
-                and redaction_sensitive_value(key, found.group())
-            ):
-                add(
-                    match.start(),
-                    found.end(),
-                    "local_path"
-                    if key.lower().replace("_", "") == "localpath"
-                    else "session_cookie",
-                )
+    # Credential spans already cover their contents. Scan assignments only outside
+    # them, while still examining local-path spans for embedded credentials.
+    ranges = []
+    position = 0
+    for start, end, kind in sorted(spans):
+        if kind == "local_path":
+            continue
+        if start > position:
+            ranges.append((position, start))
+        position = max(position, end)
+    if position < len(text):
+        ranges.append((position, len(text)))
+    if "=" in text or ":" in text or "%" in text:
+        for begin, finish in ranges:
+            for match in assignments.finditer(text, begin, finish):
+                key = match["key"]
+                if not redaction_sensitive_key(key):
+                    continue
+                if match["sep"] != "=" and key.lower() in {"authorization", "cookie", "set-cookie"}:
+                    continue
+                found = values.match(text, match.end(), finish)
+                if (
+                    found
+                    and text[found.end() : found.end() + 1] != "("
+                    and redaction_sensitive_value(key, found.group())
+                ):
+                    add(
+                        match.start(),
+                        found.end(),
+                        "local_path"
+                        if key.lower().replace("_", "") == "localpath"
+                        else "session_cookie",
+                    )
 
     if "sk-" in text:
         for match in re.finditer(
@@ -1591,7 +1661,7 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
     merged: list[tuple[int, int]] = []
     covered_kind = None
     for start, end, kind in sorted(spans, key=lambda span: (span[0], -span[1])):
-        if merged and start < merged[-1][1]:
+        if merged and start <= merged[-1][1]:
             if end > merged[-1][1] or (covered_kind == "local_path" and kind != "local_path"):
                 counts[kind] = counts.get(kind, 0) + 1
             merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
