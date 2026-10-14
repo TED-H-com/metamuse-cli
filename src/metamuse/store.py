@@ -89,7 +89,7 @@ _MUSE_STORAGE_ACTIONS = {
         "Check workspace availability and permissions before reconnecting"
     ),
     "Muse security state has a committed propagation barrier": (
-        "Stop Muse connections; in one maintenance transaction insert or retain the barrier, "
+        "Stop Muse connections; in one maintenance transaction create the barrier if absent, "
         "rerun the owner/VM closure over the whole workspace, "
         "then remove the marker and commit; no restore is needed"
     ),
