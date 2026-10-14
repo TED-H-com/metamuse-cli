@@ -27,4 +27,8 @@ boundaries and database APIs are documented in [CORE_API.md](docs/dev/CORE_API.m
 Dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). No real
 account integration or publishing capability is claimed by this core build.
 
+## Skill
+
+The agent skill definition lives in [skills/metamuse/](skills/metamuse/SKILL.md). The Skill requires an installed, reachable MetaMuse backend (CLI or MCP server) to execute operations; when the backend is unavailable, operations cannot be simulated.
+
 License: [Apache-2.0](LICENSE).
