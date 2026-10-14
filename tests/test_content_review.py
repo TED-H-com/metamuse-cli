@@ -125,8 +125,14 @@ def test_review_01_shared_asset_is_visible_only_to_the_owning_project(ctx, proje
 def test_review_02_redaction_bypasses():
     samples = [
         "https://example.invalid/#access_token=FAKE_FRAGMENT",
-        "https://example.invalid/?api_key=FAKE_API&refresh_token=FAKE_REFRESH&client_secret=FAKE_CLIENT",
-        "https://example.invalid/?next=https%3A%2F%2Fexample.invalid%2F%3Faccess_token%3DFAKE_ENCODED",
+        (
+            "https://example.invalid/?api_key=FAKE_API&refresh_token=FAKE_REFRESH&c"
+            "lient_secret=FAKE_CLIENT"
+        ),
+        (
+            "https://example.invalid/?next=https%3A%2F%2Fexample.invalid%2F%3Facces"
+            "s_token%3DFAKE_ENCODED"
+        ),
         "session%5Fid=FAKE_SESSION",
         "Authorization: Basic FAKE_BASIC",
         "Authorization: Token FAKE_TOKEN",
@@ -327,7 +333,9 @@ def test_f16_all_core_tools_effective_and_stubs_absent(ctx):
     core = [row for row in rows if row["name"] in app.CORE_IMPLEMENTED_TOOLS]
     assert {row["name"] for row in core if row["effective"]} == app.CORE_IMPLEMENTED_TOOLS
     assert all(not row["effective"] for row in rows if row["implementation"] == "absent")
-    assert len(generated_schemas()) == 40
+    from metamuse.store import TABLE_MODELS
+
+    assert len(generated_schemas()) == len(m.TOOL_REQUEST_MODELS) + len(TABLE_MODELS) + 6
 
 
 def test_cursor_tamper_fields_and_no_per_query_state(ctx, project):

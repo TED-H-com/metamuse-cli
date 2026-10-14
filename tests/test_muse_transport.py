@@ -52,12 +52,8 @@ from metamuse.muse import (
     MuseProgrammingError,
     MuseTransport,
     PreparedMuseRequest,
-    close_muse_exchange,
-    open_muse_discussion,
     prepare_muse_request,
-    read_muse_exchange,
     register_operations,
-    submit_muse_exchange,
 )
 from metamuse.safety import CheckedURL
 
@@ -348,18 +344,19 @@ def assert_clean(text: str) -> None:
     assert "hatch_sess" not in text
 
 
-def test_lifecycle_stays_unimplemented():
-    assert IMPLEMENTED_TOOLS == frozenset()
+def test_lifecycle_declares_the_four_host_tools():
+    assert IMPLEMENTED_TOOLS == frozenset(
+        {
+            "metamuse_muse_open",
+            "metamuse_muse_send",
+            "metamuse_muse_read",
+            "metamuse_muse_close_exchange",
+        }
+    )
     register_operations(None)
-    for function in (
-        open_muse_discussion,
-        submit_muse_exchange,
-        read_muse_exchange,
-        close_muse_exchange,
-    ):
-        with pytest.raises(CoreError) as caught:
-            function(None, None)  # type: ignore[arg-type]
-        assert caught.value.detail.code == ErrorCode.UNSUPPORTED
+    from metamuse.jobs import OPERATIONS
+
+    assert {"muse.open", "muse.send", "muse.history", "muse.sessions"} <= OPERATIONS.keys()
 
 
 def test_import_does_not_load_network_libraries():

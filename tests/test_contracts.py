@@ -132,12 +132,10 @@ def test_capability_and_stub(ctx):
     rows = app.inspect_capabilities(ctx).data["capabilities"]
     capabilities = [row for row in rows if row["name"] in m.TOOL_REQUEST_MODELS]
     assert len(capabilities) == 15
-    from metamuse import collect, content
 
     assert sum(c["implementation"] == "implemented" for c in capabilities) == (
         len(app.CORE_IMPLEMENTED_TOOLS)
-        + len(content.IMPLEMENTED_TOOLS)
-        + len(collect.IMPLEMENTED_TOOLS)
+        + sum(len(module.IMPLEMENTED_TOOLS) for module in app._feature_modules())
     )
     assert all(not c["effective"] for c in capabilities if c["implementation"] == "absent")
     collect = next(row for row in capabilities if row["name"] == "metamuse_collect")

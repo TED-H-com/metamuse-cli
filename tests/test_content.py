@@ -577,7 +577,7 @@ def test_content_capabilities_are_local_fixture_only(ctx):
         assert capabilities[tool]["implementation"] == "implemented"
         assert capabilities[tool]["verification"] == "fixture_passed"
         assert capabilities[tool]["effective"]
-    assert capabilities["metamuse_muse_send"]["implementation"] == "absent"
+    assert capabilities["metamuse_muse_send"]["implementation"] == "implemented"
 
 
 def test_cli_content_additive_flags_and_full_offline_flow(ctx, project, tmp_path, capsys):
