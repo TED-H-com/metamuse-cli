@@ -2144,7 +2144,9 @@ class _PlaywrightSession:
           source.forEach((node, index) => {
             const style = getComputedStyle(node);
             if (style.display === 'none' || style.visibility === 'hidden'
-                || style.visibility === 'collapse') clones[index].setAttribute('hidden', '');
+                || style.visibility === 'collapse') {
+              clones[index].setAttribute('data-metamuse-invisible', '');
+            }
           });
           return copy.outerHTML;
         }""")
@@ -2581,6 +2583,16 @@ class _DOMExtractor(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = {k.lower(): (v or "") for k, v in attrs}
         tag = tag.lower()
+        # Stop evidence is independent of rendering, including head/void elements.
+        fb_state = attr_map.get("data-fb-state") or attr_map.get("data-page-state")
+        if fb_state:
+            self.meta_state = fb_state.strip().lower()
+        if tag == "form" and (
+            attr_map.get("id") == "login_form" or attr_map.get("data-testid") == "royal_login_form"
+        ):
+            self.meta_state = self.meta_state or "login_wall"
+        if attr_map.get("data-checkpoint") == "true" or attr_map.get("id") == "checkpoint_Form":
+            self.meta_state = self.meta_state or "checkpoint"
         # Structural JSON evidence is independent of rendered-body visibility.
         if (
             tag == "script"
@@ -2597,6 +2609,9 @@ class _DOMExtractor(HTMLParser):
         style = attr_map.get("style", "").lower()
         hidden = (
             "hidden" in attr_map
+            or "data-metamuse-invisible" in attr_map
+            or tag in {"head", "meta"}
+            or (tag == "input" and attr_map.get("type", "").lower() == "hidden")
             or attr_map.get("aria-hidden", "").lower() == "true"
             or re.search(r"(?:^|;)\s*display\s*:\s*none(?:\s*!important)?\s*(?:;|$)", style)
             or re.search(
@@ -2611,15 +2626,6 @@ class _DOMExtractor(HTMLParser):
         # and stack tracking must exclude them.
         if attr_map.get("data-comments-exhausted") == "true":
             self.comments_exhausted = True
-        fb_state = attr_map.get("data-fb-state") or attr_map.get("data-page-state")
-        if fb_state:
-            self.meta_state = fb_state.strip().lower()
-        if tag == "form" and (
-            attr_map.get("id") == "login_form" or attr_map.get("data-testid") == "royal_login_form"
-        ):
-            self.meta_state = self.meta_state or "login_wall"
-        if attr_map.get("data-checkpoint") == "true" or attr_map.get("id") == "checkpoint_Form":
-            self.meta_state = self.meta_state or "checkpoint"
         if (
             attr_map.get("data-fb-role", "").lower() == "attachment"
             and "data-attachment-url" in attr_map

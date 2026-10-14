@@ -833,3 +833,13 @@ type. Every other script is excluded from body text, even if it carries that mar
 Embedded JSON integer tokens over 128 characters stay lexical for field validation.
 Oversized counts add their fixed *_count_unparsed gap and retain the observed post;
 they do not turn a valid JSON document into a malformed-payload error.
+
+
+Facebook stop markers (`data-fb-state`, `data-page-state`, `data-checkpoint`, login
+and checkpoint form IDs) are inspected on every element, including hidden, head
+and void elements, in both drivers. Completeness evidence such as
+`data-comments-exhausted` counts only in visible subtrees under the shared text
+visibility rules. Chromium snapshots annotate computed invisibility on the clone
+with `data-metamuse-invisible`; they preserve the page's own `hidden` attribute
+and never mutate the live DOM. Head/meta and hidden inputs are invisible in both
+drivers. Text and structural JSON extraction retain their existing rules.
