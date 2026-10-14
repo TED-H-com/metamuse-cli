@@ -572,6 +572,18 @@ class BrowserEgressProxy:
                     self._active_tunnels = max(0, self._active_tunnels - 1)
 
     def check_url_bounded(self, url: str, purpose: safety.URLPurpose) -> safety.CheckedURL:
+        authority = self.egress._authority(url)
+        with self.egress._lock:
+            pinned = (
+                authority in self.egress.checked_by_authority
+                or authority in self.egress._route_checked_by_authority
+            )
+        if pinned:
+            # Recheck the complete URL policy using the already pinned addresses.
+            # This cannot resolve or dial, even after cutoff. In particular, a
+            # completed HTML observation must reach fatal barrier classification
+            # before the application decides whether its byte budget is exhausted.
+            return self.egress._check_route_destination(url, purpose)
         try:
             return self._check_bounded(lambda: self.egress._check_route_destination(url, purpose))
         except ProxyRequestError as exc:
