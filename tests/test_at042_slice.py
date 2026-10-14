@@ -250,7 +250,7 @@ class Journey:
 
 def test_at042_cli_and_mcp_stdio_journey(tmp_path):
     journey = Journey(tmp_path)
-    assert journey.cli("init")["data"]["schema_version"] == 4
+    assert journey.cli("init")["data"]["schema_version"] == 5
     config = journey.workspace / "metamuse.toml"
     config.write_text(
         config.read_text()

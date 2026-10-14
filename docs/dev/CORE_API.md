@@ -1,4 +1,4 @@
-# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 4)
+# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 5)
 
 B02–B04 owns `app.py`, `cli.py`, `models.py`, `store.py`, `jobs.py`, migration SQL and
 generated schemas. Other tasks must build against these APIs without editing them.
@@ -746,7 +746,7 @@ B08 owns verification and atomic consumption on the verifier's supplied connecti
 adds no competing permit API. New scope/expiry/use budgets require a new human grant.
 Ready object reads/inserts verify SHA-256; put_object can repair a corrupt occupant only
 with newly measured/hash-verified bytes and rejects a conflicting MIME classification.
-Failed backups remove only their newly created partial destination. Schema is 4;
+Failed backups remove only their newly created partial destination. Schema is 5;
 001 and 002 are amended pre-release. Canonical v1 workspaces upgrade through 002;
 older development workspaces missing amendments in 001 must be recreated.
 Core still owns all migrations and generated schemas.
@@ -861,3 +861,37 @@ that same worker Store. An explicitly injected fixture gateway retains its suppl
 Store and mutable fixture state; its database access is read-only. Credentials use
 the secret store, and the resolver does DNS; neither uses the workspace database.
 Network waits never hold a connection lock or transaction.
+
+## B09 standard transport trust (schema 5)
+
+Migration `005_muse_trust.sql` adds private `muse_trust_accounts` and
+`muse_trust_vms`, separate from lifecycle history. Account identity is
+`(provider, account)`; VM identity adds normalized `vm_id`. No auth_ref, cookie,
+route/notary token or key is stored. The first authenticated bootstrap binds the
+configured account to SHA-256(viewer_id); conflicting owners fail closed. A
+session-binding hash captures connection currentness without resetting history.
+
+`Store.muse_freeze(...)` returns a private typed `MuseTrustSnapshot` with owner,
+session, active selection and generation. Authenticated CVM assignment joins the
+sticky per-VM and active-account confidential requirement. Standard never clears
+it. Connect/retry cannot select a different active VM; there is no trust-reset or
+VM-reselection tool in this slice. Operator correction requires a separately
+controlled binding/selection action, never model content.
+
+`muse_record_confidential(snapshot)` records a valid RV observation atomically and
+increments generation. `muse_assert_current(snapshot)` refuses stale/corrupt state.
+`muse_standard_handoff(snapshot, callback)` validates both expectations and the
+captured generation, commits standard-observation provenance, then invokes msg3
+under the same per-account file lock used for every selection/session write. A shared
+workspace maintenance lock also excludes migration/restore across commit and handoff. A
+failed commit/CAS never invokes the callback. `muse_watch` registers weak local
+socket invalidators. Other processes recheck durable generation before each call;
+one workspace worker remains the execution owner.
+
+Trust SQL guards freeze owner/identity/version, retain rows, forbid replacement,
+require generation increments for context changes and make confidentiality
+monotonic. Missing backing files, noncanonical schema, unsupported versions,
+missing active-VM provenance and failed transactions block with E_STORAGE. No
+in-memory fallback exists. Upgrades use the existing pre-upgrade backup and
+atomic migration; rollback is restoring that verified schema-4 backup into a fresh
+workspace, not dropping trust rows in place. Domain/tool schemas are unchanged.

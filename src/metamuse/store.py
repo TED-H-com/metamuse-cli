@@ -14,11 +14,12 @@ import stat
 import tempfile
 import threading
 import warnings
+import weakref
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from functools import lru_cache
+from functools import lru_cache, wraps
 from pathlib import Path
 from typing import Any, BinaryIO, Literal, TypeVar
 
@@ -28,13 +29,14 @@ from metamuse import models as m
 from metamuse.config import load_config
 from metamuse.paths import WorkspacePaths, private_dir, private_file
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 DATA = Path(__file__).parent / "data"
 MIGRATIONS = {
     1: DATA / "migrations" / "001_initial.sql",
     2: DATA / "migrations" / "002_collect_media.sql",
     3: DATA / "migrations" / "003_muse_lifecycle.sql",
     4: DATA / "migrations" / "004_muse_evidence.sql",
+    5: DATA / "migrations" / "005_muse_trust.sql",
 }
 CONTENT_CURSOR_KEY = "content.cursor"
 
@@ -62,6 +64,48 @@ class WorkspaceKey:
     key_material: bytes = field(repr=False)
     created_at: str
     status: str
+
+
+@dataclass(frozen=True)
+class MuseTrustSnapshot:
+    """Private frozen owner/session/selection context; no auth_ref or keys."""
+
+    provider: str
+    account: str
+    vm_id: str
+    viewer_hash: str = field(repr=False)
+    session_hash: str = field(repr=False)
+    generation: int
+    confidential_required: bool
+
+
+_MUSE_LISTENERS: dict[tuple[str, str, str], list[weakref.WeakMethod]] = {}
+_MUSE_LISTENERS_LOCK = threading.Lock()
+
+
+def _muse_storage_error() -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.STORAGE,
+        "Muse security state is unavailable or stale",
+        next_action="Restore the bound account security-state store before reconnecting",
+    )
+
+
+def _muse_safe(fn):
+    """Raise storage failures outside context-manager exception state, without raw causes."""
+
+    @wraps(fn)
+    def run(*args, **kwargs):
+        failure = None
+        try:
+            return fn(*args, **kwargs)
+        except m.CoreError as exc:
+            if exc.detail.code != m.ErrorCode.STORAGE:
+                raise
+            failure = _muse_storage_error()
+        raise failure
+
+    return run
 
 
 TABLE_MODELS = {
@@ -416,6 +460,284 @@ class Store:
                 ) from None
             finally:
                 conn.close()
+
+    @contextmanager
+    def _muse_boundary(self, provider: str, account: str):
+        """Selection writes and final msg3 share an account file lock across Store instances."""
+        digest = m.payload_digest([provider, account])
+        failure = None
+        validated = False
+        try:
+            if not self.paths.database.is_file():
+                raise _muse_storage_error()
+            with (
+                file_lock(self.paths.runtime / f"muse-trust-{digest}.lock"),
+                file_lock(self.paths.runtime / "maintenance.lock", exclusive=False),
+            ):
+                self._check_restore_marker()
+                if not self.paths.database.is_file():
+                    raise _muse_storage_error()
+                with self.connection() as conn:
+                    _verify_schema(conn, self.schema_version, self._migrations)
+                validated = True
+                yield
+        except m.CoreError as exc:
+            failure = (
+                exc
+                if validated and exc.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
+                else _muse_storage_error()
+            )
+        except Exception:
+            failure = _muse_storage_error()
+        if failure is not None:
+            raise failure
+
+    def _muse_notify(self, provider: str, account: str) -> None:
+        key = (str(self.paths.root), provider, account)
+        with _MUSE_LISTENERS_LOCK:
+            listeners = _MUSE_LISTENERS.get(key, [])
+            _MUSE_LISTENERS[key] = [ref for ref in listeners if ref() is not None]
+        for ref in listeners:
+            callback = ref()
+            if callback is not None:
+                callback()
+
+    def muse_watch(self, snapshot: MuseTrustSnapshot, callback: Callable[[], None]) -> None:
+        """Weak socket invalidator; recheck currentness after registration."""
+        key = (str(self.paths.root), snapshot.provider, snapshot.account)
+        with _MUSE_LISTENERS_LOCK:
+            refs = _MUSE_LISTENERS.setdefault(key, [])
+            refs[:] = [ref for ref in refs if ref() is not None]
+            refs.append(weakref.WeakMethod(callback))
+
+    @staticmethod
+    def _muse_rows(conn, provider, account, vm_id):
+        owner = conn.execute(
+            "SELECT * FROM muse_trust_accounts WHERE provider=? AND account=?", (provider, account)
+        ).fetchone()
+        vm = conn.execute(
+            "SELECT * FROM muse_trust_vms WHERE provider=? AND account=? AND vm_id=?",
+            (provider, account, vm_id),
+        ).fetchone()
+        for row in (owner, vm):
+            if row is not None and (
+                row["version"] != 1 or row["confidential_required"] not in (0, 1)
+            ):
+                raise _muse_storage_error()
+        if owner is not None and (
+            not re.fullmatch(r"[0-9a-f]{64}", owner["viewer_hash"])
+            or not re.fullmatch(r"[0-9a-f]{64}", owner["session_hash"])
+            or owner["generation"] < 1
+            or not owner["active_vm_id"]
+            or not owner["updated_at"]
+        ):
+            raise _muse_storage_error()
+        if owner is not None:
+            active = conn.execute(
+                "SELECT version, source, observed_at, confidential_required FROM muse_trust_vms "
+                "WHERE provider=? AND account=? AND vm_id=?",
+                (provider, account, owner["active_vm_id"]),
+            ).fetchone()
+            if (
+                active is None
+                or active["version"] != 1
+                or not active["observed_at"]
+                or active["source"] not in ("authenticated_assignment", "noise_message_2")
+                or active["confidential_required"] not in (0, 1)
+            ):
+                raise _muse_storage_error()
+            if active["confidential_required"] and not owner["confidential_required"]:
+                raise _muse_storage_error()
+        if vm is not None and (
+            vm["source"] not in ("authenticated_assignment", "noise_message_2")
+            or not vm["observed_at"]
+        ):
+            raise _muse_storage_error()
+        return owner, vm
+
+    @_muse_safe
+    def muse_freeze(
+        self,
+        *,
+        provider: str,
+        account: str,
+        vm_id: str,
+        viewer_id: str,
+        session_binding_id: str,
+        confidential: bool = False,
+    ) -> MuseTrustSnapshot:
+        """Bind owner once; freeze session/selection; join confidential evidence monotonically."""
+        if any(
+            not isinstance(value, str)
+            or not value
+            or len(value) > 4096
+            or any(ord(c) < 32 for c in value)
+            for value in (provider, account, vm_id, viewer_id, session_binding_id)
+        ):
+            raise _muse_storage_error()
+        vm_id = vm_id.strip().lower()
+        if re.fullmatch(r"[a-z0-9._-]{1,128}", vm_id) is None:
+            raise _muse_storage_error()
+        viewer_hash = hashlib.sha256(viewer_id.encode()).hexdigest()
+        session_hash = hashlib.sha256(session_binding_id.encode()).hexdigest()
+        changed = False
+        with self._muse_boundary(provider, account):
+            with self.transaction() as conn:
+                owner, vm = self._muse_rows(conn, provider, account, vm_id)
+                if owner is None:
+                    if vm is not None:
+                        raise _muse_storage_error()
+                    generation = 1
+                    active_confidential = bool(confidential)
+                    conn.execute(
+                        "INSERT INTO muse_trust_accounts VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)",
+                        (
+                            provider,
+                            account,
+                            viewer_hash,
+                            session_hash,
+                            vm_id,
+                            generation,
+                            int(active_confidential),
+                            self.clock(),
+                        ),
+                    )
+                else:
+                    if owner["viewer_hash"] != viewer_hash:
+                        raise m.CoreError(
+                            m.ErrorCode.PROTOCOL_MISMATCH,
+                            "Muse authenticated owner changed",
+                            next_action="Correct the operator account binding before reconnecting",
+                        )
+                    active_confidential = bool(owner["confidential_required"] or confidential)
+                    # Connect/retry is not an operator VM-reselection action.
+                    if owner["active_vm_id"] != vm_id and not active_confidential:
+                        raise m.CoreError(
+                            m.ErrorCode.PROTOCOL_MISMATCH,
+                            "Muse active VM selection changed",
+                            next_action="Resolve the operator VM selection before reconnecting",
+                        )
+                    selected_vm = owner["active_vm_id"]
+                    changed = (
+                        owner["session_hash"] != session_hash
+                        or owner["active_vm_id"] != selected_vm
+                        or owner["confidential_required"] != int(active_confidential)
+                    )
+                    generation = owner["generation"] + int(changed)
+                    result = conn.execute(
+                        "UPDATE muse_trust_accounts SET session_hash=?, active_vm_id=?, "
+                        "generation=?, "
+                        "confidential_required=?, updated_at=? WHERE provider=? "
+                        "AND account=? AND generation=?",
+                        (
+                            session_hash,
+                            selected_vm,
+                            generation,
+                            int(active_confidential),
+                            self.clock(),
+                            provider,
+                            account,
+                            owner["generation"],
+                        ),
+                    )
+                    if result.rowcount != 1:
+                        raise _muse_storage_error()
+                if vm is None:
+                    conn.execute(
+                        "INSERT INTO muse_trust_vms VALUES (?, ?, ?, 1, ?, ?, ?)",
+                        (
+                            provider,
+                            account,
+                            vm_id,
+                            int(confidential),
+                            "authenticated_assignment",
+                            self.clock(),
+                        ),
+                    )
+                elif confidential:
+                    conn.execute(
+                        "UPDATE muse_trust_vms SET confidential_required=1, "
+                        "source='authenticated_assignment', "
+                        "observed_at=? WHERE provider=? AND account=? AND vm_id=?",
+                        (self.clock(), provider, account, vm_id),
+                    )
+                required = (
+                    active_confidential or confidential or bool(vm and vm["confidential_required"])
+                )
+                snapshot = MuseTrustSnapshot(
+                    provider, account, vm_id, viewer_hash, session_hash, generation, bool(required)
+                )
+            if changed:
+                self._muse_notify(provider, account)
+        return snapshot
+
+    def _muse_current(self, conn, snapshot: MuseTrustSnapshot, *, standard: bool):
+        owner, vm = self._muse_rows(conn, snapshot.provider, snapshot.account, snapshot.vm_id)
+        if (
+            owner is None
+            or vm is None
+            or owner["generation"] != snapshot.generation
+            or owner["viewer_hash"] != snapshot.viewer_hash
+            or owner["session_hash"] != snapshot.session_hash
+            or owner["active_vm_id"] != snapshot.vm_id
+        ):
+            raise _muse_storage_error()
+        if standard and (owner["confidential_required"] or vm["confidential_required"]):
+            raise m.CoreError(
+                m.ErrorCode.PROTOCOL_MISMATCH,
+                "Muse confidential expectation forbids standard",
+                next_action="Use a supported confidential verifier; do not reset trust on retry",
+            )
+        return owner, vm
+
+    @_muse_safe
+    def muse_assert_current(self, snapshot: MuseTrustSnapshot) -> None:
+        with self._muse_boundary(snapshot.provider, snapshot.account), self.connection() as conn:
+            self._muse_current(conn, snapshot, standard=True)
+
+    @_muse_safe
+    def muse_record_confidential(self, snapshot: MuseTrustSnapshot) -> None:
+        with self._muse_boundary(snapshot.provider, snapshot.account):
+            with self.transaction() as conn:
+                self._muse_current(conn, snapshot, standard=False)
+                conn.execute(
+                    "UPDATE muse_trust_vms SET confidential_required=1, "
+                    "source='noise_message_2', observed_at=? "
+                    "WHERE provider=? AND account=? AND vm_id=?",
+                    (self.clock(), snapshot.provider, snapshot.account, snapshot.vm_id),
+                )
+                result = conn.execute(
+                    "UPDATE muse_trust_accounts SET confidential_required=1, "
+                    "generation=generation+1, updated_at=? "
+                    "WHERE provider=? AND account=? AND generation=?",
+                    (self.clock(), snapshot.provider, snapshot.account, snapshot.generation),
+                )
+                if result.rowcount != 1:
+                    raise _muse_storage_error()
+            self._muse_notify(snapshot.provider, snapshot.account)
+
+    @_muse_safe
+    def muse_standard_handoff(
+        self, snapshot: MuseTrustSnapshot, handoff: Callable[[], None]
+    ) -> None:
+        """Commit CAS before msg3; serialize handoff against selection changes."""
+        with self._muse_boundary(snapshot.provider, snapshot.account):
+            with self.transaction() as conn:
+                self._muse_current(conn, snapshot, standard=True)
+                result = conn.execute(
+                    "UPDATE muse_trust_vms SET source='noise_message_2', observed_at=? "
+                    "WHERE provider=? AND account=? AND vm_id=? AND confidential_required=0",
+                    (self.clock(), snapshot.provider, snapshot.account, snapshot.vm_id),
+                )
+                if result.rowcount != 1:
+                    raise _muse_storage_error()
+            handoff_error = None
+            try:
+                handoff()
+            except Exception as exc:
+                handoff_error = exc
+        if handoff_error is not None:
+            raise handoff_error
 
     @staticmethod
     def _key_name(name: str) -> None:

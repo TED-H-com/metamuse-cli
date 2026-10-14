@@ -552,6 +552,17 @@ Browser context一個控制者，原生登入／2FA由人類處理。人接手�
 
 同Gateway一個receive consumer；以stream ID管理response，限制buffer／frame／body大小。P0 serial requests，不做多consumer subscriptions。完整reassembly未支援的frame回不相容，不能把半包當成功。不得關閉TLS驗證或自造握手來「相容」。token可能出現在WSS query，diagnostic不得外洩。
 
+
+
+2026-10-14 B09 authoritative trust補充：migration 005在同一private Store保存
+per-provider/account/VM的version、source/time、sticky confidential_required，及account
+active selection、viewer/session hash與generation；不以可輪替auth_ref作security identity。
+第一次authenticated bootstrap綁viewer；衝突owner不重綁。authenticated hatch_cvm/CVM_*與
+valid RV observation即使不支援也先持久化confidential requirement，standard不得清除。
+connect/retry不重新選VM、不reset trust。standard observation以generation CAS及account file lock
+commit後才handoff msg3，selection/session變更關閉本process舊socket；每次call再檢查durable
+currentness。corrupt/unavailable state或failed CAS回E_STORAGE（never），無memory fallback。
+
 ### Session建立
 
 先建本地discussion＋open intent，再遠端create；回remote id才完成mapping。timeout時列open_uncertain。list對帳必須可靠識別，同標題不夠；找不到也不證明沒建。需要人選擇已有session時只顯示核准範圍，不掃其他私人對話猜。

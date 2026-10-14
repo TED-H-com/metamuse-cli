@@ -228,12 +228,14 @@ def test_v3_upgrade_and_archive_restore_match_fresh_v4_and_replay(tmp_path):
     assert archive.status == "complete"
     archive_before, source_before = snapshot(archive.path), snapshot(old.paths.root)
     restored = core.Store.restore(archive.path, WorkspacePaths.resolve(tmp_path / "restored"))
-    assert restored.status == "complete" and restored.store.schema_version == 4
+    assert restored.status == "complete" and restored.store.schema_version == core.SCHEMA_VERSION
     fresh = core.Store(WorkspacePaths.resolve(tmp_path / "fresh"))
     assert signature(restored.store) == signature(fresh)
     assert snapshot(archive.path) == archive_before and snapshot(old.paths.root) == source_before
     upgraded = core.Store(old.paths)
-    assert upgraded.schema_version == 4 and signature(upgraded) == signature(fresh)
+    assert upgraded.schema_version == core.SCHEMA_VERSION and signature(upgraded) == signature(
+        fresh
+    )
     old_guards = {(name, table) for kind, name, table, _ in old_signature if kind == "trigger"}
     assert old_guards <= {
         (name, table) for kind, name, table, _ in signature(upgraded) if kind == "trigger"
