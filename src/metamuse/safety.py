@@ -1464,136 +1464,147 @@ def _url_redaction_spans(text: str) -> list[tuple[int, int]]:
 
 
 def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
-    """Syntax-aware best-effort guard, not a guarantee. Audits contain no values."""
-    import re
+    """Collect intervals on original text, merge overlaps, and join exactly once."""
+    spans: list[tuple[int, int, str]] = []
 
-    counts: dict[str, int] = {}
+    def add(start: int, end: int, kind: str) -> None:
+        if start < end and not (
+            end - start == len("[REDACTED]") and text.startswith("[REDACTED]", start)
+        ):
+            spans.append((start, end, kind))
 
-    def count(kind: str) -> None:
-        counts[kind] = counts.get(kind, 0) + 1
+    quoted = r"""(?:"[^"\r\n]*+"|'[^'\r\n]*+')"""
+    if '"' in text or "'" in text:
+        fields = re.compile(
+            r"""(?<!\\)(?P<q>["'])(?P<key>(?:[A-Za-z0-9_.%\-]|\\u[0-9a-fA-F]{4}|\\[^u\r\n]){1,128}+)"""
+            r"""(?P=q)\s*:\s*(?P<vq>["'])(?P<value>(?:\\[^\r\n]|(?!(?P=vq))[^\\\r\n])*+)(?P=vq)""",
+            re.ASCII,
+        )
+        for match in fields.finditer(text):
+            key = match["key"]
+            if "\\" in key:
+                try:
+                    key = json.loads('"' + key + '"')
+                except ValueError:
+                    continue
+            if redaction_sensitive_value(key, match["value"]):
+                kind = (
+                    "local_path"
+                    if key.lower().replace("_", "").replace("-", "") == "localpath"
+                    else "sensitive_field"
+                )
+                add(*match.span("value"), kind)
 
-    def replace(pattern: str, kind: str, replacement=None) -> None:
-        nonlocal text
-
-        def substitute(match):
-            result = replacement(match) if replacement else "[REDACTED]"
-            if result != match.group(0):
-                count(kind)
-            return result
-
-        text = re.sub(pattern, substitute, text, flags=re.ASCII)
-
-    # Replace JSON/string-literal values, preserving delimiters and surrounding syntax.
-    def json_value(match):
-        key = match["key"]
-        if "\\" in key:
-            try:
-                key = json.loads('"' + key + '"')
-            except ValueError:
-                return match.group(0)
-        if key.lower().replace("_", "").replace("-", "") == "localpath":
-            return match.group(0)
-        if redaction_sensitive_value(key, match["value"]):
-            return (
-                match["q"]
-                + match["key"]
-                + match["q"]
-                + match["gap"]
-                + match["vq"]
-                + "[REDACTED]"
-                + match["vq"]
+    # Atomic bodies preserve quoted cookie pairs and JSON closing delimiters.
+    header_body = (
+        r"(?:(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]{1,128}+=" + quoted + r"""|[^\r\n"'}\]])*+"""
+    )
+    headers = re.compile(
+        r"(?im)(?<![A-Za-z0-9_.-])(?P<key>set-cookie|cookie|authorization)[ \t]*:[ \t]*"
+        + header_body
+        + r"(?:\r?\n[ \t]+"
+        + header_body
+        + r")*+",
+        re.ASCII,
+    )
+    # Avoid scanning large plain text for absent header labels.
+    if ":" in text:
+        for match in headers.finditer(text):
+            key = match["key"].lower()
+            sensitive = (
+                _cookie_values(match.group())
+                if key != "authorization"
+                else redaction_sensitive_value(key, match.group().split(":", 1)[1])
             )
-        return match.group(0)
+            if sensitive:
+                add(*match.span(), "authorization" if key == "authorization" else "cookie")
 
-    replace(
-        r"""(?<!\\)(?P<q>["'])(?P<key>(?:[A-Za-z0-9_.%\-]|\\u[0-9a-fA-F]{4}|\\[^u\r\n]){1,128}+)"""
-        r"""(?P=q)(?P<gap>\s*:\s*)"""
-        r"""(?P<vq>["'])(?P<value>(?:\\[^\r\n]|(?!(?P=vq))[^\\\r\n])*?)(?P=vq)""",
-        "sensitive_field",
-        json_value,
+    value = quoted + r"""|(?:\[REDACTED\]|[^\s;,"'{}<>\[\]()`|])++"""
+    # '=' cannot restart a chain. Failed a=a=a... scans its value only once.
+    chain = re.compile(
+        r"(?<![A-Za-z0-9_.%=/:-])[A-Za-z0-9_.-]{1,128}+=(?:" + value + r")"
+        r"(?:;[ \t]*[A-Za-z0-9_.-]{1,128}+=(?:" + value + r"))++",
+        re.ASCII,
     )
-    # Headers, including label prefixes, quoted cookie values and folded continuations.
-    quoted = r"""(?:"[^"\r\n]*"|'[^'\r\n]*')"""
-    header_body = r"(?:(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]+=" + quoted + r"""|[^\r\n"'}\]])*"""
-    replace(
-        r"(?im)(?<![A-Za-z0-9_.-])(?:set-cookie|cookie)[ \t]*:[ \t]*"
-        + header_body
-        + r"(?:\r?\n[ \t]+"
-        + header_body
-        + r")*",
-        "cookie",
-        lambda match: "[REDACTED]" if _cookie_values(match.group()) else match.group(),
-    )
-    replace(
-        r"(?i)(?<![A-Za-z0-9_.-])authorization[ \t]*:[ \t]*"
-        r"(?:bearer|basic|token|digest|aws4-hmac-sha256)[ \t]+"
-        + header_body
-        + r"(?:\r?\n[ \t]+"
-        + header_body
-        + r")*",
-        "authorization",
-        lambda match: (
-            "[REDACTED]"
-            if redaction_sensitive_value("authorization", match.group().split(":", 1)[1])
-            else match.group()
-        ),
-    )
+    if ";" in text:
+        for match in chain.finditer(text):
+            if _cookie_values(match.group()):
+                add(*match.span(), "cookie")
 
-    # All replacements use the original encoded spans; no character-sized offset map.
+    for start, end in _url_redaction_spans(text):
+        add(start, end, "url_token")
+
+    assignments = re.compile(
+        r"(?i)(?<![A-Za-z0-9_.%?&#-])(?P<key>[A-Za-z_][A-Za-z0-9_.%\-]{0,383}?)[ \t]*=[ \t]*",
+        re.ASCII,
+    )
+    values = re.compile("(?:" + value + ")", re.ASCII)
+    if "=" in text:
+        for match in assignments.finditer(text):
+            key = match["key"]
+            if not redaction_sensitive_key(key):
+                continue
+            found = values.match(text, match.end())
+            if (
+                found
+                and text[found.end() : found.end() + 1] != "("
+                and redaction_sensitive_value(key, found.group())
+            ):
+                add(
+                    match.start(),
+                    found.end(),
+                    "local_path"
+                    if key.lower().replace("_", "") == "localpath"
+                    else "session_cookie",
+                )
+
+    if "sk-" in text:
+        for match in re.finditer(
+            r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{8,}+(?![A-Za-z0-9_-])", text, re.ASCII
+        ):
+            add(*match.span(), "api_key")
+
+    roots = r"/(?:tmp|var|etc|home|Users|opt|usr|proc|sys|dev|run|srv|mnt|media|root|private|Library|Volumes|app|workspace)(?:/|\b)"
+    plausible = r"(?:" + roots + r"|/[A-Za-z0-9._-]++/|[A-Za-z]:[\\/]|\\\\)"
+    if "/" in text or "\\" in text:
+        public_paths = {"/docs/plan.md", "/etc/hosts"}
+        if '"' in text or "'" in text:
+            paths = re.compile(
+                r"""(?P<q>["'])(?P<path>(?:/[^"'\r\n/]*+/|"""
+                + plausible
+                + r""")[^"'\r\n]*+)(?P=q)""",
+                re.ASCII,
+            )
+            for match in paths.finditer(text):
+                if match["path"] not in public_paths:
+                    add(*match.span("path"), "local_path")
+        paths = re.compile(
+            r"(?<![A-Za-z0-9:/])" + plausible + r"""[^\s<>"'`,;{}\]\[)]*+""", re.ASCII
+        )
+        for match in paths.finditer(text):
+            if match.group() not in public_paths:
+                add(*match.span(), "local_path")
+
+    if not spans:
+        return text, []
+    counts: dict[str, int] = {}
+    merged: list[tuple[int, int]] = []
+    covered_kind = None
+    for start, end, kind in sorted(spans, key=lambda span: (span[0], -span[1])):
+        if merged and start < merged[-1][1]:
+            if end > merged[-1][1] or (covered_kind == "local_path" and kind != "local_path"):
+                counts[kind] = counts.get(kind, 0) + 1
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+            if kind != "local_path":
+                covered_kind = kind
+        else:
+            merged.append((start, end))
+            covered_kind = kind
+            counts[kind] = counts.get(kind, 0) + 1
     parts = []
     position = 0
-    for start, end in _url_redaction_spans(text):
+    for start, end in merged:
         parts.extend((text[position:start], "[REDACTED]"))
         position = end
-        count("url_token")
-    if parts:
-        parts.append(text[position:])
-        text = "".join(parts)
-
-    value = quoted + r"""|[^\s;,"'{}\]]+"""
-
-    replace(
-        r"(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]+=(?:" + value + ")"
-        r"(?:;[ \t]*[A-Za-z0-9_.-]+=(?:" + value + "))+",
-        "cookie",
-        lambda match: "[REDACTED]" if _cookie_values(match.group()) else match.group(),
-    )
-
-    def session(match):
-        if redaction_sensitive_value(match["key"], match.group().split("=", 1)[1]):
-            return "[REDACTED]"
-        return match.group(0)
-
-    replace(
-        r"(?i)(?<![A-Za-z0-9_.%?&#-])(?P<key>[A-Za-z_][A-Za-z0-9_.%\-]*)[ \t]*=[ \t]*(?:"
-        + value
-        + ")",
-        "session_cookie",
-        session,
-    )
-    replace(r"(?<![A-Za-z0-9_-])sk-[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])", "api_key")
-
-    roots = (
-        r"/(?:tmp|var|etc|home|Users|opt|usr|proc|sys|dev|run|srv|mnt|media|root|private|"
-        r"Library|Volumes|app|workspace)(?:/|\b)"
-    )
-    plausible = r"(?:" + roots + r"|/[A-Za-z0-9._-]+/[A-Za-z0-9._/-]+|[A-Za-z]:[\\/]|\\\\)"
-    replace(
-        r"""(?P<q>["'])(?P<path>(?:/[^"'\r\n]+/[^"'\r\n]+|"""
-        + plausible
-        + r"""[^"'\r\n]*))(?P=q)""",
-        "local_path",
-        lambda match: (
-            match.group()
-            if match["path"] in {"/docs/plan.md", "/etc/hosts"}
-            else match["q"] + "[REDACTED]" + match["q"]
-        ),
-    )
-    replace(
-        r"(?<![A-Za-z0-9:/])" + plausible + r"""[^\s<>"'`,;{}\]\[)]+""",
-        "local_path",
-        lambda match: (
-            match.group() if match.group() in {"/docs/plan.md", "/etc/hosts"} else "[REDACTED]"
-        ),
-    )
-    return text, [{"kind": kind, "count": n} for kind, n in sorted(counts.items())]
+    parts.append(text[position:])
+    return "".join(parts), [{"kind": kind, "count": n} for kind, n in sorted(counts.items())]

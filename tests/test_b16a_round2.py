@@ -1,6 +1,7 @@
 """Independent B16a review regressions; synthetic OFFLINE evidence only."""
 
 import signal
+import sqlite3
 import json
 import subprocess
 import sys
@@ -355,3 +356,45 @@ def test_f11_sparse_percent_escape_memory():
     finally:
         tracemalloc.stop()
     assert peak < len(text) * 4
+
+
+@pytest.mark.parametrize("case,budget", [("cookies", 0.25), ("path", 0.35), ("encoded", 12.0)])
+def test_f13_linear_redaction_complexity(case, budget):
+    if case == "cookies":
+        text = "a=" * 24576
+    elif case == "path":
+        text = '"' + "/a" * 24575
+    else:
+        unit = "?token=" + "%20" * 64
+        text = (unit * (20 * 1024 * 1024 // len(unit) + 1))[: 20 * 1024 * 1024]
+    bounded_redaction(text, budget)
+
+
+@pytest.mark.parametrize("operation", ["packet", "bundle"])
+def test_f13_redaction_does_not_hold_sqlite_write_lock(ctx, project, monkeypatch, operation):
+    from test_b16a_privacy import evidence
+    from metamuse import app, content
+
+    ref = evidence(ctx, project, "Synthetic evidence")
+    redact = content.redact_text
+    calls = []
+
+    def unlocked(text):
+        with ctx.store.connection() as conn:
+            conn.execute("PRAGMA busy_timeout=1")
+            try:
+                conn.execute("BEGIN IMMEDIATE")
+            except sqlite3.OperationalError:
+                pytest.fail("Redaction holds the SQLite write lock")
+            conn.rollback()
+        calls.append(True)
+        return redact(text)
+
+    monkeypatch.setattr(content, "redact_text", unlocked)
+    request = {"project_id": project, "selection": [ref], "request_key": "unlocked"}
+    result = (
+        app.prepare_packet(ctx, request)
+        if operation == "packet"
+        else app.export_objects(ctx, {**request, "format": "bundle"})
+    )
+    assert result.status == "ok" and calls

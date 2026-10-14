@@ -799,6 +799,15 @@ and `next_action` lists those commands. Neither file contents nor paths are expo
 Human-only auth/permit commands refuse noninteractive calls before opening a workspace;
 scripted `permit approve --exact-digest` needs no TTY.
 
+B16a redaction uses disjoint bounded possessive JSON key atoms (128 atoms), bounded
+assignment/query names, original encoded spans and a single final join after overlap
+merging. It has no dense per-character percent-offset map or per-span text rebuild.
+Packet and export resolution check the raw canonical byte budget before rendering;
+rendering/redaction happens outside `BEGIN IMMEDIATE`. The write transaction repeats
+scope/existence checks and compares the evidence snapshot before committing.
+Concurrent evidence changes require a fresh prepare/export; receipt conflicts and
+artifact verification retain the shared core API.
+
 ---
 
 # 來源與恢復說明
