@@ -7,7 +7,7 @@ import shlex
 import subprocess
 import sys
 import time
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
 import anyio
@@ -43,6 +43,14 @@ class Entrypoints:
         if remaining <= 0:
             raise AssertionError("Test deadline exceeded: " + command)
         return remaining
+
+    @contextmanager
+    def waiting(self, command):
+        try:
+            with anyio.fail_after(self.remaining(command)):
+                yield
+        except TimeoutError:
+            raise AssertionError("Test deadline exceeded: " + command) from None
 
     def cli(self, *args, operator=False, code=0, stdin=None):
         command = [str(self.command), "--workspace", str(self.workspace), "--json"]
@@ -134,11 +142,11 @@ class Entrypoints:
         )
         with (
             log.open("w+") as errlog,
-            anyio.fail_after(self.remaining("MCP session " + " ".join(extra))),
+            self.waiting("metamuse mcp " + " ".join(extra)),
         ):
             async with stdio_client(params, errlog=errlog) as (read, write):
                 async with ClientSession(read, write) as session:
-                    with anyio.fail_after(self.remaining("MCP initialize")):
+                    with self.waiting("MCP initialize"):
                         try:
                             await session.initialize()
                         except TimeoutError:
@@ -163,7 +171,7 @@ class Entrypoints:
         return envelope
 
     async def terminal(self, session, job_id):
-        with anyio.fail_after(self.remaining("MCP job_get " + job_id)):
+        with self.waiting("MCP metamuse_job_get " + job_id):
             while True:
                 data = (await self.call(session, "job_get", {"job_id": job_id}))["data"]
                 if data["job"]["state"] in (

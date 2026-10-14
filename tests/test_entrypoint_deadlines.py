@@ -53,3 +53,21 @@ def test_entrypoint_mcp_hang_has_finite_shared_deadline(tmp_path):
             await entry.call(Hanging(), "job_get", {"job_id": "synthetic"})
 
     anyio.run(scenario)
+
+
+def test_entrypoint_terminal_poll_deadline_names_command(tmp_path):
+    entry = Entrypoints(tmp_path)
+    entry.deadline = time.monotonic() + 0.02
+
+    async def queued(*args, **kwargs):
+        return {"data": {"job": {"state": "queued"}}}
+
+    entry.call = queued
+
+    async def scenario():
+        with pytest.raises(
+            AssertionError, match="Test deadline exceeded: MCP metamuse_job_get synthetic"
+        ):
+            await entry.terminal(None, "synthetic")
+
+    anyio.run(scenario)
