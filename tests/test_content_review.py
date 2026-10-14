@@ -231,9 +231,8 @@ def test_review_06_stateless_cursor_and_restored_export(ctx, project, tmp_path):
     )
     assert second.status == "ok" and second.data["results"][0]["ref"] == refs[1]
     replay = export(restored, project, refs[0])
-    error(replay, m.ErrorCode.RESOURCE_UNAVAILABLE)
-    assert "backups do not contain export directories" in replay.error.message
-    assert "new request key" in replay.error.next_action
+    assert replay.status == "ok"
+    assert replay.data["id"] == export(ctx, project, refs[0]).data["id"]
     assert export(restored, project, refs[0], key="new-after-restore").status == "ok"
 
 

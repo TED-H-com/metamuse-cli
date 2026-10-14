@@ -159,12 +159,12 @@ Handled write/rename/commit errors roll back and remove only directories owned b
 attempt. A process/host crash may leave orphan staging/final directories without a ready
 row; they are not returned as success and automatic orphan cleanup is not implemented.
 
-Core backups include SQLite and ready objects, not export directories. Search cursor
-replay survives restore, but export replay cannot verify an absent artifact. It returns
-`E_RESOURCE_UNAVAILABLE` with a recovery action instead of claiming success. Restore the
-original artifact separately and verify it, or use a new request key to export again
-from still-valid exact refs. Archive support for exports is a core change request; no
-automatic regeneration is presented as replay of the old artifact.
+Core backups include SQLite, ready objects and every ready export directory with its
+manifest. Backup and restore use the same Store.verify_export checks as receipt replay:
+exact manifest bytes, payload hashes/sizes, no symlinks or unexpected members. Restored
+export receipts replay the original artifact after reference checks. Missing/corrupt
+artifacts return an honest error; they are never regenerated under an old receipt.
+Orphan/uncommitted export directories are excluded from backups.
 
 ## Integration pending
 

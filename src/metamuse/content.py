@@ -789,45 +789,7 @@ def _export_files(
 
 
 def _verify_export(ctx: AppContext, data: dict[str, Any]) -> None:
-    artifact = Path(data["artifact"])
-    expected = Path("exports") / data["id"]
-    if artifact != expected:
-        raise m.CoreError(m.ErrorCode.STORAGE, "Invalid stored export artifact")
-    directory = ctx.paths.root / artifact
-    if directory.resolve() != directory or not directory.is_dir():
-        raise m.CoreError(
-            m.ErrorCode.RESOURCE_UNAVAILABLE,
-            "Export artifact is unavailable; core backups do not contain export directories",
-            next_action="Restore the verified artifact separately, or use a new request key",
-        )
-    manifest_path = directory / "manifest.json"
-    if (
-        manifest_path.is_symlink()
-        or not manifest_path.is_file()
-        or manifest_path.read_bytes() != m.canonical_json(data["manifest"]) + b"\n"
-    ):
-        raise m.CoreError(
-            m.ErrorCode.RESOURCE_UNAVAILABLE, "Export manifest is unavailable or changed"
-        )
-    names = {"manifest.json"}
-    for entry in data["manifest"]["files"]:
-        name = entry["name"]
-        if (
-            re.fullmatch(
-                r"(?:records\.(?:csv|jsonl)|object-\d{4,}\.(?:txt|md))", name, flags=re.ASCII
-            )
-            is None
-        ):
-            raise m.CoreError(m.ErrorCode.STORAGE, "Invalid export member")
-        path = directory / name
-        if path.is_symlink() or not path.is_file():
-            raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Export file is unavailable")
-        raw = path.read_bytes()
-        if len(raw) != entry["bytes"] or hashlib.sha256(raw).hexdigest() != entry["sha256"]:
-            raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Export file has changed")
-        names.add(name)
-    if {p.name for p in directory.iterdir()} != names:
-        raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Export contains unexpected files")
+    ctx.store.verify_export(m.Export.model_validate(data))
 
 
 def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
