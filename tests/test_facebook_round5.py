@@ -540,3 +540,23 @@ def test_r5_n5_inspect_and_submit_classify_invalid_cookie_as_auth(tmp_path):
     )
     assert result.error.code == m.ErrorCode.AUTH_REQUIRED
     assert "allow_unsandboxed_browser" not in result.error.next_action
+
+
+@pytest.mark.parametrize("hop", ["redirect", "script"])
+def test_r5_n9_off_post_navigation_needs_session_review(tmp_path, monkeypatch, hop):
+    other = "/two_step_verification/authentication/"
+    markup = _synthetic_post_html().replace(
+        "</body>", f"<script>location.replace('{other}')</script></body>"
+    )
+    pages = {
+        POST_PATH: (302, other) if hop == "redirect" else markup,
+        other: "<html>session review</html>",
+    }
+    with browser_fixture(tmp_path, monkeypatch, pages) as env:
+        ctx, project, permit, _, _, _, _ = env
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["state"] == "awaiting_user"
+        assert job["error"]["code"] == "E_CHECKPOINT_REQUIRED"
+        assert job["error"]["message"] == "Facebook navigation left the approved post"
+        assert "session in a browser" in job["error"]["next_action"]
+        assert not rows(ctx)
