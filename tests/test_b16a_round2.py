@@ -5,6 +5,7 @@ import json
 import subprocess
 import sys
 import time
+import tracemalloc
 import uuid
 from pathlib import Path
 
@@ -343,3 +344,14 @@ def test_f10_auth_list_partial_retains_valid_refs_and_exact_revoke(ctx, tmp_path
     )
     assert safety.revoke_auth(ctx, bad_ref).data["config_bound"]
     assert safety.list_auth(ctx).status == "ok"
+
+
+def test_f11_sparse_percent_escape_memory():
+    text = "%41" + "a" * (2 * 1024 * 1024 - 3)
+    tracemalloc.start()
+    try:
+        assert safety.redact_text(text) == (text, [])
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert peak < len(text) * 4
