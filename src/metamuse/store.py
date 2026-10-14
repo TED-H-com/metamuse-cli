@@ -590,7 +590,11 @@ class Store:
                 or not row["observed_at"]
             ):
                 raise _muse_storage_error()
-        return any(row["confidential_required"] for row in (*owners, *vms))
+        observations = conn.execute(
+            "SELECT confidential_required FROM muse_trust_observations WHERE viewer_hash=? OR (vm_id=? AND vm_id!='')",
+            (viewer_hash, vm_id),
+        ).fetchall()
+        return any(row["confidential_required"] for row in (*owners, *vms, *observations))
 
     @_muse_safe
     def muse_freeze(
@@ -768,25 +772,45 @@ class Store:
         with self._muse_boundary(snapshot.provider, snapshot.account), self.transaction() as conn:
             self._muse_current(conn, snapshot, standard=True)
 
-    @_muse_safe
-    def muse_record_confidential(self, snapshot: MuseTrustSnapshot) -> None:
-        with self._muse_boundary(snapshot.provider, snapshot.account):
-            with self.transaction() as conn:
-                self._muse_current(conn, snapshot, standard=False)
-                result = conn.execute(
-                    "UPDATE muse_trust_accounts SET confidential_required=1, "
-                    "generation=generation+1, updated_at=? "
-                    "WHERE provider=? AND account=? AND generation=?",
-                    (self.clock(), snapshot.provider, snapshot.account, snapshot.generation),
-                )
-                if result.rowcount != 1:
-                    raise _muse_storage_error()
+    def _muse_observe(self, conn, viewer_hash, vm_ids, *, confidential, source):
+        """Commit remote evidence without consulting a label's currentness or generation."""
+        for identity in sorted(vm_ids) or [""]:
+            existing = conn.execute(
+                "SELECT confidential_required FROM muse_trust_observations WHERE viewer_hash=? AND vm_id=?",
+                (viewer_hash, identity),
+            ).fetchone()
+            if existing is None:
                 conn.execute(
-                    "UPDATE muse_trust_vms SET confidential_required=1, source='noise_message_2', "
-                    "observed_at=? WHERE provider=? AND account=? AND vm_id=?",
-                    (self.clock(), snapshot.provider, snapshot.account, snapshot.vm_id),
+                    "INSERT INTO muse_trust_observations VALUES (?,?,1,?,?,?)",
+                    (viewer_hash, identity, int(confidential), source, self.clock()),
                 )
-            self._muse_notify(snapshot.provider, snapshot.account)
+            elif confidential:
+                conn.execute(
+                    "UPDATE muse_trust_observations SET confidential_required=1,source=?,observed_at=? WHERE viewer_hash=? AND vm_id=?",
+                    (source, self.clock(), viewer_hash, identity),
+                )
+
+    def muse_record_confidential(self, snapshot: MuseTrustSnapshot) -> None:
+        failure = None
+        try:
+            with self._muse_boundary(snapshot.provider, snapshot.account):
+                with self.transaction() as conn:
+                    self._muse_observe(
+                        conn,
+                        snapshot.viewer_hash,
+                        {snapshot.vm_id} if snapshot.vm_id is not None else set(),
+                        confidential=True,
+                        source="noise_message_2",
+                    )
+                self._muse_notify(snapshot.provider, snapshot.account)
+        except m.CoreError:
+            failure = m.CoreError(
+                m.ErrorCode.STORAGE,
+                "Muse confidentiality could not be recorded",
+                next_action="Repair the security-state store before reconnecting; confidentiality could not be recorded",
+            )
+        if failure is not None:
+            raise failure
 
     @_muse_safe
     def muse_standard_handoff(

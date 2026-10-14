@@ -89,3 +89,36 @@ END;
 
 CREATE INDEX muse_trust_owner_expectation ON muse_trust_accounts(viewer_hash);
 CREATE INDEX muse_trust_vm_expectation ON muse_trust_vms(vm_id);
+
+-- Remote authenticated observations are independent of local connection labels.
+-- Empty VM id represents owner-only evidence; it is never a wire VM id.
+CREATE TABLE muse_trust_observations (
+    viewer_hash TEXT NOT NULL CHECK(length(viewer_hash)=64 AND viewer_hash NOT GLOB '*[^0-9a-f]*'),
+    vm_id TEXT NOT NULL CHECK(vm_id='' OR (length(vm_id) BETWEEN 1 AND 128 AND vm_id=lower(trim(vm_id)) AND vm_id NOT GLOB '*[^a-z0-9._-]*')),
+    version INTEGER NOT NULL CHECK(version=1),
+    confidential_required INTEGER NOT NULL CHECK(confidential_required IN (0,1)),
+    source TEXT NOT NULL CHECK(source IN ('authenticated_assignment','noise_message_2')),
+    observed_at TEXT NOT NULL,
+    PRIMARY KEY(viewer_hash, vm_id)
+);
+CREATE INDEX muse_trust_observation_vm ON muse_trust_observations(vm_id);
+CREATE TRIGGER muse_trust_observation_no_replace BEFORE INSERT ON muse_trust_observations
+WHEN EXISTS(SELECT 1 FROM muse_trust_observations WHERE (viewer_hash=NEW.viewer_hash AND vm_id=NEW.vm_id) OR rowid=NEW.rowid)
+BEGIN SELECT RAISE(ABORT, 'muse trust observation replacement'); END;
+CREATE TRIGGER muse_trust_observation_guard BEFORE UPDATE ON muse_trust_observations
+WHEN NEW.rowid != OLD.rowid OR NEW.viewer_hash != OLD.viewer_hash OR NEW.vm_id != OLD.vm_id OR NEW.version != OLD.version OR NEW.confidential_required < OLD.confidential_required
+BEGIN SELECT RAISE(ABORT, 'muse trust observation immutable or downgrade'); END;
+CREATE TRIGGER muse_trust_observation_retention BEFORE DELETE ON muse_trust_observations
+BEGIN SELECT RAISE(ABORT, 'muse trust observation retention'); END;
+CREATE TRIGGER muse_trust_observations_propagate_insert AFTER INSERT ON muse_trust_observations
+WHEN NEW.confidential_required=1
+BEGIN
+UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE confidential_required=0 AND (viewer_hash=NEW.viewer_hash OR (provider,account) IN (SELECT provider,account FROM muse_trust_vms WHERE vm_id=NEW.vm_id));
+UPDATE muse_trust_vms SET confidential_required=1 WHERE confidential_required=0 AND vm_id=NEW.vm_id;
+END;
+CREATE TRIGGER muse_trust_observations_propagate_update AFTER UPDATE ON muse_trust_observations
+WHEN NEW.confidential_required=1 AND OLD.confidential_required=0
+BEGIN
+UPDATE muse_trust_accounts SET confidential_required=1,generation=generation+1 WHERE confidential_required=0 AND (viewer_hash=NEW.viewer_hash OR (provider,account) IN (SELECT provider,account FROM muse_trust_vms WHERE vm_id=NEW.vm_id));
+UPDATE muse_trust_vms SET confidential_required=1 WHERE confidential_required=0 AND vm_id=NEW.vm_id;
+END;

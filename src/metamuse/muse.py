@@ -576,6 +576,10 @@ def _raise_if(error: CoreError | None) -> None:
 # error is re-raised as one of these, outside the handler, so its text and
 # traceback chain are not the public error.
 _PUBLIC_ERRORS: dict[str, tuple[ErrorCode, str]] = {
+    "Muse confidentiality could not be recorded": (
+        ErrorCode.STORAGE,
+        "Repair the security-state store before reconnecting; confidentiality could not be recorded",
+    ),
     "Muse minted credentials remain stale": (
         ErrorCode.RESOURCE_UNAVAILABLE,
         "Retry the connection later; minted credentials remain stale",
