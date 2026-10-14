@@ -20,7 +20,7 @@ def private_dir(path: Path) -> Path:
 
 
 def private_file(path: Path) -> None:
-    fd = os.open(path, os.O_CREAT | os.O_WRONLY, 0o600)
+    fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_NOFOLLOW, 0o600)
     os.close(fd)
     path.chmod(0o600)
 
@@ -35,7 +35,10 @@ class WorkspacePaths:
             Path(workspace).expanduser()
             if workspace
             else user_data_path("metamuse", appauthor=False) / "default"
-        ).resolve()
+        )
+        if root.is_symlink():
+            raise CoreError(ErrorCode.INPUT_INVALID, "Workspace root must not be a symlink")
+        root = root.resolve()
         if any(
             (parent / ".git").exists() and (parent / "src/metamuse").is_dir()
             for parent in (root, *root.parents)

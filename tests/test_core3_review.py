@@ -19,7 +19,7 @@ from metamuse.paths import WorkspacePaths
     "probe", ["rollback", "wal_overlay", "readonly", "unknown", "shm", "journal"]
 )
 def test_f1_backup_is_standalone_and_verifies_the_copied_database(ctx, records, tmp_path, probe):
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     if probe == "rollback":
         with closing(sqlite3.connect(backup / "state.sqlite3")) as conn:
             assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
@@ -79,7 +79,7 @@ def test_f4_unavailable_exports_warn_without_blocking_backup_open_or_migration(
         member.unlink()
     assert app.AppContext.open(ctx.paths.root)
     with pytest.warns(UserWarning, match="unavailable"):
-        backup = ctx.store.backup(tmp_path / "partial")
+        backup = ctx.store.backup(tmp_path / "partial").path
     manifest = json.loads((backup / "manifest.json").read_bytes())
     assert manifest["status"] == "partial"
     assert manifest["exports"][0]["state"] == "unavailable"
@@ -88,7 +88,7 @@ def test_f4_unavailable_exports_warn_without_blocking_backup_open_or_migration(
         upgraded = core.Store(ctx.paths)
     assert upgraded.schema_version == 2
     with pytest.warns(UserWarning, match="unavailable"):
-        restored = core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored"))
+        restored = core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored")).store
     assert restored.get(m.Export, records["export"]["id"]).state == "unavailable"
     assert (
         app.export_objects(app.AppContext.open(restored.paths.root), records["request"]).status
@@ -100,7 +100,7 @@ def test_f4_unavailable_exports_warn_without_blocking_backup_open_or_migration(
     "kind", ["restore_descendant", "restore_ancestor", "backup_descendant", "backup_equal"]
 )
 def test_f5_backup_and_restore_paths_must_not_overlap(ctx, tmp_path, kind):
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     before = {p.relative_to(backup): p.read_bytes() for p in backup.rglob("*") if p.is_file()}
     with pytest.raises(m.CoreError):
         if kind == "restore_descendant":
@@ -117,7 +117,7 @@ def test_f5_backup_and_restore_paths_must_not_overlap(ctx, tmp_path, kind):
 
 
 def test_f6_initialize_failure_is_blocked_before_any_database_creation(ctx, tmp_path, monkeypatch):
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     paths = WorkspacePaths.resolve(tmp_path / "failed")
     original = path_module.private_file
 
@@ -140,7 +140,7 @@ def test_f6_marker_unlink_is_fsynced_and_preupgrade_worker_state_is_cleared(
 ):
     with ctx.store.transaction() as conn:
         conn.execute("UPDATE worker_state SET owner_nonce='99999:synthetic',heartbeat='2000-01-01'")
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     synthetic_v2(tmp_path, monkeypatch)
     paths = WorkspacePaths.resolve(tmp_path / "restored")
     observed = []
@@ -179,10 +179,10 @@ def test_f6_marker_unlink_is_fsynced_and_preupgrade_worker_state_is_cleared(
 def test_f7_verified_files_reject_symlinks_hardlinks_and_extra_objects(
     ctx, records, tmp_path, probe
 ):
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     if probe == "broken_exports":
         empty = app.AppContext.open(tmp_path / "empty")
-        backup = empty.store.backup(tmp_path / "empty-backup")
+        backup = empty.store.backup(tmp_path / "empty-backup").path
         (backup / "exports").symlink_to(tmp_path / "missing")
     elif probe == "extra_object":
         (backup / "objects" / "unexpected").write_bytes(b"synthetic")
@@ -221,7 +221,7 @@ def test_f7_live_asset_and_export_hardlinks_are_not_verified(ctx, records, tmp_p
 
 @pytest.mark.parametrize("kind", ["database", "object", "export"])
 def test_f1_copied_database_and_members_are_reverified(ctx, records, tmp_path, monkeypatch, kind):
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     paths = WorkspacePaths.resolve(tmp_path / "target")
     original = core.shutil.copyfile
     victim = {
@@ -273,7 +273,7 @@ def test_f6_all_entry_points_respect_even_broken_restore_markers(ctx, tmp_path, 
 
 
 def test_f6_failed_marker_unlink_fsync_reinstates_the_blocker(ctx, tmp_path, monkeypatch):
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     paths = WorkspacePaths.resolve(tmp_path / "target")
     original = core._fsync_dir
 
@@ -290,7 +290,7 @@ def test_f6_failed_marker_unlink_fsync_reinstates_the_blocker(ctx, tmp_path, mon
 
 
 def test_f7_backup_manifest_hardlink_is_rejected(ctx, tmp_path):
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     os.link(backup / "manifest.json", tmp_path / "manifest-alias")
     with pytest.raises(m.CoreError):
         core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "rejected"))
@@ -299,7 +299,7 @@ def test_f7_backup_manifest_hardlink_is_rejected(ctx, tmp_path):
 def test_f1_f4_old_backup_verification_is_independent_of_current_models(
     ctx, records, tmp_path, monkeypatch
 ):
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
 
     class FutureAsset(m.Asset):
         future_column: str
@@ -318,7 +318,7 @@ def test_f1_f4_old_backup_verification_is_independent_of_current_models(
         "ALTER TABLE assets ADD COLUMN future_column TEXT NOT NULL DEFAULT 'v2';\n"
         "ALTER TABLE exports ADD COLUMN future_column TEXT NOT NULL DEFAULT 'v2';\n",
     )
-    restored = core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "upgraded"))
+    restored = core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "upgraded")).store
     assert restored.get(FutureAsset, records["asset"].id).future_column == "v2"
     assert restored.get(FutureExport, records["export"]["id"]).future_column == "v2"
     assert len(list((restored.paths.root / "backups").glob("pre_upgrade_*"))) == 1

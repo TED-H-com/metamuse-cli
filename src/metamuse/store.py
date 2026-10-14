@@ -18,8 +18,9 @@ from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
-from typing import Any, BinaryIO, TypeVar
+from typing import Any, BinaryIO, Literal, TypeVar
 
 from pydantic import ValidationError
 
@@ -178,15 +179,25 @@ class Store:
                 "Workspace restore is incomplete",
                 next_action="Restore the verified backup into a fresh workspace",
             )
-        self.paths = paths
+        self.paths = WorkspacePaths.resolve(paths.root)
         self.clock = clock
         self._restore_in_progress = _restore_in_progress
+        self.open_warnings: list[str] = []
         self.schema_version = SCHEMA_VERSION if schema_version is None else schema_version
+        self._migrations = migrations or MIGRATIONS
         self.paths.initialize()
-        self.migrate(migrations or MIGRATIONS)
+        self.migrate(self._migrations)
         self._provision_workspace_keys()
 
     def _open_database(self) -> sqlite3.Connection:
+        # Check live files before SQLite can follow a link or mutate its sidecars.
+        for path in (
+            self.paths.database,
+            Path(str(self.paths.database) + "-wal"),
+            Path(str(self.paths.database) + "-shm"),
+        ):
+            if path.is_symlink() or path.exists():
+                _regular_file(path)
         # Check version before applying writable pragmas; older builds must not write newer DBs.
         if self.paths.database.exists():
             with closing(
@@ -218,6 +229,7 @@ class Store:
     def connection(self) -> Iterator[sqlite3.Connection]:
         self._check_restore_marker()
         with file_lock(self.paths.runtime / "maintenance.lock", exclusive=False):
+            self._check_restore_marker()
             conn = self._open()
             try:
                 if conn.execute("PRAGMA user_version").fetchone()[0] != self.schema_version:
@@ -258,47 +270,24 @@ class Store:
     def migrate(self, migrations: dict[int, Path]) -> None:
         self._check_restore_marker()
         with file_lock(self.paths.runtime / "maintenance.lock"):
+            self._check_restore_marker()
             had_database = self.paths.database.exists() and self.paths.database.stat().st_size > 0
             conn = self._open()
             try:
                 old_version = conn.execute("PRAGMA user_version").fetchone()[0]
-                if (
-                    old_version
-                    and not conn.execute(
-                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='workspace_keys'"
-                    ).fetchone()
-                ):
-                    raise m.CoreError(
-                        m.ErrorCode.PROTOCOL_MISMATCH,
-                        "Development database lacks workspace_keys; create a fresh workspace",
-                    ) from None
+                _verify_schema(conn, old_version, migrations)
                 if old_version == self.schema_version:
-                    # In-place pre-release amendments must not bless an obsolete guard set.
-                    expected = set(
-                        re.findall(
-                            r"CREATE TRIGGER ([A-Za-z_][A-Za-z0-9_]*)",
-                            migrations.get(1, MIGRATIONS[1]).read_text(),
-                        )
-                    )
-                    present = {
-                        row[0]
-                        for row in conn.execute(
-                            "SELECT name FROM sqlite_master WHERE type='trigger'"
-                        )
-                    }
-                    if expected - present:
-                        raise m.CoreError(
-                            m.ErrorCode.PROTOCOL_MISMATCH,
-                            "Development database lacks storage guards; create a fresh workspace",
-                        ) from None
                     return
                 with file_lock(self.paths.worker_lock, blocking=False):
                     if had_database:
-                        self._backup(
+                        result = self._backup(
                             conn,
                             self.paths.root / "backups" / m.new_id("pre_upgrade"),
                             _pre_upgrade=True,
                         )
+                        self._record_upgrade_backup(result)
+                        self.open_warnings.extend(result.warnings)
+                        _warn_backup(result, stacklevel=4)
                     conn.execute("PRAGMA foreign_keys=OFF")
                     conn.execute("BEGIN IMMEDIATE")
                     try:
@@ -310,6 +299,7 @@ class Store:
                             conn.execute(f"PRAGMA user_version={version}")
                         if conn.execute("PRAGMA foreign_key_check").fetchone():
                             raise m.CoreError(m.ErrorCode.STORAGE, "Migration FK check failed")
+                        _verify_schema(conn, self.schema_version, migrations)
                         conn.commit()
                     except BaseException:
                         conn.rollback()
@@ -685,7 +675,7 @@ class Store:
 
     def _backup(
         self, source: sqlite3.Connection, destination: Path, *, _pre_upgrade: bool = False
-    ) -> Path:
+    ) -> BackupResult:
         destination = WorkspacePaths.resolve(destination).root
         if _pre_upgrade:
             if destination.parent != self.paths.root / "backups" or not destination.name.startswith(
@@ -712,7 +702,7 @@ class Store:
             shutil.rmtree(destination)
             raise
 
-    def _write_backup(self, source: sqlite3.Connection, destination: Path) -> Path:
+    def _write_backup(self, source: sqlite3.Connection, destination: Path) -> BackupResult:
         db = destination / "state.sqlite3"
         private_file(db)
         with closing(sqlite3.connect(db)) as target:
@@ -761,29 +751,75 @@ class Store:
         file = destination / "manifest.json"
         private_file(file)
         file.write_bytes(m.canonical_json(manifest))
+        _fsync_file(db)
+        _fsync_file(file)
+        for directory in sorted(
+            (p for p in destination.rglob("*") if p.is_dir()),
+            key=lambda p: len(p.parts),
+            reverse=True,
+        ):
+            _fsync_dir(directory)
+        _fsync_dir(destination)
+        _fsync_dir(destination.parent)
         # Validate the archive we actually copied, including every directory member.
-        _verified_backup(destination, max_version=self.schema_version)
-        for message in messages:
-            warnings.warn(message, BackupWarning, stacklevel=3)
-        return destination
+        _verified_backup(destination, max_version=self.schema_version, migrations=self._migrations)
+        return BackupResult(
+            destination,
+            "partial" if unavailable else "complete",
+            tuple(entry["id"] for entry in entries if entry["state"] == "unavailable"),
+            tuple(messages),
+        )
 
-    def backup(self, destination: Path) -> Path:
-        """Return archive path; BackupWarning and manifest status expose unavailable exports."""
+    def backup(self, destination: Path) -> BackupResult:
+        """Structured artifact availability; Python warnings are only a secondary signal."""
         with self.connection() as conn:
-            return self._backup(conn, destination)
+            result = self._backup(conn, destination)
+        _warn_backup(result, stacklevel=3)
+        return result
+
+    def pre_upgrade_backups(self) -> list[dict[str, Any]]:
+        path = self.paths.runtime / "pre_upgrade_backups.json"
+        if not path.exists():
+            return []
+        try:
+            _regular_file(path)
+            return json.loads(path.read_bytes())
+        except (OSError, ValueError, TypeError):
+            raise m.CoreError(m.ErrorCode.STORAGE, "Upgrade backup status is unavailable") from None
+
+    def _record_upgrade_backup(self, result: BackupResult) -> None:
+        records = self.pre_upgrade_backups()
+        records.append(
+            {
+                "path": str(result.path.relative_to(self.paths.root)),
+                "status": result.status,
+                "unavailable_export_ids": list(result.unavailable_export_ids),
+                "warnings": list(result.warnings),
+            }
+        )
+        target = self.paths.runtime / "pre_upgrade_backups.json"
+        staged = self.paths.runtime / "pre_upgrade_backups.new"
+        private_file(staged)
+        staged.write_bytes(m.canonical_json(records[-100:]))
+        _fsync_file(staged)
+        os.replace(staged, target)
+        _fsync_dir(self.paths.runtime)
 
     def verify_export(self, export: m.Export) -> Path:
         return _verify_export(export.model_dump(mode="json"), self.paths.root)
 
     @classmethod
-    def restore(cls, backup: Path, paths: WorkspacePaths) -> Store:
+    def restore(cls, backup: Path, paths: WorkspacePaths) -> RestoreResult:
         try:
-            return cls._restore(Path(backup).resolve(), WorkspacePaths.resolve(paths.root))
+            raw = Path(backup).expanduser()
+            if raw.is_symlink():
+                raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Backup root must not be a symlink")
+            return cls._restore(raw.resolve(), WorkspacePaths.resolve(paths.root))
         except (OSError, sqlite3.Error, ValueError, KeyError, TypeError):
             raise m.CoreError(m.ErrorCode.STORAGE, "Restore verification failed") from None
 
     @classmethod
-    def _restore(cls, backup: Path, paths: WorkspacePaths) -> Store:
+    def _restore(cls, backup: Path, paths: WorkspacePaths) -> RestoreResult:
         _reject_overlap(backup, paths.root, "Restore destination must not overlap backup")
         if paths.root.exists() and any(paths.root.iterdir()):
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Restore requires a fresh workspace")
@@ -808,6 +844,7 @@ class Store:
                     _copy_export(export, backup, paths.root)
             # Verify the actual copy at its old schema, using raw SQL, before migration.
             with _archive_connection(paths.database) as conn:
+                _verify_schema(conn, inventory.version, MIGRATIONS)
                 if _inventory(conn) != inventory:
                     raise m.CoreError(m.ErrorCode.STORAGE, "Copied database inventory mismatch")
             _verify_artifacts(paths.root, inventory, states)
@@ -836,11 +873,29 @@ class Store:
                 ):
                     raise m.CoreError(m.ErrorCode.STORAGE, "Restored database inventory mismatch")
                 _check_integrity(conn)
-            _verify_artifacts(paths.root, actual, states)
-            marker.unlink()
-            _fsync_dir(paths.runtime)
-            store._restore_in_progress = False
-            return store
+            with file_lock(paths.runtime / "maintenance.lock"):
+                if not _restore_marker_present(paths):
+                    raise m.CoreError(m.ErrorCode.STORAGE, "Restore blocker disappeared")
+                _verify_artifacts(paths.root, actual, states)
+                marker.unlink()
+                try:
+                    _fsync_dir(paths.runtime)
+                except BaseException:
+                    _write_restore_marker(paths)
+                    raise
+                store._restore_in_progress = False
+            unavailable = tuple(key for key, state in states.items() if state == "unavailable")
+            result = RestoreResult(
+                paths.root,
+                "partial" if unavailable else "complete",
+                unavailable,
+                (f"{len(unavailable)} export artifacts unavailable; restore is partial",)
+                if unavailable
+                else (),
+                store,
+            )
+            _warn_backup(result, stacklevel=4)
+            return result
         except BaseException as exc:
             # A failed unlink fsync must also leave the workspace blocked.
             if not _restore_marker_present(paths):
@@ -855,6 +910,30 @@ class Store:
                     next_action="Restore the verified backup into a fresh workspace",
                 ) from None
             raise
+
+
+@dataclass(frozen=True)
+class BackupResult:
+    path: Path
+    status: Literal["complete", "partial"]
+    unavailable_export_ids: tuple[str, ...]
+    warnings: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class RestoreResult(BackupResult):
+    store: Store
+
+
+def _warn_backup(result: BackupResult, *, stacklevel: int) -> None:
+    for message in result.warnings:
+        warnings.warn(message, BackupWarning, stacklevel=stacklevel)
+
+
+def _fsync_file(path: Path) -> None:
+    _regular_file(path)
+    with path.open("rb") as handle:
+        os.fsync(handle.fileno())
 
 
 class BackupWarning(UserWarning):
@@ -873,6 +952,55 @@ class _VerifiedBackup:
     inventory: _Inventory
     database_digest: str
     export_states: dict[str, str]
+
+
+def _schema_signature(conn: sqlite3.Connection) -> frozenset[tuple[str, str, str, str]]:
+    return frozenset(
+        (row[0], row[1], row[2], re.sub(r"\s+", " ", row[3].strip()) if row[3] else "")
+        for row in conn.execute(
+            "SELECT type,name,tbl_name,sql FROM sqlite_master "
+            "WHERE name NOT GLOB 'sqlite_*' AND type IN ('table','index','trigger','view')"
+        )
+    )
+
+
+@lru_cache(maxsize=16)
+def _expected_schema(scripts: tuple[str, ...]) -> frozenset[tuple[str, str, str, str]]:
+    with closing(sqlite3.connect(":memory:", isolation_level=None)) as conn:
+        _configure(conn, writable=False)
+        conn.create_function("metamuse_now", 0, utc_now)
+        conn.execute("PRAGMA foreign_keys=OFF")
+        retained: set[tuple[str, str]] = set()
+        for script in scripts:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                for statement in _statements(script):
+                    conn.execute(statement)
+                signature = _schema_signature(conn)
+                tables = {name for kind, name, _, _ in signature if kind == "table"}
+                guards = {(name, table) for kind, name, table, _ in signature if kind == "trigger"}
+                if {(name, table) for name, table in retained if table in tables} - guards:
+                    raise m.CoreError(m.ErrorCode.STORAGE, "Migration drops required schema guards")
+                retained = guards
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+        return _schema_signature(conn)
+
+
+def _verify_schema(conn: sqlite3.Connection, version: int, migrations: dict[int, Path]) -> None:
+    try:
+        expected = _expected_schema(tuple(migrations[n].read_text() for n in range(1, version + 1)))
+    except (KeyError, OSError, sqlite3.Error, ValueError):
+        raise m.CoreError(
+            m.ErrorCode.STORAGE, "Canonical migration schema is unavailable"
+        ) from None
+    if _schema_signature(conn) != expected:
+        raise m.CoreError(
+            m.ErrorCode.PROTOCOL_MISMATCH,
+            "Database schema differs from canonical migrations; create a fresh workspace",
+        ) from None
 
 
 def _inventory(conn: sqlite3.Connection) -> _Inventory:
@@ -918,7 +1046,9 @@ def _check_integrity(conn: sqlite3.Connection) -> None:
         raise m.CoreError(m.ErrorCode.STORAGE, "Backup integrity check failed")
 
 
-def _verified_backup(root: Path, *, max_version: int) -> _VerifiedBackup:
+def _verified_backup(
+    root: Path, *, max_version: int, migrations: dict[int, Path] | None = None
+) -> _VerifiedBackup:
     if {p.name for p in root.iterdir()} - {"manifest.json", "state.sqlite3", "objects", "exports"}:
         raise m.CoreError(m.ErrorCode.STORAGE, "Backup contains sidecars or unexpected entries")
     _regular_file(root / "manifest.json")
@@ -931,12 +1061,13 @@ def _verified_backup(root: Path, *, max_version: int) -> _VerifiedBackup:
     if version > max_version:
         raise m.CoreError(m.ErrorCode.PROTOCOL_MISMATCH, "Backup schema is newer than this build")
     digest = _hash_file(database)
-    if "database" in manifest and manifest["database"] != {
+    if manifest.get("database") != {
         "sha256": digest,
         "actual_bytes": database.stat().st_size,
     }:
         raise m.CoreError(m.ErrorCode.STORAGE, "Backup database digest mismatch")
     with _archive_connection(database) as conn:
+        _verify_schema(conn, version, MIGRATIONS if migrations is None else migrations)
         _check_integrity(conn)
         inventory = _inventory(conn)
     if inventory.version != version:
@@ -1028,7 +1159,7 @@ def _write_restore_marker(paths: WorkspacePaths) -> None:
 def _regular_file(path: Path) -> None:
     if path.is_symlink() or path.resolve() != path:
         raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Linked archive file is unavailable")
-    info = path.stat()
+    info = path.lstat()
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         raise m.CoreError(
             m.ErrorCode.RESOURCE_UNAVAILABLE, "Archive file is not a private regular file"

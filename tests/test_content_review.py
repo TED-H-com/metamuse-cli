@@ -223,7 +223,7 @@ def test_review_06_stateless_cursor_and_restored_export(ctx, project, tmp_path):
     first = app.search_evidence(ctx, {"project_id": project, "query": "中", "limit": 1})
     assert not (ctx.paths.runtime / "search").exists()
     export(ctx, project, refs[0])
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored"))
     restored = app.AppContext.open(tmp_path / "restored")
     second = app.search_evidence(

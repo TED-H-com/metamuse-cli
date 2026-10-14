@@ -22,6 +22,14 @@ def synthetic_v2(tmp_path, monkeypatch, script="CREATE TABLE upgrade_probe(id IN
 def test_f3_rebuild_with_child_rows_uses_fk_check_and_restores_enforcement(
     ctx, tmp_path, monkeypatch, bad_fk
 ):
+    first = tmp_path / "synthetic_001.sql"
+    first.write_text(
+        core.MIGRATIONS[1].read_text() + "CREATE TABLE rebuild_parent(id INTEGER PRIMARY KEY);\n"
+        "CREATE TABLE rebuild_child(id INTEGER PRIMARY KEY,"
+        "parent INTEGER REFERENCES rebuild_parent(id));\n"
+    )
+    monkeypatch.setattr(core, "MIGRATIONS", {**core.MIGRATIONS, 1: first})
+    ctx.store._migrations = core.MIGRATIONS
     with ctx.store.transaction() as conn:
         conn.execute("CREATE TABLE rebuild_parent(id INTEGER PRIMARY KEY)")
         conn.execute(

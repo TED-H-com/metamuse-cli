@@ -291,12 +291,21 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
 def dispatch(args: argparse.Namespace) -> m.Envelope | None:
     ctx = app.AppContext.open(args.workspace)
     ctx.non_interactive = args.non_interactive
+    result = _dispatch(ctx, args)
+    if result is not None:
+        result = result.model_copy(
+            update={"warnings": list(dict.fromkeys([*result.warnings, *ctx.store.open_warnings]))}
+        )
+    return result
+
+
+def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | None:
     if args.command in ("worker", "add", "packet", "muse", "draft", "export", "mcp"):
         app.register_builtin_operations()
     match args.command:
         case "init":
             return m.Envelope(
-                status="ok", data={"initialized": True, "schema_version": SCHEMA_VERSION}
+                status="ok", data={"initialized": True, "schema_version": ctx.store.schema_version}
             )
         case "doctor":
             if args.live:

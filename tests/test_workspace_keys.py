@@ -89,9 +89,9 @@ def test_rotation_retains_old_cursors_and_versions_through_restore(
     second = ctx.store.rotate_workspace_key(CONTENT_CURSOR_KEY)
     assert second.version == 2 and second.key_material != first.key_material
     assert ctx.store.get_workspace_key(CONTENT_CURSOR_KEY, 1).status == "retired"
-    backup = ctx.store.backup(tmp_path / "keys-backup")
+    backup = ctx.store.backup(tmp_path / "keys-backup").path
     paths = WorkspacePaths.resolve(tmp_path / "keys-restored")
-    restored = Store.restore(backup, paths)
+    restored = Store.restore(backup, paths).store
     assert restored.get_workspace_key(CONTENT_CURSOR_KEY) == second
     assert [k.version for k in restored.workspace_verification_keys(CONTENT_CURSOR_KEY)] == [2, 1]
     result = app.search_evidence(

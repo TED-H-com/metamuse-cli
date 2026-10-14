@@ -49,7 +49,7 @@ def test_all_ready_exports_restored_and_old_receipts_replay(ctx, export_request,
     original = [ready_export(ctx, request) for request in requests]
     # Uncommitted/orphan artifacts are not silently folded into a ready snapshot.
     (ctx.paths.root / "exports" / "orphan").mkdir()
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     manifest = json.loads((backup / "manifest.json").read_bytes())
     assert {entry["id"] for entry in manifest["exports"]} == {data["id"] for data in original}
     assert not (backup / "exports" / "orphan").exists()
@@ -112,12 +112,14 @@ def test_backup_records_unavailable_artifact_with_explicit_partial_warning(
     damage(ctx.paths.root / data["artifact"], kind)
     destination = tmp_path / "failed-backup"
     with pytest.warns(UserWarning, match="unavailable"):
-        assert ctx.store.backup(destination) == destination
+        assert ctx.store.backup(destination).path == destination
     manifest = json.loads((destination / "manifest.json").read_bytes())
     assert manifest["status"] == "partial" and manifest["warnings"]
     assert manifest["exports"][0]["state"] == "unavailable"
     assert not (destination / data["artifact"]).exists()
-    restored = Store.restore(destination, WorkspacePaths.resolve(tmp_path / "partial-restored"))
+    restored = Store.restore(
+        destination, WorkspacePaths.resolve(tmp_path / "partial-restored")
+    ).store
     assert restored.get(m.Export, data["id"]).state == "unavailable"
     assert ctx.store.get(m.Export, data["id"]).state == "ready"
     assert app.export_objects(ctx, export_request).status == "error"
@@ -128,7 +130,7 @@ def test_restore_rejects_corrupt_or_unexpected_members_before_copy(
     ctx, export_request, tmp_path, kind
 ):
     data = ready_export(ctx, export_request)
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     damage(backup / data["artifact"], kind)
     paths = WorkspacePaths.resolve(tmp_path / "invalid-restore")
     with pytest.raises(m.CoreError):
@@ -138,7 +140,7 @@ def test_restore_rejects_corrupt_or_unexpected_members_before_copy(
 
 def test_restore_rejects_unlisted_export_directory(ctx, export_request, tmp_path):
     ready_export(ctx, export_request)
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     (backup / "exports" / "unlisted").mkdir()
     with pytest.raises(m.CoreError) as error:
         Store.restore(backup, WorkspacePaths.resolve(tmp_path / "invalid"))
@@ -147,7 +149,7 @@ def test_restore_rejects_unlisted_export_directory(ctx, export_request, tmp_path
 
 def test_restore_requires_export_inventory_to_match_database(ctx, export_request, tmp_path):
     ready_export(ctx, export_request)
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     path = backup / "manifest.json"
     manifest = json.loads(path.read_bytes())
     manifest["exports"] = []

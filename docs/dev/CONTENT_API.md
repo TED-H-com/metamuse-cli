@@ -188,3 +188,11 @@ compute transcript/transitive staleness on creation, preview and replay.
 calls on a fixed 10,000-record synthetic zh-Hant corpus. It uses a unique home-directory
 disk workspace and removes it on exit. It reports reference-environment deviations;
 its RSS is process peak including setup, not the separate import-RSS acceptance result.
+
+
+Core backup/restore now return structured results. Use `backup_result.path` and
+`restore_result.store`; complete/partial status, unavailable export IDs and warnings
+remain available even when Python warnings are suppressed. Legacy manifests without
+database checksums are refused. SQL conflict clauses (including OR IGNORE/DO NOTHING)
+and rowid writes are forbidden; deduplicate with SELECT/request receipt checks and plain
+INSERT in a short transaction. Schema and immutable bindings are core-owned.

@@ -33,7 +33,7 @@ def v1_backup(ctx, project, tmp_path):
     }
     exported = app.export_objects(ctx, request)
     assert exported.status == "ok"
-    return ctx.store.backup(tmp_path / "v1-backup"), asset, request, exported.data
+    return ctx.store.backup(tmp_path / "v1-backup").path, asset, request, exported.data
 
 
 def install_v2(tmp_path, monkeypatch, *, failing=False):
@@ -54,7 +54,7 @@ def test_older_backup_restores_then_migrates_with_its_own_backup(
     backup, asset, request, exported = v1_backup
     install_v2(tmp_path, monkeypatch)
     restored_paths = WorkspacePaths.resolve(tmp_path / "restored-v2")
-    restored = core.Store.restore(backup, restored_paths)
+    restored = core.Store.restore(backup, restored_paths).store
     assert restored.schema_version == 2
     with restored.connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
@@ -102,7 +102,7 @@ def test_restore_migration_failure_rolls_back_and_blocks_target(tmp_path, monkey
         core.Store(paths)
     with pytest.raises(m.CoreError):
         app.AppContext.open(paths.root)
-    recovery = core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "fresh-recovery"))
+    recovery = core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "fresh-recovery")).store
     assert recovery.schema_version == 2
 
 
@@ -115,7 +115,7 @@ def test_older_backup_verified_before_any_target_or_upgrade(
     if corruption == "foreign_key":
         with closing(sqlite3.connect(backup / "state.sqlite3")) as conn:
             conn.execute("PRAGMA foreign_keys=OFF")
-            conn.execute("UPDATE drafts SET project_id='prj_missing'")
+            conn.execute("UPDATE events SET project_id='prj_missing'")
             conn.commit()
     elif corruption == "object":
         (backup / asset.object_path).write_bytes(b"corrupt")
@@ -131,8 +131,8 @@ def test_older_backup_verified_before_any_target_or_upgrade(
 def test_newer_backup_refused_before_touching_target(tmp_path, monkeypatch, v1_backup):
     backup, _, _, _ = v1_backup
     install_v2(tmp_path, monkeypatch)
-    upgraded = core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "v2"))
-    newer_backup = upgraded.backup(tmp_path / "v2-backup")
+    upgraded = core.Store.restore(backup, WorkspacePaths.resolve(tmp_path / "v2")).store
+    newer_backup = upgraded.backup(tmp_path / "v2-backup").path
     monkeypatch.setattr(core, "SCHEMA_VERSION", 1)
     paths = WorkspacePaths.resolve(tmp_path / "old-build-target")
     with pytest.raises(m.CoreError) as error:

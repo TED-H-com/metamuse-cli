@@ -735,8 +735,12 @@ def test_preview_checks_cross_project_reference_after_project_membership_change(
     ref = add_item(ctx, project)
     draft = save(ctx, project, facts_refs=[ref]).data
     other = other_project(ctx)
+    with pytest.raises(m.CoreError):
+        with ctx.store.transaction() as conn:
+            conn.execute("UPDATE sources SET project_id=? WHERE id=?", (other, "src_" + ref["id"]))
     with ctx.store.transaction() as conn:
-        # Synthetic privacy/reparenting simulation; no content is created through raw SQL.
+        # Deliberate scratch-DB corruption tests preview's independent scope check.
+        conn.execute("DROP TRIGGER sources_identity_immutable")
         conn.execute("PRAGMA defer_foreign_keys=ON")
         conn.execute("UPDATE sources SET project_id=? WHERE id=?", (other, "src_" + ref["id"]))
         conn.execute("UPDATE items SET project_id=? WHERE id=?", (other, ref["id"]))

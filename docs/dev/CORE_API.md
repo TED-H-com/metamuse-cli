@@ -350,28 +350,54 @@ orphan deletion is implemented. Ready files are not deleted by job failure.
 member's size/hash, and rejects symlinks, hardlinks and unexpected files. Receipt replay
 compares the authoritative row to its receipt and verifies that row, not a receipt copy.
 
-`backup(fresh_destination)` returns the archive Path. The destination must be outside
-and disjoint from the live workspace; only automatic pre-upgrade backups use the private
-workspace/backups directory. SQLite online backup is converted to rollback-journal mode.
-The manifest records DB hash/size, ready objects, export IDs/artifact paths/manifest hashes,
-and export state. Verified artifacts are copied and reverified. Missing/changed export
-files are recorded as unavailable, with manifest status=partial and warnings; BackupWarning
-is emitted on stderr. Both explicit and pre-upgrade backups use this policy. Missing or
-corrupt authoritative object bytes still fail; uncommitted/orphan exports are excluded.
-Callers may capture BackupWarning and read manifest.json; no envelope is emitted by Store.
+`backup(fresh_destination)` returns BackupResult(path, status, unavailable_export_ids,
+warnings); status is complete/partial. `Store.restore(backup, fresh_paths)` returns
+RestoreResult with those same fields plus `.store`. Use `.path` to obtain the archive
+path and `.store` to use the restored database. Structured results retain partial status
+even when Python suppresses repeated warnings. BackupWarning is a secondary signal at
+the public caller; no global warning filters are installed.
 
-`Store.restore(backup, fresh_paths)` rejects overlapping paths, SQLite sidecars and unknown
-archive entries. Inspection is immutable/read-only: it neither creates journals nor
-requires write access to the backup. Every verified file must be regular, unsymlinked,
-and have st_nlink=1; unlisted object/export members are rejected. Verification uses raw
-SQL and stable archive columns at the backup version, not current Pydantic models.
-Copied DB bytes, inventory and artifact hashes are checked again before migration and
-afterward. Newer backups are refused; older copies follow normal guarded forward
-migration with their own pre-upgrade backup. Restored unavailable exports stay unavailable,
-so old receipt replay fails honestly; verified old artifacts still replay byte-for-byte.
+```python
+archived = ctx.store.backup(destination)
+if archived.status == "partial":
+    report_unavailable(archived.unavailable_export_ids, archived.warnings)
+restored = Store.restore(archived.path, fresh_paths)
+store = restored.store
+```
+
+Destinations must be outside and disjoint from the live workspace; only automatic
+pre-upgrade backups use workspace/backups. SQLite archives use rollback-journal mode.
+The manifest requires DB hash/size, ready objects, export IDs/artifact paths/manifest hashes
+and export state. Every copied artifact is verified; unavailable exports are recorded
+explicitly without blocking upgrades. Authoritative object loss still fails. DB, manifest,
+member files and directory entries are fsynced before returning. Uncommitted exports
+are excluded. Pre-upgrade results are durably recorded in runtime/pre_upgrade_backups.json
+(last 100 records), exposed by doctor/inspect as pre_upgrade_backups, and partial upgrade
+warnings are included in application and CLI envelopes created by that opening context.
+
+Archive inspection is immutable/read-only and rejects sidecars/unknown entries. Every
+verified file must be regular, unsymlinked and have st_nlink=1; unlisted members are refused.
+Raw SQL inventories at the backup version avoid current Pydantic models. The entire
+sqlite_master set of tables/indexes/triggers/views, with whitespace-normalized SQL, must
+match MIGRATIONS[1..version] replayed in memory. SQLite-internal objects alone are ignored.
+Check the old schema before the pre-upgrade snapshot, the target schema before migration
+commit, the archive before any writable copy connection, the copied DB before its first
+write, and every normal Store open. Expected schemas are process-cached by exact migration
+contents (16 entries); actual DB schemas are always read and compared. Rebuild migrations
+must recreate prior guards; dropping a guard while retaining its table is refused.
+Newer backups and legacy manifests missing the database checksum are refused. Older
+copies use guarded forward migrations with their own pre-upgrade backup. Verified old
+artifacts replay byte-for-byte; restored unavailable exports stay unavailable.
+
+A symlink at the raw leaf workspace/backup/destination path, including a dangling link,
+is refused before resolution. Symlinked parent directories remain supported. Live SQLite
+DB/WAL/SHM files are checked with lstat for private regular files; private_file uses
+O_NOFOLLOW. These checks protect application mistakes, not a hostile process controlling
+the same user and changing paths during a system call.
 
 Runtime restore.incomplete is written and fsynced before initialize, and removed with a
-subsequent directory fsync only after successful migration/integrity checks. Normal open,
+subsequent directory fsync, both inside the maintenance lock, only after successful
+migration/integrity checks. Connection/migrate recheck the marker after acquiring that lock. Normal open,
 connection, migrate and put_object reject even broken-symlink markers. Copied worker_state
 is cleared before the pre-upgrade backup. A failure leaves the target blocked; restore
 again into another fresh destination after resolving the failure. Do not remove a marker
@@ -563,26 +589,45 @@ history reads/reconciliation are separate safe_read jobs. Any explicitly approve
 submission after a proven refusal requires feature-level target/intent/permission checks;
 a new key cannot bypass unresolved delivery.
 
-Every Store connection enables recursive_triggers so conflict-resolution deletes fire
-retention triggers. BEFORE INSERT guards reject REPLACE/INSERT OR REPLACE/UPSERT conflicts
-on these identities; use explicit guarded UPDATE for mutable state, not conflict replacement.
+SQL guards are defense in depth against application bugs. They are not a sandbox
+against a same-user actor issuing arbitrary SQL, changing guard definitions or editing
+the DB file. Job/exchange state machines remain enforced by jobs.py and the application;
+SQL freezes identities/bindings and selected monotonic facts, not every state transition.
 
-| Guarded table | Protected identity / behavior |
+Application and migration SQL must never use INSERT OR ..., UPDATE OR ..., OR REPLACE,
+REPLACE INTO, OR IGNORE or ON CONFLICT, and must never write rowid/_rowid_/oid. The static
+scan in tests/test_sql_policy.py enforces this across every source SQL string and migration.
+Exceptions require an explicit, commented allowlist of exact source locations; none exist.
+Read-only SELECT rowid for ordering is allowed. Use SELECT/checks and request_receipts in
+a short transaction for idempotency/deduplication, then ordinary INSERT or guarded UPDATE.
+INSERT OR IGNORE and ON CONFLICT DO NOTHING also abort on guarded identity conflicts;
+they are not supported no-op ingestion mechanisms.
+
+Every Store connection enables recursive_triggers. BEFORE INSERT guards reject identity
+conflicts including explicit NEW.rowid; experimentally automatic NEW.rowid is -1 before
+assignment. BEFORE UPDATE guards freeze rowid and primary/unique identities. Partial
+unique slots with legitimate lifecycle changes (active key retirement, exchange closure)
+use their existing guarded APIs rather than immutable status values.
+
+| Guarded table | Identity and immutable binding columns (rowid frozen on all) |
 |---|---|
-| sources | id and reliable source identity; acquisition methods immutable |
-| item_revisions | (item_id, revision); append-only UPDATE |
-| packets | id; exact payload immutable, stale mutable |
-| permits | id; immutable scope, monotonic use, sticky revocation, expiry checks |
-| exchanges | id, discussion/request key, open-exchange slot; settled outcome sticky |
-| drafts | id; current_revision requires appended head and never decreases |
-| draft_revisions | (draft_id, revision); sequential append and immutable UPDATE |
-| job_steps | id and job/sequence; entered external steps cannot reset/requeue |
-| workspace_keys | name/version and active slot; immutable material, retained retired keys |
-| exports | id; ready/unavailable payload immutable, ready→unavailable allowed once |
+| sources | id, project_id, platform, native_scope/native_id; acquisition methods immutable |
+| item_revisions | item_id/revision; all payload updates forbidden |
+| packets | id, project_id; exact payload immutable, stale mutable |
+| permits | id, project_id; grant scope immutable, monotonic use and sticky revocation |
+| exchanges | id, project_id, discussion_id, request_key, question, packet_id, digest, permit_id; closed outcome sticky |
+| drafts | id, project_id; head requires appended revision and cannot decrease |
+| draft_revisions | draft_id/revision; sequential append, payload updates forbidden |
+| job_steps | id, job_id, sequence, target, side_effect_class, uncertain_state; entered attempt cannot reset/requeue |
+| workspace_keys | name/version, key_material, created_at; retired material retained, active slot rotated atomically |
+| exports | id, project_id always; ready/unavailable payload frozen, ready→unavailable allowed once |
 
-Exports cannot regain ready state from unavailable; receipt replay checks the authoritative
-row against the stored receipt, then verifies that row's artifact. Corrections use new IDs.
-Transcript guards/scoping remain B05/B06-owned and are not amended here.
+Every table's no-replace guard includes primary, declared secondary unique and rowid
+conflicts. The F2 regression fixture uses unreferenced victims and asserts exact trigger
+messages; METAMUSE_TEST_DROP_GUARDS=1 is a test-only mutation switch proving all 38
+replacement cases fail when their guards are removed. Exports cannot regain ready state
+from unavailable. Receipt replay compares the authoritative row and verifies its artifact.
+Transcript guards/scoping remain B05/B06-owned until its migration rebase.
 
 Storage triggers freeze packet payloads (stale remains mutable), acquisition methods,
 permit scope and settled exchange outcomes. Permit used is monotonic, revocation sticky,

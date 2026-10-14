@@ -8,7 +8,7 @@ import pytest
 from metamuse import app
 from metamuse import models as m
 from metamuse.paths import WorkspacePaths
-from metamuse.store import MIGRATIONS, SCHEMA_VERSION, Store
+from metamuse.store import MIGRATIONS, MIGRATIONS, SCHEMA_VERSION, Store
 
 
 def source(ctx, project, sid="src_one"):
@@ -544,8 +544,8 @@ def test_v1_two_project_shared_asset_aborts_upgrade(tmp_path):
 
 def test_backup_restore_and_hash_integrity(ctx, project, tmp_path):
     a = ctx.store.put_object(io.BytesIO(b"backup fixture"), mime="text/plain")
-    backup = ctx.store.backup(tmp_path / "backup")
-    restored = Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored"))
+    backup = ctx.store.backup(tmp_path / "backup").path
+    restored = Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored")).store
     assert restored.get(m.Project, project).name == "Synthetic project"
     assert restored.get(m.Asset, a.id).sha256 == a.sha256
     with restored.connection() as conn:
@@ -561,7 +561,7 @@ def test_migration_rollback_backup_and_newer_refusal(ctx, project, tmp_path):
     migration = tmp_path / "next_failure.sql"
     migration.write_text("CREATE TABLE intermediate(id TEXT);\nINSERT INTO missing VALUES(1);\n")
     with pytest.raises(m.CoreError) as error:
-        Store(ctx.paths, schema_version=current + 1, migrations={current + 1: migration})
+        Store(ctx.paths, schema_version=current + 1, migrations={**MIGRATIONS, current + 1: migration})
     assert error.value.detail.code == m.ErrorCode.STORAGE
     with ctx.store.connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == current
@@ -569,10 +569,10 @@ def test_migration_rollback_backup_and_newer_refusal(ctx, project, tmp_path):
     assert ctx.store.get(m.Project, project).id == project
     backup = next((ctx.paths.root / "backups").glob("pre_upgrade_*"))
     assert json.loads((backup / "manifest.json").read_text())["schema_version"] == current
-    restored = Store.restore(backup, WorkspacePaths.resolve(tmp_path / "pre_restored"))
+    restored = Store.restore(backup, WorkspacePaths.resolve(tmp_path / "pre_restored")).store
     assert restored.get(m.Project, project).id == project
     migration.write_text("CREATE TABLE added(id TEXT);\n")
-    newer = Store(ctx.paths, schema_version=current + 1, migrations={current + 1: migration})
+    newer = Store(ctx.paths, schema_version=current + 1, migrations={**MIGRATIONS, current + 1: migration})
     with newer.connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == current + 1
     with pytest.raises(m.CoreError) as error:
@@ -697,7 +697,7 @@ def test_upgrade_refuses_live_executor(ctx, tmp_path):
     migration.write_text("CREATE TABLE added(id TEXT);\n")
     with Executor(ctx.store):
         with pytest.raises(m.CoreError) as error:
-            Store(ctx.paths, schema_version=current + 1, migrations={current + 1: migration})
+            Store(ctx.paths, schema_version=current + 1, migrations={**MIGRATIONS, current + 1: migration})
         assert error.value.detail.code == m.ErrorCode.JOB_BUSY
     with ctx.store.connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == current
@@ -705,7 +705,7 @@ def test_upgrade_refuses_live_executor(ctx, tmp_path):
 
 def test_backup_private_files_and_tampered_manifest(ctx, tmp_path):
     ctx.store.put_object(io.BytesIO(b"fixture"), mime="text/plain")
-    backup = ctx.store.backup(tmp_path / "backup")
+    backup = ctx.store.backup(tmp_path / "backup").path
     for path in (backup, *backup.rglob("*")):
         assert path.stat().st_mode & 0o777 == (0o700 if path.is_dir() else 0o600)
     manifest = backup / "manifest.json"

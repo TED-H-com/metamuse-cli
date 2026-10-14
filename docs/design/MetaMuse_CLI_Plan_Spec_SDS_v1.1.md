@@ -606,6 +606,23 @@ with authoritative project_id and coordinate the core validator, nullable-asset 
 and proactive transcript stale marking. B07/B11 computes transcript staleness at use;
 its fixture evidence does not claim pending integration or any LIVE result.
 
+
+### Core round-3 storage clarifications
+
+SQL guards defend against application bugs, not arbitrary same-user SQL/file edits.
+Application/migration SQL forbids all conflict clauses and rowid writes; static tests
+check every source SQL string and migration. Guarded identities include implicit rowid
+and immutable operation/exchange/project bindings; state machines remain in jobs/app.
+Canonical sqlite_master objects (tables/indexes/triggers/views plus normalized SQL) must
+match replayed migrations at the recorded version on open, before upgrade backup,
+before migration commit, and before any restored DB writes. Guard-dropping rebuilds fail.
+Archive database checksums are required. Backup/restore return structured complete/partial
+results with unavailable export IDs and warnings; restore additionally returns its Store.
+Partial pre-upgrade status is durably recorded under runtime, visible in doctor/inspect
+and triggering envelopes. No global Python warning filter is changed. Archives fsync DB,
+manifest and directories. Restore blocker checks/unlink are inside the maintenance lock.
+Raw leaf symlinks are refused before resolution; symlinked parents remain supported.
+
 ---
 
 # 來源與恢復說明

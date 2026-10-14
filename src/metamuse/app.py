@@ -71,15 +71,21 @@ def application(model: type[m.Model]) -> Callable:
                 request = model.model_validate(
                     {} if request is None else request, context={"limits": ctx.limits}
                 )
-                return fn(ctx, request)
+                envelope = fn(ctx, request)
             except m.CoreError as exc:
-                return m.failure(exc)
+                envelope = m.failure(exc)
             except ValidationError as exc:
-                return m.failure(m.validation_error(exc))
+                envelope = m.failure(m.validation_error(exc))
             except (ValueError, TypeError):
-                return m.failure(m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid request"))
+                envelope = m.failure(m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid request"))
             except OSError:
-                return m.failure(m.CoreError(m.ErrorCode.STORAGE, "Workspace I/O failed"))
+                envelope = m.failure(m.CoreError(m.ErrorCode.STORAGE, "Workspace I/O failed"))
+
+            return envelope.model_copy(
+                update={
+                    "warnings": list(dict.fromkeys([*envelope.warnings, *ctx.store.open_warnings]))
+                }
+            )
 
         return call
 
@@ -153,6 +159,7 @@ def inspect_capabilities(ctx: AppContext, request: m.InspectRequest) -> m.Envelo
             "capabilities": capabilities,
             "worker_available": worker_available(ctx.store),
             "network_mode": ctx.policy.app.network_mode,
+            "pre_upgrade_backups": ctx.store.pre_upgrade_backups(),
         },
     )
 
