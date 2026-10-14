@@ -180,6 +180,7 @@ before_external_action transaction完成verifier/reservation/intent後才mint on
 consume綁owner/epoch/job/step/operation/target/action digest。read不mint。transport affirmative zero-handoff可同process
 record_not_submitted，原step經settle_uncertain變local failed/remote not_submitted；crash則unknown，不退用量。
 history/list在另一safe_read job，讀取current access grant；原step settlement不再reserve/send/requeue。
+send boundary持久化write-once submitted_observation_high_water；history關聯排除prepared/zero-handoff，並要求訊息首次observation在此高水位之後。多個同文exchange共享markerless echo時保持ambiguous，不按rowid先後認領。user_echo SQL guard也檢查已提交與首次observation；transport首結果保留既有history proof、另存真實ack/verdict，不reopen closed。
 live send先有已完成、授權的history baseline；已mapped discussion_id的open走history read，不做第二次create。
 open boundary在reservation與token之前重查未解create；拒絕時transaction rollback，不接觸remote、不標uncertain。
 

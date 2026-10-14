@@ -18,6 +18,7 @@ ALTER TABLE exchanges ADD COLUMN outbound_payload TEXT CHECK(outbound_payload IS
 ALTER TABLE exchanges ADD COLUMN outbound_digest TEXT CHECK(outbound_digest IS NULL OR (length(outbound_digest)=64 AND outbound_digest NOT GLOB '*[^0-9a-f]*'));
 ALTER TABLE exchanges ADD COLUMN submission_step_id TEXT REFERENCES job_steps(id);
 ALTER TABLE exchanges ADD COLUMN submitted_at_ms INTEGER CHECK(submitted_at_ms IS NULL OR (typeof(submitted_at_ms)='integer' AND submitted_at_ms>=0));
+ALTER TABLE exchanges ADD COLUMN submitted_observation_high_water INTEGER CHECK(submitted_observation_high_water IS NULL OR (typeof(submitted_observation_high_water)='integer' AND submitted_observation_high_water>=0));
 ALTER TABLE exchanges ADD COLUMN stream_id INTEGER CHECK(stream_id IS NULL OR (typeof(stream_id)='integer' AND stream_id BETWEEN 1 AND 9223372036854775807));
 ALTER TABLE exchanges ADD COLUMN bytes_handed_off INTEGER CHECK(bytes_handed_off IN (0,1));
 ALTER TABLE exchanges ADD COLUMN attempt_verdict TEXT CHECK(attempt_verdict IN ('acked','app_error','undecided'));
@@ -98,6 +99,7 @@ CREATE TRIGGER exchange_attempt_once BEFORE UPDATE ON exchanges
 WHEN (OLD.job_id IS NOT NULL AND NEW.job_id IS NOT OLD.job_id)
  OR (OLD.submission_step_id IS NOT NULL AND NEW.submission_step_id IS NOT OLD.submission_step_id)
  OR (OLD.submitted_at_ms IS NOT NULL AND NEW.submitted_at_ms IS NOT OLD.submitted_at_ms)
+ OR (OLD.submitted_observation_high_water IS NOT NULL AND NEW.submitted_observation_high_water IS NOT OLD.submitted_observation_high_water)
  OR (OLD.stream_id IS NOT NULL AND NEW.stream_id IS NOT OLD.stream_id)
  OR (OLD.bytes_handed_off IS NOT NULL AND NEW.bytes_handed_off IS NOT OLD.bytes_handed_off)
  OR (OLD.attempt_verdict IS NOT NULL AND NEW.attempt_verdict IS NOT OLD.attempt_verdict)
@@ -123,7 +125,7 @@ WHEN NEW.state NOT IN ('prepared','submitting','sent','send_uncertain','failed_b
  OR (NEW.state='failed_before_send' AND (NEW.bytes_handed_off IS NOT 0 OR json_extract(NEW.delivery_proof,'$.kind') IS NOT 'not_submitted'))
 BEGIN SELECT RAISE(ABORT,'invalid exchange transition'); END;
 CREATE TRIGGER exchange_submit_guard BEFORE UPDATE ON exchanges
-WHEN NEW.state='submitting' AND (NEW.request_marker IS NULL OR NEW.outbound_payload IS NULL OR NEW.outbound_digest IS NULL OR NEW.submitted_at_ms IS NULL OR NEW.submission_step_id IS NULL OR NOT EXISTS(SELECT 1 FROM job_steps s JOIN jobs j ON j.id=s.job_id WHERE s.id=NEW.submission_step_id AND j.id=NEW.job_id AND j.project_id=NEW.project_id AND j.operation='muse.send' AND s.side_effect_class='external_submit' AND json_extract(s.target,'$.intent_id')=NEW.id))
+WHEN NEW.state='submitting' AND (NEW.request_marker IS NULL OR NEW.outbound_payload IS NULL OR NEW.outbound_digest IS NULL OR NEW.submitted_at_ms IS NULL OR NEW.submitted_observation_high_water IS NULL OR NEW.submission_step_id IS NULL OR NOT EXISTS(SELECT 1 FROM job_steps s JOIN jobs j ON j.id=s.job_id WHERE s.id=NEW.submission_step_id AND j.id=NEW.job_id AND j.project_id=NEW.project_id AND j.operation='muse.send' AND s.side_effect_class='external_submit' AND json_extract(s.target,'$.intent_id')=NEW.id))
 BEGIN SELECT RAISE(ABORT,'prepared original attempt required'); END;
 CREATE UNIQUE INDEX exchange_original_step ON exchanges(submission_step_id) WHERE submission_step_id IS NOT NULL;
 DROP TRIGGER exchange_no_replace;
@@ -137,7 +139,7 @@ CREATE TRIGGER exchange_delivery_proof BEFORE UPDATE OF delivery_proof ON exchan
 WHEN NEW.delivery_proof IS NOT NULL AND (json_type(NEW.delivery_proof) IS NOT 'object' OR json_extract(NEW.delivery_proof,'$.step_id') IS NOT NEW.submission_step_id OR json_extract(NEW.delivery_proof,'$.outbound_digest') IS NOT NEW.outbound_digest OR json_extract(NEW.delivery_proof,'$.kind') IS NULL OR json_extract(NEW.delivery_proof,'$.kind') NOT IN ('ack','user_echo','not_submitted')
  OR (json_extract(NEW.delivery_proof,'$.kind')='ack' AND (NEW.attempt_verdict IS NOT 'acked' OR NEW.bytes_handed_off IS NOT 1))
  OR (json_extract(NEW.delivery_proof,'$.kind')='not_submitted' AND NEW.bytes_handed_off IS NOT 0)
- OR (json_extract(NEW.delivery_proof,'$.kind')='user_echo' AND NOT EXISTS(SELECT 1 FROM muse_observations o JOIN discussions d ON d.id=o.discussion_id WHERE o.id=json_extract(NEW.delivery_proof,'$.observation_id') AND o.discussion_id=NEW.discussion_id AND json_extract(o.raw_event,'$.event_name')='message.user' AND json_extract(o.raw_event,'$.session_id')=d.remote_session AND json_extract(o.raw_event,'$.seq')>json_extract(NEW.baseline,'$.seq'))))
+ OR (json_extract(NEW.delivery_proof,'$.kind')='user_echo' AND (NEW.state='prepared' OR NEW.bytes_handed_off IS 0 OR NEW.submitted_at_ms IS NULL OR NEW.submitted_observation_high_water IS NULL OR NOT EXISTS(SELECT 1 FROM muse_observations o JOIN discussions d ON d.id=o.discussion_id WHERE o.id=json_extract(NEW.delivery_proof,'$.observation_id') AND o.discussion_id=NEW.discussion_id AND json_extract(o.raw_event,'$.event_name')='message.user' AND json_extract(o.raw_event,'$.session_id')=d.remote_session AND json_extract(o.raw_event,'$.seq')>json_extract(NEW.baseline,'$.seq') AND o.rowid>NEW.submitted_observation_high_water AND NOT EXISTS(SELECT 1 FROM muse_observations prior WHERE prior.message_id=o.message_id AND prior.rowid<=NEW.submitted_observation_high_water)))))
 BEGIN SELECT RAISE(ABORT,'delivery proof must reference original attempt evidence'); END;
 CREATE TRIGGER exchange_memory_guard BEFORE UPDATE OF observation_memory ON exchanges
 WHEN NEW.observation_memory IS NOT NULL AND (json_extract(NEW.observation_memory,'$.version') IS NOT 1 OR json_type(NEW.observation_memory,'$.ambiguous') IS NULL OR json_type(NEW.observation_memory,'$.ambiguous') NOT IN ('true','false') OR json_type(NEW.observation_memory,'$.competing') IS NOT 'array' OR json_type(NEW.observation_memory,'$.disqualified') IS NOT 'array' OR json_type(NEW.observation_memory,'$.high_water') IS NOT 'integer' OR json_extract(NEW.observation_memory,'$.high_water')<0)

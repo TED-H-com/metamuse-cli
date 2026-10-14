@@ -182,6 +182,15 @@ it returns stored data and an accepted `refresh_job_id`, `state`, `worker_availa
 `read_action(discussion, sessions=False)` previews the exact read scope. A refresh
 fetches one bounded history page from the original session; absence is not proof of
 non-delivery or full history coverage. Raw observations are retained before association.
+Association excludes prepared attempts and proven `not_submitted` / zero-handoff
+attempts, including closed ones. The boundary records a write-once
+`submitted_observation_high_water`; only messages first observed after that mark
+and passing the sequence/time checks can belong to this send. Later enrichment
+cannot make an old message eligible. If markerless echoes fit two delivered
+exchanges, their association stays sticky `ambiguous` and neither claims messages
+or gains a history delivery proof. A first transport result arriving after a
+history proof still records its actual verdict/handoff, preserving that proof and
+the host's closed state.
 The app's opaque HMAC cursor uses the private versioned `content.cursor` workspace key,
 binds discussion/exchange and observation high-water/offset, and survives key rotation
 and backup/restore. Pages contain at most 50 observations; message text/status comes
@@ -255,7 +264,7 @@ get NULL binding/backend and handoff/evidence, never fabricated zero delivery. E
 host outcomes become `closed` without inventing delivery proof.
 
 Exchange columns: marker, typed exact outbound payload/body digest, original submission
-step FK, write-once submit time and positive int64 stream ID, nullable handoff, first
+step FK, write-once submit time/observation high-water and positive int64 stream ID, nullable handoff, first
 verdict/detail/SPEC error, separately guarded delivery proof and versioned observation
 memory. Discussion columns snapshot binding/backend, original open intent/permit/step,
 first open attempt accounting and session proof, plus unresolved-step quarantine.

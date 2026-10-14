@@ -1,11 +1,15 @@
 """Offline regressions for the independent B10 lifecycle review."""
 
+import copy
+import sqlite3
+
+import pytest
 from test_muse_lifecycle import fixture_ctx as fixture_ctx
-from test_muse_lifecycle import grant, invoke, run
+from test_muse_lifecycle import grant, invoke, opened, packet, run
 
 from metamuse import models as m
 from metamuse import safety
-from metamuse._muse_lifecycle import prepare_open
+from metamuse._muse_lifecycle import prepare_open, prepare_send, read_action
 
 
 def queue_open(ctx, project, key):
@@ -37,3 +41,176 @@ def test_queued_open_rechecks_unresolved_creation_before_reserving(fixture_ctx, 
     assert discussion.open_submitted_at_ms is None and discussion.remote_session is None
     assert ctx.store.get(m.Permit, request.access_grant_id).used == 0
     assert sum(route == "session.start" for route, _ in ctx.muse_gateway.calls) == 1
+
+
+def queue_send(ctx, project, discussion_id, pkt, key, question="Same host question"):
+    request = m.MuseSendRequest(
+        discussion_id=discussion_id,
+        packet_id=pkt.id,
+        question=question,
+        share_grant_id="placeholder",
+        request_key=key,
+    )
+    prepared = prepare_send(ctx, request)
+    request.share_grant_id = grant(
+        ctx,
+        project,
+        safety.action_digest(prepared.target, prepared.payload),
+        kind="share",
+        packet=pkt,
+    )
+    response = invoke(ctx, "send", request)
+    assert response.status == "accepted"
+    return response.data["exchange_id"]
+
+
+def queue_history(ctx, exchange_id):
+    exchange = ctx.store.get(m.Exchange, exchange_id)
+    discussion = ctx.store.get(m.Discussion, exchange.discussion_id)
+    target, payload = read_action(discussion)
+    permit = grant(
+        ctx, discussion.project_id, safety.action_digest(target, payload), operation="muse.read"
+    )
+    response = invoke(
+        ctx,
+        "read",
+        {
+            "exchange_id": exchange_id,
+            "refresh": True,
+            "access_grant_id": permit,
+        },
+    )
+    assert response.status == "accepted"
+
+
+def markerless_history(ctx, discussion_id):
+    session = ctx.store.get(m.Discussion, discussion_id).remote_session
+    events = copy.deepcopy(ctx.muse_gateway.events[session])
+    for event in events:
+        event.pop("request_marker", None)
+    ctx.muse_gateway.pages = [events]
+
+
+def test_never_sent_exchange_cannot_steal_markerless_retry(fixture_ctx, project):
+    ctx = fixture_ctx
+    opening, _ = opened(ctx, project)
+    did = opening.data["discussion_id"]
+    pkt = packet(ctx, project)
+    ctx.muse_gateway.mode = "not_submitted"
+    first = queue_send(ctx, project, did, pkt, "first")
+    run(ctx)
+    assert (
+        invoke(
+            ctx,
+            "close_exchange",
+            {"exchange_id": first, "outcome": "abandoned", "request_key": "close-first"},
+        ).status
+        == "ok"
+    )
+    ctx.muse_gateway.mode = "normal"
+    second = queue_send(ctx, project, did, pkt, "second")
+    run(ctx)
+    markerless_history(ctx, did)
+    queue_history(ctx, second)
+    run(ctx)
+    assert invoke(ctx, "read", {"exchange_id": first}).data["messages"] == []
+    result = invoke(ctx, "read", {"exchange_id": second})
+    assert len(result.data["messages"]) == 2 and result.data["association"] == "progress"
+
+
+def test_prepared_exchange_cannot_borrow_history_or_lose_its_ack(fixture_ctx, project):
+    ctx = fixture_ctx
+    opening, _ = opened(ctx, project)
+    did = opening.data["discussion_id"]
+    pkt = packet(ctx, project)
+    first = queue_send(ctx, project, did, pkt, "first")
+    run(ctx)
+    assert (
+        invoke(
+            ctx,
+            "close_exchange",
+            {"exchange_id": first, "outcome": "needs_more_data", "request_key": "close-first"},
+        ).status
+        == "ok"
+    )
+    markerless_history(ctx, did)
+    queue_history(ctx, first)
+    second = queue_send(ctx, project, did, pkt, "second")
+    run(ctx)
+    exchange = ctx.store.get(m.Exchange, second)
+    assert exchange.state == "prepared" and exchange.delivery_proof is None
+    with ctx.store.connection() as conn:
+        observation = conn.execute(
+            "SELECT id FROM muse_observations WHERE json_extract(raw_event,'$.event_name')="
+            "'message.user' LIMIT 1"
+        ).fetchone()[0]
+        proof = m.MuseProof(
+            kind="user_echo",
+            step_id=exchange.submission_step_id,
+            outbound_digest=exchange.outbound_digest,
+            observation_id=observation,
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="delivery proof must reference"):
+            conn.execute(
+                "UPDATE exchanges SET delivery_proof=? WHERE id=?",
+                (
+                    m.canonical_json(proof).decode(),
+                    second,
+                ),
+            )
+    run(ctx)
+    exchange = ctx.store.get(m.Exchange, second)
+    assert exchange.bytes_handed_off is True and exchange.attempt_verdict == "acked"
+    assert exchange.delivery_proof.kind == "ack"
+    assert ctx.store.get(m.JobStep, exchange.submission_step_id).state == "succeeded"
+    assert sum(route == "chat.stream" for route, _ in ctx.muse_gateway.calls) == 2
+
+
+def test_identical_delivered_turns_without_markers_stay_ambiguous(fixture_ctx, project):
+    ctx = fixture_ctx
+    opening, _ = opened(ctx, project)
+    did = opening.data["discussion_id"]
+    pkt = packet(ctx, project)
+    first = queue_send(ctx, project, did, pkt, "first")
+    run(ctx)
+    invoke(
+        ctx,
+        "close_exchange",
+        {"exchange_id": first, "outcome": "needs_more_data", "request_key": "close-first"},
+    )
+    second = queue_send(ctx, project, did, pkt, "second")
+    run(ctx)
+    markerless_history(ctx, did)
+    queue_history(ctx, second)
+    run(ctx)
+    for identity in (first, second):
+        data = invoke(ctx, "read", {"exchange_id": identity}).data
+        assert data["association"] == "ambiguous" and data["messages"] == []
+
+
+def test_history_proof_before_transport_ack_preserves_both(fixture_ctx, project):
+    from metamuse._muse_lifecycle import _associate, _normalize, _observe
+
+    ctx = fixture_ctx
+    opening, _ = opened(ctx, project)
+    did = opening.data["discussion_id"]
+    original = ctx.muse_gateway.chat_stream
+
+    def send(prepared, *, authorization, **kwargs):
+        result = original(prepared, authorization=authorization, **kwargs)
+        step = authorization._issuer._tokens[authorization][0]
+        exchange = ctx.store.get(m.Exchange, step.target["intent_id"])
+        discussion = ctx.store.get(m.Discussion, did)
+        events = ctx.muse_gateway.events[discussion.remote_session]
+        _observe(step, discussion, _normalize(events, discussion.remote_session))
+        _associate(step, discussion, exchange)
+        assert ctx.store.get(m.Exchange, exchange.id).delivery_proof.kind == "user_echo"
+        return result
+
+    ctx.muse_gateway.chat_stream = send
+    identity = queue_send(ctx, project, did, packet(ctx, project), "send")
+    run(ctx)
+    exchange = ctx.store.get(m.Exchange, identity)
+    assert exchange.attempt_verdict == "acked" and exchange.bytes_handed_off is True
+    assert exchange.delivery_proof.kind == "user_echo"
+    assert ctx.store.get(m.JobStep, exchange.submission_step_id).state == "succeeded"
