@@ -88,6 +88,7 @@ def parser() -> Parser:
     muse = commands.add_parser("muse").add_subparsers(dest="action", required=True)
     opening = muse.add_parser("open")
     _project(opening)
+    opening.add_argument("--discussion", help="Reconcile this original open attempt; no new create")
     opening.add_argument("--topic", required=True)
     opening.add_argument("--access-grant", required=True)
     _request_key(opening)
@@ -371,6 +372,7 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
                     return app.open_muse_discussion(
                         ctx,
                         m.MuseOpenRequest(
+                            discussion_id=args.discussion,
                             project_id=args.project,
                             topic=args.topic,
                             access_grant_id=args.access_grant,

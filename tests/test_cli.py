@@ -123,6 +123,9 @@ def test_registered_commands_report_errors_for_missing_data(tmp_path, capsys, co
         assert code == 3 and result["error"]["code"] == "E_SCOPE_REQUIRED"
     elif command[0] in ("search", "packet", "draft", "export"):
         assert code == 2 and result["error"]["code"] == "E_REFERENCE_INVALID"
+    elif command[0] == "muse":
+        assert result["error"]["code"] in ("E_SCOPE_REQUIRED", "E_REFERENCE_INVALID")
+        assert code in (2, 3)
     else:
         assert code == 4 and result["error"]["code"] == "E_UNSUPPORTED"
 

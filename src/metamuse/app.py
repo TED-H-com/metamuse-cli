@@ -37,6 +37,9 @@ class AppContext:
     limits: m.Limits = field(default_factory=m.Limits)
     policy: Config = field(default_factory=Config)
     non_interactive: bool = False
+    muse_gateway: Any = field(default=None, repr=False)
+    secret_store: Any = field(default=None, repr=False)
+    muse_resolver: Any = field(default=None, repr=False)
 
     def require_interactive(self) -> None:
         if self.non_interactive:

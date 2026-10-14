@@ -2,7 +2,7 @@
 
 B09 owns the gateway transport: HTTPS auth, one Noise_XX WebSocket, serial
 unary calls on the four allowlisted routes, and the attempt evidence B10
-persists. Discussion lifecycle stays unimplemented until B10.
+persists. B10 lifecycle functions delegate to ``_muse_lifecycle``.
 
 Nothing in this module is sent unless the caller passes ``network_mode="live"``,
 a credential provider, and an outbound guard. Mutations also require a frozen
@@ -179,6 +179,20 @@ class MuseStateUnknown(CoreError):
         self.bytes_handed_off = bytes_handed_off
 
 
+class MuseNotSubmitted(CoreError):
+    """Affirmative accounting: connect failed before any gateway request frame."""
+
+    bytes_handed_off = False
+
+    def __init__(self, error: CoreError | None = None):
+        if error is None:
+            super().__init__(ErrorCode.NETWORK_TIMEOUT, "Muse request failed before frame handoff")
+        else:
+            super().__init__(
+                error.detail.code, error.detail.message, next_action=error.detail.next_action
+            )
+
+
 class MuseProtocolStop(CoreError):
     """Protocol failure after a mutation handoff. Delivery stays unknown."""
 
@@ -292,11 +306,23 @@ def _limit_error() -> CoreError:
     )
 
 
+def _joined_text(value: Mapping[str, Any]) -> str | None:
+    question, packet = value.get("question"), value.get("packet_text")
+    if isinstance(question, str) and isinstance(packet, str):
+        if (
+            len(question.encode()) > QUESTION_MAX_UTF8_BYTES
+            or len(packet.encode()) > PACKET_MAX_UTF8_BYTES
+        ):
+            raise _limit_error()
+        return question + "\n\n" + packet
+    return None
+
+
 def _check_mapping_limits(value: Mapping[str, Any]) -> None:
-    _walk_limits(value, 0)
+    _walk_limits(value, 0, _joined_text(value))
 
 
-def _walk_limits(value: Any, depth: int) -> None:
+def _walk_limits(value: Any, depth: int, joined: str | None = None) -> None:
     """Apply the SPEC text caps at every object, including nested item text."""
     if depth > _JSON_DEPTH:
         raise _error(
@@ -308,20 +334,24 @@ def _walk_limits(value: Any, depth: int) -> None:
         for key, item in value.items():
             if key in _QUESTION_KEYS:
                 size = _utf8_size(item)
-                if size is not None and size > QUESTION_MAX_UTF8_BYTES:
+                if (
+                    size is not None
+                    and size > QUESTION_MAX_UTF8_BYTES
+                    and not (key == "text" and joined is not None and item == joined)
+                ):
                     raise _limit_error()
             if key in _PACKET_KEYS:
                 size = _utf8_size(item)
                 if size is not None and size > PACKET_MAX_UTF8_BYTES:
                     raise _limit_error()
-            _walk_limits(item, depth + 1)
+            _walk_limits(item, depth + 1, joined)
         return
     if isinstance(value, (list, tuple)):
         for item in value:
-            _walk_limits(item, depth + 1)
+            _walk_limits(item, depth + 1, joined)
 
 
-def _check_body_limits(body: bytes) -> None:
+def _check_body_limits(body: bytes, joined: str | None = None) -> None:
     if not body:
         return
     if len(body) > AUTH_RESPONSE_MAX_BYTES and len(body) > PACKET_MAX_UTF8_BYTES + 1024:
@@ -332,7 +362,7 @@ def _check_body_limits(body: bytes) -> None:
     parsed = _json_value(body)
     if not isinstance(parsed, dict):
         raise MuseProgrammingError("prepared body is not a JSON object")
-    _check_mapping_limits(parsed)
+    _walk_limits(parsed, 0, joined)
 
 
 def _json_value(body: bytes) -> Any:
@@ -386,7 +416,7 @@ class PreparedMuseRequest:
         object.__setattr__(self, "target", _freeze(self.target))
         object.__setattr__(self, "payload", _freeze(self.payload))
         _check_mapping_limits(self.payload)
-        _check_body_limits(bytes(self.body))
+        _check_body_limits(bytes(self.body), _joined_text(self.payload))
 
 
 def prepare_muse_request(
@@ -486,7 +516,13 @@ class _Secrets:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
             return b""
-        return self.text(text).encode("utf-8")
+        from metamuse._muse_redact import sanitize_document
+
+        try:
+            value = json.loads(text)
+        except (ValueError, RecursionError):
+            return self.text(text).encode("utf-8")
+        return m.canonical_json(sanitize_document(value, tuple(self._values)))
 
     def clear(self) -> None:
         self._values.clear()
@@ -857,7 +893,21 @@ class MuseTransport:
             raise ProtocolMismatch("concurrent collection")
         self._secrets = _Secrets()
         try:
-            self._connect()
+            connect_error = None
+            try:
+                self._connect()
+            except CoreError as exc:
+                connect_error = exc
+            if connect_error is not None and spec.mutating:
+                if route == "chat.stream":
+                    from dataclasses import replace
+
+                    return replace(
+                        self._never_sent(marker, raw), error_code=connect_error.detail.code.value
+                    )
+                raise MuseNotSubmitted(connect_error)
+            if connect_error is not None:
+                raise connect_error
             return self._unary(
                 route,
                 spec,
@@ -1512,24 +1562,47 @@ class MuseTransport:
         )
 
 
-IMPLEMENTED_TOOLS: frozenset[str] = frozenset()
+IMPLEMENTED_TOOLS = frozenset(
+    {
+        "metamuse_muse_open",
+        "metamuse_muse_send",
+        "metamuse_muse_read",
+        "metamuse_muse_close_exchange",
+    }
+)
+
+
+def capability_status(ctx):
+    from metamuse._muse_lifecycle import capability_status as status
+
+    return status(ctx)
 
 
 def register_operations(registry: dict[str, Operation] | None = None) -> None:
-    """Register this module's operations idempotently; none are implemented yet."""
+    from metamuse._muse_lifecycle import register_operations as register
+
+    register(registry)
 
 
 def open_muse_discussion(ctx: AppContext, request: m.MuseOpenRequest) -> m.Envelope:
-    raise m.CoreError(m.ErrorCode.UNSUPPORTED, "not implemented in this build")
+    from metamuse._muse_lifecycle import open_muse_discussion as run
+
+    return run(ctx, request)
 
 
 def submit_muse_exchange(ctx: AppContext, request: m.MuseSendRequest) -> m.Envelope:
-    raise m.CoreError(m.ErrorCode.UNSUPPORTED, "not implemented in this build")
+    from metamuse._muse_lifecycle import submit_muse_exchange as run
+
+    return run(ctx, request)
 
 
 def read_muse_exchange(ctx: AppContext, request: m.MuseReadRequest) -> m.Envelope:
-    raise m.CoreError(m.ErrorCode.UNSUPPORTED, "not implemented in this build")
+    from metamuse._muse_lifecycle import read_muse_exchange as run
+
+    return run(ctx, request)
 
 
 def close_muse_exchange(ctx: AppContext, request: m.MuseCloseExchangeRequest) -> m.Envelope:
-    raise m.CoreError(m.ErrorCode.UNSUPPORTED, "not implemented in this build")
+    from metamuse._muse_lifecycle import close_muse_exchange as run
+
+    return run(ctx, request)
