@@ -32,6 +32,8 @@ class RemoteApproval(m.Model):
 class RemoteMediaConfig(m.Model):
     """Operator allowlist for remote media. Empty refuses every remote URL."""
 
+    provider: str = Field(default="remote-media", pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,127}$")
+    account: str = Field(default="anonymous", pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,127}$")
     approvals: list[RemoteApproval] = Field(default_factory=list, max_length=32)
 
 

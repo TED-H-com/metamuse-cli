@@ -54,6 +54,7 @@ import re
 import shutil
 import sys
 import time
+import unicodedata
 from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -356,16 +357,6 @@ def _allowlist_required() -> m.CoreError:
     )
 
 
-def _grant_required() -> m.CoreError:
-    return m.CoreError(
-        m.ErrorCode.SCOPE_REQUIRED,
-        "A permit is required",
-        next_action=(
-            "Create a B08 access permit for collect.remote whose target digest matches this request"
-        ),
-    )
-
-
 def _offline_error() -> m.CoreError:
     return m.CoreError(
         m.ErrorCode.SCOPE_DENIED,
@@ -450,8 +441,22 @@ def _workspace(ctx: Any) -> Any:
 
 
 def _host_of(url: str) -> str:
-    parsed = urlsplit(url)
-    if not parsed.hostname or parsed.username is not None or parsed.password is not None:
+    try:
+        parsed = urlsplit(url)
+        invalid = (
+            parsed.scheme.lower() not in ("http", "https")
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.port == 0
+            or parsed.netloc.endswith(":")
+            or "\\" in url
+            or any(char.isspace() for char in url)
+            or any(unicodedata.category(char) in ("Cc", "Cf") for char in unquote(url))
+        )
+    except ValueError:
+        invalid = True
+    if invalid:
         raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Remote URL is not a bare http(s) URL")
     return safety.normalize_hostname(parsed.hostname)
 
@@ -776,7 +781,7 @@ def _select(url: str, approvals: list[Any]) -> tuple[type, Any]:
 def action_parts(
     request: m.CollectRequest, provider: str, account: str, extractors: list[str]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Permit target and payload. Hosts and byte limits are not part of the digest."""
+    """Original URLs, resources, extractors and requested limits bind the exact action."""
 
     urls = [item.url for item in request.inputs if item.kind == "url"]
     resources = sorted(request.resources)
@@ -789,7 +794,12 @@ def action_parts(
         "resources": resources,
         "extractors": list(extractors),
     }
-    payload = {"urls": urls, "resources": resources, "extractors": list(extractors)}
+    payload = {
+        "urls": urls,
+        "resources": resources,
+        "extractors": list(extractors),
+        "limits": request.limits.model_dump(mode="json"),
+    }
     return target, payload
 
 
@@ -805,14 +815,24 @@ def _check_limits(request: m.CollectRequest, workspace: Any) -> None:
         raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Input count exceeds max_urls")
 
 
-def submit_remote_media(ctx: Any, request: m.CollectRequest) -> m.Envelope:
-    """Refuse before a job exists unless the extra, allowlist, and grant all pass."""
+@dataclass
+class _PreparedRemote:
+    workspace: Any
+    matched: list[tuple[type, Any]]
+    target: dict[str, Any]
+    payload: dict[str, Any]
+    limits: dict[str, Any]
 
-    register_operations()
+
+def prepare_remote_media(
+    ctx: Any, request: m.CollectRequest, *, workspace: Any = None, conn: Any = None
+) -> _PreparedRemote:
+    """Read-only preparation shared by operator review, submission and execution."""
+
     if not dependency_available():
         raise _dependency_error()
-    ctx.store.get(m.Project, request.project_id)
-    workspace = _workspace(ctx)
+    ctx.store.get(m.Project, request.project_id, conn=conn)
+    workspace = _workspace(ctx) if workspace is None else workspace
     _check_limits(request, workspace)
     if workspace.app.network_mode == "offline":
         raise _offline_error()
@@ -820,32 +840,124 @@ def submit_remote_media(ctx: Any, request: m.CollectRequest) -> m.Envelope:
     if not approvals:
         raise _allowlist_required()
     matched = [_select(item.url, approvals) for item in request.inputs if item.kind == "url"]
-    if not request.access_grant_id:
-        raise _grant_required()
-    with ctx.store.connection() as conn:
-        row = conn.execute(
-            "SELECT provider, account FROM permits WHERE id=?",
-            (request.access_grant_id,),
-        ).fetchone()
-    if row is None or not row["provider"] or not row["account"]:
-        raise _grant_required()
     keys = [cls.ie_key() for cls, _approval in matched]
-    target, payload = action_parts(request, row["provider"], row["account"], keys)
+    target, payload = action_parts(
+        request, workspace.remote_media.provider, workspace.remote_media.account, keys
+    )
+    limits = request.limits.model_dump(mode="json")
+    for name in ("safe_read_retries", "read_timeout_seconds", "media_max_bytes", "text_max_bytes"):
+        limits[name] = getattr(workspace.limits, name)
+    return _PreparedRemote(workspace, matched, target, payload, limits)
+
+
+def _safe_display(value: Any) -> Any:
+    """Redact every raw text field before JSON encoding can hide credentials."""
+    if isinstance(value, str):
+        return safety.redact_text(value)[0]
+    if isinstance(value, list):
+        return [_safe_display(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _safe_display(item) for key, item in value.items()}
+    return value
+
+
+def preview_remote_media(ctx: Any, request: m.CollectRequest) -> m.ApprovalPreview:
+    prepared = prepare_remote_media(ctx, request)
+    digest = safety.action_digest(prepared.target, prepared.payload)
+    safe_request = _safe_display(request.model_dump(mode="json"))
+    safe_request["access_grant_id"] = None
+    provider = _safe_display(prepared.target["provider"])
+    account = _safe_display(prepared.target["account"])
+    destination = "\n".join(item["url"] for item in safe_request["inputs"])
+    details = [
+        "Would: collect remote " + ", ".join(safe_request["resources"]),
+        "Destination: " + destination,
+        "Provider/account: " + provider + "/" + account,
+        "Project: " + safe_request["project_id"],
+        "Action digest: " + digest,
+    ]
+    for cls, approval in prepared.matched:
+        details.append(
+            "Extractor/allowed hosts: "
+            + _safe_display(cls.ie_key())
+            + "/"
+            + ", ".join(_safe_display(approval.hosts))
+        )
+        if approval.auth_ref:
+            details.append(
+                "Cookie binding: " + _safe_display(approval.auth_ref) + "; account: " + account
+            )
+    details.append(
+        "Limits: " + "; ".join(f"{key}={value}" for key, value in prepared.limits.items())
+    )
+    details.append(
+        "Stores: source provenance and media metadata; requested subtitle tracks and cues; "
+        "media bytes only when media_file is requested. No cookie values are stored."
+    )
+    if any(_share_parts(item.url) for item in request.inputs):
+        details.append(
+            "Share links resolve only during execution through checked redirects and at most "
+            "two approved extractor hops. This digest binds the original share URL."
+        )
+    request_file = str(ctx.paths.root / ("approval-" + digest + ".json"))
+    approval_key = "approve-" + digest
+    with ctx.store.connection() as conn:
+        used_keys = {
+            row["request_key"]
+            for row in conn.execute(
+                "SELECT request_key FROM request_receipts "
+                "WHERE operation='permit.create' AND request_key LIKE ?",
+                (approval_key + "%",),
+            )
+        }
+    candidate = approval_key
+    ordinal = 0
+    while candidate in used_keys:
+        ordinal += 1
+        candidate = approval_key + "-" + str(ordinal)
+    return m.ApprovalPreview(
+        operation=PERMIT_OPERATION,
+        permit_operation=PERMIT_OPERATION,
+        kind="access",
+        project_id=request.project_id,
+        provider=provider,
+        account=account,
+        action_digest=digest,
+        destination=destination,
+        summary="\n".join(details),
+        request_file=request_file,
+        request=safe_request,
+        next_action=safety.operator_command(
+            ctx,
+            "permit",
+            "approve",
+            "--operation",
+            PERMIT_OPERATION,
+            "--request-file",
+            request_file,
+            "--exact-digest",
+            digest,
+            "--request-key",
+            candidate,
+        ),
+    )
+
+
+def submit_remote_media(ctx: Any, request: m.CollectRequest) -> m.Envelope:
+    """Refuse before a job exists unless preparation and the configured grant pass."""
+    register_operations()
+    prepared = prepare_remote_media(ctx, request)
+    target, payload = prepared.target, prepared.payload
     use = safety.PermitUse(
         kind="access",
         project_id=request.project_id,
-        provider=row["provider"],
-        account=row["account"],
+        provider=target["provider"],
+        account=target["account"],
         operation=PERMIT_OPERATION,
         digest=safety.action_digest(target, payload),
     )
     with ctx.store.transaction() as conn:
         safety.verify_permit(ctx.store, request.access_grant_id, use, conn=conn, reserve=False)
-    limits = request.limits.model_dump(mode="json")
-    limits["safe_read_retries"] = workspace.limits.safe_read_retries
-    limits["read_timeout_seconds"] = workspace.limits.read_timeout_seconds
-    limits["media_max_bytes"] = workspace.limits.media_max_bytes
-    limits["text_max_bytes"] = workspace.limits.text_max_bytes
     return submit_job(
         ctx.store,
         OPERATION,
@@ -857,7 +969,7 @@ def submit_remote_media(ctx: Any, request: m.CollectRequest) -> m.Envelope:
             "resources": sorted(request.resources),
             "input_count": len(request.inputs),
         },
-        limits=limits,
+        limits=prepared.limits,
     )
 
 
@@ -2453,44 +2565,27 @@ def _result(step: StepContext, state: _State, resources: set[str]) -> m.JobResul
 
 
 def run_remote_media(step: StepContext) -> m.JobResult:
-    if not dependency_available():
-        raise _dependency_error()
     request = m.CollectRequest.model_validate(step.payload)
-    workspace = load_config(step.store.paths.root)
-    if workspace.app.network_mode == "offline":
-        raise _offline_error()
+    prepared = prepare_remote_media(step, request)
+    workspace = prepared.workspace
     approvals = list(workspace.remote_media.approvals)
-    if not approvals:
-        raise _allowlist_required()
     urls = [item.url for item in request.inputs if item.kind == "url"]
     keys = list(step.target.get("extractors") or [])
     if len(keys) != len(urls):
         raise m.CoreError(
             m.ErrorCode.REFERENCE_INVALID, "Stored extractor list does not match the inputs"
         )
-    classes: list[type] = []
-    input_hosts: list[tuple[str, ...]] = []
-    for url, key in zip(urls, keys, strict=True):
-        if _solver_key(key):
-            raise _solver_error()
-        if not _still_approved(url, key, approvals):
-            raise _host_denied() if _extractor_class(key) is not None else _extractor_denied()
-        cls = _extractor_class(key)
-        if cls is None:
-            raise _extractor_denied()
-        classes.append(cls)
-        # This input may use only the hosts approved for its own extractor.
-        chosen: tuple[str, ...] | None = None
-        for approval in approvals:
-            if approval.extractor == key and _host_of(url) in _hosts(approval.hosts):
-                chosen = tuple(approval.hosts)
-                break
-        if chosen is None:
-            raise _host_denied()
-        input_hosts.append(chosen)
-    provider = str(step.target["provider"])
-    account = str(step.target["account"])
-    _target, payload = action_parts(request, provider, account, keys)
+    if step.target != prepared.target:
+        raise m.CoreError(
+            m.ErrorCode.SCOPE_DENIED,
+            "Permit does not cover this action",
+            next_action="Repeat the call without a grant to get a fresh approval preview",
+        )
+    classes = [cls for cls, _approval in prepared.matched]
+    input_hosts = [tuple(approval.hosts) for _cls, approval in prepared.matched]
+    provider = prepared.target["provider"]
+    account = prepared.target["account"]
+    payload = prepared.payload
     use = safety.PermitUse(
         kind="access",
         project_id=request.project_id,
@@ -2501,16 +2596,19 @@ def run_remote_media(step: StepContext) -> m.JobResult:
     )
 
     def load_payload(conn: Any, target: dict[str, Any]) -> dict[str, Any]:
-        del conn
-        stored = m.CollectRequest.model_validate(step.job.payload)
-        rebuilt, _payload = action_parts(
-            stored,
-            str(target["provider"]),
-            str(target["account"]),
-            list(target["extractors"]),
+        stored = step.store.get(m.Job, step.job.id, conn=conn)
+        # Use the boundary's policy snapshot: verification does no file/network IO
+        # inside its transaction, while rebuilding the actual persisted request.
+        current = prepare_remote_media(
+            step, m.CollectRequest.model_validate(stored.payload), workspace=workspace, conn=conn
         )
-        del rebuilt
-        return _payload
+        if current.target != target:
+            raise m.CoreError(
+                m.ErrorCode.SCOPE_DENIED,
+                "Permit does not cover this action",
+                next_action="Repeat the call without a grant to get a fresh approval preview",
+            )
+        return current.payload
 
     step.before_external_action(
         step.target,

@@ -35,6 +35,7 @@ class Entrypoints:
         self.transcript = []
         self.diagnostics = []
         self.server_number = 0
+        self.cli_timeout = 60
 
     def cli(self, *args, operator=False, code=0, stdin=None):
         command = [str(self.command), "--workspace", str(self.workspace), "--json"]
@@ -42,7 +43,12 @@ class Entrypoints:
             command.append("--non-interactive")
         command.extend(str(arg) for arg in args)
         result = subprocess.run(
-            command, input=stdin, capture_output=True, text=True, timeout=60, check=False
+            command,
+            input=stdin,
+            capture_output=True,
+            text=True,
+            timeout=self.cli_timeout,
+            check=False,
         )
         assert result.returncode == code, (result.stdout, result.stderr)
         envelope = json.loads(result.stdout)
