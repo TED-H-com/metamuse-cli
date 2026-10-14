@@ -73,65 +73,113 @@ def sensitive_key(key: str) -> bool:
     )
 
 
-def _known_spans(value: str, known: tuple[str, ...]) -> str:
+def _decoded_levels(value):
+    """Keep raw and decoded coordinates: a literal '%' can eat a secret prefix."""
+    yield value, None
+    positions = None
+    for _ in range(2):
+        chunks, mapped = [], []
+        offset = 0
+        for match in re.finditer(r"(?:%[0-9a-fA-F]{2})+", value):
+            chunks.append(value[offset : match.start()])
+            mapped.extend(
+                positions[offset : match.start()]
+                if positions is not None
+                else ((i, i + 1) for i in range(offset, match.start()))
+            )
+            decoded = unquote(match[0])
+            chunks.append(decoded)
+            start = positions[match.start()][0] if positions is not None else match.start()
+            end = positions[match.end() - 1][1] if positions is not None else match.end()
+            mapped.extend([(start, end)] * len(decoded))
+            offset = match.end()
+        if offset == 0:
+            break
+        chunks.append(value[offset:])
+        mapped.extend(
+            positions[offset:]
+            if positions is not None
+            else ((i, i + 1) for i in range(offset, len(value)))
+        )
+        value, positions = "".join(chunks), mapped
+        yield value, positions
+
+
+def _known_spans(value: str, known: tuple[str, ...]):
     variants = set()
     for secret in known:
         if len(secret) < 4:
             continue
         variants.add(secret)
-        variants.add(secret.replace(" ", "+"))  # quote_plus spelling after percent decoding
+        variants.add(secret.replace(" ", "+"))
         for _ in range(2):
             secret = unquote(secret)
             variants.add(secret)
-    spans = []
     for secret in sorted(variants, key=len, reverse=True):
         flags = (
             re.IGNORECASE
             if re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{64}|[0-9a-fA-F-]{36}", secret)
             else 0
         )
-        spans.extend(match.span() for match in re.finditer(re.escape(secret), value, flags))
-    # Merge overlaps before editing: replacing one value cannot destroy another match.
+        yield from (match.span() for match in re.finditer(re.escape(secret), value, flags))
+
+
+def _render_spans(value, spans):
+    # One output build. Merge the union before editing so duplicates/containment
+    # neither leak a tail nor consume ordinary context beside the secret.
     merged = []
     for start, end in sorted(spans):
         if merged and start <= merged[-1][1]:
             merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
         else:
             merged.append((start, end))
-    for start, end in reversed(merged):
-        value = value[:start] + "redacted" + value[end:]
-    return value
+    chunks, offset = [], 0
+    for start, end in merged:
+        chunks.extend((value[offset:start], "redacted"))
+        offset = end
+    chunks.append(value[offset:])
+    return "".join(chunks)
 
 
-def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
-    # Decode first, including lowercase escapes, so encoded containment is intact.
-    original = value
-    for _ in range(2):
-        value = unquote(value)
-    decoded = value
-    value = _known_spans(value, known)
-    value = _WAKE_OBJECT.sub(_embedded_wake, value)
-    # An ordinary prefix (e.g. wss:) must not consume a later query assignment.
-    spans = []
+def _syntax_spans(value):
+    from metamuse._muse_codec import _BEARER, _COOKIE, _PAIR
+
+    for match in re.finditer(
+        r"(?i)(?<![a-z0-9_.-])(?:proxy-)?authorization\s*:\s*[^\s]+[ \t]+[^\s,}]+", value
+    ):
+        yield match.span()
+    # Match these before a generic assignment can treat 'Bearer' as the value.
+    for pattern in (_BEARER, _COOKIE, _PAIR):
+        yield from (match.span() for match in pattern.finditer(value))
     offset = 0
     while match := _ASSIGNMENT.search(value, offset):
         if sensitive_key(match[2]):
-            spans.append((match.start(), match.end(), match[1] + '"redacted"'))
+            yield match.start() + len(match[1]), match.end()
             offset = match.end()
         else:
             offset = match.start() + len(match[1])
-    for start, end, replacement in reversed(spans):
-        value = value[:start] + replacement + value[end:]
-    value = _XML.sub(
-        lambda match: (
-            "<" + match[1] + ">redacted</" + match[1] + ">" if sensitive_key(match[1]) else match[0]
-        ),
-        value,
-    )
-    value = _ENVELOPE.sub("redacted", value)
-    value = _NOTARY.sub("redacted", value)
-    cleaned = redact_text(value)[0]
-    return original if cleaned == decoded else cleaned
+    for match in _XML.finditer(value):
+        if sensitive_key(match[1]):
+            yield match.start(2), match.end(2)
+    for match in _WAKE_OBJECT.finditer(value):
+        if _embedded_wake(match) != match[0]:
+            yield match.span()
+    for pattern in (_ENVELOPE, _NOTARY):
+        yield from (match.span() for match in pattern.finditer(value))
+
+
+def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
+    spans = []
+    for decoded, positions in _decoded_levels(value):
+        for start, end in (*_known_spans(decoded, known), *_syntax_spans(decoded)):
+            if start == end:
+                continue
+            spans.append(
+                (positions[start][0], positions[end - 1][1])
+                if positions is not None
+                else (start, end)
+            )
+    return redact_text(_render_spans(value, spans))[0]
 
 
 def sanitize_document(value: Any, known: tuple[str, ...] = (), depth=0) -> Any:

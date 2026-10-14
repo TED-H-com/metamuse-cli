@@ -282,3 +282,9 @@ persistent trust key use that identity. The exact server `vm_id` may be retained
 on the wire only after that agreement check (case and surrounding whitespace
 are the only permitted differences). A confidential hint records every usable
 identity alias before any disagreement is refused, before mint, wake or dial.
+
+Muse sanitization includes the codec's cookie, bearer and credential-pair
+shapes, and treats Authorization and Proxy-Authorization scheme plus credential
+as one value. Known secrets are matched in both raw text and up to two decoded
+percent-encoding layers; their coordinate-mapped span union is merged before
+one output join. A literal percent next to a hex nonce or UUID cannot hide it.
