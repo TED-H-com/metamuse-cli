@@ -158,6 +158,7 @@ metamuse muse close-exchange ID --outcome answered|needs_more_data|abandoned --r
 metamuse draft save --project ID --text-file PATH --platform PLATFORM --request-key KEY
 metamuse draft preview ID --revision N
 metamuse export --project ID --refs-file PATH --format FORMAT --request-key KEY
+metamuse skill export --dest DIR [--force]
 metamuse mcp
 ```
 
@@ -174,6 +175,10 @@ Exact access targets, exact packets or an immutable displayed evidence snapshot 
 project/provider/account. [Safety API](../dev/SAFETY_API.md) defines scope formats and
 backend obligations. These are human-only commands, never MCP self-approval tools.
 
+`metamuse skill export` copies the packaged Skill into the directory named by `--dest`.
+It refuses to overwrite an existing file unless `--force` is set. It does not choose an
+agent or host config directory. It is not an MCP tool.
+
 JSON envelope：contract_version、request_id、status(ok/accepted/partial/error)、data、error、warnings、next_cursor。exit 0代表本命令成功，可能僅queued；2輸入錯、3需要人／權限、4backend不相容、5部分或等待逾時、6需對帳、7儲存／內部錯、130中止。
 
 ## 9. MCP與Skill
@@ -185,6 +190,7 @@ JSON envelope：contract_version、request_id、status(ok/accepted/partial/error
 MCP SDK／host／協定版本在B01選定並實測，不宣稱任何host必然支援。輸出schema是我們的結果格式，不是Muse受約束生成。tool annotations不能代替授權；muse_send和refresh不可假稱read-only。
 
 Skill短主檔＋按需references，先查實際工具；只有Skill不代表backend已安裝或登入。
+安裝已打包的 Skill 用人類 CLI `metamuse skill export --dest DIR [--force]`，不是第十六個 MCP 工具，也不會自己寫入 agent 或 host 設定目錄。
 
 ## 10. 起始限制
 

@@ -42,3 +42,4 @@ dev = [
 
 [tool.hatch.build.targets.wheel.force-include]
 "THIRD_PARTY_NOTICES.md" = "metamuse/data/THIRD_PARTY_NOTICES.md"
+"skills/metamuse" = "metamuse/data/skills/metamuse"

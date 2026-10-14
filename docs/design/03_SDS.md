@@ -38,6 +38,8 @@ metamuse-cli/
 
 檔案真的大了再拆。store不import CLI/MCP；muse不調度整個社群工作。使用AppContext傳workspace、store、clock、logger和policy，不需要DI framework。
 
+Wheel 另含 `metamuse/data/skills/metamuse/`，內容與 `skills/metamuse/` 相同。`metamuse skill export` 把那份打包副本寫到操作者指定的目錄。
+
 Python 3.12作首個參考環境；型別/schema、官方MCP SDK、platformdirs、SQLite、yt-dlp、Playwright與Muse所需標準庫按B01驗證lock。ffmpeg/browser binary由人類明確安裝；不提權、不隱藏下載。延遲import非必要功能，缺browser不阻擋離線。
 
 ## 2. Runtime與信任邊界

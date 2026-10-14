@@ -30,3 +30,8 @@ JSON Schema maxLength counts characters and cannot enforce those byte limits. Th
 regeneration command also regenerates the narrative rollup from 01/02/03/06 (including
 the sources appendix) and refreshes MANIFEST. Edit the numbered narrative sources,
 not a second hand-synchronized copy of their clarifications.
+
+`metamuse skill export --dest DIR [--force]` is a human CLI command. It copies the
+packaged Skill into that directory and is not a sixteenth MCP tool. The fifteen tool
+contracts are unchanged. Installation is documented in
+[SKILL.md](../../dev/SKILL.md).

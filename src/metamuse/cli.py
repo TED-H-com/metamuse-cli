@@ -152,6 +152,11 @@ def parser() -> Parser:
             _request_key(revoke)
             listing = sub.add_parser("list")
             _project(listing)
+    skill = commands.add_parser("skill")
+    skill_action = skill.add_subparsers(dest="action", required=True)
+    exporting = skill_action.add_parser("export")
+    exporting.add_argument("--dest", required=True)
+    exporting.add_argument("--force", action="store_true")
     return root
 
 
@@ -290,6 +295,10 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
 
 
 def dispatch(args: argparse.Namespace) -> m.Envelope | None:
+    if args.command == "skill":
+        from metamuse.skill_export import export_skill
+
+        return export_skill(args.dest, force=args.force)
     ctx = app.AppContext.open(args.workspace)
     ctx.non_interactive = args.non_interactive
     result = _dispatch(ctx, args)

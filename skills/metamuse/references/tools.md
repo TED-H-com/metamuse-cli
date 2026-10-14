@@ -115,6 +115,7 @@
 以下本機維護與環境命令僅能在 CLI 終端機執行，無對應 MCP 工具：
 - `metamuse init`：初始化 MetaMuse 工作區目錄與資料庫。
 - `metamuse worker run`：手動啟動本機背景工作執行程序以推動佇列。
+- `metamuse skill export --dest DIR`：把已打包的 Skill 寫到操作者指定的目錄。已有檔案時要加 `--force`。此命令不會自行選擇 agent 或 host 設定目錄，也不授予權限。安裝步驟見 [Skill 安裝](../../../docs/dev/SKILL.md)。
 
 ---
 
