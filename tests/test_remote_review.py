@@ -277,3 +277,37 @@ def test_review_broken_bound_secret_fails_before_consumption(entry, secret, plac
     assert permit(entry, grant)["used"] == 0
     assert not entry.egress.exists()
     assert marker not in json.dumps(job) and all(marker not in raw for raw in entry.diagnostics)
+
+
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+@pytest.mark.parametrize("ran", [False, True])
+def test_review_exact_replay_ignores_spent_grant_and_workspace_caps(entry, channel, ran):
+    body = request(entry)
+    preview = collect(entry, body, channel)["approval"]
+    grant = entry.approve(preview, body, approval_key(preview))["data"]["id"]
+    repeated = {**body, "access_grant_id": grant}
+    accepted = submit(entry, repeated, channel)
+    if ran:
+        entry.cli("worker", "run", "--once")
+    path = entry.workspace / "metamuse.toml"
+    path.write_text(
+        path.read_text()
+        .replace("media_max_bytes = 536870912", "media_max_bytes = 100")
+        .replace("text_max_bytes = 20971520", "text_max_bytes = 10000")
+        .replace("read_timeout_seconds = 30", "read_timeout_seconds = 15")
+        .replace("safe_read_retries = 2", "safe_read_retries = 0")
+    )
+    before = entry.egress.read_text() if entry.egress.exists() else ""
+    replay = submit(entry, repeated, channel)
+    assert replay["data"]["job_id"] == accepted["data"]["job_id"]
+    assert replay["data"]["state"] == ("succeeded" if ran else "queued")
+    assert (entry.egress.read_text() if entry.egress.exists() else "") == before
+    assert permit(entry, grant)["used"] == int(ran)
+    fresh = collect(entry, request(entry, key="other-run"), channel)["approval"]
+    other_grant = entry.approve(fresh, fresh["request"], approval_key(fresh))["data"]["id"]
+    conflict = collect(entry, {**body, "access_grant_id": other_grant}, channel, code=2)
+    assert conflict["error"]["code"] == "E_IDEMPOTENCY_CONFLICT"
+    assert conflict["approval"] is None
+    assert permit(entry, other_grant)["used"] == 0
+    jobs = entry.cli("jobs", "list", "--project", entry.project)["data"]["jobs"]
+    assert len(jobs) == 1

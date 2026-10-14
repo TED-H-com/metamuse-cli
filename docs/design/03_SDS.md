@@ -647,3 +647,8 @@ B12 preparation checks metadata for all bound cookie references without reading 
 bytes: existence and provider/account must match, otherwise E_AUTH_REQUIRED without a
 preview. Execution resolves and parses every bound secret before permit consumption,
 including unused later-hop bindings. Parsed cookies are scoped to bound entries.
+
+B12 receipt lookup precedes permit verification: an identical request including its grant
+returns its original job after consumption or workspace-cap edits. Any changed payload
+is E_IDEMPOTENCY_CONFLICT. Workspace caps do not enter target or job identity; the
+B12-owned step checkpoint stores `remote_media_caps` at atomic job acceptance.
