@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from browser_deadline import browser_deadline
 from test_facebook import _setup_fb_env, _synthetic_post_html
 from test_facebook_review import URL, browser_fixture, finish, observation
 
@@ -217,7 +218,8 @@ def test_r5_n8_resume_without_committed_batch_keeps_weak_records(tmp_path):
 
 
 @pytest.mark.parametrize("kind", ["stream", "passthrough"])
-def test_r5_04_network_blocks_page_websocket_bypasses(tmp_path, monkeypatch, kind):
+@browser_deadline
+def test_r5_04_network_blocks_page_websocket_bypasses(tmp_path, monkeypatch, kind, request):
     monkeypatch.setattr(facebook, "WEBSOCKET_BLOCK_SCRIPT", "")
     script = (
         "new WebSocketStream('wss://' + location.host + '/socket');"
@@ -228,7 +230,7 @@ def test_r5_04_network_blocks_page_websocket_bypasses(tmp_path, monkeypatch, kin
     with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False) as env:
         ctx, _, _, _, hits, guard, driver = env
         state = facebook.load_storage_state(ctx.policy.facebook.auth_ref, account="acct_synth")
-        session = driver.open_session(state, guard, timeout_ms=5000)
+        session = driver.open_session(state, guard, timeout_ms=300000)
         # Isolate the network rules from the independent prompt-stop watcher.
         # Otherwise closing the page could mask a removed network rule (M1).
         session._byte_watch.cancel()

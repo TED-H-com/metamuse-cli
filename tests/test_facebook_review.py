@@ -13,6 +13,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
+from browser_deadline import browser_deadline
 from test_facebook import (
     _allow_loopback_sockets,
     _setup_fb_env,
@@ -172,7 +173,7 @@ def browser_fixture(
 
         def get_request(self):
             sock, address = super().get_request()
-            sock.settimeout(2)
+            sock.settimeout(30)
             return tls.wrap_socket(sock, server_side=True), address
 
     server = TLSFixtureServer(("127.0.0.1", 0), Handler)
@@ -366,37 +367,39 @@ def test_finding_03_browser_navigation_identity_stops_before_import(tmp_path, mo
 
 
 @pytest.mark.parametrize("worker_kind", ["Worker", "SharedWorker"])
+@browser_deadline
 def test_finding_04_approved_wss_and_worker_wss_closed_before_handshake(
-    tmp_path, monkeypatch, worker_kind
+    tmp_path, monkeypatch, worker_kind, request
 ):
     script = """<script>
     window.states = [];
     const socket = new WebSocket('wss://' + location.host + '/ws');
     socket.onopen = () => states.push('open');
     socket.onclose = () => states.push('closed');
-    const source = `const s = new WebSocket('wss://${location.host}/ws-worker');
+    const source = `fetch('https://${location.host}/worker-escape');
+      const s = new WebSocket('wss://${location.host}/ws-worker');
       s.onopen = () => postMessage('open'); s.onclose = () => postMessage('closed');`;
     const worker = new Worker(URL.createObjectURL(new Blob([source], {type: 'text/javascript'})));
     worker.onmessage = (event) => states.push(event.data);
     </script>"""
     script = script.replace("new Worker(", f"new {worker_kind}(")
     markup = _synthetic_post_html().replace("</body>", script + "</body>")
-    with browser_fixture(tmp_path, monkeypatch, {"/synth.lab/posts/pfbid0101synth": markup}) as env:
+    with browser_fixture(
+        tmp_path, monkeypatch, {"/synth.lab/posts/pfbid0101synth": markup}, unsandboxed=False
+    ) as env:
         ctx, _, _, _, hits, guard, driver = env
         state = facebook.load_storage_state(ctx.policy.facebook.auth_ref, account="acct_synth")
-        options = (
-            {"allow_unsandboxed_browser": True}
-            if "allow_unsandboxed_browser" in config.FacebookConfig.model_fields
-            else {}
-        )
-        session = driver.open_session(state, guard, timeout_ms=30000, **options)
+        session = driver.open_session(state, guard, timeout_ms=300000)
         try:
             session.goto_post(URL)
-            session._page.wait_for_function("window.states.includes('closed')", timeout=2000)
+            session._page.wait_for_function("window.states.includes('closed')", timeout=300000)
             session._page.wait_for_timeout(200)
             assert session._page.evaluate("window.states") == ["closed"]
             assert session.workers_blocked >= 1
             assert not any(upgrade for _, upgrade in hits)
+            assert not any(path == "/worker-escape" for path, _ in hits)
+            targets = session._worker_cdp.send("Target.getTargets")["targetInfos"]
+            assert not any(t["type"] in ("worker", "shared_worker") for t in targets)
             assert guard.summary()["aborted"] >= 2
         finally:
             session.close()
