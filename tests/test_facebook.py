@@ -5,6 +5,7 @@ from __future__ import annotations
 import html as html_lib
 import http.server
 import json
+import socket
 import sys
 import threading
 from datetime import UTC, datetime, timedelta
@@ -13,8 +14,48 @@ from typing import Any
 
 import pytest
 
-from metamuse import app, config, facebook, jobs, safety
+from metamuse import _browser_egress, app, config, facebook, jobs, safety
 from metamuse import models as m
+
+_REAL_SOCKET_CONNECT = socket.socket.connect
+_REAL_SOCKET_CONNECT_EX = socket.socket.connect_ex
+_REAL_CREATE_CONNECTION = socket.create_connection
+
+
+def _allow_loopback_sockets(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Permit 127.0.0.1/127.0.0.2 loopback sockets for local proxy/Playwright tests only."""
+
+    def _check_loopback_addr(address: Any) -> None:
+        host = address[0] if isinstance(address, tuple) and address else ""
+        if host not in {"127.0.0.1", "127.0.0.2", "localhost"}:
+            pytest.fail(f"Non-loopback network access attempted in test: {address!r}")
+
+    def _loopback_connect(self: socket.socket, address: Any) -> Any:
+        _check_loopback_addr(address)
+        return _REAL_SOCKET_CONNECT(self, address)
+
+    def _loopback_connect_ex(self: socket.socket, address: Any) -> int:
+        _check_loopback_addr(address)
+        return _REAL_SOCKET_CONNECT_EX(self, address)
+
+    def _loopback_create_connection(
+        address: Any,
+        timeout: Any = socket._GLOBAL_DEFAULT_TIMEOUT,  # type: ignore[attr-defined]
+        source_address: Any = None,
+        *,
+        all_errors: bool = False,
+    ) -> socket.socket:
+        _check_loopback_addr(address)
+        return _REAL_CREATE_CONNECTION(
+            address,
+            timeout=timeout,
+            source_address=source_address,
+            all_errors=all_errors,
+        )
+
+    monkeypatch.setattr(socket.socket, "connect", _loopback_connect)
+    monkeypatch.setattr(socket.socket, "connect_ex", _loopback_connect_ex)
+    monkeypatch.setattr(socket, "create_connection", _loopback_create_connection)
 
 
 def _write_facebook_config(
@@ -619,8 +660,14 @@ def test_capability_backend_row_states_and_tool_row_unchanged(
         assert rows_a["metamuse_collect"]["environment"] == "ready"
         assert rows_a["metamuse_collect"]["effective"] is True
         assert rows_a["metamuse_collect.facebook_post"]["environment"] == "missing_dependency"
-        with pytest.raises(pytest.skip.Exception):
-            test_playwright_integration_against_local_synthetic_server(tmp_path)
+        for pw_test in (
+            test_playwright_integration_against_local_synthetic_server,
+            test_playwright_egress_proxy_blocks_navigation_and_subresource_redirects_to_server_b,
+            test_playwright_egress_proxy_dials_only_first_checked_resolver_address,
+            test_playwright_egress_proxy_byte_budget_stops_oversized_response,
+        ):
+            with pytest.raises(pytest.skip.Exception):
+                pw_test(tmp_path, mp_a)
 
     # 4b. Browser binary absent (empty PLAYWRIGHT_BROWSERS_PATH, METAMUSE_CHROMIUM_EXECUTABLE unset)
     empty_browsers = tmp_path / "empty_browsers"
@@ -630,8 +677,14 @@ def test_capability_backend_row_states_and_tool_row_unchanged(
     assert rows_b["metamuse_collect"]["environment"] == "ready"
     assert rows_b["metamuse_collect"]["effective"] is True
     assert rows_b["metamuse_collect.facebook_post"]["environment"] == "missing_dependency"
-    with pytest.raises(pytest.skip.Exception):
-        test_playwright_integration_against_local_synthetic_server(tmp_path)
+    for pw_test in (
+        test_playwright_integration_against_local_synthetic_server,
+        test_playwright_egress_proxy_blocks_navigation_and_subresource_redirects_to_server_b,
+        test_playwright_egress_proxy_dials_only_first_checked_resolver_address,
+        test_playwright_egress_proxy_byte_budget_stops_oversized_response,
+    ):
+        with pytest.raises(pytest.skip.Exception):
+            pw_test(tmp_path, monkeypatch)
 
     # Facebook collection returns E_DEPENDENCY_MISSING before creating a job
     fb_res = app.submit_collect(
@@ -1356,7 +1409,7 @@ def test_content_is_stored_as_inert_data_only(tmp_path: Path):
 
 
 def test_resume_after_crash_completes_without_duplicates_or_extra_permit_use(tmp_path: Path):
-    """AT-028: crash after first checkpointed batch recovers and finishes cleanly on restart."""
+    """AT-013, FR-010: identity-based resume re-fetches, stores new top comment, 0 duplicates."""
     url = "https://www.facebook.com/synth.lab/posts/pfbid0101synth"
     ctx, proj_id, permit_id, _, _ = _setup_fb_env(tmp_path, url=url)
 
@@ -1424,14 +1477,34 @@ def test_resume_after_crash_completes_without_duplicates_or_extra_permit_use(tmp
         with pytest.raises(RuntimeError, match="Simulated mid-job crash"):
             facebook.run_facebook_post(jobs.StepContext(ex, job_row, step_row))
 
-    # First 50 records are durably committed; step is still running with checkpoint next_record=50
+    # First 50 records are durably committed; checkpoint is small and never stores captured_html
     with ctx.store.connection() as conn:
         assert (
             conn.execute("SELECT COUNT(*) FROM items WHERE project_id=?", (proj_id,)).fetchone()[0]
             == 50
         )
+        cp_raw = conn.execute("SELECT checkpoint FROM job_steps WHERE id=?", (step_id,)).fetchone()[
+            0
+        ]
+    cp_obj = json.loads(cp_raw)
+    assert "captured_html" not in cp_obj
+    assert "next_record" not in cp_obj
+    assert "rows" not in cp_obj
 
-    # Clear crash hook and start a fresh Executor: it recovers the running step and resumes from 50
+    # Insert a new top comment into the fixture page before resuming!
+    # An index-slicing implementation would skip index 0/1 and miss cmt_new_top or duplicate
+    # shifted comments; identity-based resume via book.apply stores cmt_new_top and deduplicates.
+    new_top_comment = {
+        "kind": "comment",
+        "id": "cmt_new_top",
+        "author": "New Top User",
+        "text": "Newly inserted top comment before resume",
+        "created_at": "2026-10-13T12:15:00Z",
+    }
+    html_with_new_top = _synthetic_post_html(comments=[new_top_comment, *comments])
+    driver.initial = facebook.PageObservation(url=url, status_code=200, html=html_with_new_top)
+
+    # Clear crash hook and start a fresh Executor: it recovers the running step and re-fetches
     facebook.set_batch_hook(None)
     with jobs.Executor(ctx.store) as ex2:
         ex2.run(once=True)
@@ -1445,24 +1518,290 @@ def test_resume_after_crash_completes_without_duplicates_or_extra_permit_use(tmp
             "SELECT COUNT(*) FROM items WHERE project_id=?", (proj_id,)
         ).fetchone()[0]
         total_revs = conn.execute("SELECT COUNT(*) FROM item_revisions").fetchone()[0]
+        new_top_row = conn.execute(
+            "SELECT i.native_id, r.text FROM items i JOIN item_revisions r ON r.item_id=i.id "
+            "WHERE i.project_id=? AND i.native_id='cmt_new_top'",
+            (proj_id,),
+        ).fetchone()
         permit_used = conn.execute("SELECT used FROM permits WHERE id=?", (permit_id,)).fetchone()[
             0
         ]
 
-    assert total_items == 61
-    assert total_revs == 61
+    # 1 post + 1 new top comment + 60 original comments = 62 items, 62 revisions (0 duplicates)
+    assert new_top_row is not None
+    assert new_top_row["text"] == "Newly inserted top comment before resume"
+    assert total_items == 62
+    assert total_revs == 62
     assert permit_used == 1
-    # Browser was only driven once because the captured snapshot was checkpointed
-    assert len(driver.visited_urls) == 1
+    assert len(driver.visited_urls) == 2
 
 
-def test_playwright_integration_against_local_synthetic_server(tmp_path: Path):
-    """INTEGRATION test driving real Playwright against a local server via check_fixture_url."""
+def test_proxy_request_parser_rejects_malformed_and_disallowed_inputs():
+    """OFFLINE unit tests for parse_proxy_request covering valid and refused proxy inputs."""
+    # 1. Valid CONNECT authority requests
+    c1 = _browser_egress.parse_proxy_request(
+        b"CONNECT www.facebook.com:443 HTTP/1.1\r\nHost: www.facebook.com:443\r\n\r\n",
+        proxy_port=31280,
+    )
+    assert c1.is_connect is True
+    assert c1.method == "CONNECT"
+    assert c1.hostname == "www.facebook.com"
+    assert c1.port == 443
+    assert c1.check_url == "https://www.facebook.com:443/"
+
+    c_v6 = _browser_egress.parse_proxy_request(
+        b"CONNECT [2606:2800:220:1:248:1893:25c8:1946]:443 HTTP/1.1\r\n\r\n",
+        proxy_port=31280,
+    )
+    assert c_v6.is_connect is True
+    assert c_v6.port == 443
+    assert c_v6.check_url == "https://[2606:2800:220:1:248:1893:25c8:1946]:443/"
+
+    # 2. Valid absolute-form plain-HTTP GET and HEAD
+    g1 = _browser_egress.parse_proxy_request(
+        b"GET http://127.0.0.1:41234/synth.local/posts/pfbid_1?a=1 HTTP/1.1\r\n"
+        b"Host: 127.0.0.1:41234\r\n"
+        b"Sec-Fetch-Mode: navigate\r\n"
+        b"Sec-Fetch-Dest: document\r\n\r\n",
+        proxy_port=31280,
+    )
+    assert g1.is_connect is False
+    assert g1.method == "GET"
+    assert g1.port == 41234
+    assert g1.origin_path == "/synth.local/posts/pfbid_1?a=1"
+    assert g1.is_navigation is True
+    assert g1.purpose == "request"
+
+    h1 = _browser_egress.parse_proxy_request(
+        b"HEAD http://127.0.0.1/img.png HTTP/1.1\r\nSec-Fetch-Dest: image\r\n\r\n",
+        proxy_port=31280,
+    )
+    assert h1.method == "HEAD"
+    assert h1.port == 80
+    assert h1.purpose == "media"
+
+    # 3. Malformed requests, control chars, oversize headers, too many lines
+    with pytest.raises(_browser_egress.ProxyRequestError) as exc_empty:
+        _browser_egress.parse_proxy_request(b"")
+    assert exc_empty.value.reason == "empty_request"
+
+    with pytest.raises(_browser_egress.ProxyRequestError) as exc_oversize:
+        _browser_egress.parse_proxy_request(b"GET http://example.com/ " + (b"A" * 17000))
+    assert exc_oversize.value.reason == "oversize_headers"
+
+    many_headers = b"GET http://example.com/ HTTP/1.1\r\n" + b"".join(
+        f"X-H-{i}: val\r\n".encode("ascii") for i in range(70)
+    )
+    with pytest.raises(_browser_egress.ProxyRequestError) as exc_lines:
+        _browser_egress.parse_proxy_request(many_headers)
+    assert exc_lines.value.reason == "too_many_headers"
+
+    for malformed in (
+        b"GARBAGE\r\n\r\n",
+        b"GET http://example.com/ HTTP/2.0\r\n\r\n",
+        b"GET http://example.com/ HTTP/1.1\r\nBad Header: 1\r\n\r\n",
+        b"GET http://example.com/ HTTP/1.1\r\nX-Null: \x00\r\n\r\n",
+        b"GET http://example.com/ HTTP/1.1\nHost: example.com\r\n\r\n",
+    ):
+        with pytest.raises(_browser_egress.ProxyRequestError):
+            _browser_egress.parse_proxy_request(malformed)
+
+    # 4. Bad ports
+    for bad_port_req in (
+        b"CONNECT www.facebook.com HTTP/1.1\r\n\r\n",
+        b"CONNECT www.facebook.com:0 HTTP/1.1\r\n\r\n",
+        b"CONNECT www.facebook.com:0443 HTTP/1.1\r\n\r\n",
+        b"CONNECT www.facebook.com:65536 HTTP/1.1\r\n\r\n",
+        b"CONNECT www.facebook.com:abc HTTP/1.1\r\n\r\n",
+        b"CONNECT https://www.facebook.com:443/ HTTP/1.1\r\n\r\n",
+        b"GET http://127.0.0.1:0/path HTTP/1.1\r\n\r\n",
+        b"GET http://127.0.0.1:99999/path HTTP/1.1\r\n\r\n",
+    ):
+        with pytest.raises(_browser_egress.ProxyRequestError):
+            _browser_egress.parse_proxy_request(bad_port_req)
+
+    # 5. Origin-form and asterisk-form requests
+    for origin_req in (
+        b"GET /synth.lab/posts/101 HTTP/1.1\r\nHost: www.facebook.com\r\n\r\n",
+        b"GET * HTTP/1.1\r\nHost: www.facebook.com\r\n\r\n",
+    ):
+        with pytest.raises(_browser_egress.ProxyRequestError) as exc_origin:
+            _browser_egress.parse_proxy_request(origin_req)
+        assert exc_origin.value.reason == "origin_form_refused"
+
+    # 6. Unsupported methods and request bodies
+    for method in (b"POST", b"PUT", b"DELETE", b"OPTIONS", b"TRACE"):
+        with pytest.raises(_browser_egress.ProxyRequestError) as exc_method:
+            _browser_egress.parse_proxy_request(
+                method + b" http://www.facebook.com/ HTTP/1.1\r\n\r\n"
+            )
+        assert exc_method.value.reason.startswith("unsupported_method:")
+
+    for body_req in (
+        b"GET http://www.facebook.com/ HTTP/1.1\r\nContent-Length: 5\r\n\r\n",
+        b"GET http://www.facebook.com/ HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n",
+    ):
+        with pytest.raises(_browser_egress.ProxyRequestError):
+            _browser_egress.parse_proxy_request(body_req)
+
+    # 7. WebSocket / Upgrade headers
+    for upgrade_req in (
+        b"GET http://www.facebook.com/ws HTTP/1.1\r\nUpgrade: websocket\r\n\r\n",
+        b"GET http://www.facebook.com/ws HTTP/1.1\r\nConnection: keep-alive, Upgrade\r\n\r\n",
+    ):
+        with pytest.raises(_browser_egress.ProxyRequestError) as exc_upg:
+            _browser_egress.parse_proxy_request(upgrade_req)
+        assert exc_upg.value.reason == "websocket_upgrade_refused"
+
+    # 8. Requests targeting the proxy's own port
+    for self_req in (
+        b"CONNECT 127.0.0.1:31280 HTTP/1.1\r\n\r\n",
+        b"CONNECT localhost:31280 HTTP/1.1\r\n\r\n",
+        b"CONNECT [::1]:31280 HTTP/1.1\r\n\r\n",
+        b"GET http://127.0.0.1:31280/status HTTP/1.1\r\n\r\n",
+        b"GET http://localhost:31280/status HTTP/1.1\r\n\r\n",
+    ):
+        with pytest.raises(_browser_egress.ProxyRequestError) as exc_self:
+            _browser_egress.parse_proxy_request(self_req, proxy_port=31280)
+        assert exc_self.value.reason == "proxy_self_target"
+
+
+def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """OFFLINE test pinning Chromium proxy/DNS/QUIC/WebRTC launch flags and sandbox state."""
+    args = _browser_egress.build_chromium_launch_args(45678)
+    assert "--proxy-server=http://127.0.0.1:45678" in args
+    assert "--proxy-bypass-list=<-loopback>" in args
+    assert "--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1" in args
+    assert "--disable-quic" in args
+    assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in args
+    assert "--disable-background-networking" in args
+    assert "--no-first-run" in args
+
+    with pytest.raises(ValueError):
+        _browser_egress.build_chromium_launch_args(0)
+    with pytest.raises(ValueError):
+        _browser_egress.build_chromium_launch_args(70000)
+
+    # Also verify PlaywrightBrowserDriver.open_session passes these exact launch args and
+    # chromium_sandbox=False to pw.chromium.launch, and stops the proxy on close().
+    fake_bin = tmp_path / "fake-chrome"
+    fake_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+    fake_bin.chmod(0o755)
+    monkeypatch.setenv("METAMUSE_CHROMIUM_EXECUTABLE", str(fake_bin))
+
+    launched: dict[str, Any] = {}
+
+    class _FakePage:
+        url = "https://www.facebook.com/synth.lab/posts/101"
+
+        def on(self, event: str, handler: Any) -> None:
+            del event, handler
+
+        def close(self) -> None:
+            pass
+
+    class _FakeContext:
+        def on(self, event: str, handler: Any) -> None:
+            del event, handler
+
+        def route(self, pattern: str, handler: Any) -> None:
+            del pattern, handler
+
+        def new_page(self) -> _FakePage:
+            return _FakePage()
+
+        def close(self) -> None:
+            pass
+
+    class _FakeBrowser:
+        def new_context(self, **kwargs: Any) -> _FakeContext:
+            launched["context_kwargs"] = kwargs
+            return _FakeContext()
+
+        def close(self) -> None:
+            pass
+
+    class _FakeChromium:
+        def launch(self, **kwargs: Any) -> _FakeBrowser:
+            launched["launch_kwargs"] = kwargs
+            return _FakeBrowser()
+
+    class _FakePlaywright:
+        chromium = _FakeChromium()
+
+        def start(self) -> _FakePlaywright:
+            return self
+
+        def stop(self) -> None:
+            launched["pw_stopped"] = True
+
+    import playwright.sync_api as pw_sync
+
+    monkeypatch.setattr(pw_sync, "sync_playwright", lambda: _FakePlaywright())
+
+    state = facebook.sanitize_storage_state(_synthetic_storage_state_bytes())
+    guard = facebook.EgressGuard(
+        allowed_hosts=config.DEFAULT_FACEBOOK_ALLOWED_HOSTS,
+        resolver=lambda _host: ["93.184.216.34"],
+    )
+    driver = facebook.PlaywrightBrowserDriver()
+    session = driver.open_session(state, guard, timeout_ms=15000, max_bytes=123456)
+    try:
+        assert guard.proxy_port is not None and guard.proxy_port > 0
+        kw = launched["launch_kwargs"]
+        assert kw["headless"] is True
+        assert kw["chromium_sandbox"] is False
+        assert kw["args"] == _browser_egress.build_chromium_launch_args(guard.proxy_port)
+        assert launched["context_kwargs"]["service_workers"] == "block"
+        assert launched["context_kwargs"]["accept_downloads"] is False
+    finally:
+        session.close()
+
+
+def test_egress_proxy_refuses_connect_to_private_ip_without_dialing(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """AT-030: CONNECT to a private IP literal (10.1.2.3:443) is refused with 0 dial attempts."""
+    _allow_loopback_sockets(monkeypatch)
+    dial_attempts: list[Any] = []
+    real_create_connection = socket.create_connection
+
+    def spy_create_connection(address: Any, *args: Any, **kwargs: Any) -> socket.socket:
+        # Record any upstream dial attempt made by BrowserEgressProxy
+        if address != ("127.0.0.1", proxy.port):
+            dial_attempts.append(address)
+        return real_create_connection(address, *args, **kwargs)
+
+    guard = facebook.EgressGuard(
+        allowed_hosts=config.DEFAULT_FACEBOOK_ALLOWED_HOSTS,
+        resolver=lambda _host: ["93.184.216.34"],
+    )
+    proxy = _browser_egress.BrowserEgressProxy(guard, idle_timeout_s=5.0)
+    monkeypatch.setattr(socket, "create_connection", spy_create_connection)
+    try:
+        with real_create_connection(("127.0.0.1", proxy.port), timeout=5.0) as client:
+            client.sendall(b"CONNECT 10.1.2.3:443 HTTP/1.1\r\nHost: 10.1.2.3:443\r\n\r\n")
+            resp = client.recv(4096)
+        assert resp.startswith(b"HTTP/1.1 403 Forbidden")
+        assert dial_attempts == []
+        summary = guard.summary()
+        assert summary["aborted"] == 1
+        assert summary["aborted_reasons"][0]["reason"] == "E_SCOPE_DENIED"
+    finally:
+        proxy.close()
+
+
+def test_playwright_integration_against_local_synthetic_server(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """INTEGRATION test driving real Playwright against a local server via BrowserEgressProxy."""
     if facebook.find_playwright_browser() is None:
         pytest.skip("Playwright or Chromium browser binary is not installed")
+    _allow_loopback_sockets(monkeypatch)
 
     initial_html = (
         b"<!DOCTYPE html><html><head>"
+        b'<link rel="icon" href="data:,">'
         b'<script src="https://evil.example/disallowed.js"></script>'
         b"</head><body>"
         b'<article role="article" data-fb-role="post" data-post-id="pfbid_local_1" '
@@ -1515,7 +1854,7 @@ def test_playwright_integration_against_local_synthetic_server(tmp_path: Path):
             pacing_ms=0,
         )
         # Use test-only seams (unreachable from config, CLI, MCP, or request data)
-        # to wire B08 check_fixture_url and route Playwright to the local synthetic server.
+        # to wire B08 check_fixture_url and route Playwright through BrowserEgressProxy.
         facebook.set_egress_factory(
             lambda _hosts: facebook.EgressGuard.for_fixture_test(
                 allowed_hosts=("www.facebook.com", "127.0.0.1"),
@@ -1554,6 +1893,390 @@ def test_playwright_integration_against_local_synthetic_server(tmp_path: Path):
         assert step_res["observed_scope"]["comments_observed"] == 2
         assert step_res["data"]["egress"]["aborted"] >= 1
         assert step_res["data"]["egress"]["peer_verified"] >= 1
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_playwright_egress_proxy_blocks_navigation_and_subresource_redirects_to_server_b(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """AT-030, FR-019: navigation 302 and subresource 302 from A (127.0.0.1) to B (127.0.0.2).
+
+    Proves with real Chromium that Server B on 127.0.0.2 receives ZERO requests on both a
+    navigation 302 redirect and a subresource <img> 302 redirect.
+    """
+    if facebook.find_playwright_browser() is None:
+        pytest.skip("Playwright or Chromium browser binary is not installed")
+    _allow_loopback_sockets(monkeypatch)
+
+    hits: dict[str, list[str]] = {"A": [], "B": []}
+    port_b_holder = {"port": 0}
+    port_a_holder = {"port": 0}
+
+    class _HandlerB(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            hits["B"].append(self.path)
+            body = b"reached server B"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format: str, *args: Any) -> None:
+            del format, args
+
+    class _HandlerA(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            hits["A"].append(self.path)
+            b_port = port_b_holder["port"]
+            a_port = port_a_holder["port"]
+            if self.path == "/synth.nav/posts/pfbid_nav_redir":
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.2:{b_port}/landing")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if self.path == "/img_redir":
+                self.send_response(302)
+                self.send_header("Location", f"http://127.0.0.2:{b_port}/pixel")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if self.path == "/synth.sub/posts/pfbid_sub_redir":
+                page_bytes = (
+                    f'<!DOCTYPE html><html><head><link rel="icon" href="data:,"></head><body>'
+                    f'<article role="article" data-fb-role="post" data-post-id="pfbid_sub_redir" '
+                    f'data-actor="synth.sub" data-author="Subresource Redirect Author" '
+                    f'data-created-at="2026-10-13T16:00:00Z">'
+                    f'<div data-fb-role="post-body">Post with redirecting image subresource.</div>'
+                    f"</article>"
+                    f'<img src="http://127.0.0.1:{a_port}/img_redir">'
+                    f'<section data-fb-role="comments-section"></section>'
+                    f"</body></html>"
+                ).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(page_bytes)))
+                self.end_headers()
+                self.wfile.write(page_bytes)
+                return
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: Any) -> None:
+            del format, args
+
+    server_b = http.server.ThreadingHTTPServer(("127.0.0.2", 0), _HandlerB)
+    port_b_holder["port"] = server_b.server_port
+    thread_b = threading.Thread(target=server_b.serve_forever, daemon=True)
+    thread_b.start()
+
+    server_a = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HandlerA)
+    port_a_holder["port"] = server_a.server_port
+    thread_a = threading.Thread(target=server_a.serve_forever, daemon=True)
+    thread_a.start()
+
+    try:
+        facebook.set_egress_factory(
+            lambda _hosts: facebook.EgressGuard.for_fixture_test(
+                allowed_hosts=("www.facebook.com", "127.0.0.1"),
+                resolver=lambda host: (
+                    [host] if host in ("127.0.0.1", "127.0.0.2") else ["93.184.216.34"]
+                ),
+            )
+        )
+        facebook.set_driver_factory(
+            lambda: facebook.PlaywrightBrowserDriver(
+                _test_origin=f"http://127.0.0.1:{port_a_holder['port']}"
+            )
+        )
+
+        # 1. Navigation 302 from Server A (127.0.0.1) to Server B (127.0.0.2) -> E_SCOPE_DENIED
+        nav_url = "https://www.facebook.com/synth.nav/posts/pfbid_nav_redir"
+        ctx_nav, proj_nav, permit_nav, _, _ = _setup_fb_env(
+            tmp_path / "nav_redir",
+            url=nav_url,
+            max_expansions=1,
+            pacing_ms=0,
+        )
+        sub_nav = app.submit_collect(
+            ctx_nav,
+            {
+                "project_id": proj_nav,
+                "inputs": [{"kind": "url", "url": nav_url}],
+                "resources": ["post", "comments"],
+                "limits": {
+                    "max_urls": 1,
+                    "max_items": 50,
+                    "max_bytes": 1_000_000,
+                    "wall_clock_seconds": 60,
+                },
+                "access_grant_id": permit_nav,
+                "request_key": "req-nav-302-to-b",
+            },
+        )
+        assert sub_nav.status == "accepted"
+        with jobs.Executor(ctx_nav.store) as ex_nav:
+            ex_nav.run(once=True)
+
+        job_nav = app.get_job(ctx_nav, {"job_id": sub_nav.data["job_id"]}).data["job"]
+        assert job_nav["state"] in ("failed", "awaiting_user")
+        assert job_nav["error"]["code"] == m.ErrorCode.SCOPE_DENIED.value
+        assert "/synth.nav/posts/pfbid_nav_redir" in hits["A"]
+        assert hits["B"] == []
+
+        # 2. Subresource 302 (<img>) from Server A (127.0.0.1) to Server B (127.0.0.2)
+        sub_url = "https://www.facebook.com/synth.sub/posts/pfbid_sub_redir"
+        ctx_sub, proj_sub, permit_sub, _, _ = _setup_fb_env(
+            tmp_path / "sub_redir",
+            url=sub_url,
+            max_expansions=1,
+            pacing_ms=0,
+        )
+        sub_req = app.submit_collect(
+            ctx_sub,
+            {
+                "project_id": proj_sub,
+                "inputs": [{"kind": "url", "url": sub_url}],
+                "resources": ["post", "comments"],
+                "limits": {
+                    "max_urls": 1,
+                    "max_items": 50,
+                    "max_bytes": 1_000_000,
+                    "wall_clock_seconds": 60,
+                },
+                "access_grant_id": permit_sub,
+                "request_key": "req-sub-302-to-b",
+            },
+        )
+        assert sub_req.status == "accepted"
+        with jobs.Executor(ctx_sub.store) as ex_sub:
+            ex_sub.run(once=True)
+
+        job_sub = app.get_job(ctx_sub, {"job_id": sub_req.data["job_id"]}).data["job"]
+        assert job_sub["state"] == "succeeded"
+        assert "/synth.sub/posts/pfbid_sub_redir" in hits["A"]
+        assert "/img_redir" in hits["A"]
+        assert hits["B"] == []
+        step_egress = job_sub["result"]["data"]["steps"][0]["data"]["egress"]
+        assert step_egress["aborted"] >= 1
+        assert any(
+            r["hostname"] == "127.0.0.2" and r["reason"] == "E_SCOPE_DENIED"
+            for r in step_egress["aborted_reasons"]
+        )
+        print(f"HITS A: {hits['A']}")
+        print(f"HITS B: {hits['B']}")
+    finally:
+        server_a.shutdown()
+        server_a.server_close()
+        server_b.shutdown()
+        server_b.server_close()
+
+
+def test_playwright_egress_proxy_dials_only_first_checked_resolver_address(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """AT-030: resolver maps host to 127.0.0.1 on first lookup and 127.0.0.2 on later lookups.
+
+    Proves the proxy dials the first checked address without re-resolving DNS.
+    """
+    if facebook.find_playwright_browser() is None:
+        pytest.skip("Playwright or Chromium browser binary is not installed")
+    _allow_loopback_sockets(monkeypatch)
+
+    hits: dict[str, int] = {"A": 0, "B": 0}
+    html_bytes = (
+        b'<!DOCTYPE html><html><head><link rel="icon" href="data:,"></head><body>'
+        b'<article role="article" data-fb-role="post" data-post-id="pfbid_pin_1" '
+        b'data-actor="synth.pin" data-author="Pinned Author" '
+        b'data-created-at="2026-10-13T17:00:00Z">'
+        b'<div data-fb-role="post-body">Pinned DNS dial verified.</div>'
+        b"</article>"
+        b'<section data-fb-role="comments-section"></section>'
+        b"</body></html>"
+    )
+
+    class _HandlerA(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            hits["A"] += 1
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(html_bytes)))
+            self.end_headers()
+            self.wfile.write(html_bytes)
+
+        def log_message(self, format: str, *args: Any) -> None:
+            del format, args
+
+    class _HandlerB(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            hits["B"] += 1
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: Any) -> None:
+            del format, args
+
+    server_a = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HandlerA)
+    port_a = server_a.server_port
+    thread_a = threading.Thread(target=server_a.serve_forever, daemon=True)
+    thread_a.start()
+
+    server_b = http.server.ThreadingHTTPServer(("127.0.0.2", port_a), _HandlerB)
+    thread_b = threading.Thread(target=server_b.serve_forever, daemon=True)
+    thread_b.start()
+
+    try:
+        canonical_url = "https://www.facebook.com/synth.pin/posts/pfbid_pin_1"
+        ctx, proj_id, permit_id, _, _ = _setup_fb_env(
+            tmp_path / "dns_pin",
+            url=canonical_url,
+            resources=("post",),
+            max_expansions=0,
+            pacing_ms=0,
+        )
+
+        lookup_count = {"synth-pin.example": 0}
+
+        def stateful_resolver(host: str) -> list[str]:
+            if host == "synth-pin.example":
+                lookup_count["synth-pin.example"] += 1
+                if lookup_count["synth-pin.example"] == 1:
+                    return ["127.0.0.1"]
+                return ["127.0.0.2"]
+            return ["127.0.0.1"]
+
+        facebook.set_egress_factory(
+            lambda _hosts: facebook.EgressGuard.for_fixture_test(
+                allowed_hosts=("www.facebook.com", "synth-pin.example"),
+                resolver=stateful_resolver,
+            )
+        )
+        facebook.set_driver_factory(
+            lambda: facebook.PlaywrightBrowserDriver(
+                _test_origin=f"http://synth-pin.example:{port_a}"
+            )
+        )
+
+        sub = app.submit_collect(
+            ctx,
+            {
+                "project_id": proj_id,
+                "inputs": [{"kind": "url", "url": canonical_url}],
+                "resources": ["post"],
+                "limits": {
+                    "max_urls": 1,
+                    "max_items": 10,
+                    "max_bytes": 1_000_000,
+                    "wall_clock_seconds": 60,
+                },
+                "access_grant_id": permit_id,
+                "request_key": "req-dns-pinned-dial",
+            },
+        )
+        assert sub.status == "accepted"
+        with jobs.Executor(ctx.store) as ex:
+            ex.run(once=True)
+
+        job = app.get_job(ctx, {"job_id": sub.data["job_id"]}).data["job"]
+        assert job["state"] == "succeeded"
+        assert lookup_count["synth-pin.example"] == 1
+        assert hits["A"] == 1
+        assert hits["B"] == 0
+    finally:
+        server_a.shutdown()
+        server_a.server_close()
+        server_b.shutdown()
+        server_b.server_close()
+
+
+def test_playwright_egress_proxy_byte_budget_stops_oversized_response(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """AT-030: byte budget stops an oversized response and reports E_LIMIT_REACHED + partial."""
+    if facebook.find_playwright_browser() is None:
+        pytest.skip("Playwright or Chromium browser binary is not installed")
+    _allow_loopback_sockets(monkeypatch)
+
+    oversized_html = (
+        "<!DOCTYPE html><html><body>"
+        '<article role="article" data-fb-role="post" data-post-id="pfbid_big_1" '
+        'data-actor="synth.big" data-author="Big Author" '
+        'data-created-at="2026-10-13T17:00:00Z">'
+        f'<div data-fb-role="post-body">{"X" * 64_000}</div>'
+        "</article>"
+        '<section data-fb-role="comments-section"></section>'
+        "</body></html>"
+    ).encode()
+
+    class _OversizedHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(oversized_html)))
+            self.end_headers()
+            try:
+                self.wfile.write(oversized_html)
+            except OSError:
+                pass
+
+        def log_message(self, format: str, *args: Any) -> None:
+            del format, args
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _OversizedHandler)
+    port = server.server_port
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        canonical_url = "https://www.facebook.com/synth.big/posts/pfbid_big_1"
+        ctx, proj_id, permit_id, _, _ = _setup_fb_env(
+            tmp_path / "pw_budget",
+            url=canonical_url,
+            max_expansions=1,
+            pacing_ms=0,
+        )
+        facebook.set_egress_factory(
+            lambda _hosts: facebook.EgressGuard.for_fixture_test(
+                allowed_hosts=("www.facebook.com", "127.0.0.1"),
+                resolver=lambda host: ["127.0.0.1"] if host == "127.0.0.1" else ["93.184.216.34"],
+            )
+        )
+        facebook.set_driver_factory(
+            lambda: facebook.PlaywrightBrowserDriver(_test_origin=f"http://127.0.0.1:{port}")
+        )
+
+        sub = app.submit_collect(
+            ctx,
+            {
+                "project_id": proj_id,
+                "inputs": [{"kind": "url", "url": canonical_url}],
+                "resources": ["post", "comments"],
+                "limits": {
+                    "max_urls": 1,
+                    "max_items": 50,
+                    "max_bytes": 2048,
+                    "wall_clock_seconds": 60,
+                },
+                "access_grant_id": permit_id,
+                "request_key": "req-pw-byte-budget",
+            },
+        )
+        assert sub.status == "accepted"
+        with jobs.Executor(ctx.store) as ex:
+            ex.run(once=True)
+
+        job = app.get_job(ctx, {"job_id": sub.data["job_id"]}).data["job"]
+        assert job["state"] == "partial"
+        assert job["coverage_status"] == "partial"
+        assert job["stop_reason"] == "limit_reached"
+        assert "byte_budget_exceeded" in job["missing_fields"]
+        step_res = job["result"]["data"]["steps"][0]
+        assert step_res["data"]["error"]["code"] == m.ErrorCode.LIMIT_REACHED.value
+        assert any(
+            r.get("code") == m.ErrorCode.LIMIT_REACHED.value for r in step_res["data"]["rows"]
+        )
     finally:
         server.shutdown()
         server.server_close()
