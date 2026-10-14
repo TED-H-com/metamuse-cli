@@ -545,3 +545,14 @@ report action, without restore or permissions advice. Recording retains its
 honest failure prefix and the underlying guidance. A committed barrier uses
 closure-only human repair. Unreleased 005 enforces integer generation/flags,
 text identities/hashes and nonempty text timestamps, also on upgrade and restore.
+
+Hint matching walks all object/list values to the parser's depth bound, using
+NFKC casefolding and compaction. Any string containing cvm or confidential is
+evidence; a key containing either is evidence when truthy, except false, 0, null,
+empty values or compact false/no/0/none. Each marker records every usable identity
+of its innermost identity-bearing object; child rows own their evidence. A vms
+container starts a row scope. Without an identity scope, persist owner evidence
+and every usable id. Direct session-level hints cover every usable id. Every
+observation commits before refusal, including contradictory aliases and owner
+mismatch. False positives permanently refuse the connected standard tier; this
+intentionally errs toward confidentiality and there is no reset tool.

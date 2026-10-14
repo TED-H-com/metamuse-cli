@@ -26,6 +26,7 @@ import re
 import threading
 import time
 import urllib.parse
+import unicodedata
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -1402,7 +1403,7 @@ class MuseTransport:
         rows = payload.get("vms")
 
         def compact(value):
-            return re.sub(r"[^a-z0-9]", "", value.casefold())
+            return re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKC", value).casefold())
 
         def identities(item):
             return [value for key, value in item.items() if compact(key) == "vmid"]
@@ -1428,60 +1429,51 @@ class MuseTransport:
                 raise protocol_stop()
             return next(iter(normalized))
 
-        marker_keys = {
-            "vmtype",
-            "type",
-            "vmstate",
-            "state",
-            "kind",
-            "vmkind",
-            "vmresolutionissue",
-            "cvmrequired",
-            "cvmreplacementenabled",
-        }
-
-        def confidential_marker(key, value):
-            name = compact(key)
-            folded = compact(value) if isinstance(value, str) else ""
-            return name in marker_keys and (
-                "cvm" in folded
-                or "confidentialvm" in folded
-                or (name in {"cvmrequired", "cvmreplacementenabled"} and bool(value))
+        def truthy(value):
+            return bool(value) and not (
+                isinstance(value, str) and compact(value) in {"false", "no", "0", "none"}
             )
 
-        # One bounded iterative walk: row metadata keeps its nearest row identity.
-        # Markers outside vms rows conservatively cover all usable authenticated ids.
+        def marker_value(value):
+            if not isinstance(value, str):
+                return False
+            folded = compact(value)
+            return "cvm" in folded or "confidential" in folded
+
+        # One bounded walk. Child identity-bearing objects replace the enclosing
+        # identity scope. A vms container starts a new scope, even if malformed.
         usable, marked = set(), set()
         outside_marker = False
         confidential = False
-        stack = [(payload, 0, False, None)]
+        stack = [(payload, 0, None)]
         while stack:
-            node, depth, in_rows, row_id = stack.pop()
+            node, depth, anchor = stack.pop()
             if depth > _JSON_DEPTH:
                 raise protocol_stop()
             if isinstance(node, dict):
                 node_ids = usable_identities(node)
                 usable.update(node_ids)
-                if node_ids and in_rows and row_id is None:
-                    row_id = node_ids
+                if identities(node):
+                    anchor = node_ids
                 for key, value in node.items():
-                    if confidential_marker(key, value):
+                    name = compact(key)
+                    marker = ("cvm" in name or "confidential" in name) and truthy(value)
+                    if marker or marker_value(value):
                         confidential = True
-                        if not in_rows:
+                        if node is payload or not anchor:
                             outside_marker = True
-                        elif row_id is not None:
-                            marked.update(row_id)
+                        else:
+                            marked.update(anchor)
                     if isinstance(value, (dict, list)):
-                        stack.append(
-                            (
-                                value,
-                                depth + 1,
-                                in_rows or compact(key) == "vms",
-                                None if compact(key) == "vms" else row_id,
-                            )
-                        )
+                        stack.append((value, depth + 1, None if name == "vms" else anchor))
             elif isinstance(node, list):
-                stack.extend((child, depth + 1, in_rows, row_id) for child in node)
+                stack.extend((child, depth + 1, anchor) for child in node)
+            elif marker_value(node):
+                confidential = True
+                if not anchor:
+                    outside_marker = True
+                else:
+                    marked.update(anchor)
         if confidential:
             ids = tuple(sorted(usable if outside_marker else marked))
             self._trust.store.muse_freeze(

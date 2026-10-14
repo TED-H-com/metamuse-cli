@@ -36,7 +36,6 @@ VARIANTS = {
     "state_CVM-RUNNING": lambda: assignment(vm_state="CVM-RUNNING"),
     "state_cvm_space": lambda: assignment(vm_state="cvm running"),
     "required_string_true": lambda: assignment(cvm_required="true"),
-    "required_string_false": lambda: assignment(cvm_required="false"),
     "required_int_1": lambda: assignment(cvm_required=1),
     # new key spellings / locations
     "key_vmType": lambda: {**assignment(), "vmType": "hatch_cvm"},
@@ -131,7 +130,7 @@ def test_r4_8_marker_inside_row_records_only_that_row(ctx):
     assert not connector.urls
 
 
-def test_r4_8_row_identity_cannot_be_redirected_by_metadata(ctx):
+def test_r4_8_row_identity_follows_innermost_identity(ctx):
     payload = assignment(vms=[{**selected_row(), "meta": {"vm_id": "vm2", "kind": "HATCH-CVM"}}])
     connector = Connecting()
     transport, *_ = build(
@@ -145,14 +144,14 @@ def test_r4_8_row_identity_cannot_be_redirected_by_metadata(ctx):
     with ctx.store.connection() as conn:
         assert dict(
             conn.execute("SELECT vm_id,confidential_required FROM muse_trust_observations")
-        ) == {"vm1": 1}
+        ) == {"vm2": 1}
     # A fresh label/owner must inherit the observed row's confidential expectation.
     snapshot = ctx.store.muse_freeze(
         provider="alias",
         account="later",
         viewer_id="other-owner",
         session_binding_id="other-session",
-        vm_id="vm1",
+        vm_id="vm2",
     )
     assert snapshot.confidential_required
     sent = []
