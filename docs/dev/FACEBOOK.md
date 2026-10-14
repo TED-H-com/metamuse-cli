@@ -386,9 +386,15 @@ login/checkpoint/challenge/rate-limit barrier, off-post navigation, then the byt
 budget. When HTML has been observed, barrier classification runs before the byte
 budget decision. Fatal stops preserve their normal job state, error, records and
 next action. Every operation checks guard state first, and close always verifies
-pending target destruction before tearing down CDP, including after a cutoff. The watcher uses the pinned Playwright implementation loop, as does
-the existing async WebSocket close adapter. Tests bound hangs at an independent
-90-second subprocess deadline, with 300-second read and job budgets.
+pending target destruction before tearing down CDP, including after a cutoff.
+Already pinned authorities are revalidated synchronously through the complete URL
+policy using their pinned addresses, without resolving or dialing, even after a
+cutoff. This permits completed observations to reach barrier classification before
+the budget decision while preserving destination checks. Unpinned policy/DNS waits
+remain bounded and interruptible. The watcher uses the pinned Playwright
+implementation loop, as does the existing async WebSocket close adapter. Tests
+bound hangs at an independent 90-second subprocess deadline, with 300-second read
+and job budgets.
 
 
 Route validation pins its validated address set by authority for this bounded
