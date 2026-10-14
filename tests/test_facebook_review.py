@@ -142,6 +142,8 @@ def browser_fixture(
             value = pages.get(self.path, pages.get(path, "<html>Unclassified fixture</html>"))
             if callable(value):
                 value = value(self)
+                if value is None:  # A streaming fixture wrote its own response.
+                    return
             if isinstance(value, tuple):
                 self.send_response(value[0])
                 if value[1] is not None:
