@@ -22,10 +22,18 @@
       "x-max-utf8-bytes": 8192
     },
     "share_grant_id": {
-      "maxLength": 128,
-      "minLength": 3,
-      "title": "Share Grant Id",
-      "type": "string"
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Share Grant Id"
     },
     "request_key": {
       "maxLength": 128,
@@ -38,7 +46,6 @@
     "discussion_id",
     "packet_id",
     "question",
-    "share_grant_id",
     "request_key"
   ],
   "title": "MuseSendRequest",

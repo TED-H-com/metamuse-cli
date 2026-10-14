@@ -59,13 +59,13 @@
 ### 9. `metamuse_muse_open`
 - **使用者意圖**：在已授權範圍內開啟新的 Muse 主題討論。
 - **對應 CLI 命令**：`metamuse muse open`
-- **必要識別碼**：`project_id`、`access_grant_id`、`request_key`。
+- **必要識別碼**：`project_id`、`request_key`（缺access_grant_id回approval）。
 - **成功語意**：`accepted`。discussion 與 job 已 commit；沒有 worker 則 queued。可明示原 `discussion_id` 排 list 對帳，不再 create。
 
 ### 10. `metamuse_muse_send`
 - **使用者意圖**：向 Muse 討論主題發送問題與分享資料包。
 - **對應 CLI 命令**：`metamuse muse send`
-- **必要識別碼**：`discussion_id`、`packet_id`、`share_grant_id`、`request_key`。
+- **必要識別碼**：`discussion_id`、`packet_id`、`request_key`（缺share_grant_id回approval）。
 - **成功語意**：`accepted`。外送交換請求已提交，不等於研究已完成。
 
 ### 11. `metamuse_muse_read`
@@ -105,6 +105,7 @@
 以下管理操作涉及授權、憑證與安全邊界，僅限人類操作者在 CLI 手動執行，無對應 MCP 工具。Skill 與模型輸出絕無權限自動執行或自我簽發授權：
 - `metamuse auth import`：匯入外部帳號驗證資訊或憑證檔案。
 - `metamuse permit create`：建立限定範圍、到期日與使用次數之操作許可。
+- `metamuse permit approve`：人類重算並確認approval.request；Agent只顯示next_action命令，絕不可執行或自批。預設24h到期，改request不能沿用digest。
 - `metamuse permit revoke`：撤銷特定操作許可。
 - `metamuse permit list`：檢視專案內現有許可清單。
 
@@ -113,6 +114,7 @@
 ## 3. 本機專用 CLI 命令（CLI-only local commands）
 
 以下本機維護與環境命令僅能在 CLI 終端機執行，無對應 MCP 工具：
+- `metamuse packet preview ID`：人類查看固定packet文字；MCP可重播同packet_prepare request/key取得相同preview。
 - `metamuse init`：初始化 MetaMuse 工作區目錄與資料庫。
 - `metamuse worker run`：手動啟動本機背景工作執行程序以推動佇列。
 - `metamuse skill export --dest DIR`：把已打包的 Skill 寫到操作者指定的目錄。已有檔案時要加 `--force`。此命令不會自行選擇 agent 或 host 設定目錄，也不授予權限。安裝步驟見 [Skill 安裝](../../../docs/dev/SKILL.md)。

@@ -628,6 +628,18 @@ def prepare_packet(ctx: AppContext, request: m.PacketPrepareRequest) -> m.Envelo
     return m.Envelope(status="ok", data=data)
 
 
+def preview_packet(ctx: AppContext, packet_id: str) -> m.Envelope:
+    """Read the fixed packet text without creating a packet or granting permission."""
+    with ctx.store.connection() as conn:
+        packet = ctx.store.get(m.Packet, packet_id, conn=conn)
+        resolver = _Resolver(ctx, packet.project_id, conn)
+        records = [resolver.resolve(ref, source_only=True) for ref in packet.selection]
+        sources = _safe_value([{"ref": r["ref"], **r["source"]} for r in records], [])
+        data = _packet_preview(packet, sources)
+        data["stale"] = _is_stale(resolver, packet.selection)
+    return m.Envelope(status="ok", data=data)
+
+
 def save_draft(ctx: AppContext, request: m.DraftSaveRequest) -> m.Envelope:
     with ctx.store.transaction() as conn:
         resolver = _Resolver(ctx, request.project_id, conn)

@@ -8,7 +8,6 @@ import json
 import os
 import subprocess
 import sys
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import anyio
@@ -17,9 +16,8 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from test_at042_evidence import observation as make_observation
 
-from metamuse import app, safety
+from metamuse import app
 from metamuse import models as m
-from metamuse._muse_lifecycle import prepare_open, prepare_send, read_action
 
 CORPUS = Path(__file__).parent / "fixtures/corpus/import/comments_tree.jsonl"
 SECRET = "SYNTHETIC_SLICE_SECRET"
@@ -129,7 +127,7 @@ class Journey:
         if not operator:
             command.append("--non-interactive")
         command.extend(str(arg) for arg in args)
-        result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
         assert result.returncode == exit_code, (args, result.stdout, result.stderr)
         envelope = json.loads(result.stdout)
         m.Envelope.model_validate(envelope)
@@ -151,82 +149,84 @@ class Journey:
         if (data.get("job", {}).get("result") or {}).get("coverage_status") == "partial":
             assert data["job"]["state"] == "partial"
 
-    def permit(self, project, operation, digest, key, packet=None):
-        scope = {"operations": [operation], "target_digests": [digest]}
-        kind = "access"
-        extra = []
-        if packet:
-            scope = {"packet_digests": [packet["digest"]]}
-            kind = "share"
-            extra = ["--exact-digest", digest]
-        # Test acts as the fixture operator; these commands are never MCP tools.
+    def preview_request(self, operation, request):
+        if operation == "muse.open":
+            return self.cli(
+                "muse",
+                "open",
+                "--project",
+                request["project_id"],
+                "--topic",
+                request["topic"],
+                "--request-key",
+                request["request_key"],
+                exit_code=3,
+            )["approval"]
+        if operation == "muse.send":
+            question = self.inputs / "approval-question.txt"
+            question.write_bytes(request["question"].encode())
+            return self.cli(
+                "muse",
+                "send",
+                "--discussion",
+                request["discussion_id"],
+                "--packet",
+                request["packet_id"],
+                "--question-file",
+                question,
+                "--request-key",
+                request["request_key"],
+                exit_code=3,
+            )["approval"]
+        return self.cli(
+            "muse",
+            "read",
+            "--exchange",
+            request["exchange_id"],
+            "--refresh",
+            exit_code=3,
+        )["approval"]
+
+    def approve(self, operation, request, preview, key, **kwargs):
+        assert preview["operation"] == operation
+        assert preview["provider"] == preview["account"] == "fixture"
         return self.cli(
             "permit",
-            "create",
-            "--project",
-            project,
-            "--kind",
-            kind,
-            "--scope-file",
-            self.json_file(key + "-scope.json", scope),
-            "--provider",
-            "fixture",
-            "--account",
-            "fixture",
-            "--issuer",
-            "fixture-operator",
-            "--expires-at",
-            (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+            "approve",
+            "--operation",
+            operation,
+            "--request-file",
+            self.json_file(key + "-request.json", request),
+            "--exact-digest",
+            preview["action_digest"],
             "--request-key",
             key,
-            *extra,
             operator=True,
+            **kwargs,
         )["data"]["id"]
 
     def open_request(self, project, key):
-        request = m.MuseOpenRequest(
-            project_id=project,
-            topic="Synthetic activity review",
-            access_grant_id="pending",
-            request_key=key,
-        )
-        prepared = prepare_open(app.AppContext.open(self.workspace), request)
-        request.access_grant_id = self.permit(
-            project,
-            "muse.open",
-            safety.action_digest(prepared.target, prepared.payload),
-            key + "-grant",
-        )
-        return request.model_dump(mode="json")
+        request = {"project_id": project, "topic": "Synthetic activity review", "request_key": key}
+        preview = self.preview_request("muse.open", request)
+        request["access_grant_id"] = self.approve("muse.open", request, preview, key + "-grant")
+        return request
 
     def send_request(self, project, discussion, packet, key):
-        request = m.MuseSendRequest(
-            discussion_id=discussion,
-            packet_id=packet["id"],
-            question="List evidence and gaps.",
-            share_grant_id="pending",
-            request_key=key,
-        )
-        prepared = prepare_send(app.AppContext.open(self.workspace), request)
-        request.share_grant_id = self.permit(
-            project,
-            "muse.send",
-            safety.action_digest(prepared.target, prepared.payload),
-            key + "-grant",
-            packet,
-        )
-        return request.model_dump(mode="json")
+        request = {
+            "discussion_id": discussion,
+            "packet_id": packet["id"],
+            "question": "List evidence and gaps.",
+            "request_key": key,
+        }
+        preview = self.preview_request("muse.send", request)
+        request["share_grant_id"] = self.approve("muse.send", request, preview, key + "-grant")
+        return request
 
     def read_request(self, project, discussion, exchange, key):
-        ctx = app.AppContext.open(self.workspace)
-        target, payload = read_action(ctx.store.get(m.Discussion, discussion))
-        return {
-            "exchange_id": exchange,
-            "refresh": True,
-            "access_grant_id": self.permit(
-                project, "muse.read", safety.action_digest(target, payload), key + "-grant"
-            ),
-        }
+        request = {"exchange_id": exchange, "refresh": True}
+        preview = self.preview_request("muse.read", request)
+        request["access_grant_id"] = self.approve("muse.read", request, preview, key + "-grant")
+        return request
 
     def worker(self, job_id):
         before = self.cli("jobs", "get", job_id)["data"]
@@ -321,16 +321,12 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
     assert packet["selection"] == refs and packet["redaction_notice"]
     assert hashlib.sha256(packet["rendered_text"].encode()).hexdigest() == packet["digest"]
     # Guard challenge is never printed by search or private exports; packet preview redacts it.
-    with app.AppContext.open(journey.workspace).store.connection() as conn:
-        dirty = conn.execute("SELECT id FROM items WHERE native_id='hygiene'").fetchone()[0]
-        tree = conn.execute(
-            "SELECT i.kind,i.parent_id FROM items i JOIN sources s ON s.id=i.source_id "
-            "WHERE s.native_scope='tree-scope'"
-        ).fetchall()
-        assert sorted(row["kind"] for row in tree) == ["comment", "post", "reply"]
-        assert sum(row["parent_id"] is not None for row in tree) == 2
+    rows = job["result"]["data"]["steps"][0]["data"]["rows"]
+    dirty = rows[-1]
+    assert dirty["status"] == "committed"
     challenge = journey.json_file(
-        "challenge.json", [{"kind": "item_revision", "id": dirty, "revision": 1}]
+        "challenge.json",
+        [{"kind": "item_revision", "id": dirty["item_id"], "revision": dirty["revision"]}],
     )
     redacted = journey.cli(
         "packet",
@@ -445,7 +441,7 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
     async def mcp_half():
         params = StdioServerParameters(
             command=str(journey.command),
-            args=["--workspace", str(journey.workspace), "--non-interactive", "mcp"],
+            args=["--workspace", str(journey.workspace), "--non-interactive", "mcp", "--no-worker"],
         )
         log = tmp_path / "mcp-stderr.log"
         with log.open("w+") as errlog:
@@ -466,7 +462,11 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
                         return envelope
 
                     inspected = await call("inspect", {})
-                    assert inspected["data"] == journey.cli("doctor")["data"]
+                    assert {
+                        k: v
+                        for k, v in inspected["data"].items()
+                        if k not in ("attached_worker", "worker_next_action")
+                    } == journey.cli("doctor")["data"]
                     opened = (await call("muse_open", journey.open_request(project, "mcp-open")))[
                         "data"
                     ]

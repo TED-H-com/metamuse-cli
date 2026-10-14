@@ -224,8 +224,8 @@ bypasses the verifier is outside the stated trust boundary.
 
 Core's interaction guard runs before CLI delegation for all human-only auth/permit
 commands, and safety entry points also call `ctx.require_interactive()`. A non-interactive
-context cannot import, issue, revoke or list via these entry points. No additional prompt
-is introduced. Tests opt into live-mode configuration only for synthetic handlers while
+context cannot import, issue, revoke or list via these entry points. `permit approve`
+also requires the explicit confirmation described below. Tests opt into live-mode configuration only for synthetic handlers while
 socket/DNS calls remain blocked; this is FIXTURE/INTEGRATION evidence, never LIVE.
 
 For `settle_uncertain`, read remote evidence outside transactions and supply a separate
@@ -251,3 +251,17 @@ checks/reservation. Core mints a one-use token after commit. Live Muse credentia
 an immutable provider/account/auth_ref snapshot and the explicit cookie-header JSON
 format documented in [MUSE.md](MUSE.md). A Muse share also requires exact_digest for
 the prepared question/packet/target action, in addition to its snapshot/packet scope.
+
+## Human approval without Python internals
+
+Use the E_SCOPE_REQUIRED `approval` from a shipped Muse CLI/MCP call. The preview creates
+nothing. The human saves the shown request JSON, reviews the topic/question/destination
+and packet via `packet preview`, then runs `permit approve --operation OP --request-file
+PATH --request-key KEY [--exact-digest SHA256] [--expires-at TIMESTAMP] [--max-uses N]`.
+The command recomputes/displays review on stderr and accepts terminal `yes` or an exact
+recomputed digest. `--non-interactive` is refused and no MCP approval tool exists.
+Default expiry is 24h; explicit expiry is timezone-aware and within 30 days. Default-expiry
+replay validates stored receipts through the core duplicate-key-rejecting decoder and
+never extends the original grant. Binding labels come from configuration only.
+Changed request text or packet fails digest equality; preview data cannot mint permissions.
+The fixed registration seam and B12/B13 adoption obligations are in [CORE_API.md](CORE_API.md).

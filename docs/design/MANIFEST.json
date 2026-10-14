@@ -9,13 +9,13 @@
     },
     {
       "path": "02_SPEC.md",
-      "bytes": 18870,
-      "sha256": "a58665e1733febbfa57fdc02a76246c425855f8b7286fb4b8acdf7cd9b5b050c"
+      "bytes": 20754,
+      "sha256": "c2d4dc3a45696f028cc97ed061c8d5e27711e412fc9ca75814d32467d2f7e683"
     },
     {
       "path": "03_SDS.md",
-      "bytes": 30434,
-      "sha256": "53764468bf5be4a80d084e8756dd6e7080de8c9fa21e969ae2da9468b355ff5b"
+      "bytes": 32274,
+      "sha256": "b99538a97ff37189eafa08e10899efffcff7eb5df56bde7d638cdd72e68a43c4"
     },
     {
       "path": "04_BACKLOG.md",
@@ -24,8 +24,8 @@
     },
     {
       "path": "05_ACCEPTANCE.md",
-      "bytes": 7023,
-      "sha256": "0d1e8b0e75adcf806b9baa65e8ec2e5d92c18d3db02dba9d0742dd36f682615d"
+      "bytes": 7806,
+      "sha256": "f26a94ceaf375b7a423a0f6c5283ace6939943461b97d7dcf356f0cc3c1f4ca9"
     },
     {
       "path": "06_SOURCES.md",
@@ -49,8 +49,8 @@
     },
     {
       "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
-      "bytes": 58421,
-      "sha256": "61c9e2b0b65c7052b5191df38890e715173cd96e0f57fe781bc66d2899421a5c"
+      "bytes": 62145,
+      "sha256": "7d238a742bdf484c30993b06b21ba04d2caaa82a7a2bbbaa1250d09f7d514b45"
     },
     {
       "path": "README.md",
@@ -69,8 +69,8 @@
     },
     {
       "path": "contracts/acceptance-cases.json",
-      "bytes": 13803,
-      "sha256": "7d0b38a699df675907ba5c4deb8882cdc1870620fa63891694fa93643cc8a57b"
+      "bytes": 13945,
+      "sha256": "d62b7c48aa0300d6fc25c064ed05b085b3cbcec914024b98814606fe4e5866cd"
     },
     {
       "path": "contracts/backlog.json",
@@ -79,13 +79,13 @@
     },
     {
       "path": "contracts/envelope.schema.json",
-      "bytes": 3617,
-      "sha256": "5d3dbc36b4fe8c977d73285059d942bd76375a7c84f3cc5e9f2a4586681e387a"
+      "bytes": 7743,
+      "sha256": "987d794806fa9f3b4b0eedb6a6ff0f8b35073da79699e5abadc352d943a06daf"
     },
     {
       "path": "contracts/mcp-tools.json",
-      "bytes": 102464,
-      "sha256": "857244b9b2b99693254bcbaced7bb58cf5e986ac13e6be74b4357625b94650a1"
+      "bytes": 181745,
+      "sha256": "726fe4cc2023c0f2a5f57882891c017a151d3653b823765da418d0b3dd49eb82"
     },
     {
       "path": "contracts/requirements.json",
@@ -119,8 +119,8 @@
     },
     {
       "path": "skills/metamuse/SKILL.md",
-      "bytes": 3612,
-      "sha256": "bd177fbddcf539036622ec83b4a7310e344be5b8c37a710a71ee9e5b769613d9"
+      "bytes": 4516,
+      "sha256": "31fa27a4710eeb36f809487dab0f376472d18381f5f06b09050f9b1778ceacdb"
     },
     {
       "path": "validate_design_pack.py",

@@ -30,7 +30,7 @@
 
 ### 1.4 權限狀態（`permission`）
 - **`granted_scope`（範圍已授權）**：人類操作者已建立有效之範圍許可（`permission: "granted_scope"`）。
-- **`not_configured`（未配置授權）**：尚未建立存取許可或金鑰（`permission: "not_configured"`）。呼叫將回傳 `E_SCOPE_REQUIRED` 或 `E_AUTH_REQUIRED`。提示操作者以 CLI 執行 `metamuse permit create` 或 `metamuse auth import`。
+- **`not_configured`（未配置授權）**：尚未建立存取許可或金鑰（`permission: "not_configured"`）。呼叫將回傳 `E_SCOPE_REQUIRED` 或 `E_AUTH_REQUIRED`。顯示E_SCOPE_REQUIRED approval與next_action；提示人類執行 `metamuse permit approve`，Agent絕不可執行或自批。無preview時依next_action或 `metamuse auth import`。
 - **`denied`（授權遭拒）**：許可已被撤銷或範圍受限（`permission: "denied"`）。呼叫將回傳 `E_SCOPE_DENIED`。Skill 與 Agent 絕不可自行偽造或假定已獲得授權。
 
 ---
@@ -58,7 +58,7 @@
 當 `metamuse_inspect` 回報 `worker_available: false` 時：
 - 所有非同步提交（如 `metamuse_collect`、`metamuse_muse_open`、`metamuse_muse_send`）在回傳狀態為 `accepted` 後，僅是將 job 寫入本機 SQLite 資料庫之佇列。
 - **語意誠實**：絕不可向使用者宣稱「工作正在背景執行中」或「稍後背景完成」。
-- **操作指引**：應明確告知使用者背景無 worker 運作，提示使用者可於終端機執行 `metamuse worker run` 推動佇列。
+- **操作指引**：應明確告知使用者背景無 worker 運作，提示使用者可於終端機執行 `metamuse worker run` 推動佇列，或在原owner退出後重啟預設附worker的MCP。本server不重試取得鎖，server退出後不宣稱續跑。
 
 ---
 

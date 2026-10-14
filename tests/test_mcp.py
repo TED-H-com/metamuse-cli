@@ -179,7 +179,8 @@ def test_mcp_stdio_calls_state_handles_and_errors(tmp_path: Path) -> None:
                     assert inspect_env["status"] == "ok"
                     assert inspect_env["error"] is None
                     assert inspect_env["data"]["network_mode"] == "offline"
-                    assert inspect_env["data"]["worker_available"] is False
+                    assert inspect_env["data"]["worker_available"] is True
+                    assert inspect_env["data"]["attached_worker"] == "running"
                     assert len(inspect_env["data"]["capabilities"]) == 15
 
                     # 2. project_create followed by calls omitting project_id must NOT reuse it.
@@ -606,6 +607,7 @@ def test_mcp_cancelled_call_leaves_accepted_job_queued(tmp_path: Path) -> None:
 
     async def scenario() -> None:
         params = _metamuse_command(workspace, extra_env={"PYTHONPATH": pythonpath})
+        params.args.append("--no-worker")
         with errlog_path.open("w+", encoding="utf-8") as errlog:
             async with stdio_client(params, errlog=errlog) as (read_stream, write_stream):
                 async with ClientSession(read_stream, write_stream) as session:

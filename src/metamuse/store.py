@@ -222,6 +222,10 @@ class Store:
             )
         self.paths = WorkspacePaths.resolve(paths.root)
         self.clock = clock
+        # CLI/MCP and an attached Executor share this Store across threads. Serialize
+        # short connection lifetimes so WAL/configuration and snapshot reads do not
+        # contend with our own writer; external waits stay outside Store contexts.
+        self._connections = threading.RLock()
         self._restore_in_progress = _restore_in_progress
         self.open_warnings: list[str] = []
         self.schema_version = SCHEMA_VERSION if schema_version is None else schema_version
@@ -274,7 +278,7 @@ class Store:
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
         self._check_restore_marker()
-        with file_lock(self.paths.runtime / "maintenance.lock", exclusive=False):
+        with self._connections, file_lock(self.paths.runtime / "maintenance.lock", exclusive=False):
             self._check_restore_marker()
             conn = self._open()
             try:

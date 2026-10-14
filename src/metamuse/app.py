@@ -40,6 +40,7 @@ class AppContext:
     muse_gateway: Any = field(default=None, repr=False)
     secret_store: Any = field(default=None, repr=False)
     muse_resolver: Any = field(default=None, repr=False)
+    worker_status: Callable[[], dict[str, Any]] | None = field(default=None, repr=False)
 
     def require_interactive(self) -> None:
         if self.non_interactive:
@@ -69,15 +70,23 @@ def application(model: type[m.Model]) -> Callable:
     def decorate(fn: Callable) -> Callable:
         @wraps(fn)
         def call(ctx: AppContext, request: Any = None) -> m.Envelope:
+            validated = None
             try:
                 if isinstance(request, model):
                     request = request.model_dump(mode="python")
                 request = model.model_validate(
                     {} if request is None else request, context={"limits": ctx.limits}
                 )
+                validated = request
                 envelope = fn(ctx, request)
             except m.CoreError as exc:
-                envelope = m.failure(exc)
+                from metamuse import safety
+
+                envelope = (
+                    safety.approval_failure(ctx, validated, exc)
+                    if validated is not None
+                    else m.failure(exc)
+                )
             except ValidationError as exc:
                 envelope = m.failure(m.validation_error(exc))
             except (ValueError, TypeError):
@@ -85,6 +94,9 @@ def application(model: type[m.Model]) -> Callable:
             except OSError:
                 envelope = m.failure(m.CoreError(m.ErrorCode.STORAGE, "Workspace I/O failed"))
 
+            if ctx.worker_status is not None and isinstance(envelope.data, dict):
+                if "worker_available" in envelope.data:
+                    envelope.data.update(ctx.worker_status())
             return envelope.model_copy(
                 update={
                     "warnings": list(dict.fromkeys([*envelope.warnings, *ctx.store.open_warnings]))

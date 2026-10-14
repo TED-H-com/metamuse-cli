@@ -15,6 +15,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -112,6 +265,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -184,6 +363,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -234,6 +424,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -331,6 +674,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -403,6 +772,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -726,6 +1106,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -823,6 +1356,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -895,6 +1454,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -939,6 +1509,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -1036,6 +1759,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -1108,6 +1857,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -1171,6 +1931,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -1268,6 +2181,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -1340,6 +2279,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -1400,6 +2350,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -1497,6 +2600,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -1569,6 +2698,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -1639,6 +2779,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -1736,6 +3029,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -1808,6 +3127,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -1921,6 +3251,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -2018,6 +3501,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -2090,6 +3599,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -2146,10 +3666,18 @@
             "x-max-utf8-bytes": 8192
           },
           "access_grant_id": {
-            "maxLength": 128,
-            "minLength": 3,
-            "title": "Access Grant Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Access Grant Id"
           },
           "request_key": {
             "maxLength": 128,
@@ -2161,7 +3689,6 @@
         "required": [
           "project_id",
           "topic",
-          "access_grant_id",
           "request_key"
         ],
         "title": "MuseOpenRequest",
@@ -2170,6 +3697,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -2267,6 +3947,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -2339,6 +4045,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -2387,10 +4104,18 @@
             "x-max-utf8-bytes": 8192
           },
           "share_grant_id": {
-            "maxLength": 128,
-            "minLength": 3,
-            "title": "Share Grant Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Share Grant Id"
           },
           "request_key": {
             "maxLength": 128,
@@ -2403,7 +4128,6 @@
           "discussion_id",
           "packet_id",
           "question",
-          "share_grant_id",
           "request_key"
         ],
         "title": "MuseSendRequest",
@@ -2412,6 +4136,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -2509,6 +4386,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -2581,6 +4484,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -2656,6 +4570,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -2753,6 +4820,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -2825,6 +4918,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -2886,6 +4990,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -2983,6 +5240,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -3055,6 +5338,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -3267,6 +5561,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -3364,6 +5811,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -3436,6 +5909,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -3486,6 +5970,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -3583,6 +6220,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -3655,6 +6318,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [
@@ -3780,6 +6454,159 @@
       "outputSchema": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
           "ErrorCode": {
             "enum": [
               "E_INPUT_INVALID",
@@ -3877,6 +6704,32 @@
                 }
               }
             }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
           }
         ],
         "properties": {
@@ -3949,6 +6802,17 @@
             ],
             "default": null,
             "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
           }
         },
         "required": [

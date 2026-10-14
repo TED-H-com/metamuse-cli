@@ -107,11 +107,11 @@ native IDs為opaque字串，不自行解碼。可靠ID用(platform,scope,id)識�
 
 先驗輸入／scope→transaction查request_key→建立job/steps/event→commit→回accepted/job_id/worker_available。收到job並不等於開始。
 
-worker run、MCP附帶worker、CLI --run都搶相同OS lock。同workspace只有一個owner；其他入口只排隊。舊heartbeat過期但OS lock仍被持有時不能直接接管；由操作者確認終止owned process及退出後才開新worker。不得殺不明browser程序。
+worker run、預設MCP附帶worker、CLI --run都搶相同OS lock。MCP --no-worker明示停用附帶executor；鎖被占用仍服務，回worker_available:false及next action，本次server不重試取得鎖。附帶worker只是同Executor的一個thread，沒有第二個scheduler或store。inspect附attached_worker狀態；CLI doctor由owner及Linux FLOCK觀測實際持鎖。同workspace只有一個owner；其他入口只排隊。舊heartbeat過期但OS lock仍被持有時不能直接接管；由操作者確認終止owned process及退出後才開新worker。不得殺不明browser程序。
 
 取得鎖後遞增epoch，短transaction claim queued step；外部動作前再驗epoch、job state、permit和target。epoch防舊callback寫回，但不能讓遠端服務獲得它不支援的fencing或exactly-once。
 
-網路下載／模型等待不持有長transaction。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
+共用Store instance以process內RLock序列化短connection生命週期，避免附worker與MCP thread的自身WAL／writer contention；跨process仍依SQLite及maintenance／worker OS lock。網路下載／模型等待不持有長transaction或connection lock。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
 
 ### 重啟恢復
 
@@ -124,6 +124,8 @@ worker run、MCP附帶worker、CLI --run都搶相同OS lock。同workspace只有
 | Muse send submitting | send_uncertain，查原session；未證明沒送達不重送。 |
 | publish submitting | needs_reconcile，不重點送出。 |
 | awaiting_user | 等明確條件／有效grant，不背景撞平台。 |
+
+MCP stdin EOF、SIGTERM、SIGINT先request_stop，停止claim新step；目前有界step完成或依既有cancel／epoch規則停在安全邊界，再join thread並釋放鎖。不將server關閉當job cancel，不承諾server退出後附帶worker繼續。SIGKILL／crash由下次Executor的原有恢復處理，已進submitting的send只對帳不重送。若crash發生在ack已checkpoint但job完成前，authorized history read亦可驗原step／target／outbound digest與persisted ack後settle，attempt不增加。
 
 取消持久化後在安全邊界停止自己的資源；local cancelled與remote unknown分開。MCP呼叫等待被中止不代表原job消失。UI／CLI關閉後沒有worker就不能宣稱背景繼續。
 
@@ -376,3 +378,15 @@ Partial pre-upgrade status is durably recorded under runtime, visible in doctor/
 and triggering envelopes. No global Python warning filter is changed. Archives fsync DB,
 manifest and directories. Restore blocker checks/unlink are inside the maintenance lock.
 Raw leaf symlinks are refused before resolution; symlinked parents remain supported.
+
+## Operator approval preview seam (B08/B10/B14)
+
+Fixed feature registration uses `safety.register_approval_preview(operation, fn,
+request_model=...)`. The shared app wrapper calls it after grant failure, before any
+submission. The callback prepares exactly the action the feature will later verify,
+reads only the workspace/configuration, redacts secrets and creates nothing. CLI
+`permit approve` uses the same registry/model/preparation; terminal yes or an exact
+recomputed digest is required before the existing create_permit API. MCP cannot mint
+permits. Model text cannot select provider/account or expand the action. Packet preview
+reads its immutable text; MCP packet_prepare replay returns the same fixed pre-share
+preview. No schema migration or separate approval store is needed.

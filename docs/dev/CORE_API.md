@@ -715,3 +715,52 @@ integer and value 1. Every JSON decode in Store uses a recursive duplicate-key-r
 `object_pairs_hook`; stored records and receipts retain their fixed `E_STORAGE` errors,
 without echoing values. Migration 004 is amended before release; no 005 is added.
 See [CONTENT_API.md](CONTENT_API.md) and [OFFLINE_SLICE.md](OFFLINE_SLICE.md).
+
+## Approval preview registration (B08/B10/B14)
+
+```python
+from metamuse import models as m, safety
+
+# Call from the feature's idempotent register_operations, before submissions/workers.
+safety.register_approval_preview("collect.remote", preview_remote, request_model=m.CollectRequest)
+```
+
+The callback `(ctx, validated_request) -> models.ApprovalPreview` reads configuration and
+stored domain data and calls the SAME prepare code used by the submission/boundary.
+It must create nothing: no grant, receipt, job, intent, temporary file, network call or
+account discovery. `operation` identifies the request entrypoint; `permit_operation`
+is the actual scope operation (Muse open reconciliation needs muse.read). The preview
+includes kind/project/configured provider/account, action_digest, destination, a precise
+summary and non-secret request/request_file/next_action. Shares additionally include
+packet_id, packet_digest, packet_utf8_bytes and operator packet_preview_command.
+Use `safety.operator_command(ctx, ...)` for shell-quoted commands; never interpolate
+untrusted text as shell code. Redact credentials in summary/topic/question/request.
+The exact digest binds original prepared bytes even when display text is redacted.
+
+The shared application decorator adds a preview on SCOPE_REQUIRED/SCOPE_DENIED when
+preparation succeeds and returns E_SCOPE_REQUIRED with null data. Disabled backend,
+missing credentials, stale/invalid references and unsupported routes retain their
+actual errors when preparation cannot produce a valid review. Callback failures create
+no grant. `permit approve` validates through that registry and recomputes/displays the
+preview. Only the human CLI confirms and calls existing create_permit; no MCP route is
+added. Expiry defaults to 24h, explicit expiry remains capped at 30 days, every permit
+is bound to exact_digest, and default-expiry receipt replay preserves the original expiry.
+
+B12/B13 must implement one collect.remote preview dispatcher for the same CollectRequest,
+route to their fixed backend preparation, derive provider/account from operator config,
+and use the identical target/payload in PermitUse and external_action_verifier. Two
+callbacks cannot register the same operation with different implementations: coordinate
+that dispatcher with core. Do not accept account labels/digests/approved flags from model
+text. Register previews before returning grant errors, enforce current permit and target
+again at the step boundary, and retain B08 egress/retry rules. This base has no remote
+collector; every grant-requiring route here is covered by Muse open/send/read registration.
+
+AppContext.worker_status is an optional process-owned callback installed by MCP startup.
+Shared wrappers replace worker availability fields with attached-worker truth there;
+CLI contexts use the existing Linux FLOCK observation. No feature sets this callback.
+
+The shared Store serializes short connection contexts with a per-instance threading
+RLock. MCP tool threads and its attached Executor use the same Store instance; this
+prevents their own WAL/configuration/writer contention. Network waits never hold that
+lock or a transaction. Cross-process ownership still uses existing maintenance/worker
+OS locks and SQLite; this introduces no scheduler, store or migration.

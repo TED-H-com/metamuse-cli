@@ -30,10 +30,18 @@
       "x-max-utf8-bytes": 8192
     },
     "access_grant_id": {
-      "maxLength": 128,
-      "minLength": 3,
-      "title": "Access Grant Id",
-      "type": "string"
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Access Grant Id"
     },
     "request_key": {
       "maxLength": 128,
@@ -45,7 +53,6 @@
   "required": [
     "project_id",
     "topic",
-    "access_grant_id",
     "request_key"
   ],
   "title": "MuseOpenRequest",

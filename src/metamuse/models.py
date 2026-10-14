@@ -238,6 +238,29 @@ class CoreError(Exception):
         self.retry_after = max(0, retry_after)
 
 
+class ApprovalPreview(Model):
+    """Non-secret operator review; never a grant or submission intent."""
+
+    operation: str
+    permit_operation: str
+    kind: Literal["access", "share"]
+    project_id: ID
+    provider: str
+    account: str
+    action_digest: Digest
+    destination: str
+    topic: str | None = None
+    question: str | None = None
+    packet_id: ID | None = None
+    packet_digest: Digest | None = None
+    packet_utf8_bytes: int | None = None
+    packet_preview_command: str | None = None
+    summary: str
+    request_file: str
+    request: dict[str, Any]
+    next_action: str
+
+
 class Envelope(Model):
     model_config = ConfigDict(
         extra="forbid",
@@ -257,7 +280,19 @@ class Envelope(Model):
                     "if": {"properties": {"status": {"const": "error"}}},
                     "then": {"properties": {"data": {"type": "null"}, "error": {"type": "object"}}},
                     "else": {"properties": {"error": {"type": "null"}}},
-                }
+                },
+                {
+                    "if": {
+                        "required": ["approval"],
+                        "properties": {"approval": {"type": "object"}},
+                    },
+                    "then": {
+                        "properties": {
+                            "status": {"const": "error"},
+                            "error": {"properties": {"code": {"const": "E_SCOPE_REQUIRED"}}},
+                        }
+                    },
+                },
             ],
         },
     )
@@ -268,6 +303,7 @@ class Envelope(Model):
     error: ErrorDetail | None = None
     warnings: list[Text] = Field(default_factory=list)
     next_cursor: str | None = None
+    approval: ApprovalPreview | None = None
 
     @model_validator(mode="after")
     def consistent(self) -> Envelope:
@@ -276,6 +312,10 @@ class Envelope(Model):
                 raise ValueError("error status requires error and null data")
         elif self.error is not None:
             raise ValueError("successful status requires null error")
+        if self.approval is not None and (
+            self.status != "error" or self.error.code != ErrorCode.SCOPE_REQUIRED
+        ):
+            raise ValueError("approval requires E_SCOPE_REQUIRED")
         canonical_json(self.model_dump(mode="json"))
         return self
 
@@ -835,7 +875,7 @@ class MuseOpenRequest(Model):
     topic: Annotated[
         str, Field(min_length=1, max_length=8192, json_schema_extra={"x-max-utf8-bytes": 8192})
     ]
-    access_grant_id: ID
+    access_grant_id: ID | None = None
     request_key: RequestKey
 
 
@@ -845,7 +885,7 @@ class MuseSendRequest(Model):
     question: Annotated[
         str, Field(min_length=1, max_length=8192, json_schema_extra={"x-max-utf8-bytes": 8192})
     ]
-    share_grant_id: ID
+    share_grant_id: ID | None = None
     request_key: RequestKey
 
 

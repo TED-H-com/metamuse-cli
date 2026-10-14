@@ -155,19 +155,35 @@ an already-queued create is refused before reserving its grant or minting a toke
 Its step fails locally without uncertain delivery. This is a refusal, never evidence
 based on title equality.
 
-Operator preview helpers `_muse_lifecycle.prepare_open(ctx, MuseOpenRequest)` and
-`prepare_send(ctx, MuseSendRequest)` return the exact stored `MusePayload`. Compute
-`safety.action_digest(prepared.target, prepared.payload)` before granting the action.
-The marker is stable for the request key, and the project ID is the stable node ID.
-A live send also requires a recorded successful authorized history job for its baseline;
-use the mapped-discussion read path above before preparing a send. A new fixture session
-has a known empty baseline. Sequence observations never claim full history coverage.
-An access grant covers `muse.open` and its exact action digest. A share grant covers
-an exact packet or displayed snapshot, provider/account, and requires `exact_digest`
-for the full question/packet/destination action. The verified body, headers, verb,
-path, marker and node ID cannot be substituted. Grants are reserved once inside the
-boundary, never before it. Revocation, expiry, account, source revisions and packet
-staleness are checked again there.
+Operators approve through the shipped entrypoints. Omit the grant on `muse open`,
+`muse send`, or `muse read --refresh` (or send the corresponding MCP request). The
+E_SCOPE_REQUIRED envelope includes `approval`, creates nothing, and shows the exact
+configured provider/account, destination, topic/question, action digest and packet
+ID/digest/byte count. Run its `packet_preview_command` to inspect the fixed packet.
+Save the shown non-secret `approval.request` JSON at `approval.request_file`, then
+show the human `approval.next_action`, for example:
+
+```bash
+metamuse --workspace /path/to/workspace --json permit approve \
+  --operation muse.send --request-file /path/to/request.json \
+  --exact-digest DIGEST_FROM_PREVIEW --request-key operator-send-1
+```
+
+The human command recomputes/displays the preview, requires the exact digest (or a
+terminal `yes` if omitted), and returns a permit ID. Retry the original request with
+that ID as `share_grant_id` or `access_grant_id`. `--non-interactive` refuses approval;
+there is no MCP approval tool. Expiry defaults to 24h and may be set explicitly with
+`--expires-at`. `--max-uses` can allow a bounded number of identical history reads;
+changed question/packet/target requires a new approval. Provider/account come only
+from the binding, and the verified body/headers/verb/path/marker/node cannot be
+substituted. Reservation and expiry/revocation checks occur again at the step boundary.
+Credential-like request text is redacted for review; use the original human-owned
+request file to approve its original digest, never substitute the redacted copy.
+
+A live send requires a successful authorized history job for its baseline; use the
+mapped discussion's open reconciliation request with an access approval first. A new
+fixture session has a known empty baseline. Sequence observations do not claim full
+history coverage. See [OFFLINE_SLICE.md](OFFLINE_SLICE.md) for a rerunnable journey.
 
 The daemon `text` is exactly `question + "\n\n" + packet.rendered_text`; the two host
 texts retain CRLF and Unicode composition. The separator is the only joining text.
@@ -179,7 +195,7 @@ persona or action are derived from replies. Replies remain untrusted host data.
 `muse_read` without `refresh` performs only local reads, including while Muse is
 unconfigured or offline. With `refresh=true`, a current access grant is required;
 it returns stored data and an accepted `refresh_job_id`, `state`, `worker_available`.
-`read_action(discussion, sessions=False)` previews the exact read scope. A refresh
+The approval envelope previews the exact read scope. A refresh
 fetches one bounded history page from the original session; absence is not proof of
 non-delivery or full history coverage. Raw observations are retained before association.
 Echo comparison applies the same deterministic `sanitize_document` redaction to the
@@ -321,3 +337,10 @@ observation the host read, including progress; later enrichment is a different I
 Content resolves that stored raw event and digest, not the current Message view. Drafts
 and all exports preserve fixture attribution transitively; packets reject Muse refs.
 [OFFLINE_SLICE.md](OFFLINE_SLICE.md) proves the fixture-only CLI/MCP process journey.
+
+A crash after a committed send acknowledgement but before job completion leaves the step
+uncertain on recovery. An authorized history read verifies the stored original ack's
+step ID, exact target/body digest, handed-off bytes and ack verdict, then settles that
+original step. It does not require a newly created echo proof, increase attempts or send
+again. The same verifier still validates immutable observations for stored user-echo
+proofs. This checkpoint boundary is exercised by the real subprocess worker tests.

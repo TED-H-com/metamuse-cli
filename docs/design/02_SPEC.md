@@ -151,20 +151,22 @@ metamuse jobs cancel ID --request-key KEY
 metamuse worker run [--once]
 metamuse search --project ID --query TEXT [--cursor CURSOR] [--limit N]
 metamuse packet prepare --project ID --selection-file PATH --request-key KEY
-metamuse muse open --project ID --topic TEXT --access-grant ID --request-key KEY [--discussion ID]
-metamuse muse send --discussion ID --packet ID --question-file PATH --share-grant ID --request-key KEY
-metamuse muse read --exchange ID [--refresh] [--cursor CURSOR]
+metamuse packet preview ID
+metamuse muse open --project ID --topic TEXT [--access-grant ID] --request-key KEY [--discussion ID]
+metamuse muse send --discussion ID --packet ID --question-file PATH [--share-grant ID] --request-key KEY
+metamuse muse read --exchange ID [--refresh] [--access-grant ID] [--cursor CURSOR]
 metamuse muse close-exchange ID --outcome answered|needs_more_data|abandoned --request-key KEY
 metamuse draft save --project ID --text-file PATH --platform PLATFORM --request-key KEY
 metamuse draft preview ID --revision N
 metamuse export --project ID --refs-file PATH --format FORMAT --request-key KEY
 metamuse skill export --dest DIR [--force]
-metamuse mcp
+metamuse mcp [--no-worker]
+metamuse permit approve --operation OP --request-file PATH --request-key KEY [--exact-digest SHA256] [--expires-at TIMESTAMP] [--max-uses N]
 ```
 
 更新草稿加 --draft ID --expected-revision N。明示引用／附件／變體／偏好可用 --facts-file、--assets-file、--variant-file、--preferences-file（JSON）。人類本地auth import／permit create另提供；不是能讓MCP自己approved:true的工具。憑證匯入需操作者指定檔案，不讀任意主瀏覽器profile。
 
-CLI add預設持久化；--run前景執行。沒有長駐worker時前景命令結束不代表工作會在背景繼續。MCP可附同套件worker，但同workspace只能一個executor。
+CLI add預設持久化；--run前景執行。沒有長駐worker時前景命令結束不代表工作會在背景繼續。MCP預設附同套件worker；--no-worker退出。使用與worker run相同Executor／OS lock，同workspace只能一個executor。若鎖被持有，server仍服務但worker_available:false、附next action；本process不重試取得鎖，原owner退出後重啟MCP。只有附帶worker持鎖且運作時MCP envelope才回true，停止server後不承諾背景續跑。
 
 B08 local safety commands: `auth import --file PATH [--provider LABEL] [--account LABEL]`;
 `permit create --project ID --kind access|share --scope-file PATH --provider LABEL
@@ -179,7 +181,24 @@ backend obligations. These are human-only commands, never MCP self-approval tool
 It refuses to overwrite an existing file unless `--force` is set. It does not choose an
 agent or host config directory. It is not an MCP tool.
 
-JSON envelope：contract_version、request_id、status(ok/accepted/partial/error)、data、error、warnings、next_cursor。exit 0代表本命令成功，可能僅queued；2輸入錯、3需要人／權限、4backend不相容、5部分或等待逾時、6需對帳、7儲存／內部錯、130中止。
+Grant-requiring Muse open/send/read (refresh and open reconciliation) accepts an omitted or
+unusable grant and returns E_SCOPE_REQUIRED with null data and a nullable `approval` preview.
+It creates no grant, discussion, exchange or job. Preview includes operation/permit_operation,
+kind, project, configured provider/account, exact action digest, destination, topic/question,
+and for shares packet ID/digest/UTF-8 bytes plus the exact `packet preview` command.
+`request` is a non-secret copy to save at `request_file`; `next_action` is the exact human
+CLI command. Credential-like text is redacted in the preview; the digest still binds original
+bytes, so a redacted or otherwise changed request cannot reuse that digest.
+
+`permit approve` recomputes the preview through the same preparation code and displays it
+on stderr. It requires typed `yes` at a terminal or equality with `--exact-digest` in a
+non-TTY operator CLI. `--non-interactive` refuses this command even with an exact digest.
+Provider/account cannot be supplied in model text or flags. Every approval has an expiry:
+default 24 hours, or explicit timezone-aware `--expires-at` within 30 days. Exact action
+and packet scope are stored in the existing permit; repeated approval with the same key
+and default expiry replays the original permit without extending it. No MCP approval tool.
+
+JSON envelope：contract_version、request_id、status(ok/accepted/partial/error)、data、error、warnings、next_cursor、approval（nullable）。exit 0代表本命令成功，可能僅queued；2輸入錯、3需要人／權限、4backend不相容、5部分或等待逾時、6需對帳、7儲存／內部錯、130中止。
 
 ## 9. MCP與Skill
 

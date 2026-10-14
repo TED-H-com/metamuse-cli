@@ -393,19 +393,21 @@ def test_unsupported_add_run_does_not_start_executor(ctx, monkeypatch, capsys):
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "E_REFERENCE_INVALID"
 
 
-def test_mcp_lifecycle_registers_and_owns_stdout(ctx, monkeypatch, capsys):
+@pytest.mark.parametrize("attach_worker", [True, False])
+def test_mcp_lifecycle_registers_and_owns_stdout(ctx, monkeypatch, capsys, attach_worker):
     from metamuse import mcp
 
     _bind_context(ctx, monkeypatch)
     seen = []
     monkeypatch.setattr(app, "register_builtin_operations", lambda: seen.append("register"))
 
-    def serve(context):
+    def serve(context, *, worker):
         assert context is ctx and seen == ["register"]
+        assert worker is attach_worker
         print('{"jsonrpc":"2.0","id":1,"result":{}}')
 
     monkeypatch.setattr(mcp, "run", serve)
-    assert cli.main(["mcp"]) == 0
+    assert cli.main(["mcp"] + ([] if attach_worker else ["--no-worker"])) == 0
     assert capsys.readouterr().out == '{"jsonrpc":"2.0","id":1,"result":{}}\n'
 
 

@@ -9,6 +9,7 @@ import ipaddress
 import json
 import os
 import re
+import shlex
 import socket
 import sqlite3
 import stat
@@ -40,6 +41,110 @@ IMPLEMENTED_TOOLS: frozenset[str] = frozenset()
 
 def register_operations(registry: dict[str, Operation] | None = None) -> None:
     """No asynchronous operations are needed by this module."""
+
+
+# Approval callbacks prepare actions only. They must never issue grants or perform IO abroad.
+_APPROVAL_PREVIEWS: dict[str, tuple[type[m.Model], Callable]] = {}
+
+
+def register_approval_preview(
+    operation: str, fn: Callable, *, request_model: type[m.Model]
+) -> None:
+    """Register a fixed feature callback at startup; registration is idempotent."""
+    entry = (request_model, fn)
+    if operation in _APPROVAL_PREVIEWS and _APPROVAL_PREVIEWS[operation] != entry:
+        raise ValueError("Approval operation already registered")
+    _APPROVAL_PREVIEWS[operation] = entry
+
+
+def approval_preview(ctx: AppContext, operation: str, request: Any) -> m.ApprovalPreview:
+    from metamuse.app import register_builtin_operations
+
+    register_builtin_operations()
+    if operation not in _APPROVAL_PREVIEWS:
+        raise m.CoreError(m.ErrorCode.UNSUPPORTED, "Operation has no approval preview")
+    model, fn = _APPROVAL_PREVIEWS[operation]
+    validated = model.model_validate(request, context={"limits": ctx.limits})
+    preview = fn(ctx, validated)
+    if preview.operation != operation:
+        raise m.CoreError(m.ErrorCode.STORAGE, "Approval callback returned another operation")
+    _label(preview.provider)
+    _label(preview.account)
+    return preview
+
+
+def approval_failure(ctx: AppContext, request: m.Model, error: m.CoreError) -> m.Envelope:
+    """Shared CLI/MCP hook; keep unrelated policy/auth errors without a preview."""
+    if error.detail.code not in (m.ErrorCode.SCOPE_REQUIRED, m.ErrorCode.SCOPE_DENIED):
+        return m.failure(error)
+    for operation, (model, _) in _APPROVAL_PREVIEWS.items():
+        if isinstance(request, model):
+            try:
+                preview = approval_preview(ctx, operation, request.model_dump(mode="python"))
+            except m.CoreError:
+                return m.failure(error)
+            return m.Envelope(
+                status="error",
+                error=m.CoreError(
+                    m.ErrorCode.SCOPE_REQUIRED,
+                    "An operator permit is required for this exact action",
+                    next_action=preview.next_action,
+                ).detail,
+                approval=preview,
+            )
+    return m.failure(error)
+
+
+def operator_command(ctx: AppContext, *args: str) -> str:
+    return shlex.join(["metamuse", "--workspace", str(ctx.paths.root), "--json", *args])
+
+
+def approve_permit(
+    ctx: AppContext,
+    preview: m.ApprovalPreview,
+    *,
+    expires_at: str | None,
+    request_key: str,
+    max_uses: int = 1,
+) -> m.Envelope:
+    """Called by the human CLI only, after confirmation of a freshly recomputed preview."""
+    ctx.require_interactive()
+    if expires_at is None:
+        with ctx.store.connection() as conn:
+            receipt = conn.execute(
+                "SELECT response FROM request_receipts "
+                "WHERE operation='permit.create' AND request_key=?",
+                (request_key,),
+            ).fetchone()
+        if receipt:
+            from metamuse.store import _json_loads
+
+            try:
+                expires_at = _json_loads(receipt["response"])["expires_at"]
+            except (ValueError, TypeError, KeyError):
+                raise m.CoreError(m.ErrorCode.STORAGE, "Stored receipt is invalid") from None
+        else:
+            expires_at = (_timestamp(ctx.clock()) + timedelta(hours=24)).isoformat()
+    scope = (
+        {"packet_digests": [preview.packet_digest]}
+        if preview.kind == "share"
+        else {"operations": [preview.permit_operation], "target_digests": [preview.action_digest]}
+    )
+    return create_permit(
+        ctx,
+        m.PermitCreateRequest(
+            project_id=preview.project_id,
+            kind=preview.kind,
+            scope=scope,
+            provider=preview.provider,
+            account=preview.account,
+            issuer="local_operator",
+            expires_at=expires_at,
+            max_uses=max_uses,
+            exact_digest=preview.action_digest,
+            request_key=request_key,
+        ),
+    )
 
 
 # --- Local input files (B05/B06) ---

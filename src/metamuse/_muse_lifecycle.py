@@ -31,7 +31,9 @@ from metamuse.safety import (
     PermitUse,
     action_digest,
     external_action_verifier,
+    operator_command,
     redact_text,
+    register_approval_preview,
     verify_permit,
 )
 from metamuse.store import CONTENT_CURSOR_KEY
@@ -220,6 +222,119 @@ def prepare_send(ctx, request: m.MuseSendRequest):
                 "packet_text": packet.rendered_text,
             }
         }
+    )
+
+
+def _approval_preview(ctx, request):
+    """Use the exact prepare path, without domain writes, network calls or grants."""
+    topic = question = None
+    packet = None
+    if isinstance(request, m.MuseOpenRequest) and request.discussion_id is None:
+        ctx.store.get(m.Project, request.project_id)
+        prepared = prepare_open(ctx, request)
+        target, payload = prepared.target, prepared.payload
+        topic = request.topic
+        operation = "muse.open"
+    elif isinstance(request, m.MuseSendRequest):
+        prepared = prepare_send(ctx, request)
+        target, payload = prepared.target, prepared.payload
+        packet = ctx.store.get(m.Packet, request.packet_id)
+        if packet.stale:
+            _error(m.ErrorCode.REFERENCE_INVALID, "Packet is stale; prepare a new packet")
+        topic = ctx.store.get(m.Discussion, request.discussion_id).topic
+        question = request.question
+        operation = "muse.send"
+    else:
+        if isinstance(request, m.MuseOpenRequest):
+            discussion = ctx.store.get(m.Discussion, request.discussion_id)
+            if discussion.project_id != request.project_id or discussion.topic != request.topic:
+                _error(m.ErrorCode.REFERENCE_INVALID, "Reconciliation must name the discussion")
+        else:
+            if not request.refresh:
+                _error(m.ErrorCode.INPUT_INVALID, "Local history needs no permit")
+            exchange = ctx.store.get(m.Exchange, request.exchange_id)
+            discussion = ctx.store.get(m.Discussion, exchange.discussion_id)
+        _binding(ctx, discussion)
+        target, payload = read_action(discussion, sessions=discussion.remote_session is None)
+        topic = discussion.topic
+        operation = "muse.open" if isinstance(request, m.MuseOpenRequest) else "muse.read"
+    digest = action_digest(target, payload)
+    request_file = str(ctx.paths.root / ("approval-" + digest + ".json"))
+    safe_request = json.loads(redact_text(m.canonical_json(request).decode())[0])
+    safe_request.pop("access_grant_id", None)
+    safe_request.pop("share_grant_id", None)
+    destination = target["origin"] + (
+        " session " + target["session_id"] if target.get("session_id") else " session creation"
+    )
+    # Fixture uses the same target identity but sends no network requests.
+    if target["backend"] == "fixture":
+        destination = "fixture (no network): " + destination
+    packet_command = operator_command(ctx, "packet", "preview", packet.id) if packet else None
+    summary = (
+        "Create a Muse session with this topic"
+        if operation == "muse.open" and request.discussion_id is None
+        else "Send this exact question and packet to the bound session"
+        if operation == "muse.send"
+        else "Read at most 200 history events from the bound session"
+        if target.get("session_id")
+        else "List sessions to reconcile the original creation intent"
+    )
+    safe_topic = redact_text(topic)[0] if topic is not None else None
+    safe_question = redact_text(question)[0] if question is not None else None
+    details = [
+        "Would: " + summary,
+        "Destination: " + destination,
+        "Provider/account: " + target["provider"] + "/" + target["account"],
+        "Project: " + target["project_id"],
+        "Action digest: " + digest,
+    ]
+    if safe_topic is not None:
+        details.append("Topic: " + safe_topic)
+    if safe_question is not None:
+        details.append(
+            "Question (exact text, with credential-like values redacted): " + safe_question
+        )
+    if packet is not None:
+        details.extend(
+            [
+                f"Packet: {packet.id}; {len(packet.rendered_text.encode())} UTF-8 bytes; "
+                f"SHA-256 {packet.digest}",
+                "Inspect exact packet text: " + packet_command,
+            ]
+        )
+    summary = "\n".join(details)
+    next_action = operator_command(
+        ctx,
+        "permit",
+        "approve",
+        "--operation",
+        operation,
+        "--request-file",
+        request_file,
+        "--exact-digest",
+        digest,
+        "--request-key",
+        "approve-" + digest,
+    )
+    return m.ApprovalPreview(
+        operation=operation,
+        permit_operation=target["operation"],
+        kind="share" if packet else "access",
+        project_id=target["project_id"],
+        provider=target["provider"],
+        account=target["account"],
+        action_digest=digest,
+        destination=destination,
+        topic=safe_topic,
+        question=safe_question,
+        packet_id=packet.id if packet else None,
+        packet_digest=packet.digest if packet else None,
+        packet_utf8_bytes=len(packet.rendered_text.encode()) if packet else None,
+        packet_preview_command=packet_command,
+        summary=summary,
+        request_file=request_file,
+        request=safe_request,
+        next_action=next_action,
     )
 
 
@@ -460,20 +575,6 @@ def submit_muse_exchange(ctx, request):
     prepared = prepare_send(ctx, request)
     discussion = ctx.store.get(m.Discussion, request.discussion_id)
     packet = ctx.store.get(m.Packet, request.packet_id)
-    exchange = m.Exchange(
-        id=prepared.target["intent_id"],
-        project_id=discussion.project_id,
-        discussion_id=discussion.id,
-        request_key=request.request_key,
-        question=request.question,
-        packet_id=packet.id,
-        digest=m.payload_digest(request.model_dump(mode="json")),
-        permit_id=request.share_grant_id,
-        baseline=_history_baseline(ctx.store, discussion),
-        request_marker=prepared.marker,
-        outbound_payload=prepared,
-        outbound_digest=hashlib.sha256(m.canonical_json(prepared.body)).hexdigest(),
-    )
     with ctx.store.connection() as conn:
         _assert_available(conn, discussion.id)
         permit = verify_permit(
@@ -490,6 +591,21 @@ def submit_muse_exchange(ctx, request):
         ).fetchone()[0]
         if count >= ctx.limits.max_exchanges:
             _error(m.ErrorCode.LIMIT_REACHED, "Discussion exchange limit reached")
+
+    exchange = m.Exchange(
+        id=prepared.target["intent_id"],
+        project_id=discussion.project_id,
+        discussion_id=discussion.id,
+        request_key=request.request_key,
+        question=request.question,
+        packet_id=packet.id,
+        digest=m.payload_digest(request.model_dump(mode="json")),
+        permit_id=request.share_grant_id,
+        baseline=_history_baseline(ctx.store, discussion),
+        request_marker=prepared.marker,
+        outbound_payload=prepared,
+        outbound_digest=hashlib.sha256(m.canonical_json(prepared.body)).hexdigest(),
+    )
 
     def domain(writer, job, steps):
         _assert_available(writer, discussion.id)
@@ -1126,7 +1242,11 @@ def _hydrate(store, discussion, exchange, conn):
 def _associate(step, discussion, exchange):
     if not _may_be_delivered(exchange):
         return
-    proof = None
+    # Recovery may find an ack already committed before job completion. Preserve and
+    # verify that original proof rather than requiring a newly minted user echo.
+    proof = exchange.delivery_proof
+    if proof is not None and proof.kind not in ("ack", "user_echo"):
+        proof = None
     with step.store.connection() as conn:
         rows, view, association, echo = _hydrate(step.store, discussion, exchange, conn)
         if exchange.delivery_proof is None and echo is not None:
@@ -1203,18 +1323,30 @@ def _associate(step, discussion, exchange):
 
         def verify(conn, target):
             current = step.store.get(m.Exchange, exchange.id, conn=conn)
-            observed = step.store.get(m.MuseObservation, proof.observation_id, conn=conn)
             if (
                 current.delivery_proof != proof
-                or observed.discussion_id != discussion.id
-                or user_echo(
-                    _exchange_view(step.store, discussion, current, conn), [observed.raw_event]
-                )
-                is None
+                or proof.step_id != original.id
+                or proof.outbound_digest != current.outbound_digest
+                or current.outbound_payload is None
+                or current.outbound_payload.target != target
             ):
-                _error(
-                    m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Original delivery proof is not definite"
-                )
+                _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Original delivery proof changed")
+            if proof.kind == "ack":
+                if current.bytes_handed_off is not True or current.attempt_verdict != "acked":
+                    _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Original ack is not definite")
+            else:
+                observed = step.store.get(m.MuseObservation, proof.observation_id, conn=conn)
+                if (
+                    observed.discussion_id != discussion.id
+                    or user_echo(
+                        _exchange_view(step.store, discussion, current, conn), [observed.raw_event]
+                    )
+                    is None
+                ):
+                    _error(
+                        m.ErrorCode.EXTERNAL_STATE_UNKNOWN,
+                        "Original delivery proof is not definite",
+                    )
 
         step.executor.settle_uncertain(
             original.id,
@@ -1222,7 +1354,7 @@ def _associate(step, discussion, exchange):
             verify=verify,
             result=m.JobResult(
                 coverage_status="bounded",
-                stop_reason="original_user_echo",
+                stop_reason="original_ack" if proof.kind == "ack" else "original_user_echo",
                 data={
                     "exchange_id": exchange.id,
                     "backend": discussion.backend,
@@ -1554,6 +1686,12 @@ def close_muse_exchange(ctx, request):
 
 
 def register_operations(registry=None):
+    for operation, model in (
+        ("muse.open", m.MuseOpenRequest),
+        ("muse.send", m.MuseSendRequest),
+        ("muse.read", m.MuseReadRequest),
+    ):
+        register_approval_preview(operation, _approval_preview, request_model=model)
     target = OPERATIONS if registry is None else registry
     for name, handler, side, uncertain in (
         ("muse.open", _mutate, "external_submit", "open_uncertain"),

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import signal
 import sys
+import threading
 import warnings
 from collections.abc import Mapping
 from contextlib import redirect_stdout
@@ -21,6 +23,7 @@ from pydantic import ValidationError
 
 from metamuse import app
 from metamuse import models as m
+from metamuse.jobs import Executor
 from metamuse.safe_log import known_job_id, log_safe_exception
 
 if TYPE_CHECKING:
@@ -212,17 +215,120 @@ def create_server(ctx: AppContext) -> Server[Any]:
     return server
 
 
+class _AttachedWorker:
+    """An Executor thread owned by this stdio process; acquire the shared lock once."""
+
+    def __init__(self, ctx: AppContext, enabled: bool):
+        self.ctx = ctx
+        self.enabled = enabled
+        self.executor: Executor | None = None
+        self.ready = threading.Event()
+        self.stopping = threading.Event()
+        self.state = "starting" if enabled else "disabled"
+        self.thread = threading.Thread(target=self._run, name="metamuse-worker")
+        self.start_error: BaseException | None = None
+
+    def status(self) -> dict[str, Any]:
+        available = (
+            self.executor is not None
+            and self.executor.handle is not None
+            and self.thread.is_alive()
+            and self.state == "running"
+            and not self.stopping.is_set()
+        )
+        return {
+            "worker_available": available,
+            "attached_worker": self.state,
+            "worker_next_action": (
+                "Restart metamuse mcp without --no-worker or run metamuse worker run"
+                if not self.enabled
+                else "Keep this MCP server open; poll job_get for terminal state"
+                if available
+                else "Restart metamuse mcp after the other owner exits, "
+                "or run metamuse worker run; "
+                "this server does not retry lock acquisition"
+            ),
+        }
+
+    def _run(self) -> None:
+        try:
+            with Executor(
+                self.ctx.store,
+                non_interactive=True,
+                muse_gateway=self.ctx.muse_gateway,
+                secret_store=self.ctx.secret_store,
+                muse_resolver=self.ctx.muse_resolver,
+            ) as executor:
+                self.executor = executor
+                self.state = "running"
+                self.ready.set()
+                if self.stopping.is_set():
+                    executor.request_stop()
+                executor.run()
+        except m.CoreError as exc:
+            if exc.detail.code == m.ErrorCode.JOB_BUSY:
+                self.state = "lock_busy"
+            else:
+                self.start_error = exc
+                self.state = "failed"
+        except BaseException as exc:
+            self.start_error = exc
+            self.state = "failed"
+        finally:
+            if self.state == "running":
+                self.state = "stopped"
+            self.ready.set()
+
+    def stop(self) -> None:
+        self.stopping.set()
+        if self.executor is not None:
+            self.executor.request_stop()
+
+
 async def _serve_stdio(
     ctx: AppContext,
     stdin: anyio.AsyncFile[str] | None = None,
     stdout: anyio.AsyncFile[str] | None = None,
+    worker: bool = True,
 ) -> None:
     server = create_server(ctx)
     init_options = server.create_initialization_options()
+    attached = _AttachedWorker(ctx, worker)
+    ctx.worker_status = attached.status
+    _configure_stderr_diagnostics(ctx)
+    # Let the SDK capture/divert fd 1 before redirecting Python stdout or starting work.
     async with stdio_server(stdin=stdin, stdout=stdout) as (read_stream, write_stream):
-        _configure_stderr_diagnostics(ctx)
         with redirect_stdout(sys.stderr):
-            await server.run(read_stream, write_stream, init_options)
+            try:
+                async with anyio.create_task_group() as group:
+
+                    async def stop_on_signal(*, task_status=anyio.TASK_STATUS_IGNORED) -> None:
+                        with anyio.open_signal_receiver(signal.SIGTERM, signal.SIGINT) as signals:
+                            task_status.started()
+                            async for _ in signals:
+                                attached.stop()
+                                group.cancel_scope.cancel()
+                                return
+
+                    await group.start(stop_on_signal)
+                    try:
+                        if worker:
+                            attached.thread.start()
+                            await anyio.to_thread.run_sync(attached.ready.wait)
+                            if attached.start_error is not None:
+                                raise attached.start_error
+                        await server.run(read_stream, write_stream, init_options)
+                    finally:
+                        attached.stop()
+                        group.cancel_scope.cancel()
+            finally:
+                attached.stop()
+                if worker and attached.thread.ident is not None:
+                    # Never abandon the Executor thread or release its lock during a step.
+                    # request_stop prevents new claims; current bounded step reaches its boundary.
+                    with anyio.CancelScope(shield=True):
+                        await anyio.to_thread.run_sync(attached.thread.join)
+                ctx.worker_status = None
 
 
 def run(
@@ -230,9 +336,10 @@ def run(
     *,
     stdin: anyio.AsyncFile[str] | None = None,
     stdout: anyio.AsyncFile[str] | None = None,
+    worker: bool = True,
 ) -> None:
     """Own protocol stdout; register builtins before tools or an attached worker start."""
     ctx.non_interactive = True
     app.register_builtin_operations()
     _configure_stderr_diagnostics(ctx)
-    anyio.run(_serve_stdio, ctx, stdin, stdout)
+    anyio.run(_serve_stdio, ctx, stdin, stdout, worker)

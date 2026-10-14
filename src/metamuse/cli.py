@@ -86,16 +86,18 @@ def parser() -> Parser:
     _project(prepare)
     prepare.add_argument("--selection-file", required=True)
     _request_key(prepare)
+    packet_preview = packet.add_parser("preview")
+    packet_preview.add_argument("id")
     muse = commands.add_parser("muse").add_subparsers(dest="action", required=True)
     opening = muse.add_parser("open")
     _project(opening)
     opening.add_argument("--discussion", help="Reconcile this original open attempt; no new create")
     opening.add_argument("--topic", required=True)
-    opening.add_argument("--access-grant", required=True)
+    opening.add_argument("--access-grant")
     _request_key(opening)
     send = muse.add_parser("send")
     for arg in ("discussion", "packet", "question-file", "share-grant"):
-        send.add_argument(f"--{arg}", required=True)
+        send.add_argument(f"--{arg}", required=arg != "share-grant")
     _request_key(send)
     read = muse.add_parser("read")
     read.add_argument("--exchange", required=True)
@@ -128,7 +130,7 @@ def parser() -> Parser:
     export.add_argument("--refs-file", required=True)
     export.add_argument("--format", required=True)
     _request_key(export)
-    commands.add_parser("mcp")
+    commands.add_parser("mcp").add_argument("--no-worker", action="store_true")
     for command, action in (("auth", "import"), ("permit", "create")):
         sub = commands.add_parser(command).add_subparsers(dest="action", required=True)
         stub = sub.add_parser(action)
@@ -147,6 +149,13 @@ def parser() -> Parser:
             stub.add_argument("--max-uses", type=int, default=1)
             stub.add_argument("--exact-digest")
             _request_key(stub)
+            approve = sub.add_parser("approve")
+            approve.add_argument("--operation", required=True)
+            approve.add_argument("--request-file", required=True)
+            approve.add_argument("--exact-digest")
+            approve.add_argument("--expires-at")
+            approve.add_argument("--max-uses", type=int, default=1)
+            _request_key(approve)
             revoke = sub.add_parser("revoke")
             revoke.add_argument("id")
             _request_key(revoke)
@@ -368,6 +377,10 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
                 ),
             )
         case "packet":
+            if args.action == "preview":
+                from metamuse.content import preview_packet
+
+                return preview_packet(ctx, args.id)
             return app.prepare_packet(
                 ctx,
                 m.PacketPrepareRequest(
@@ -469,6 +482,37 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
             from metamuse import safety
 
             ctx.require_interactive()
+            if args.action == "approve":
+                app.register_builtin_operations()
+                preview = safety.approval_preview(
+                    ctx, args.operation, _read_json(args.request_file, ctx.limits.text_max_bytes)
+                )
+                # Review goes to stderr, leaving one machine-readable envelope on stdout.
+                sys.stderr.write(preview.summary + "\n")
+                if args.exact_digest is not None:
+                    if args.exact_digest != preview.action_digest:
+                        raise m.CoreError(
+                            m.ErrorCode.SCOPE_DENIED,
+                            "Approval digest differs from this request",
+                            next_action="Review the changed request and its new approval preview",
+                        )
+                else:
+                    if not sys.stdin.isatty():
+                        raise m.CoreError(
+                            m.ErrorCode.SCOPE_REQUIRED,
+                            "Approval needs a terminal confirmation or --exact-digest",
+                        )
+                    sys.stderr.write("Approve this exact action? Type yes: ")
+                    sys.stderr.flush()
+                    if sys.stdin.readline().strip().lower() != "yes":
+                        raise m.CoreError(m.ErrorCode.SCOPE_DENIED, "Approval was declined")
+                return safety.approve_permit(
+                    ctx,
+                    preview,
+                    expires_at=args.expires_at,
+                    max_uses=args.max_uses,
+                    request_key=args.request_key,
+                )
             if args.action == "revoke":
                 return safety.revoke_permit(ctx, args.id, request_key=args.request_key)
             if args.action == "list":
@@ -493,7 +537,7 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
         case "mcp":
             from metamuse import mcp
 
-            return mcp.run(ctx)
+            return mcp.run(ctx, worker=not args.no_worker)
     raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Unknown command")
 
 

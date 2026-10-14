@@ -45,7 +45,7 @@
 | AT-039 | P0-LIVE | LIVE | Facebook LIVE | 核准小範圍對照正文、留言、父層與缺漏。 |
 | AT-040 | P0-LIVE | LIVE | 媒體 LIVE | 可處理來源metadata／字幕／必要下載可核對。 |
 | AT-041 | P0 | OFFLINE/FIXTURE/INTEGRATION | 限制與假零結果 | 登入、challenge、403、429、parser失敗、空資料各異。 |
-| AT-042 | P0 | OFFLINE/FIXTURE/INTEGRATION | 離線縱切片 | 假資料→packet→mock Muse→草稿→bundle，標示mock。 |
+| AT-042 | P0 | OFFLINE/FIXTURE/INTEGRATION | 離線縱切片 | 假資料→packet preview→mock Muse同discussion追問→restart read-back→草稿引用兩輪→bundle＋另一格式，標示mock；host僅MCP、human僅init/config/CLI批准，不調internals或DB。 |
 | AT-043 | P0-LIVE | LIVE | 整合 LIVE旅程 | 獲准來源→真Muse→草稿匯出，不發布。 |
 | AT-044 | P1 | OFFLINE/FIXTURE/INTEGRATION | 素材處理 | 只處理核准asset，雲端ASR另分享許可。 |
 | AT-045 | P1 | OFFLINE/FIXTURE/INTEGRATION | 來源變更影響 | 標記相關草稿stale，不改已發布。 |
@@ -66,3 +66,13 @@ Alpha須完成P0離線／fixture／integration，有性能實值或明示deviati
 LIVE記backend revision、dependencies、OS、帳號類型／頁型、日期、範圍與人工核對；私有receipt不進public。所有test狀態只能依實際結果改pass/fail/blocked/not_run。不能刪測試來讓功能冒稱完成。
 
 測試用自製或明確可再散布素材；不把私人留言、完整cookie或真實Muse記憶當公開fixture。
+
+## Journey entrypoint evidence
+
+`tests/test_journey.py` covers AT-042 using installed CLI init/permit approve and the
+official MCP stdio client for every host action, default attached worker, follow-up and
+restart/read-back. `tests/test_approval_cli.py` covers human confirmation, exact digest,
+expiry/replay and preview privacy (AT-016/028/029). `tests/test_mcp_worker.py` covers
+AT-008/009/012/019/037 with real subprocess lock contention and synthetic checkpoint
+SIGTERM/SIGINT/SIGKILL injection. These are OFFLINE/FIXTURE/INTEGRATION, never LIVE;
+execution counts/results belong to task reports, not the design cases' not_run baseline.

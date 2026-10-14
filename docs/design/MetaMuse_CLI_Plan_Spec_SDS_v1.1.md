@@ -242,20 +242,22 @@ metamuse jobs cancel ID --request-key KEY
 metamuse worker run [--once]
 metamuse search --project ID --query TEXT [--cursor CURSOR] [--limit N]
 metamuse packet prepare --project ID --selection-file PATH --request-key KEY
-metamuse muse open --project ID --topic TEXT --access-grant ID --request-key KEY [--discussion ID]
-metamuse muse send --discussion ID --packet ID --question-file PATH --share-grant ID --request-key KEY
-metamuse muse read --exchange ID [--refresh] [--cursor CURSOR]
+metamuse packet preview ID
+metamuse muse open --project ID --topic TEXT [--access-grant ID] --request-key KEY [--discussion ID]
+metamuse muse send --discussion ID --packet ID --question-file PATH [--share-grant ID] --request-key KEY
+metamuse muse read --exchange ID [--refresh] [--access-grant ID] [--cursor CURSOR]
 metamuse muse close-exchange ID --outcome answered|needs_more_data|abandoned --request-key KEY
 metamuse draft save --project ID --text-file PATH --platform PLATFORM --request-key KEY
 metamuse draft preview ID --revision N
 metamuse export --project ID --refs-file PATH --format FORMAT --request-key KEY
 metamuse skill export --dest DIR [--force]
-metamuse mcp
+metamuse mcp [--no-worker]
+metamuse permit approve --operation OP --request-file PATH --request-key KEY [--exact-digest SHA256] [--expires-at TIMESTAMP] [--max-uses N]
 ```
 
 更新草稿加 --draft ID --expected-revision N。明示引用／附件／變體／偏好可用 --facts-file、--assets-file、--variant-file、--preferences-file（JSON）。人類本地auth import／permit create另提供；不是能讓MCP自己approved:true的工具。憑證匯入需操作者指定檔案，不讀任意主瀏覽器profile。
 
-CLI add預設持久化；--run前景執行。沒有長駐worker時前景命令結束不代表工作會在背景繼續。MCP可附同套件worker，但同workspace只能一個executor。
+CLI add預設持久化；--run前景執行。沒有長駐worker時前景命令結束不代表工作會在背景繼續。MCP預設附同套件worker；--no-worker退出。使用與worker run相同Executor／OS lock，同workspace只能一個executor。若鎖被持有，server仍服務但worker_available:false、附next action；本process不重試取得鎖，原owner退出後重啟MCP。只有附帶worker持鎖且運作時MCP envelope才回true，停止server後不承諾背景續跑。
 
 B08 local safety commands: `auth import --file PATH [--provider LABEL] [--account LABEL]`;
 `permit create --project ID --kind access|share --scope-file PATH --provider LABEL
@@ -270,7 +272,24 @@ backend obligations. These are human-only commands, never MCP self-approval tool
 It refuses to overwrite an existing file unless `--force` is set. It does not choose an
 agent or host config directory. It is not an MCP tool.
 
-JSON envelope：contract_version、request_id、status(ok/accepted/partial/error)、data、error、warnings、next_cursor。exit 0代表本命令成功，可能僅queued；2輸入錯、3需要人／權限、4backend不相容、5部分或等待逾時、6需對帳、7儲存／內部錯、130中止。
+Grant-requiring Muse open/send/read (refresh and open reconciliation) accepts an omitted or
+unusable grant and returns E_SCOPE_REQUIRED with null data and a nullable `approval` preview.
+It creates no grant, discussion, exchange or job. Preview includes operation/permit_operation,
+kind, project, configured provider/account, exact action digest, destination, topic/question,
+and for shares packet ID/digest/UTF-8 bytes plus the exact `packet preview` command.
+`request` is a non-secret copy to save at `request_file`; `next_action` is the exact human
+CLI command. Credential-like text is redacted in the preview; the digest still binds original
+bytes, so a redacted or otherwise changed request cannot reuse that digest.
+
+`permit approve` recomputes the preview through the same preparation code and displays it
+on stderr. It requires typed `yes` at a terminal or equality with `--exact-digest` in a
+non-TTY operator CLI. `--non-interactive` refuses this command even with an exact digest.
+Provider/account cannot be supplied in model text or flags. Every approval has an expiry:
+default 24 hours, or explicit timezone-aware `--expires-at` within 30 days. Exact action
+and packet scope are stored in the existing permit; repeated approval with the same key
+and default expiry replays the original permit without extending it. No MCP approval tool.
+
+JSON envelope：contract_version、request_id、status(ok/accepted/partial/error)、data、error、warnings、next_cursor、approval（nullable）。exit 0代表本命令成功，可能僅queued；2輸入錯、3需要人／權限、4backend不相容、5部分或等待逾時、6需對帳、7儲存／內部錯、130中止。
 
 ## 9. MCP與Skill
 
@@ -421,11 +440,11 @@ native IDs為opaque字串，不自行解碼。可靠ID用(platform,scope,id)識�
 
 先驗輸入／scope→transaction查request_key→建立job/steps/event→commit→回accepted/job_id/worker_available。收到job並不等於開始。
 
-worker run、MCP附帶worker、CLI --run都搶相同OS lock。同workspace只有一個owner；其他入口只排隊。舊heartbeat過期但OS lock仍被持有時不能直接接管；由操作者確認終止owned process及退出後才開新worker。不得殺不明browser程序。
+worker run、預設MCP附帶worker、CLI --run都搶相同OS lock。MCP --no-worker明示停用附帶executor；鎖被占用仍服務，回worker_available:false及next action，本次server不重試取得鎖。附帶worker只是同Executor的一個thread，沒有第二個scheduler或store。inspect附attached_worker狀態；CLI doctor由owner及Linux FLOCK觀測實際持鎖。同workspace只有一個owner；其他入口只排隊。舊heartbeat過期但OS lock仍被持有時不能直接接管；由操作者確認終止owned process及退出後才開新worker。不得殺不明browser程序。
 
 取得鎖後遞增epoch，短transaction claim queued step；外部動作前再驗epoch、job state、permit和target。epoch防舊callback寫回，但不能讓遠端服務獲得它不支援的fencing或exactly-once。
 
-網路下載／模型等待不持有長transaction。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
+共用Store instance以process內RLock序列化短connection生命週期，避免附worker與MCP thread的自身WAL／writer contention；跨process仍依SQLite及maintenance／worker OS lock。網路下載／模型等待不持有長transaction或connection lock。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
 
 ### 重啟恢復
 
@@ -438,6 +457,8 @@ worker run、MCP附帶worker、CLI --run都搶相同OS lock。同workspace只有
 | Muse send submitting | send_uncertain，查原session；未證明沒送達不重送。 |
 | publish submitting | needs_reconcile，不重點送出。 |
 | awaiting_user | 等明確條件／有效grant，不背景撞平台。 |
+
+MCP stdin EOF、SIGTERM、SIGINT先request_stop，停止claim新step；目前有界step完成或依既有cancel／epoch規則停在安全邊界，再join thread並釋放鎖。不將server關閉當job cancel，不承諾server退出後附帶worker繼續。SIGKILL／crash由下次Executor的原有恢復處理，已進submitting的send只對帳不重送。若crash發生在ack已checkpoint但job完成前，authorized history read亦可驗原step／target／outbound digest與persisted ack後settle，attempt不增加。
 
 取消持久化後在安全邊界停止自己的資源；local cancelled與remote unknown分開。MCP呼叫等待被中止不代表原job消失。UI／CLI關閉後沒有worker就不能宣稱背景繼續。
 
@@ -690,6 +711,18 @@ Partial pre-upgrade status is durably recorded under runtime, visible in doctor/
 and triggering envelopes. No global Python warning filter is changed. Archives fsync DB,
 manifest and directories. Restore blocker checks/unlink are inside the maintenance lock.
 Raw leaf symlinks are refused before resolution; symlinked parents remain supported.
+
+## Operator approval preview seam (B08/B10/B14)
+
+Fixed feature registration uses `safety.register_approval_preview(operation, fn,
+request_model=...)`. The shared app wrapper calls it after grant failure, before any
+submission. The callback prepares exactly the action the feature will later verify,
+reads only the workspace/configuration, redacts secrets and creates nothing. CLI
+`permit approve` uses the same registry/model/preparation; terminal yes or an exact
+recomputed digest is required before the existing create_permit API. MCP cannot mint
+permits. Model text cannot select provider/account or expand the action. Packet preview
+reads its immutable text; MCP packet_prepare replay returns the same fixed pre-share
+preview. No schema migration or separate approval store is needed.
 
 ---
 

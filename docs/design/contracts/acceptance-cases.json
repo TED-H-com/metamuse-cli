@@ -334,7 +334,7 @@
       "priority": "P0",
       "evidence_class": "OFFLINE/FIXTURE/INTEGRATION",
       "title": "離線縱切片",
-      "expected": "假資料→packet→mock Muse→草稿→bundle，標示mock。",
+      "expected": "假資料→packet preview→mock Muse同discussion追問→restart read-back→草稿引用兩輪→bundle＋另一格式，標示mock；host僅MCP、human僅init/config/CLI批准，不調internals或DB。",
       "execution_status": "not_run"
     },
     {
