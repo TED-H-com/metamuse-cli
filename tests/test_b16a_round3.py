@@ -588,3 +588,70 @@ def test_userinfo_unbounded_scheme_has_forward_anchor():
     scheme = "a" + "12345" * 200
     text = f"{scheme}://user:{marker}@example.invalid/a"
     assert marker not in checked(text)
+
+
+@pytest.mark.parametrize("name", ["cookie", "authorization", "Proxy-Authorization", "Set-Cookie"])
+@pytest.mark.parametrize("flag", ["--{name} {value}", '--{name}="{value}"', "-D{name}={value}"])
+def test_sensitive_header_names_in_flags(name, flag):
+    marker = f"{name}_MARKER-flag-value"
+    assert marker not in checked(flag.format(name=name, value=marker))
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "--authorization Basic {marker}",
+        "--cookie=sid={marker}; hatch_csrf={second}",
+        "-Dcookie=sid={marker}; hatch_csrf={second}",
+    ],
+)
+def test_header_flag_values_consume_scheme_and_cookie_chain(template):
+    marker = f"{'FLAGS'}_MARKER-value"
+    second = f"{'FLAGS'}_MARKER-csrf"
+    output = checked(template.format(marker=marker, second=second))
+    assert marker not in output and second not in output
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        'password = """{marker}\nsecond {tail}"""',
+        "password = '''{marker}\nsecond {tail}'''",
+        "password: {marker} two words {tail}",
+        '<password encoding="base64" note="greater > than">{marker} {tail}</password>',
+    ],
+)
+def test_structured_string_terminators(template):
+    marker = f"{'STRUCTURE'}_MARKER-main"
+    tail = f"{'STRUCTURE'}_MARKER-tail"
+    output = checked(template.format(marker=marker, tail=tail))
+    assert marker not in output and tail not in output
+
+
+@pytest.mark.parametrize("text", ["password: null # retained"])
+def test_yaml_empty_literal_comments(text):
+    assert safety.redact_text(text) == (text, [])
+
+
+def test_annotated_assignment_default_is_a_credential():
+    marker = f"{'ANNOTATED'}_MARKER-default"
+    text = f"password: Optional[str] = '{marker}'"
+    assert checked(text) == "password: Optional[str] = '[REDACTED]'"
+
+
+@pytest.mark.parametrize("key", ["x-amz-meta", "x-goog-meta", "__Secure-choice", "__Host-choice"])
+@pytest.mark.parametrize("layers", [1, 2, 3])
+def test_encoded_existing_prefix_keys_in_structured_values(key, layers):
+    from urllib.parse import quote
+
+    encoded = "".join(f"%{ord(char):02X}" for char in key)
+    for _ in range(layers - 1):
+        encoded = quote(encoded, safe="")
+    marker = f"{key}_MARKER-private"
+    assert safety.redaction_sensitive_key(encoded)
+    assert _safe_value({encoded: marker}, []) == {encoded: "[REDACTED]"}
+
+
+def test_xml_self_closing_value_is_empty():
+    text = '<password note="public"/> public tail'
+    assert safety.redact_text(text) == (text, [])

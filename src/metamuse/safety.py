@@ -1451,7 +1451,9 @@ def redaction_sensitive_key(key: str) -> bool:
                 "pass",
             )
         )
-        or key.lower().startswith(("x-amz-", "x-goog-", "__secure-", "__host-"))
+        or unquote(unquote(unquote(key)))
+        .lower()
+        .startswith(("x-amz-", "x-goog-", "__secure-", "__host-"))
     )
 
 
@@ -1487,7 +1489,9 @@ def _credential_value_exempt(key: str, value: Any) -> bool:
     for _ in range(3):
         value = unquote(value)
     value = value.strip()
-    if len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
+    if value.startswith(('"""', "'''")) and value.endswith(value[:3]) and len(value) >= 6:
+        value = value[3:-3].strip()
+    elif len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
         value = value[1:-1].strip()
     if not value or value.lower() in {"null", "none", "nil", "true", "false"}:
         return True
@@ -1629,6 +1633,7 @@ class _Syntax:
         self.ends = {}
         self.closings = {}
         self.quotes = []
+        self.line_ends = [m.start() for m in re.finditer(r"[\r\n]", text)]
         quote_ends = {}
         previous_quotes = {}
         stack = []
@@ -1666,9 +1671,22 @@ class _Syntax:
         for previous in previous_quotes.values():
             quote_ends[previous] = len(text)
         self.ends.update(quote_ends)
+        triple = None
+        for match in re.finditer(r"\\[\s\S]|" + '"' * 3 + "|" + "'" * 3, text):
+            delimiter = match[0]
+            if delimiter.startswith("\\"):
+                continue
+            if triple is None:
+                triple = (delimiter, match.start())
+            elif delimiter == triple[0]:
+                self.ends[triple[1]] = match.end()
+                triple = None
+        if triple is not None:
+            self.ends[triple[1]] = len(text)
         # Indented YAML containers/scalars end at the next dedent. Close every
         # pending block once, using the previous content end computed once/line.
         self.yaml_ends = {}
+        self.yaml_scalars = {}
         blocks = []
         content_end = 0
         header = re.compile(r"(?:[\"']?" + _NAME + r"[\"']?)\s*+:[^\S\r\n]*+(?:[|>][-+]?)?")
@@ -1681,6 +1699,13 @@ class _Syntax:
             while blocks and indent <= blocks[-1][0]:
                 _, colon = blocks.pop()
                 self.yaml_ends[colon] = content_end
+            scalar = re.match(r"(?P<key>" + _NAME + r")\s*+:[^\S\r\n]*+", stripped)
+            if scalar and stripped[scalar.end() : scalar.end() + 1] not in {'"', "'", "[", "{"}:
+                colon = line.start() + body.index(":")
+                # Plain YAML scalars extend through the line, except comments.
+                comment = re.search(r"\s#", stripped[scalar.end() :])
+                finish = scalar.end() + comment.start() if comment else len(stripped.rstrip())
+                self.yaml_scalars[colon] = line.start() + indent + finish
             if header.fullmatch(stripped):
                 colon = line.start() + body.index(":")
                 blocks.append((indent, colon))
@@ -1752,7 +1777,7 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
         r"(?<![A-Za-z0-9_.%?&#-])(?P<flag>--|-D)?(?P<key>" + _NAME + r"))"
         r"(?:\s*+(?P<sep>=>|[=:])\s*+|(?P<flagspace>\s++))",
     )
-    position = 0
+    position = line_index = 0
     while match := pattern.search(text, position):
         position = match.end()
         key = match["key"] or match["quotedkey"]
@@ -1764,18 +1789,62 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
         if skip_paths and _credential_name(key) == "localpath":
             continue
         start = match.end()
-        if not match["q"] and _credential_name(key) in {
-            "authorization",
-            "proxyauthorization",
-            "cookie",
-            "setcookie",
-        }:
+        annotation = False
+        if match["sep"] == ":" and not match["q"]:
+            equals = text.find("=", start, min(len(text), start + 256))
+            if equals >= 0 and _type_reference(text[start:equals].strip()):
+                annotation = True
+                start = equals + 1
+                while start < len(text) and text[start].isspace():
+                    start += 1
+        if (
+            not match["q"]
+            and not match["flag"]
+            and _credential_name(key)
+            in {
+                "authorization",
+                "proxyauthorization",
+                "cookie",
+                "setcookie",
+            }
+        ):
             continue  # Header pass consumes its complete line, including punctuation.
-        yaml_end = syntax.yaml_ends.get(match.start("sep")) if match["sep"] == ":" else None
+        yaml_end = (
+            syntax.yaml_ends.get(match.start("sep"))
+            if match["sep"] == ":" and not annotation
+            else None
+        )
         if match["q"] and yaml_end is not None and yaml_end <= start:
             yaml_end = None  # A JSON-style key may introduce a raw newline scalar.
-        end = max(start, yaml_end) if yaml_end is not None else syntax.value(text, start)
+        scalar_end = (
+            syntax.yaml_scalars.get(match.start("sep"))
+            if match["sep"] == ":" and not annotation
+            else None
+        )
+        if scalar_end is not None and _type_reference(text[start:scalar_end].strip()):
+            scalar_end = None
+        end = (
+            max(start, yaml_end)
+            if yaml_end is not None
+            else max(start, scalar_end)
+            if scalar_end is not None
+            else syntax.value(text, start)
+        )
         quoted = yaml_end is None and text[start : start + 1] in {'"', "'"}
+        if (
+            match["flag"]
+            and not quoted
+            and _credential_name(key)
+            in {
+                "authorization",
+                "proxyauthorization",
+                "cookie",
+                "setcookie",
+            }
+        ):
+            while line_index < len(syntax.line_ends) and syntax.line_ends[line_index] < start:
+                line_index += 1
+            end = syntax.line_ends[line_index] if line_index < len(syntax.line_ends) else len(text)
         value = text[start:end]
         closed_quote = quoted and len(value) > 1 and value[-1] == value[0]
         position = max(position, end - int(closed_quote))
@@ -1790,8 +1859,9 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             replacement = _REDACTED
             if quoted:
                 closed = len(value) > 1 and value[-1] == value[0]
-                start += 1
-                end -= int(closed)
+                width = 3 if value.startswith(('"""', "'''")) else 1
+                start += width
+                end -= width if closed else 0
             elif match["q"]:
                 replacement = '"' + _REDACTED + '"'
             yield start, end, kind, replacement
@@ -2092,19 +2162,32 @@ def _pem_spans(text):
         position = end
 
 
-def _xml_spans(text):
+def _xml_spans(text, syntax):
     # Index closing tags once; repeated unterminated starts cannot rescan a suffix.
     closings = {}
     for match in re.finditer(r"</(?P<key>" + _NAME + r")[^\S\r\n]*+>", text):
         closings.setdefault(match["key"].lower(), []).append(match)
     cursors = {}
     position = 0
-    pattern = re.compile(r"<(?P<key>" + _NAME + r")[^\S\r\n]*+>")
+    pattern = re.compile(r"<(?P<key>" + _NAME + r")(?=[\s>])")
     while match := pattern.search(text, position):
         position = match.end()
         key = match["key"]
         if not redaction_sensitive_key(key):
             continue
+        value_start = match.end()
+        while value_start < len(text) and text[value_start] != ">":
+            if text[value_start] in {'"', "'"}:
+                value_start = syntax.ends.get(value_start, len(text))
+            else:
+                value_start += 1
+        if value_start == len(text):
+            position = value_start
+            continue
+        if text[value_start - 1 : value_start] == "/":
+            position = value_start + 1
+            continue
+        value_start += 1
         ends = closings.get(key.lower(), [])
         index = cursors.get(key.lower(), 0)
         while index < len(ends) and ends[index].start() < match.end():
@@ -2112,8 +2195,8 @@ def _xml_spans(text):
         end = ends[index].start() if index < len(ends) else len(text)
         cursors[key.lower()] = index + 1
         position = ends[index].end() if index < len(ends) else end
-        if redaction_sensitive_value(key, text[match.end() : end]):
-            yield match.end(), end, "sensitive_field", _REDACTED
+        if redaction_sensitive_value(key, text[value_start:end]):
+            yield value_start, end, "sensitive_field", _REDACTED
 
 
 def _curl_spans(text, syntax):
@@ -2169,7 +2252,7 @@ def _view_spans(text, encoded_positions, syntax):
             _prefix_spans(text),
             _jwt_spans(text),
             _pem_spans(text),
-            _xml_spans(text),
+            _xml_spans(text, syntax),
             _curl_spans(text, syntax),
             _path_spans(text),
         ]

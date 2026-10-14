@@ -618,6 +618,77 @@ add(
     "authority_ends",
 )
 
+add(
+    "header_flag_assignment_ignored",
+    SAFE,
+    exact(
+        '            and not match["flag"]\n',
+        "",
+    ),
+    R3,
+    "header_names_in_flags",
+)
+
+add(
+    "header_flag_line_terminator_removed",
+    SAFE,
+    within(
+        "_assignment_spans",
+        '            match["flag"]\n            and not quoted',
+        "            False\n            and not quoted",
+    ),
+    R3,
+    "header_flag_values_consume",
+)
+
+
+add(
+    "toml_triple_quote_ends_removed",
+    SAFE,
+    exact("                self.ends[triple[1]] = match.end()\n", ""),
+    R3,
+    "structured_string_terminators",
+)
+add(
+    "yaml_plain_scalar_end_removed",
+    SAFE,
+    within("_assignment_spans", 'syntax.yaml_scalars.get(match.start("sep"))', "None"),
+    R3,
+    "structured_string_terminators",
+)
+add(
+    "xml_attributes_ignored",
+    SAFE,
+    within("_xml_spans", 'r")(?=[\\s>])"', 'r")[^\\S\\r\\n]*+>"'),
+    R3,
+    "structured_string_terminators",
+)
+add(
+    "annotation_default_skipped",
+    SAFE,
+    within(
+        "_assignment_spans",
+        "if equals >= 0 and _type_reference(text[start:equals].strip()):",
+        "if False:",
+    ),
+    R3,
+    "annotated_assignment_default",
+)
+add(
+    "encoded_prefix_names_one_layer",
+    SAFE,
+    exact("or unquote(unquote(unquote(key)))", "or unquote(key)"),
+    R3,
+    "encoded_existing_prefix_keys",
+)
+add(
+    "self_closing_xml_consumes_tail",
+    SAFE,
+    within("_xml_spans", 'if text[value_start - 1 : value_start] == "/":', "if False:"),
+    R3,
+    "xml_self_closing",
+)
+
 
 def main():
     parser = argparse.ArgumentParser()
