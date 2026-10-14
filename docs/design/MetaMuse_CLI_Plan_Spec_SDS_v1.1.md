@@ -217,6 +217,11 @@ Store驗證同project的discussion與observation，不接受host自填backend/mo
 fixture的mock固定true；live的backend照實保存，不憑內容升級verification。Export manifest亦保留同樣attribution。
 Text在原文前加Muse evidence notice；Markdown/CSV的source攜帶attribution；JSONL保真text欄位。
 Packet只接受原始item/transcript，不接受Muse observation或draft；引用Muse不授權、不重分享、不證明研究完成。
+Stored JSON拒絕所有層級的duplicate object keys，使用既有固定E_STORAGE且不echo值。
+Draft/packet SQL guards拒絕重複kind/id/revision；Muse revision必須JSON integer 1，不接受true。
+Product bundle verifier從stored citations核對manifest muse_evidence、JSONL records及Markdown source的
+backend/mock/research_complete；即使重算hash一致，缺少或偽造標記仍是固定export unavailable錯誤。
+已知bare hatch_sess cookie pair未被shared redaction遮蔽，AT-042 strict xfail固定此限制，B16a修正。
 
 Preview檢查客觀格式、素材可用、引用存在、日期/數字衝突候選。引用存在不代表語義被支持。Export生成本地文件與manifest，不發布或上傳。
 
@@ -495,9 +500,16 @@ EvidenceRef(kind=muse_observation,id=observation.id,revision=1)重用003的appen
 取得mock標記；later enrichment必須新observation，不改舊引用。Store經discussion驗證project。
 004_muse_evidence.sql只追加draft JSON引用的存在/project/revision guard及packet禁止Muse引用guard；
 001–003不改。既有rowid-aware no-replace與identity freeze保留，fresh/upgrade-v3/restore-v3 canonical一致。
+004尚未發行，直接修正兩guard：json_each(ref.value)計數kind/id/revision，任一重複則拒絕，
+不依賴json_extract對duplicate key取第一值。Muse revision需json_type=integer且value=1。
+Store全部JSON decoding共用object_pairs_hook遞迴拒絕duplicate keys，既有固定E_STORAGE不echo值。
 來源與host文字不mint grant；packets不重分享Muse。Draft save/preview和transitive exports附muse_evidence、
 backend、mock、research_complete:false；每格式的payload及manifest都有attribution。Text保留正文並加notice，
 CSV在source JSON附標記且維持formula-safe，JSONL text原文不變。Bundle redacted，其他格式original_private。
+Store.verify_export在原transaction或read-only archive connection從draft refs與immutable observations
+重建attribution，核對manifest muse_evidence、全部JSONL records/source與Markdown source headers；
+stripped/altered label即使hash與manifest bytes一致也拒絕，沿用固定export unavailable錯誤。
+Shared redaction漏bare hatch_sess pair由B16a修正；AT-042 strict xfail只固定已知bundle leak，不修改redactor。
 
 ## 9. Grant與packet
 

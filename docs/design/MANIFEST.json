@@ -9,13 +9,13 @@
     },
     {
       "path": "02_SPEC.md",
-      "bytes": 17875,
-      "sha256": "aa421cd1f3810263c792f2a4041aa7b487a7a3f13ee7ce10ba1759f702608b1f"
+      "bytes": 18424,
+      "sha256": "531726e85fce73190a320cc86e8c3350168a804bb482e625ddf71fe7d7834c8b"
     },
     {
       "path": "03_SDS.md",
-      "bytes": 29503,
-      "sha256": "9bdc9e72063e8d9fea7d3e02f29dcc2024140a652e30611c7a779bba4a16fc74"
+      "bytes": 30268,
+      "sha256": "9debd8675e68f78110173157d2c82f12eac27bbcef4908e1dee1fa4022874f00"
     },
     {
       "path": "04_BACKLOG.md",
@@ -49,8 +49,8 @@
     },
     {
       "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
-      "bytes": 56495,
-      "sha256": "ee3a2d81532dc0010c83c30efb69f77ecaa5e6b7ce3f6165fb152ad359c387ff"
+      "bytes": 57809,
+      "sha256": "231cf18532e639803781dcbb194bc6c0bf764a4ec96651feb91a82ae09d549fb"
     },
     {
       "path": "README.md",
@@ -64,8 +64,8 @@
     },
     {
       "path": "contracts/README.md",
-      "bytes": 2475,
-      "sha256": "8b0b51e5ff4117c184bf86f27adf06b4090b2fe878a215fa3808ca29e8278cbe"
+      "bytes": 2713,
+      "sha256": "396f7bc23e77b0e3e2b72f8c01bb04d1bd0d589cc198be6044e2dad8b74723c7"
     },
     {
       "path": "contracts/acceptance-cases.json",

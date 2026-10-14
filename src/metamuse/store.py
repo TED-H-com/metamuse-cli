@@ -39,6 +39,20 @@ MIGRATIONS = {
 CONTENT_CURSOR_KEY = "content.cursor"
 
 
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate JSON object key")
+        result[key] = value
+    return result
+
+
+def _json_loads(value: str | bytes) -> Any:
+    """Use one unambiguous interpretation for every stored JSON object, recursively."""
+    return json.loads(value, object_pairs_hook=_unique_json_object)
+
+
 @dataclass(frozen=True)
 class WorkspaceKey:
     """Internal signing material; never serialize into public records or events."""
@@ -512,7 +526,7 @@ class Store:
             data = dict(row)
             for key, value in data.items():
                 if key in JSON_FIELDS and value is not None:
-                    data[key] = json.loads(value)
+                    data[key] = _json_loads(value)
                 elif key in BOOL_FIELDS and value is not None:
                     data[key] = bool(value)
                 elif key in ("attempt_error_code", "open_error_code") and value is not None:
@@ -621,7 +635,7 @@ class Store:
                     m.ErrorCode.IDEMPOTENCY_CONFLICT, "Request key has a different payload"
                 )
             try:
-                return json.loads(row["response"])
+                return _json_loads(row["response"])
             except (ValueError, TypeError):
                 raise m.CoreError(m.ErrorCode.STORAGE, "Stored receipt is invalid") from None
         result = mutation()
@@ -824,7 +838,7 @@ class Store:
             return []
         try:
             _regular_file(path)
-            return json.loads(path.read_bytes())
+            return _json_loads(path.read_bytes())
         except (OSError, ValueError, TypeError):
             raise m.CoreError(m.ErrorCode.STORAGE, "Upgrade backup status is unavailable") from None
 
@@ -846,8 +860,11 @@ class Store:
         os.replace(staged, target)
         _fsync_dir(self.paths.runtime)
 
-    def verify_export(self, export: m.Export) -> Path:
-        return _verify_export(export.model_dump(mode="json"), self.paths.root)
+    def verify_export(self, export: m.Export, *, conn: sqlite3.Connection | None = None) -> Path:
+        if conn is None:
+            with self.connection() as tx:
+                return self.verify_export(export, conn=tx)
+        return _verify_export(export.model_dump(mode="json"), self.paths.root, conn=conn)
 
     @classmethod
     def restore(cls, backup: Path, paths: WorkspacePaths) -> RestoreResult:
@@ -1064,7 +1081,7 @@ def _inventory(conn: sqlite3.Connection) -> _Inventory:
         ):
             export = dict(row)
             for field_name in ("selection", "manifest"):
-                export[field_name] = json.loads(export[field_name])
+                export[field_name] = _json_loads(export[field_name])
             exports.append(export)
     except (ValueError, TypeError):
         raise m.CoreError(m.ErrorCode.STORAGE, "Invalid archived export metadata") from None
@@ -1095,7 +1112,7 @@ def _verified_backup(
     _regular_file(root / "manifest.json")
     database = root / "state.sqlite3"
     _regular_file(database)
-    manifest = json.loads((root / "manifest.json").read_bytes())
+    manifest = _json_loads((root / "manifest.json").read_bytes())
     version = manifest["schema_version"]
     if type(version) is not int or version < 0:
         raise m.CoreError(m.ErrorCode.STORAGE, "Invalid backup schema version")
@@ -1242,7 +1259,131 @@ def _export_manifest_entry(export: dict[str, Any], *, state: str) -> dict[str, A
     }
 
 
-def _verify_export(export: dict[str, Any], root: Path) -> Path:
+def _bundle_muse_evidence(
+    export: dict[str, Any], conn: sqlite3.Connection
+) -> dict[tuple[str, str, int], list[dict[str, Any]]]:
+    """Resolve immutable citations from the database, independently of artifact labels."""
+    cache: dict[tuple[str, str, int], list[dict[str, Any]]] = {}
+    edges = 0
+
+    def resolve(raw_ref: dict, seen: frozenset = frozenset()) -> list[dict[str, Any]]:
+        nonlocal edges
+        edges += 1
+        ref = m.EvidenceRef.model_validate(raw_ref)
+        identity = (ref.kind, ref.id, ref.revision)
+        if identity in seen or len(seen) >= 32 or edges > 10000:
+            raise ValueError("Invalid evidence graph")
+        if identity in cache:
+            return cache[identity]
+        if len(cache) + len(seen) >= 2000:
+            raise ValueError("Evidence graph exceeds verification budget")
+        entries = []
+        if ref.kind == "muse_observation":
+            row = conn.execute(
+                "SELECT o.id,o.backend,o.observation_digest,o.observed_at,o.discussion_id "
+                "FROM muse_observations o JOIN discussions d ON d.id=o.discussion_id "
+                "WHERE o.id=? AND d.project_id=?",
+                (ref.id, export["project_id"]),
+            ).fetchone()
+            if row is None or row["backend"] not in ("fixture", "live"):
+                raise ValueError("Invalid Muse evidence")
+            entries = [
+                {
+                    "ref": ref.model_dump(mode="json"),
+                    "backend": row["backend"],
+                    "mock": row["backend"] == "fixture",
+                    "research_complete": False,
+                    "observation_digest": row["observation_digest"],
+                    "observed_at": row["observed_at"],
+                    "discussion_id": row["discussion_id"],
+                }
+            ]
+        elif ref.kind == "draft_revision":
+            row = conn.execute(
+                "SELECT r.facts_refs FROM draft_revisions r JOIN drafts d ON d.id=r.draft_id "
+                "WHERE r.draft_id=? AND r.revision=? AND d.project_id=?",
+                (ref.id, ref.revision, export["project_id"]),
+            ).fetchone()
+            if row is None:
+                raise ValueError("Invalid draft evidence")
+            by_id = {
+                entry["ref"]["id"]: entry
+                for child in _json_loads(row["facts_refs"])
+                for entry in resolve(child, seen | {identity})
+            }
+            entries = [by_id[key] for key in sorted(by_id)]
+        cache[identity] = entries
+        return entries
+
+    for ref in export["selection"]:
+        resolve(ref)
+    return cache
+
+
+def _check_muse_attribution(
+    value: dict[str, Any], entries: list[dict[str, Any]], *, evidence_required: bool = True
+) -> None:
+    if not isinstance(value, dict):
+        raise ValueError("Invalid attribution object")
+    if not entries:
+        if value.get("muse_evidence"):
+            raise ValueError("Unexpected Muse attribution")
+        return
+    backends = {entry["backend"] for entry in entries}
+    backend = next(iter(backends)) if len(backends) == 1 else "mixed"
+    if (
+        value.get("backend") != backend
+        or value.get("mock") is not any(entry["mock"] for entry in entries)
+        or value.get("research_complete") is not False
+        or (
+            evidence_required
+            and m.canonical_json(value.get("muse_evidence")) != m.canonical_json(entries)
+        )
+    ):
+        raise ValueError("Muse attribution differs from stored evidence")
+
+
+def _verify_bundle_attribution(
+    export: dict[str, Any], directory: Path, conn: sqlite3.Connection
+) -> None:
+    expected = _bundle_muse_evidence(export, conn)
+    by_id = {entry["ref"]["id"]: entry for entries in expected.values() for entry in entries}
+    all_entries = [by_id[key] for key in sorted(by_id)]
+    _check_muse_attribution(export["manifest"], all_entries)
+    records = [
+        _json_loads(line) for line in (directory / "records.jsonl").read_bytes().splitlines()
+    ]
+    seen = set()
+    for index, record in enumerate(records, 1):
+        ref = m.EvidenceRef.model_validate(record["ref"])
+        identity = (ref.kind, ref.id, ref.revision)
+        if identity not in expected:
+            raise ValueError("Bundle evidence membership differs")
+        seen.add(identity)
+        entries = expected[identity]
+        _check_muse_attribution(record, entries)
+        _check_muse_attribution(
+            record["source"], entries, evidence_required=ref.kind != "muse_observation"
+        )
+        # Markdown carries each record's citation and attribution in its source header.
+        header = (directory / f"object-{index:04d}.md").read_text(encoding="utf-8").split("\n\n", 2)
+        if (
+            len(header) != 3
+            or not header[0].startswith("Evidence: ")
+            or not header[1].startswith("Source: ")
+        ):
+            raise ValueError("Invalid bundle Markdown header")
+        if _json_loads(header[0][len("Evidence: ") :]) != record["ref"]:
+            raise ValueError("Markdown citation differs")
+        source = _json_loads(header[1][len("Source: ") :])
+        _check_muse_attribution(source, entries, evidence_required=ref.kind != "muse_observation")
+    if seen != set(expected):
+        raise ValueError("Bundle evidence is missing")
+
+
+def _verify_export(
+    export: dict[str, Any], root: Path, *, conn: sqlite3.Connection | None = None
+) -> Path:
     if (
         export["state"] != "ready"
         or re.fullmatch(r"[A-Za-z0-9_-]{3,128}", export["id"], flags=re.ASCII) is None
@@ -1300,6 +1441,18 @@ def _verify_export(export: dict[str, Any], root: Path) -> Path:
             names.add(entry["name"])
         if {path.name for path in directory.iterdir()} != names:
             raise unavailable
+        if export["format"] == "bundle":
+            try:
+                if conn is None:
+                    # Read-only SQLite honors live WAL and also works on archived snapshots.
+                    database = root / "state.sqlite3"
+                    with closing(sqlite3.connect(f"{database.as_uri()}?mode=ro", uri=True)) as tx:
+                        tx.row_factory = sqlite3.Row
+                        _verify_bundle_attribution(export, directory, tx)
+                else:
+                    _verify_bundle_attribution(export, directory, conn)
+            except (OSError, ValueError, KeyError, TypeError, sqlite3.Error, m.CoreError):
+                raise unavailable from None
         return directory
     except OSError:
         raise unavailable from None

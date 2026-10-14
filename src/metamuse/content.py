@@ -952,7 +952,7 @@ def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
                 raise m.CoreError(
                     m.ErrorCode.STORAGE, "Export receipt differs from stored artifact"
                 )
-            ctx.store.verify_export(stored)
+            ctx.store.verify_export(stored, conn=conn)
         committed = True
     finally:
         if not committed:

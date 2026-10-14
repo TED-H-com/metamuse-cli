@@ -347,9 +347,13 @@ or corrupt existing objects fail. MIME/codec validation is the media owner's job
 ready insertion. A crash may leave orphan staging/object files; no unsafe automatic
 orphan deletion is implemented. Ready files are not deleted by job failure.
 
-`verify_export(Export)` checks the ready directory, exact manifest bytes, every payload
-member's size/hash, and rejects symlinks, hardlinks and unexpected files. Receipt replay
-compares the authoritative row to its receipt and verifies that row, not a receipt copy.
+`verify_export(Export, conn=None)` checks the ready directory, exact manifest bytes, every
+payload member's size/hash, and rejects symlinks, hardlinks and unexpected files. Bundle
+verification also resolves immutable Muse citations from SQLite and checks manifest,
+JSONL and Markdown attribution, including exact `muse_evidence`, backend and boolean
+mock/research_complete labels. Consistent hashes cannot substitute for those labels.
+Pass the active transaction connection before commit. Receipt replay compares the
+authoritative row to its receipt and verifies that row, not a receipt copy.
 
 `backup(fresh_destination)` returns BackupResult(path, status, unavailable_export_ids,
 warnings); status is complete/partial. `Store.restore(backup, fresh_paths)` returns
@@ -701,4 +705,9 @@ with revision=1. `validate_evidence` checks its discussion's project and rejects
 source_only=True. Existing append-only, retention, rowid/no-replace and identity guards
 are unchanged. App content functions resolve stored raw_event and backend, propagate
 verified attribution transitively, and never copy model-provided authority.
+Both new guards count `kind`, `id` and `revision` keys with `json_each(ref.value)` and
+reject duplicates regardless of the first kind. The draft guard requires JSON type
+integer and value 1. Every JSON decode in Store uses a recursive duplicate-key-rejecting
+`object_pairs_hook`; stored records and receipts retain their fixed `E_STORAGE` errors,
+without echoing values. Migration 004 is amended before release; no 005 is added.
 See [CONTENT_API.md](CONTENT_API.md) and [OFFLINE_SLICE.md](OFFLINE_SLICE.md).

@@ -179,14 +179,19 @@ written with every payload member's SHA-256 and byte count. The manifest exclude
 hash to avoid recursion; its exact bytes are verified against the stored manifest.
 After directory fsync and rename, parent directories are fsynced, and ready state plus
 receipt commit in the original transaction. Replay verifies member set, manifest bytes,
-sizes and hashes, and refuses missing, altered or additional files. Nothing is uploaded.
+sizes and hashes, and refuses missing, altered or additional files. Bundle verification
+also compares every derived record/source and manifest Muse entry against the stored
+observation's backend, mock and research_complete labels, requiring `muse_evidence`.
+It checks JSONL and Markdown even when an altered bundle has internally consistent
+hashes; a missing/altered label returns the fixed export-unavailable error. Nothing is uploaded.
 Handled write/rename/commit errors roll back and remove only directories owned by this
 attempt. A process/host crash may leave orphan staging/final directories without a ready
 row; they are not returned as success and automatic orphan cleanup is not implemented.
 
 Core backups include SQLite, ready objects and every ready export directory with its
 manifest. Backup and restore use the same Store.verify_export checks as receipt replay:
-exact manifest bytes, payload hashes/sizes, no symlinks, hardlinks or unexpected members.
+exact manifest bytes, payload hashes/sizes, bundle Muse attribution from stored citations,
+no symlinks, hardlinks or unexpected members.
 Missing/changed live export artifacts produce a partial backup warning and an unavailable
 inventory entry, without blocking workspace open or migration. Restore preserves that
 unavailable state, so its old receipt keeps failing honestly. Verified original artifacts

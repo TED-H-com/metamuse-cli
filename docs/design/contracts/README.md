@@ -6,6 +6,8 @@ EvidenceRef新增muse_observation：id指向immutable observation、revision固�
 草稿／匯出只接受同project的真實stored observation；backend/mock不由input供應。read回evidence_ref。
 Derived draft preview、payload members及manifest附backend/mock/research_complete:false與muse_evidence；
 fixture的mock=true，transitive refs不得丟標記。Packet拒絕Muse refs；引用不授權亦不重分享。
+SQL拒絕ref重複kind/id/revision且Muse revision需JSON integer 1；Store decoding遞迴拒絕duplicate object keys。
+Product bundle verifier核對stored attribution與manifest/JSONL/Markdown；hash一致仍不能丟或偽造標記。
 
 EvidenceRef為kind/id/revision的統一識別。Packet只允許item_revision和transcript_segment；draft_revision可匯出但不能冒充原始來源。此語義需在app層明確驗證。
 
