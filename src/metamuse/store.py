@@ -83,12 +83,34 @@ _MUSE_LISTENERS: dict[tuple[str, str, str], list[weakref.WeakMethod]] = {}
 _MUSE_LISTENERS_LOCK = threading.Lock()
 
 
-def _muse_storage_error() -> m.CoreError:
-    return m.CoreError(
-        m.ErrorCode.STORAGE,
-        "Muse security state is unavailable or stale",
-        next_action="Restore the bound account security-state store before reconnecting",
+_MUSE_STORAGE_ACTIONS = {
+    "Muse connection context changed": "Retry the connection with a fresh authenticated context",
+    "Muse security state is unavailable or damaged": (
+        "Repair the security-state store; restore only a verified backup, which loses expectations recorded after that backup"
+    ),
+    "Muse confidentiality could not be recorded": (
+        "Repair the security-state store before reconnecting; confidentiality could not be recorded"
+    ),
+}
+
+
+def _muse_storage_error(*, stale=False) -> m.CoreError:
+    message = (
+        "Muse connection context changed"
+        if stale
+        else "Muse security state is unavailable or damaged"
     )
+    return m.CoreError(m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message])
+
+
+def _muse_fixed_storage(exc):
+    if exc.detail.message in _MUSE_STORAGE_ACTIONS:
+        return m.CoreError(
+            m.ErrorCode.STORAGE,
+            exc.detail.message,
+            next_action=_MUSE_STORAGE_ACTIONS[exc.detail.message],
+        )
+    return _muse_storage_error()
 
 
 def _muse_safe(fn):
@@ -102,13 +124,7 @@ def _muse_safe(fn):
         except m.CoreError as exc:
             if exc.detail.code != m.ErrorCode.STORAGE:
                 raise
-            failure = (
-                m.CoreError(
-                    m.ErrorCode.STORAGE, exc.detail.message, next_action=exc.detail.next_action
-                )
-                if exc.detail.message == "Muse confidentiality could not be recorded"
-                else _muse_storage_error()
-            )
+            failure = _muse_fixed_storage(exc)
         raise failure
 
     return run
@@ -502,6 +518,8 @@ class Store:
             failure = (
                 exc
                 if validated and exc.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
+                else _muse_fixed_storage(exc)
+                if validated
                 else _muse_storage_error()
             )
         except Exception:
@@ -781,9 +799,6 @@ class Store:
         return snapshot
 
     def _muse_current(self, conn, snapshot: MuseTrustSnapshot, *, standard: bool):
-        owner, vm = self._muse_rows(conn, snapshot.provider, snapshot.account, snapshot.vm_id)
-        if owner is None or owner["viewer_hash"] != snapshot.viewer_hash:
-            raise _muse_storage_error()
         if standard and self._muse_effective(
             conn, snapshot.provider, snapshot.account, snapshot.viewer_hash, snapshot.vm_id
         ):
@@ -792,13 +807,16 @@ class Store:
                 "Muse confidential expectation forbids standard",
                 next_action="Use a supported confidential verifier; do not reset trust on retry",
             )
+        owner, vm = self._muse_rows(conn, snapshot.provider, snapshot.account, snapshot.vm_id)
+        if owner is None or owner["viewer_hash"] != snapshot.viewer_hash:
+            raise _muse_storage_error(stale=True)
         if (
             vm is None
             or owner["generation"] != snapshot.generation
             or owner["session_hash"] != snapshot.session_hash
             or owner["active_vm_id"] != snapshot.vm_id
         ):
-            raise _muse_storage_error()
+            raise _muse_storage_error(stale=True)
         return owner, vm
 
     @_muse_safe

@@ -21,8 +21,8 @@ class SelectedVM:
 def storage_stop() -> CoreError:
     return CoreError(
         ErrorCode.STORAGE,
-        "Muse security state is unavailable or stale",
-        next_action="Restore the bound account security-state store before reconnecting",
+        "Muse security-state Store is not configured",
+        next_action="Bind this transport to the workspace Store before reconnecting",
     )
 
 

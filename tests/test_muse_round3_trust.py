@@ -404,3 +404,25 @@ def test_r3_m_amended_005_fresh_upgrade_and_restore_remote_observations(tmp_path
     later = freeze(restored, provider="new", account="later", viewer_id="other", vm_id="cvm2")
     assert later.confidential_required
     refused(restored, later)
+
+
+def test_r3_h_stale_context_advises_retry_instead_of_restore(ctx):
+    from metamuse.store import Store
+
+    snapshot = freeze(ctx.store)
+    freeze(Store(ctx.paths), session_binding_id="concurrent")
+    with pytest.raises(CoreError) as caught:
+        ctx.store.muse_assert_current(snapshot)
+    assert caught.value.detail.code == ErrorCode.STORAGE
+    assert "Retry the connection" in caught.value.detail.next_action
+    assert "restore" not in caught.value.detail.next_action.lower()
+
+
+def test_r3_h_schema_restore_advice_warns_of_later_expectation_loss(ctx):
+    snapshot = freeze(ctx.store)
+    with ctx.store.connection() as conn:
+        conn.execute("DROP TRIGGER muse_trust_vm_guard")
+    with pytest.raises(CoreError) as caught:
+        ctx.store.muse_assert_current(snapshot)
+    assert caught.value.detail.code == ErrorCode.STORAGE
+    assert "after that backup" in caught.value.detail.next_action

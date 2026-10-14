@@ -574,6 +574,14 @@ def _raise_if(error: CoreError | None) -> None:
 # error is re-raised as one of these, outside the handler, so its text and
 # traceback chain are not the public error.
 _PUBLIC_ERRORS: dict[str, tuple[ErrorCode, str]] = {
+    "Muse connection context changed": (
+        ErrorCode.STORAGE,
+        "Retry the connection with a fresh authenticated context",
+    ),
+    "Muse security-state Store is not configured": (
+        ErrorCode.STORAGE,
+        "Bind this transport to the workspace Store before reconnecting",
+    ),
     "Muse session response exceeded the size cap": (
         ErrorCode.LIMIT_REACHED,
         "Stop. Do not parse an oversized session response.",
@@ -642,8 +650,8 @@ _PUBLIC_ERRORS: dict[str, tuple[ErrorCode, str]] = {
 
 _PUBLIC_CODES: dict[ErrorCode, tuple[str, str]] = {
     ErrorCode.STORAGE: (
-        "Muse security state is unavailable or stale",
-        "Restore the bound account security-state store before reconnecting",
+        "Muse security state is unavailable or damaged",
+        "Repair the security-state store; restore only a verified backup, which loses expectations recorded after that backup",
     ),
     ErrorCode.RESOURCE_UNAVAILABLE: (
         "Muse VM is not running yet",
