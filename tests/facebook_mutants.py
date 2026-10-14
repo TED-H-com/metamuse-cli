@@ -105,22 +105,26 @@ def apply_mutant(monkeypatch, mutant):
     elif mutant == "M5":
         monkeypatch.setattr(facebook, "_observed_sandbox_mode", lambda browser: "enabled")
     elif mutant == "M9":
-        snapshot = facebook._PlaywrightSession._snapshot_html
+        original = facebook._PlaywrightSession._capture
 
-        def html(self):
-            value = snapshot(self)
-            for token in (
-                "data-fb-state=",
-                "data-page-state=",
-                "data-checkpoint=",
-                'id="login_form"',
-                'data-testid="royal_login_form"',
-                'id="checkpoint_Form"',
-            ):
-                value = value.replace(token, "data-ignored=")
-            return value
+        def missing_barriers(self):
+            _, nodes, gaps = original(self)
+            for node in nodes:
+                node["attrs"] = {
+                    k: v
+                    for k, v in node["attrs"].items()
+                    if k
+                    not in {
+                        "data-fb-state",
+                        "data-page-state",
+                        "data-checkpoint",
+                        "id",
+                        "data-testid",
+                    }
+                }
+            return facebook.capture.encode(nodes), nodes, gaps
 
-        monkeypatch.setattr(facebook._PlaywrightSession, "_snapshot_html", html)
+        monkeypatch.setattr(facebook._PlaywrightSession, "_capture", missing_barriers)
     elif mutant == "F1":
         arguments = facebook.build_chromium_launch_args
         monkeypatch.setattr(
@@ -129,25 +133,26 @@ def apply_mutant(monkeypatch, mutant):
             lambda port: [arg for arg in arguments(port) if arg != "--block-new-web-contents"],
         )
     elif mutant == "F2":
-        start = facebook._DOMExtractor.handle_starttag
+        walk = facebook._DOMExtractor.walk
 
-        def visible_only(self, tag, attrs):
-            if self._hidden_depth or any(key == "hidden" for key, _ in attrs):
-                attrs = [
-                    (key, value)
-                    for key, value in attrs
-                    if key
-                    not in (
-                        "data-fb-state",
-                        "data-page-state",
-                        "data-checkpoint",
-                        "id",
-                        "data-testid",
-                    )
-                ]
-            return start(self, tag, attrs)
+        def visible_only(self, nodes):
+            for node in nodes:
+                if not node["rendered"]:
+                    node["attrs"] = {
+                        k: v
+                        for k, v in node["attrs"].items()
+                        if k
+                        not in {
+                            "data-fb-state",
+                            "data-page-state",
+                            "data-checkpoint",
+                            "id",
+                            "data-testid",
+                        }
+                    }
+            return walk(self, nodes)
 
-        monkeypatch.setattr(facebook._DOMExtractor, "handle_starttag", visible_only)
+        monkeypatch.setattr(facebook._DOMExtractor, "walk", visible_only)
     elif mutant == "F3":
         initialize = facebook.EgressGuard.__init__
 

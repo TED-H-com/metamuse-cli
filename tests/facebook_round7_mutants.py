@@ -27,33 +27,9 @@ def apply_mutant(monkeypatch, mutant):
     elif mutant == "NM2":
         monkeypatch.setattr(facebook, "_verify_popup_control", lambda *args: None)
     elif mutant == "NM3":
-        snapshot = facebook._PlaywrightSession._snapshot_html
+        from facebook_round8_mutants import trust_markers
 
-        def keep_page_marker(self):
-            evaluate = self._page.evaluate
-
-            def preserve(script):
-                old = "if (attr.name.toLowerCase().startsWith('data-metamuse-'))"
-                new = (
-                    "if (attr.name.toLowerCase().startsWith('data-metamuse-') && "
-                    "attr.name !== 'data-metamuse-invisible')"
-                )
-                assert old in script
-                return evaluate(script.replace(old, new))
-
-            with monkeypatch.context() as patch:
-                patch.setattr(self._page, "evaluate", preserve)
-                return snapshot(self)
-
-        monkeypatch.setattr(facebook._PlaywrightSession, "_snapshot_html", keep_page_marker)
-        start = facebook._DOMExtractor.handle_starttag
-
-        def trust_page(self, tag, attrs):
-            if any(key == "data-metamuse-invisible" for key, _ in attrs):
-                attrs = [*attrs, ("hidden", "")]
-            return start(self, tag, attrs)
-
-        monkeypatch.setattr(facebook._DOMExtractor, "handle_starttag", trust_page)
+        trust_markers(monkeypatch, keys={"data-metamuse-invisible"})
     elif mutant == "NM4":
         # The actual build tracks pending candidates in _active_sockets too.
         # Preserve the review's original getpeername-based fault injection.
@@ -110,10 +86,10 @@ def apply_mutant(monkeypatch, mutant):
     elif mutant == "R7F1":
         start = facebook._DOMExtractor.handle_starttag
 
-        def no_visibility_override(self, tag, attrs):
+        def no_visibility_override(self, tag, attrs, **kwargs):
             if self._visibility_stack and not self._visibility_stack[-1]:
-                attrs = [*attrs, ("hidden", "")]
-            return start(self, tag, attrs)
+                kwargs["visible"] = False
+            return start(self, tag, attrs, **kwargs)
 
         monkeypatch.setattr(facebook._DOMExtractor, "handle_starttag", no_visibility_override)
     elif mutant == "R7F2":
