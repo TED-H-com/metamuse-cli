@@ -197,7 +197,7 @@ No rendered HTML or record bodies enter checkpoints.
 ## Completeness, parent links and text
 
 After expansion the production driver waits within the read deadline for a new relevant
-comment/reply node or changed content, or a classified HTTP failure response. An already
+comment/reply node or changed content, or a failure response correlated to the trusted expansion click. An already
 loaded document or disappearing button is not progress. Timeout adds
 `expansion_progress_timeout`, partial coverage and `comments_empty=false`.
 
@@ -265,3 +265,6 @@ Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetwo
 
 
 Facebook navigation failures use only the main-document request/redirect chain and its uncompleted CONNECT authorities. Refusals of WebSockets, workers, subresources or already-responded document authorities do not choose that error. Resolver capacity/timeouts use E_NETWORK_TIMEOUT with DNS-oriented advice, never a permit/policy denial.
+
+
+Only a fetch/XHR synchronously initiated by the trusted expansion click can classify an expansion response failure. Background and proxy-aborted responses are ignored. Such a failure imports observed data with expansion_failed and partial coverage; document auth/access/barrier outcomes remain distinct. Asynchronous endpoints without click provenance are treated conservatively as progress uncertainty, not guessed failure attribution.
