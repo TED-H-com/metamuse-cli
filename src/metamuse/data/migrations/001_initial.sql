@@ -188,3 +188,44 @@ CREATE TRIGGER external_step_attempts_monotonic BEFORE UPDATE OF attempts,side_e
 WHEN OLD.side_effect_class='external_submit' AND OLD.attempts>0
  AND (NEW.attempts<OLD.attempts OR NEW.side_effect_class<>OLD.side_effect_class)
 BEGIN SELECT RAISE(ABORT,'external attempt identity cannot be reset'); END;
+-- Reject conflict-resolution deletes/reinserts, including secondary unique identities.
+CREATE TRIGGER source_no_replace BEFORE INSERT ON sources
+WHEN EXISTS (SELECT 1 FROM sources WHERE id=NEW.id OR
+ (project_id=NEW.project_id AND platform=NEW.platform AND native_scope=NEW.native_scope AND native_id=NEW.native_id))
+BEGIN SELECT RAISE(ABORT,'source replacement is forbidden'); END;
+CREATE TRIGGER item_revision_no_replace BEFORE INSERT ON item_revisions
+WHEN EXISTS (SELECT 1 FROM item_revisions WHERE item_id=NEW.item_id AND revision=NEW.revision)
+BEGIN SELECT RAISE(ABORT,'revision replacement is forbidden'); END;
+CREATE TRIGGER packet_no_replace BEFORE INSERT ON packets
+WHEN EXISTS (SELECT 1 FROM packets WHERE id=NEW.id)
+BEGIN SELECT RAISE(ABORT,'packet replacement is forbidden'); END;
+CREATE TRIGGER permit_no_replace BEFORE INSERT ON permits
+WHEN EXISTS (SELECT 1 FROM permits WHERE id=NEW.id)
+BEGIN SELECT RAISE(ABORT,'permit replacement is forbidden'); END;
+CREATE TRIGGER exchange_no_replace BEFORE INSERT ON exchanges
+WHEN EXISTS (SELECT 1 FROM exchanges WHERE id=NEW.id OR
+ (discussion_id=NEW.discussion_id AND request_key=NEW.request_key) OR
+ (discussion_id=NEW.discussion_id AND outcome IS NULL AND NEW.outcome IS NULL))
+BEGIN SELECT RAISE(ABORT,'exchange replacement is forbidden'); END;
+CREATE TRIGGER draft_no_replace BEFORE INSERT ON drafts
+WHEN EXISTS (SELECT 1 FROM drafts WHERE id=NEW.id)
+BEGIN SELECT RAISE(ABORT,'draft replacement is forbidden'); END;
+CREATE TRIGGER draft_revision_no_replace BEFORE INSERT ON draft_revisions
+WHEN EXISTS (SELECT 1 FROM draft_revisions WHERE draft_id=NEW.draft_id AND revision=NEW.revision)
+BEGIN SELECT RAISE(ABORT,'revision replacement is forbidden'); END;
+CREATE TRIGGER job_step_no_replace BEFORE INSERT ON job_steps
+WHEN EXISTS (SELECT 1 FROM job_steps WHERE id=NEW.id OR (job_id=NEW.job_id AND sequence=NEW.sequence))
+BEGIN SELECT RAISE(ABORT,'step replacement is forbidden'); END;
+CREATE TRIGGER workspace_key_no_replace BEFORE INSERT ON workspace_keys
+WHEN EXISTS (SELECT 1 FROM workspace_keys WHERE name=NEW.name AND
+ (version>=NEW.version OR (status='active' AND NEW.status='active')))
+BEGIN SELECT RAISE(ABORT,'workspace key replacement is forbidden'); END;
+CREATE TRIGGER export_no_replace BEFORE INSERT ON exports
+WHEN EXISTS (SELECT 1 FROM exports WHERE id=NEW.id)
+BEGIN SELECT RAISE(ABORT,'export replacement is forbidden'); END;
+CREATE TRIGGER export_payload_immutable BEFORE UPDATE ON exports
+WHEN OLD.state IN ('ready','unavailable') AND (
+ NEW.id IS NOT OLD.id OR NEW.project_id IS NOT OLD.project_id OR NEW.selection IS NOT OLD.selection
+ OR NEW.format IS NOT OLD.format OR NEW.manifest IS NOT OLD.manifest OR NEW.artifact IS NOT OLD.artifact
+ OR NEW.state NOT IN ('ready','unavailable') OR (OLD.state='unavailable' AND NEW.state<>'unavailable'))
+BEGIN SELECT RAISE(ABORT,'settled export payload is immutable'); END;

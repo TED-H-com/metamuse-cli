@@ -356,7 +356,7 @@ handlers只做parse/render，domain結果不print。所有mutations有request_ke
 
 ## 4. SQLite與資料模型
 
-每workspace一個權威SQLite，JSONL/CSV只是進出格式。foreign_keys=ON、local WAL、synchronous=FULL、有界busy_timeout；這不是硬體級絕對耐久性保證。不得多機直接共享live WAL DB。所有連線設定一致，外部等待不在transaction內。
+每workspace一個權威SQLite，JSONL/CSV只是進出格式。foreign_keys=ON、recursive_triggers=ON、local WAL、synchronous=FULL、有界busy_timeout；這不是硬體級絕對耐久性保證。不得多機直接共享live WAL DB。所有連線設定一致，外部等待不在transaction內。
 
 | Table | 主鍵／內容／約束 |
 |---|---|
@@ -546,6 +546,9 @@ Definite reconciliation uses the fenced Executor.settle_uncertain API described 
 CORE_API, with separate safe-read history jobs. Offline policy applies before external
 handlers/actions, retry limits come from workspace configuration, and UTF-8 byte limits
 are checked at model/app/store boundaries. Unknown operation handlers leave work queued.
+BEFORE INSERT guards prevent replacement/UPSERT of guarded identities; recursive delete
+triggers protect retained key versions. Ready/unavailable export payloads are immutable;
+only ready→unavailable changes state, and replay verifies the authoritative export row.
 Schema 001 guard fixes remain version 1 before release; transcript scope and immutability
 are deferred to B05/B06 migration 002, without treating shared bytes as derived-data permission.
 
