@@ -178,3 +178,13 @@ first script and terminated, in addition to blocking service-worker registration
 This intentionally disables worker-backed page features; unavailable content remains
 a coverage gap. Real loopback tests prove both dedicated and shared worker WSS
 cannot issue a handshake, while an approved page WSS receives a closed event.
+
+Genuine empty comments require an identified post, a present comments section,
+explicit comments-exhausted evidence, a rendered count of zero, no observed comments
+across snapshots, no controls and no progress uncertainty. For fixtures that evidence
+is data-comments-exhausted=true (or JSON comments_exhausted=true); LIVE mappings
+remain unverified. Absence of controls alone never proves exhaustion. Contradictory
+counts add rendered_count_conflict; positive counts without sufficient comments or
+controls add missing_comments_controls; absent exhaustion evidence adds
+comments_scope_unverified. Every gap yields partial coverage and incomplete post
+evidence, never scope_satisfied. Counts whose semantics are unknown are not proof.

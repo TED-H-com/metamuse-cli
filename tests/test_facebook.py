@@ -268,6 +268,7 @@ def _synthetic_post_html(
     comments: list[dict[str, Any]] | None = None,
     expand_controls: list[dict[str, Any]] | None = None,
     include_comments_section: bool = True,
+    comments_exhausted: bool = True,
 ) -> str:
     esc_post = html_lib.escape(post_text)
     parts = [
@@ -275,7 +276,9 @@ def _synthetic_post_html(
         f'<article role="article" data-fb-role="post" data-post-id="{post_id}" '
         f'data-actor="{actor}" data-author="{author}" data-created-at="{created_at}" '
         f'data-permalink="https://www.facebook.com/{actor}/posts/{post_id}" '
-        'data-reaction-count="12" data-comment-count="3" data-share-count="1">',
+        f'data-reaction-count="12" data-comment-count="{len(comments or [])}" '
+        f'data-comments-exhausted="{str(comments_exhausted and not expand_controls).lower()}" '
+        'data-share-count="1">',
         f'<div data-fb-role="post-body">{esc_post}</div>',
         (
             '<div data-fb-role="attachment" '
@@ -1278,7 +1281,9 @@ def test_embedded_json_payload_and_secret_redaction_on_error(tmp_path: Path):
             },
         ],
         "expand_controls": [],
+        "comments_exhausted": True,
     }
+    json_payload["post"]["comment_count"] = len(json_payload["comments"])
     html = (
         "<!DOCTYPE html><html><body>"
         '<script type="application/json" data-fb-post-payload="1">'
@@ -1841,6 +1846,7 @@ def test_playwright_integration_against_local_synthetic_server(
         b"art.setAttribute('data-author', 'Replier Two');"
         b"art.innerHTML = '<div data-fb-role=\\'comment-body\\'>Expanded local reply.</div>';"
         b"sec.appendChild(art);"
+        b"sec.setAttribute('data-comments-exhausted', 'true');"
         b"this.remove();"
         b'">More comments</button>'
         b"</section></body></html>"

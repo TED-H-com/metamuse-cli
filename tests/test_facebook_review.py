@@ -608,3 +608,35 @@ def test_finding_10_paginated_observations_accumulate_by_identity(tmp_path, edit
         ]
         assert revisions == (["First page", "Edited first page"] if edited else ["First page"])
     assert job["observed_scope"]["steps"][0]["comments_observed"] == 2
+
+
+@pytest.mark.parametrize("case", ["contradictory", "unknown", "affirmative", "missing_controls"])
+def test_finding_11_empty_requires_affirmative_evidence_and_counts_cannot_contradict(
+    tmp_path, case
+):
+    ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
+    comments = [{"id": "one", "text": "Observed one"}] if case == "missing_controls" else []
+    markup = _synthetic_post_html(comments=comments)
+    if case in ("contradictory", "missing_controls"):
+        markup = markup.replace(f'data-comment-count="{len(comments)}"', 'data-comment-count="100"')
+    if case == "unknown":
+        markup = markup.replace('data-comments-exhausted="true"', "")
+    driver = facebook.FixtureBrowserDriver(observation(markup))
+    facebook.set_driver_factory(lambda: driver)
+    job = finish(ctx, submit(ctx, project, permit))
+    observed = job["observed_scope"]["steps"][0]
+    if case == "affirmative":
+        assert job["coverage_status"] == "scope_satisfied"
+        assert observed["comments_empty"] is True
+    else:
+        assert job["coverage_status"] == "partial"
+        assert observed["comments_empty"] is False
+        gap = "comments_scope_unverified" if case == "unknown" else "rendered_count_conflict"
+        assert gap in job["missing_fields"]
+        with ctx.store.connection() as conn:
+            post = conn.execute(
+                "SELECT complete,missing_fields FROM item_revisions r "
+                "JOIN items i ON i.id=r.item_id WHERE i.kind='post'"
+            ).fetchone()
+            assert post[0] == 0
+            assert gap in json.loads(post[1])
