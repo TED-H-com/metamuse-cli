@@ -1,0 +1,20 @@
+$ metamuse --workspace ws --json --non-interactive muse open --project "$P" --topic "Synthetic review" --request-key open > out/open-review.json || test $? -eq 3
+$ jq -C '{status, error: .error.code, approval: .approval | {operation, action_digest, destination, topic, request}}' out/open-review.json
+{
+  "status": "error",
+  "error": "E_SCOPE_REQUIRED",
+  "approval": {
+    "operation": "muse.open",
+    "action_digest": "94251665118aaea187a45e83725538ddd353c2aa624f540e0f7420a4c41403ca",
+    "destination": "fixture (no network): https://muse.ai session creation",
+    "topic": "Synthetic review",
+    "request": {
+      "discussion_id": null,
+      "project_id": "prj_5523036a31e142acb747dc6a551a6ad6",
+      "request_key": "open",
+      "topic": "Synthetic review"
+    }
+  }
+}
+$ read R A < <(jq -r ".approval | [.request_file, .action_digest] | @tsv" out/open-review.json)
+$ jq .approval.request out/open-review.json > "$R"

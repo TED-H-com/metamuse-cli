@@ -372,8 +372,8 @@
       "zh": "已安裝的 CLI。合成工作區。"
     },
     "intro": {
-      "en": "Eight steps on synthetic data: setup, queue, search, packet, draft, export, MCP and Skill. Each real Alacritty frame is captured at 2× density, then cropped to content; the linked transcript stays readable on mobile.",
-      "zh": "合成資料的八個步驟：設定、佇列、搜尋、資料包、草稿、匯出、MCP 與 Skill。每格真實 Alacritty 畫面以 2 倍像素密度擷取，再裁到內容；手機可閱讀連結的純文字紀錄。"
+      "en": "A synthetic journey: setup, queue, search, packet, human approval, fixture questions and a follow-up, draft, export, MCP and Skill. Real Alacritty frames are captured at 2× density and cropped to content; every frame links its plain-text transcript.",
+      "zh": "合成資料的完整流程：設定、佇列、搜尋、資料包、人類核准、fixture 問答與追問、草稿、匯出、MCP 與 Skill。真實 Alacritty 畫面以 2 倍像素密度擷取並裁到內容；每格都連結純文字紀錄。"
     },
     "shots": [
       {
@@ -421,47 +421,91 @@
         }
       },
       {
-        "src": "site/images/05-draft.png",
+        "src": "site/images/05-approval-preview.png",
         "alt": {
-          "en": "Host-written Traditional Chinese text stored by draft save with its exact item citation.",
-          "zh": "draft save 保存主代理撰寫的繁體中文文字與精確項目引用。"
+          "en": "Muse open approval preview with the exact action digest",
+          "zh": "Muse 開啟預覽與精確操作雜湊"
         },
         "caption": {
-          "en": "The host writes two lines and saves them with an item revision citation. No model call. <a href=\"https://teddashh.github.io/metamuse-cli/images/05-draft.txt\">Read transcript</a>.",
-          "zh": "主代理寫下兩行文字，連同項目版本引用一起保存。沒有呼叫模型。<a href=\"https://teddashh.github.io/metamuse-cli/images/05-draft.txt\">閱讀純文字紀錄</a>。"
+          "en": "A grant-free open returns E_SCOPE_REQUIRED with the operation, exact digest and request to review. <a href=\"https://teddashh.github.io/metamuse-cli/images/05-approval-preview.txt\">Read transcript</a>.",
+          "zh": "未附授權的開啟指令回傳 E_SCOPE_REQUIRED，列出操作、精確雜湊與待審查請求。<a href=\"https://teddashh.github.io/metamuse-cli/images/05-approval-preview.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
-        "src": "site/images/06-export.png",
+        "src": "site/images/06-human-approval.png",
         "alt": {
-          "en": "Bundle manifest and file hashes, with no-publish, no-upload and redaction warnings.",
-          "zh": "套件清單與檔案雜湊，以及不發布、不上傳與遮蔽警告。"
+          "en": "Packet preview, human-only permit approval and accepted open",
+          "zh": "資料包預覽、人類專用核准與獲接受的開啟請求"
         },
         "caption": {
-          "en": "The local bundle manifest lists file hashes. Stderr says nothing was published or uploaded, and redaction is a guard. <a href=\"https://teddashh.github.io/metamuse-cli/images/06-export.txt\">Read transcript</a>.",
-          "zh": "本地套件清單列出檔案雜湊。stderr 寫明沒有發布或上傳，遮蔽只是一道防護。<a href=\"https://teddashh.github.io/metamuse-cli/images/06-export.txt\">閱讀純文字紀錄</a>。"
+          "en": "The host agent has no approval tool: a person previews the packet and approves the exact digest. The operator review shows expiry and one use; open is then accepted. <a href=\"https://teddashh.github.io/metamuse-cli/images/06-human-approval.txt\">Read transcript</a>.",
+          "zh": "主代理沒有核准工具：人類預覽資料包，再核准精確雜湊。操作者審查列出到期時間與一次使用；開啟請求接著獲接受。<a href=\"https://teddashh.github.io/metamuse-cli/images/06-human-approval.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
-        "src": "site/images/07-mcp.png",
+        "src": "site/images/07-fixture-discussion.png",
         "alt": {
-          "en": "Official MCP client tool list with 15 readOnly hints and one cited search result.",
-          "zh": "官方 MCP 用戶端列出 15 個工具的 readOnly 提示，並顯示一筆帶引用的搜尋結果。"
+          "en": "Fixture Muse question, worker refresh, progress reply and closure",
+          "zh": "fixture Muse 問題、worker 更新、進度回覆與結束"
         },
         "caption": {
-          "en": "The official mcp stdio client lists 15 tools with read-only hints, then calls metamuse_search. <a href=\"https://teddashh.github.io/metamuse-cli/images/07-mcp.txt\">Read transcript</a>.",
-          "zh": "官方 mcp stdio 用戶端列出 15 個工具與唯讀提示，再呼叫 metamuse_search。<a href=\"https://teddashh.github.io/metamuse-cli/images/07-mcp.txt\">閱讀純文字紀錄</a>。"
+          "en": "A host-written question and approved packet go to the offline fixture backend, not a real Muse account. The cached reply retains backend=fixture, mock=true and research_complete=false; the exchange closes as needs_more_data. <a href=\"https://teddashh.github.io/metamuse-cli/images/07-fixture-discussion.txt\">Read transcript</a>.",
+          "zh": "主代理撰寫的問題與已核准資料包送往離線 fixture 後端，並非真實 Muse 帳號。回覆保留 backend=fixture、mock=true、research_complete=false；此輪以 needs_more_data 結束。<a href=\"https://teddashh.github.io/metamuse-cli/images/07-fixture-discussion.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
-        "src": "site/images/08-skill.png",
+        "src": "site/images/08-fixture-follow-up.png",
         "alt": {
-          "en": "metamuse skill export file list and the resulting local directory listing.",
-          "zh": "metamuse skill export 的檔案清單與實際本地目錄內容。"
+          "en": "Fixture follow-up in the same discussion with incomplete research",
+          "zh": "同一個 fixture 討論的追問與未完成研究標記"
         },
         "caption": {
-          "en": "Skill export writes SKILL.md and three reference files to the named host directory. <a href=\"https://teddashh.github.io/metamuse-cli/images/08-skill.txt\">Read transcript</a>.",
-          "zh": "Skill 匯出把 SKILL.md 與三個參考檔寫入指定的主代理目錄。<a href=\"https://teddashh.github.io/metamuse-cli/images/08-skill.txt\">閱讀純文字紀錄</a>。"
+          "en": "A second neutral question stays in the same fixture discussion. Its reply remains progress with research_complete=false, and the exchange again closes as needs_more_data. <a href=\"https://teddashh.github.io/metamuse-cli/images/08-fixture-follow-up.txt\">Read transcript</a>.",
+          "zh": "第二個中性問題沿用同一個 fixture 討論。回覆仍是 research_complete=false 的進度，此輪也以 needs_more_data 結束。<a href=\"https://teddashh.github.io/metamuse-cli/images/08-fixture-follow-up.txt\">閱讀純文字紀錄</a>。"
+        }
+      },
+      {
+        "src": "site/images/09-host-draft.png",
+        "alt": {
+          "en": "Host-written draft citing the item and two Muse observations",
+          "zh": "主代理草稿引用項目與兩筆 Muse 觀察"
+        },
+        "caption": {
+          "en": "The host saves its own text with the item revision and observations from both fixture exchanges. No generation call. <a href=\"https://teddashh.github.io/metamuse-cli/images/09-host-draft.txt\">Read transcript</a>.",
+          "zh": "主代理保存自行撰寫的文字，引用項目版本與兩輪 fixture 討論的觀察。沒有呼叫生成模型。<a href=\"https://teddashh.github.io/metamuse-cli/images/09-host-draft.txt\">閱讀純文字紀錄</a>。"
+        }
+      },
+      {
+        "src": "site/images/10-local-export.png",
+        "alt": {
+          "en": "Local bundle manifest, fixture labels and no-publication warnings",
+          "zh": "本地套件清單、fixture 標記與未發布警告"
+        },
+        "caption": {
+          "en": "The local bundle manifest lists file hashes and retains the fixture labels. Stderr says nothing was published or uploaded, and redaction is a guard. <a href=\"https://teddashh.github.io/metamuse-cli/images/10-local-export.txt\">Read transcript</a>.",
+          "zh": "本地套件清單列出檔案雜湊並保留 fixture 標記。stderr 寫明沒有發布或上傳，遮蔽只是一道防護。<a href=\"https://teddashh.github.io/metamuse-cli/images/10-local-export.txt\">閱讀純文字紀錄</a>。"
+        }
+      },
+      {
+        "src": "site/images/11-mcp-worker.png",
+        "alt": {
+          "en": "Official MCP client, 15 tools and attached-worker collection",
+          "zh": "官方 MCP 用戶端、15 個工具與附掛 worker 匯入"
+        },
+        "caption": {
+          "en": "The official stdio client lists 15 tools, submits a local synthetic file and polls the attached worker to completion. The server reports worker_available=true. <a href=\"https://teddashh.github.io/metamuse-cli/images/11-mcp-worker.txt\">Read transcript</a>.",
+          "zh": "官方 stdio 用戶端列出 15 個工具、提交本地合成檔，並輪詢附掛 worker 至工作結束。伺服器回報 worker_available=true。<a href=\"https://teddashh.github.io/metamuse-cli/images/11-mcp-worker.txt\">閱讀純文字紀錄</a>。"
+        }
+      },
+      {
+        "src": "site/images/12-skill-export.png",
+        "alt": {
+          "en": "Packaged Skill export and resulting local files",
+          "zh": "打包 Skill 匯出與產生的本地檔案"
+        },
+        "caption": {
+          "en": "Skill export writes SKILL.md and three references to the named host directory. <a href=\"https://teddashh.github.io/metamuse-cli/images/12-skill-export.txt\">Read transcript</a>.",
+          "zh": "Skill 匯出把 SKILL.md 與三份參考寫入指定的主代理目錄。<a href=\"https://teddashh.github.io/metamuse-cli/images/12-skill-export.txt\">閱讀純文字紀錄</a>。"
         }
       }
     ]
@@ -585,22 +629,22 @@
       "zh": "取捨"
     },
     "title": {
-      "en": "What this build will not pretend.",
-      "zh": "這個版本不會假裝的事。"
+      "en": "Human decisions. Honest limits.",
+      "zh": "人類決定。限制照實。"
     },
     "intro": {
-      "en": "These frames exercise the local workflow. Approval previews, a fixture Muse discussion and the MCP attached worker wait for round 3.",
-      "zh": "這些畫面展示本地流程。核准預覽、fixture Muse 討論與 MCP 附掛 worker 留待第三輪。"
+      "en": "Review the exact action before sharing. Fixture replies keep their labels, and the host writes the draft.",
+      "zh": "分享前審查精確操作。fixture 回覆保留原有標記，草稿由主代理撰寫。"
     },
     "items": [
       {
         "title": {
-          "en": "Fixture is a choice, not a live account",
-          "zh": "fixture 是選擇，不是真實帳號"
+          "en": "A person approves the exact action",
+          "zh": "精確操作由人類核准"
         },
         "body": {
-          "en": "Doctor reports fixture_passed for the explicit fixture backend. It does not report live_verified. Opening a discussion needs a human grant, which is not in this build's frames.",
-          "zh": "doctor 對明示的 fixture 後端回報 fixture_passed。它不回報 live_verified。開啟討論需要人類授權，這個版本的畫面沒有那一步。"
+          "en": "A missing grant returns an approval preview. The human-only permit approve command binds the exact digest, expiry and use limit; there is no MCP approval tool. The synthetic demo scripts the operator input.",
+          "zh": "缺少授權時回傳核准預覽。人類專用的 permit approve 綁定精確雜湊、到期時間與使用次數；MCP 沒有核准工具。合成示範以腳本輸入操作者核准。"
         }
       },
       {
@@ -609,8 +653,8 @@
           "zh": "已接受並非執行中"
         },
         "body": {
-          "en": "The import frame first shows accepted, queued and worker_available=false. An explicit worker run processes it; jobs get then reports partial.",
-          "zh": "匯入畫面先顯示 accepted、queued 與 worker_available=false。明確執行 worker 後，jobs get 回報 partial。"
+          "en": "A CLI import can be accepted and queued without a worker. The MCP server starts one attached worker by default; --no-worker opts out. Both use the same workspace executor lock.",
+          "zh": "CLI 匯入可在沒有 worker 時接受並排隊。MCP 伺服器預設啟動一個附掛 worker；--no-worker 可停用。兩者使用同一個工作區執行鎖。"
         }
       },
       {
@@ -629,8 +673,8 @@
           "zh": "Skill 不會模擬"
         },
         "body": {
-          "en": "The skill definition tells the host to call a real CLI or MCP server. If that backend is absent, the operation stops. This page does not demonstrate a missing backend; the MCP frame uses the installed server.",
-          "zh": "Skill 定義要求主代理呼叫真正的 CLI 或 MCP 伺服器。後端不在就停止。本頁沒有示範缺少後端；MCP 畫面使用的是已安裝的伺服器。"
+          "en": "The Skill tells a host how to use an installed CLI or MCP server. Without a reachable backend it reports unavailable and stops; it cannot fabricate execution.",
+          "zh": "Skill 告訴主代理如何使用已安裝的 CLI 或 MCP 伺服器。沒有可連線的後端就回報不可用並停止，不能編造執行結果。"
         }
       }
     ]
@@ -684,8 +728,8 @@
           "zh": "檢查"
         },
         "body": {
-          "en": "Lists capabilities. Live doctor is not available in this build.",
-          "zh": "列出能力。這個版本沒有 live doctor。"
+          "en": "Lists capabilities. Live doctor is unavailable.",
+          "zh": "列出能力。live doctor 尚未提供。"
         },
         "code": "uv run metamuse \\\n  --workspace \"$WS\" doctor"
       }
@@ -701,8 +745,8 @@
       "zh": "逐列對應 README 的狀態。"
     },
     "intro": {
-      "en": "The same four states as the README. Muse LIVE is not verified. Approval previews and the MCP attached worker are in progress; those scenes wait for round 3. Pre-alpha; nothing is released.",
-      "zh": "與 README 相同的四種狀態。Muse LIVE 尚未驗證。核准預覽與 MCP 附掛 worker 仍在進行中；那些畫面留待第三輪。預覽版，尚未發行。"
+      "en": "The same four states as the README. Muse LIVE is not verified. Approval, fixture exchanges and the attached worker have offline tests; no real account integration is claimed. Pre-alpha; nothing is released.",
+      "zh": "與 README 相同的四種狀態。Muse LIVE 尚未驗證。核准、fixture 討論與附掛 worker 已有離線測試；不宣稱真實帳號整合。預覽版，尚未發行。"
     },
     "works": [
       {
@@ -710,7 +754,7 @@
         "zh": "<strong>本地匯入</strong><br><code>implemented with offline tests</code><br>本地檔案與文字；遠端 URL 在建立工作前即遭拒絕。"
       },
       {
-        "en": "<strong>Local media and subtitles</strong><br><code>implemented with offline tests</code><br>Optional ffprobe; tests requiring the binary skip when it is absent.",
+        "en": "<strong>Local media and subtitles</strong><br><code>implemented with offline tests</code><br>Optional ffprobe; tests requiring it skip when absent.",
         "zh": "<strong>本地影音與字幕</strong><br><code>implemented with offline tests</code><br>ffprobe 為選用；缺少執行檔時，相關測試會跳過。"
       },
       {
@@ -718,8 +762,8 @@
         "zh": "<strong>搜尋</strong><br><code>implemented with offline tests</code><br>在專案範圍內搜尋匯入的證據。"
       },
       {
-        "en": "<strong>Packets</strong><br><code>implemented with offline tests</code><br>Selection file to a pre-share preview.",
-        "zh": "<strong>資料包</strong><br><code>implemented with offline tests</code><br>由選取檔產生分享前預覽。"
+        "en": "<strong>Packets</strong><br><code>implemented with offline tests</code><br>Selection file to an exact pre-share preview.",
+        "zh": "<strong>資料包</strong><br><code>implemented with offline tests</code><br>由選取檔產生精確的分享前預覽。"
       },
       {
         "en": "<strong>Drafts</strong><br><code>implemented with offline tests</code><br>Host-supplied text; no generation call.",
@@ -736,28 +780,32 @@
       {
         "en": "<strong>MCP stdio</strong><br><code>implemented with offline tests</code><br>Fifteen tools; stdout is protocol, logs go to stderr.",
         "zh": "<strong>MCP stdio</strong><br><code>implemented with offline tests</code><br>15 個工具；stdout 僅傳協定，日誌送至 stderr。"
+      },
+      {
+        "en": "<strong>MCP attached worker</strong><br><code>implemented with offline tests</code><br>metamuse mcp starts one worker; --no-worker opts out. One workspace executor holds the OS lock.",
+        "zh": "<strong>MCP 附掛 worker</strong><br><code>implemented with offline tests</code><br>metamuse mcp 啟動一個 worker；--no-worker 可停用。同一工作區只有一個執行者持有 OS 鎖。"
+      },
+      {
+        "en": "<strong>Approval previews and metamuse permit approve</strong><br><code>implemented with offline tests</code><br>Human approval of the exact action; no MCP approval tool.",
+        "zh": "<strong>核准預覽與 metamuse permit approve</strong><br><code>implemented with offline tests</code><br>人類核准精確操作；MCP 沒有核准工具。"
+      },
+      {
+        "en": "<strong>CI</strong><br><code>implemented with offline tests</code><br>GitHub Actions check runs offline gates and wheel smoke on PRs and main pushes; required on main since 2026-10-14.",
+        "zh": "<strong>CI</strong><br><code>implemented with offline tests</code><br>GitHub Actions check 在 PR 與 main push 執行離線檢查與 wheel smoke；自 2026-10-14 起為 main 的必要檢查。"
       }
     ],
     "limits": [
       {
-        "en": "<strong>Muse LIVE</strong><br><code>needs a real account (LIVE)</code><br>Blocked by upstream protocol drift; the standard-VM path is in progress.",
-        "zh": "<strong>Muse LIVE</strong><br><code>needs a real account (LIVE)</code><br>上游協定漂移導致阻擋；標準 VM 路線仍在進行中。"
+        "en": "<strong>Muse LIVE</strong><br><code>needs a real account (LIVE)</code><br>Blocked by upstream protocol drift; real-account integration is not verified.",
+        "zh": "<strong>Muse LIVE</strong><br><code>needs a real account (LIVE)</code><br>上游協定漂移導致阻擋；真實帳號整合尚未驗證。"
       },
       {
-        "en": "<strong>MCP attached worker</strong><br><code>not done</code><br>In progress on another branch; metamuse mcp does not start a worker.",
-        "zh": "<strong>MCP 附掛 worker</strong><br><code>not done</code><br>另一分支進行中；metamuse mcp 不會啟動 worker。"
+        "en": "<strong>Remote media (B12) and Facebook posts (B13)</strong><br><code>not done</code><br>Remote collection is not available.",
+        "zh": "<strong>遠端影音（B12）與 Facebook 貼文（B13）</strong><br><code>not done</code><br>尚未提供遠端收集。"
       },
       {
-        "en": "<strong>Remote media (B12) and Facebook posts (B13)</strong><br><code>not done</code><br>In progress elsewhere; absent from this tree.",
-        "zh": "<strong>遠端影音（B12）與 Facebook 貼文（B13）</strong><br><code>not done</code><br>其他分支進行中；此版本尚未包含。"
-      },
-      {
-        "en": "<strong>Publishing</strong><br><code>not done</code><br>Not started.",
-        "zh": "<strong>發布</strong><br><code>not done</code><br>尚未開始。"
-      },
-      {
-        "en": "<strong>CI</strong><br><code>implemented but not independently accepted</code><br>Workflow and wheel smoke script present; no hosted run claimed.",
-        "zh": "<strong>CI</strong><br><code>implemented but not independently accepted</code><br>已包含工作流程與 wheel smoke 腳本；不宣稱已在託管 CI 執行。"
+        "en": "<strong>Publishing</strong><br><code>not done</code><br>Not implemented.",
+        "zh": "<strong>發布</strong><br><code>not done</code><br>尚未實作。"
       }
     ],
     "works_title": {

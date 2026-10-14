@@ -1,0 +1,25 @@
+$ printf '%s' '哪些缺口會影響這個判斷？' > inputs/q2.txt
+$ metamuse --workspace ws --json muse send --discussion "$T" --packet "$K" --question-file inputs/q2.txt --request-key send-2 > out/s2-review.json || test $? -eq 3
+$ metamuse --workspace ws packet preview "$K" > out/p2.json
+$ read R A < <(jq -r ".approval | [.request_file, .action_digest] | @tsv" out/s2-review.json)
+$ jq .approval.request out/s2-review.json > "$R"
+$ metamuse --workspace ws --json permit approve --operation muse.send --request-file "$R" --exact-digest "$A" --request-key sg2 > out/sg2.json 2> out/sg2.txt
+$ G=$(jq -r .data.id out/sg2.json)
+$ metamuse --workspace ws --json muse send --discussion "$T" --packet "$K" --question-file inputs/q2.txt --share-grant "$G" --request-key send-2 > out/s2.json
+$ E=$(jq -r .data.exchange_id out/s2.json)
+$ metamuse --workspace ws worker run --once > out/ws2.json
+$ metamuse --workspace ws --json muse read --exchange "$E" --refresh > out/r2-review.json || test $? -eq 3
+$ read R A < <(jq -r ".approval | [.request_file, .action_digest] | @tsv" out/r2-review.json)
+$ jq .approval.request out/r2-review.json > "$R"
+$ metamuse --workspace ws --json permit approve --operation muse.read --request-file "$R" --exact-digest "$A" --request-key rg2 > out/rg2.json 2> out/rg2.txt
+$ G=$(jq -r .data.id out/rg2.json)
+$ metamuse --workspace ws muse read --exchange "$E" --refresh --access-grant "$G" > out/rf2.json
+$ metamuse --workspace ws worker run --once > out/wr2.json
+$ metamuse --workspace ws --json muse read --exchange "$E" > out/r2.json
+$ jq -cC '.data | {discussion_id, exchange_id, backend, mock, research_complete}' out/r2.json
+{"discussion_id":"dsc_163d149f1468cd1e55ab0a70cc177f7e","exchange_id":"exc_2c107720061698dc6a29491658652d3b","backend":"fixture","mock":true,"research_complete":false}
+$ jq -cC '.data.messages[] | select(.role == "assistant") | {role, text, association}' out/r2.json
+{"role":"assistant","text":"Fixture reply, part one.","association":"progress"}
+$ metamuse --workspace ws muse close-exchange "$E" --outcome needs_more_data --request-key close-2 > out/c2.json
+$ jq -cC '{outcome, research_complete}' out/c2.json
+{"outcome":"needs_more_data","research_complete":false}

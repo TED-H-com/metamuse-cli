@@ -1,0 +1,13 @@
+$ printf '%s\n' '活動紀錄（host 撰寫）' '首輪與追問仍有缺口，尚未完成研究。' > inputs/draft.txt
+$ jq '[.results[0].ref] + [inputs | .data.observations[-1].evidence_ref]' out/search.json out/r1.json out/r2.json > inputs/facts.json
+$ metamuse --workspace ws draft save --project "$P" --text-file inputs/draft.txt --platform generic --facts-file inputs/facts.json --request-key draft > out/draft.json
+$ jq -C '{draft_id, revision, text}' out/draft.json
+{
+  "draft_id": "drf_d0f207017d27462f943af3c7b02a4953",
+  "revision": 1,
+  "text": "活動紀錄（host 撰寫）\n首輪與追問仍有缺口，尚未完成研究。\n"
+}
+$ jq -cC '.facts_refs[]' out/draft.json
+{"kind":"item_revision","id":"itm_14e23c7f61a84bc898e03ebb34db2b4e","revision":1}
+{"kind":"muse_observation","id":"obs_03c50085187a4d8ab3ac0de8cb0f56da","revision":1}
+{"kind":"muse_observation","id":"obs_d9e3de64c6bb4f4093064d99dbf22b27","revision":1}

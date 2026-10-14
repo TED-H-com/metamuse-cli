@@ -18,10 +18,8 @@ tool=metamuse_muse_close_exchange readOnly=false
 tool=metamuse_draft_save readOnly=false
 tool=metamuse_draft_preview readOnly=true
 tool=metamuse_export readOnly=false
-call=metamuse_search status=ok is_error=false
-search_mode=exact_substring
-ref=item_revision itm_30b1ff56067a484d9756b5fc701004ff revision=1
-upstream=synthetic_fixture
-collection=file_import
-complete=true
-snippet=正常留言第一行，測試逐項驗證。
+{"call":"metamuse_inspect","worker_available":true,"attached_worker":"running"}
+{"call":"metamuse_collect","status":"accepted","job_id":"job_ec5a965e8cff46f69c6e15cf299f9260","state":"queued","worker_available":true}
+{"call":"metamuse_job_get","state":"running","coverage_status":"unknown"}
+{"call":"metamuse_job_get","state":"succeeded","coverage_status":"scope_satisfied"}
+{"call":"metamuse_search","ref":{"id":"itm_14e23c7f61a84bc898e03ebb34db2b4e","kind":"item_revision","revision":1},"collection_method":"file_import","upstream_collection_method":"synthetic_fixture"}

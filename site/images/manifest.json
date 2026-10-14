@@ -1,7 +1,7 @@
 {
-  "source_commit": "4737528ade30319cbea6c7b6be571acce7eb4e17",
-  "source_tree": "8e700c9bdf1fe73ed0d659b59e5164c6f442e269",
-  "capture_script_sha256": "6df3c21e3bb948a4b3b9f0b4ff053a088aca880025f2e6f62e852f123b41fbfa",
+  "source_commit": "f56968e5bad56497d7a2a3d493281eacc0b057da",
+  "source_tree": "2522635fbe7e54b25084e720bbab69b3375be431",
+  "capture_script_sha256": "771308dcfb5b7c78c21dc7fa10448213e16e6a1a9de0968320f3f59830046d85",
   "synthetic_inputs": [
     {
       "file": "inputs/mixed.jsonl",
@@ -13,10 +13,16 @@
       "source": "tests/fixtures/corpus/security/secrets.jsonl",
       "change": "First row label shortened to 存取網址： and URL path shortened to /; synthetic token unchanged",
       "sha256": "97c85d27b4d4c8f49ed89d3d4e536480968634a856806d25d8a38d13ce23cae1"
+    },
+    {
+      "file": "inputs/mcp.jsonl",
+      "source": "tests/fixtures/corpus/import/comments_tree.jsonl",
+      "change": "First three rows only",
+      "sha256": "26f48774619f9c8dfa000e2b3c45f41da40c7809ba728c2cc0921807f20c6bd6"
     }
   ],
-  "product_base_commit": "516c5c613fa949728fc00ff1273a8b12ba507b7e",
-  "captured_at": "2026-10-14T07:08:31-04:00",
+  "product_base_commit": "041fc0b5fb6294109b84dae7e62810885e47e66c",
+  "captured_at": "2026-10-14T08:31:59-04:00",
   "scale_factor": 2,
   "density_method": "WINIT_X11_SCALE_FACTOR=2; geometry verified against doubled padding and cell grid",
   "terminal": {
@@ -34,6 +40,8 @@
     "mcp": "2.3.0",
     "metamuse": "0.1.0.dev0"
   },
+  "scripted_operator_input": true,
+  "operator_input_note": "Synthetic terminal approvals use permit approve --exact-digest; no MCP approval tool or model-minted grant.",
   "synthetic_data": true,
   "live_or_real_account": false,
   "image_edited": false,
@@ -158,11 +166,11 @@
         "width": 2106,
         "height": 818
       },
-      "bytes": 134970,
-      "sha256": "f013876a66971bc755f230405981ea119151fc24dcb27cd8762defb1ad1af8cd",
-      "transcript_sha256": "70f80d84ef184096090eb810425bbd193b2151c7c2f0e8795a0b6d4fb7d1c212",
+      "bytes": 135034,
+      "sha256": "5afe0b909a558ebd83f0f2a285421aa4413633de548c193ed0c68ed3ea1684e9",
+      "transcript_sha256": "bca4b44ecbdd8a0d321ad205bf2bc961c695efb4d0e0bc1db15a680093ec805c",
       "lossless_verified": true,
-      "decoded_rgb_sha256": "030907e2887465118a59a2a32240cd1608eb8d4dcc15fa59164ac070c9923f70"
+      "decoded_rgb_sha256": "9a365940ffc26d90cf2bed59385d04d604c255f8d1b514bb8fc12442e958bdf7"
     },
     {
       "png": "04-packet.png",
@@ -173,7 +181,8 @@
         "jq '[.results[0].ref]' out/secret-search.json > inputs/selection.json",
         "metamuse --workspace ws packet prepare --project \"$P\" --selection-file inputs/selection.json --request-key packet > out/packet.json",
         "jq -r .rendered_text out/packet.json",
-        "jq -C '{redactions, digest}' out/packet.json"
+        "jq -C '{redactions, digest}' out/packet.json",
+        "K=$(jq -r .id out/packet.json)"
       ],
       "acceptance": [
         "AT-015",
@@ -181,7 +190,7 @@
       ],
       "columns": 98,
       "window_rows": 42,
-      "content_rows": 27,
+      "content_rows": 28,
       "font_size_pt": 13.0,
       "cell_px": {
         "width": 21,
@@ -198,29 +207,30 @@
         "x": 0,
         "y": 0,
         "width": 2106,
-        "height": 1196
+        "height": 1238
       },
-      "bytes": 221400,
-      "sha256": "62a9a8e8224915cd01a7a55c7759a7b60735727282b685334b9c09244eba40e6",
-      "transcript_sha256": "957335b92150778b8b160dce87fa638518ed71f51f50449283a8c38a54daaee0",
+      "bytes": 234229,
+      "sha256": "3e56213ab7be5c186767bef0a233756c2dbfe3e8c41e5938f08f8dd64182fbdc",
+      "transcript_sha256": "cc1ef4c5f67cec879ec9a5c0396a5dfc0d5b6f8a88e1f664ca818c7af42ffa34",
       "lossless_verified": true,
-      "decoded_rgb_sha256": "2659c067fd5c9160bd83f2a43a549f80e4cdda1fb8b4a44b2a249bcb88839716"
+      "decoded_rgb_sha256": "402ee703f0a1e6537578df0d908c2ab8cc0c1f097b02b1b4652511bf8adfc28e"
     },
     {
-      "png": "05-draft.png",
-      "transcript": "05-draft.txt",
+      "png": "05-approval-preview.png",
+      "transcript": "05-approval-preview.txt",
       "commands": [
-        "printf '%s\\n' '活動紀錄（host 撰寫）' '本地留言仍在。壞列沒有被算成完整匯入。' > inputs/draft.txt",
-        "jq '[.results[0].ref]' out/search.json > inputs/facts.json",
-        "metamuse --workspace ws draft save --project \"$P\" --text-file inputs/draft.txt --platform generic --facts-file inputs/facts.json --request-key draft > out/draft.json",
-        "jq -C '{draft_id, revision, text, facts_refs}' out/draft.json"
+        "metamuse --workspace ws --json --non-interactive muse open --project \"$P\" --topic \"Synthetic review\" --request-key open > out/open-review.json || test $? -eq 3",
+        "jq -C '{status, error: .error.code, approval: .approval | {operation, action_digest, destination, topic, request}}' out/open-review.json",
+        "read R A < <(jq -r \".approval | [.request_file, .action_digest] | @tsv\" out/open-review.json)",
+        "jq .approval.request out/open-review.json > \"$R\""
       ],
       "acceptance": [
-        "AT-023"
+        "AT-016",
+        "AT-020"
       ],
       "columns": 98,
       "window_rows": 42,
-      "content_rows": 18,
+      "content_rows": 22,
       "font_size_pt": 13.0,
       "cell_px": {
         "width": 21,
@@ -237,22 +247,230 @@
         "x": 0,
         "y": 0,
         "width": 2106,
-        "height": 818
+        "height": 986
       },
-      "bytes": 171102,
-      "sha256": "eb4dff184b68eae07f17612960cd0c668b275ba39e01f7fcdeba1f7b2288d63b",
-      "transcript_sha256": "9162a3198f62c2f7017ad84356d14b51abcd4b44fe9fe8dcb6f35c36d0ec33ee",
+      "bytes": 186448,
+      "sha256": "2cd583eb1c786ee9aad8f71e14d30e653b362d65f32c8ccffc5856da5ed2c9c6",
+      "transcript_sha256": "569882bd62dae3f267fa0160157383de4170c70ff48ba03c13fe57c09900b63b",
       "lossless_verified": true,
-      "decoded_rgb_sha256": "2f90563f0acf624d288426042d5ce4c05d48e68e1e25b3421e62e85731d006c2"
+      "decoded_rgb_sha256": "29e2521c35d4d49fc62a1ee0152c70293ac445bcff7229fb7f94719438a28068"
     },
     {
-      "png": "06-export.png",
-      "transcript": "06-export.txt",
+      "png": "06-human-approval.png",
+      "transcript": "06-human-approval.txt",
+      "commands": [
+        "metamuse --workspace ws packet preview \"$K\" > out/packet-preview.json",
+        "jq -r .rendered_text out/packet-preview.json",
+        "metamuse --workspace ws --json permit approve --operation muse.open --request-file \"$R\" --exact-digest \"$A\" --request-key open-grant > out/open-grant.json",
+        "G=$(jq -r .data.id out/open-grant.json)",
+        "metamuse --workspace ws --json muse open --project \"$P\" --topic \"Synthetic review\" --access-grant \"$G\" --request-key open > out/open.json",
+        "jq -C '{status, data: .data | {state, discussion_id, worker_available}}' out/open.json",
+        "T=$(jq -r .data.discussion_id out/open.json)"
+      ],
+      "acceptance": [
+        "AT-015",
+        "AT-016",
+        "AT-020"
+      ],
+      "columns": 98,
+      "window_rows": 42,
+      "content_rows": 34,
+      "font_size_pt": 13.0,
+      "cell_px": {
+        "width": 21,
+        "height": 42
+      },
+      "padding_top_px": 20,
+      "window_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2106,
+        "height": 1804
+      },
+      "crop_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2106,
+        "height": 1490
+      },
+      "bytes": 332583,
+      "sha256": "1ae32567b3c98d0c614d823e4b1fe248a778962b119f0f2cc3abd18a3130b537",
+      "transcript_sha256": "c99f7af158013dc893ec907156a1022d503f93c97ea3567be4e35fb9a764a2e2",
+      "lossless_verified": true,
+      "decoded_rgb_sha256": "d38d606dea5e594e47477d098b9bfc8304eedbb3f64d9dc8feb7cae3d8bf64a6"
+    },
+    {
+      "png": "07-fixture-discussion.png",
+      "transcript": "07-fixture-discussion.txt",
+      "commands": [
+        "metamuse --workspace ws worker run --once > out/w-open.json",
+        "printf '%s' '這份資料有哪些資訊缺口？' > inputs/q1.txt",
+        "metamuse --workspace ws --json muse send --discussion \"$T\" --packet \"$K\" --question-file inputs/q1.txt --request-key send-1 > out/s1-review.json || test $? -eq 3",
+        "metamuse --workspace ws packet preview \"$K\" > out/p1.json",
+        "read R A < <(jq -r \".approval | [.request_file, .action_digest] | @tsv\" out/s1-review.json)",
+        "jq .approval.request out/s1-review.json > \"$R\"",
+        "metamuse --workspace ws --json permit approve --operation muse.send --request-file \"$R\" --exact-digest \"$A\" --request-key sg1 > out/sg1.json 2> out/sg1.txt",
+        "G=$(jq -r .data.id out/sg1.json)",
+        "metamuse --workspace ws --json muse send --discussion \"$T\" --packet \"$K\" --question-file inputs/q1.txt --share-grant \"$G\" --request-key send-1 > out/s1.json",
+        "E=$(jq -r .data.exchange_id out/s1.json)",
+        "metamuse --workspace ws worker run --once > out/ws1.json",
+        "metamuse --workspace ws --json muse read --exchange \"$E\" --refresh > out/r1-review.json || test $? -eq 3",
+        "read R A < <(jq -r \".approval | [.request_file, .action_digest] | @tsv\" out/r1-review.json)",
+        "jq .approval.request out/r1-review.json > \"$R\"",
+        "metamuse --workspace ws --json permit approve --operation muse.read --request-file \"$R\" --exact-digest \"$A\" --request-key rg1 > out/rg1.json 2> out/rg1.txt",
+        "G=$(jq -r .data.id out/rg1.json)",
+        "metamuse --workspace ws muse read --exchange \"$E\" --refresh --access-grant \"$G\" > out/rf1.json",
+        "metamuse --workspace ws worker run --once > out/wr1.json",
+        "metamuse --workspace ws --json muse read --exchange \"$E\" > out/r1.json",
+        "jq -cC '.data | {discussion_id, exchange_id, backend, mock, research_complete}' out/r1.json",
+        "jq -cC '.data.messages[] | select(.role == \"assistant\") | {role, text, association}' out/r1.json",
+        "metamuse --workspace ws muse close-exchange \"$E\" --outcome needs_more_data --request-key close-1 > out/c1.json",
+        "jq -cC '{outcome, research_complete}' out/c1.json"
+      ],
+      "acceptance": [
+        "AT-016",
+        "AT-020",
+        "AT-021",
+        "AT-022",
+        "AT-024"
+      ],
+      "columns": 98,
+      "window_rows": 42,
+      "content_rows": 33,
+      "font_size_pt": 13.0,
+      "cell_px": {
+        "width": 21,
+        "height": 42
+      },
+      "padding_top_px": 20,
+      "window_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2106,
+        "height": 1804
+      },
+      "crop_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2106,
+        "height": 1448
+      },
+      "bytes": 446052,
+      "sha256": "c9e82ce12b373baec9e62525b8eeafd22ad959266653caa16c85246eb4ed26d7",
+      "transcript_sha256": "d55ee0be12d803d25241da5bd8d754011bca3f10bd874235b603f69ba21721c5",
+      "lossless_verified": true,
+      "decoded_rgb_sha256": "fc7d7306c8a202fec6730a4493d4fb4e81141a4e0563b39c12266b2d9b38c2f6"
+    },
+    {
+      "png": "08-fixture-follow-up.png",
+      "transcript": "08-fixture-follow-up.txt",
+      "commands": [
+        "printf '%s' '哪些缺口會影響這個判斷？' > inputs/q2.txt",
+        "metamuse --workspace ws --json muse send --discussion \"$T\" --packet \"$K\" --question-file inputs/q2.txt --request-key send-2 > out/s2-review.json || test $? -eq 3",
+        "metamuse --workspace ws packet preview \"$K\" > out/p2.json",
+        "read R A < <(jq -r \".approval | [.request_file, .action_digest] | @tsv\" out/s2-review.json)",
+        "jq .approval.request out/s2-review.json > \"$R\"",
+        "metamuse --workspace ws --json permit approve --operation muse.send --request-file \"$R\" --exact-digest \"$A\" --request-key sg2 > out/sg2.json 2> out/sg2.txt",
+        "G=$(jq -r .data.id out/sg2.json)",
+        "metamuse --workspace ws --json muse send --discussion \"$T\" --packet \"$K\" --question-file inputs/q2.txt --share-grant \"$G\" --request-key send-2 > out/s2.json",
+        "E=$(jq -r .data.exchange_id out/s2.json)",
+        "metamuse --workspace ws worker run --once > out/ws2.json",
+        "metamuse --workspace ws --json muse read --exchange \"$E\" --refresh > out/r2-review.json || test $? -eq 3",
+        "read R A < <(jq -r \".approval | [.request_file, .action_digest] | @tsv\" out/r2-review.json)",
+        "jq .approval.request out/r2-review.json > \"$R\"",
+        "metamuse --workspace ws --json permit approve --operation muse.read --request-file \"$R\" --exact-digest \"$A\" --request-key rg2 > out/rg2.json 2> out/rg2.txt",
+        "G=$(jq -r .data.id out/rg2.json)",
+        "metamuse --workspace ws muse read --exchange \"$E\" --refresh --access-grant \"$G\" > out/rf2.json",
+        "metamuse --workspace ws worker run --once > out/wr2.json",
+        "metamuse --workspace ws --json muse read --exchange \"$E\" > out/r2.json",
+        "jq -cC '.data | {discussion_id, exchange_id, backend, mock, research_complete}' out/r2.json",
+        "jq -cC '.data.messages[] | select(.role == \"assistant\") | {role, text, association}' out/r2.json",
+        "metamuse --workspace ws muse close-exchange \"$E\" --outcome needs_more_data --request-key close-2 > out/c2.json",
+        "jq -cC '{outcome, research_complete}' out/c2.json"
+      ],
+      "acceptance": [
+        "AT-016",
+        "AT-020",
+        "AT-021",
+        "AT-022",
+        "AT-024"
+      ],
+      "columns": 98,
+      "window_rows": 42,
+      "content_rows": 32,
+      "font_size_pt": 13.0,
+      "cell_px": {
+        "width": 21,
+        "height": 42
+      },
+      "padding_top_px": 20,
+      "window_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2106,
+        "height": 1804
+      },
+      "crop_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2106,
+        "height": 1406
+      },
+      "bytes": 445920,
+      "sha256": "86db9714bca200fc0c981d20ee0055ba6510340389ed3323bcc04173e9999311",
+      "transcript_sha256": "8c8a0a6ed7dac90c3db0b0289e521cfad099f0dfed83b3874c720caa37b8fe4b",
+      "lossless_verified": true,
+      "decoded_rgb_sha256": "bfbaa33f70fdbc4b5dc78d07375fdf0b8bfbd13f5507bd53011806add6a4a6bd"
+    },
+    {
+      "png": "09-host-draft.png",
+      "transcript": "09-host-draft.txt",
+      "commands": [
+        "printf '%s\\n' '活動紀錄（host 撰寫）' '首輪與追問仍有缺口，尚未完成研究。' > inputs/draft.txt",
+        "jq '[.results[0].ref] + [inputs | .data.observations[-1].evidence_ref]' out/search.json out/r1.json out/r2.json > inputs/facts.json",
+        "metamuse --workspace ws draft save --project \"$P\" --text-file inputs/draft.txt --platform generic --facts-file inputs/facts.json --request-key draft > out/draft.json",
+        "jq -C '{draft_id, revision, text}' out/draft.json",
+        "jq -cC '.facts_refs[]' out/draft.json"
+      ],
+      "acceptance": [
+        "AT-023",
+        "AT-024"
+      ],
+      "columns": 98,
+      "window_rows": 42,
+      "content_rows": 15,
+      "font_size_pt": 13.0,
+      "cell_px": {
+        "width": 21,
+        "height": 42
+      },
+      "padding_top_px": 20,
+      "window_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2106,
+        "height": 1804
+      },
+      "crop_rect": {
+        "x": 0,
+        "y": 0,
+        "width": 2106,
+        "height": 692
+      },
+      "bytes": 208568,
+      "sha256": "3a035b1970339ca70a125555c6d04e527e67a323f62830a8d31eac581e50bf88",
+      "transcript_sha256": "d6d215ee130ed25fae97b168dbb4fa11b2a27810cf5236fc6d249375ffd6256e",
+      "lossless_verified": true,
+      "decoded_rgb_sha256": "d10f2d3341789d17069586c83d937101519c55248ab4e32560995febcb662588"
+    },
+    {
+      "png": "10-local-export.png",
+      "transcript": "10-local-export.txt",
       "commands": [
         "D=$(jq -r .draft_id out/draft.json)",
         "jq -n --arg id \"$D\" '[{kind:\"draft_revision\", id:$id, revision:1}]' > inputs/export-refs.json",
         "metamuse --workspace ws export --project \"$P\" --refs-file inputs/export-refs.json --format bundle --request-key export > out/export.json",
-        "jq -C '.manifest | {format, text_policy, asset_policy, redaction_notice}' out/export.json",
+        "jq -C '.manifest | {format, backend, mock, research_complete, text_policy, asset_policy, redaction_notice}' out/export.json",
         "jq -cC '.manifest.files[]' out/export.json"
       ],
       "acceptance": [
@@ -260,7 +478,7 @@
       ],
       "columns": 98,
       "window_rows": 42,
-      "content_rows": 20,
+      "content_rows": 28,
       "font_size_pt": 13.0,
       "cell_px": {
         "width": 21,
@@ -277,26 +495,27 @@
         "x": 0,
         "y": 0,
         "width": 2106,
-        "height": 902
+        "height": 1238
       },
-      "bytes": 226143,
-      "sha256": "7bb69f1790a55ceaf020ce244a2b4a3c9f02a6f5dbfaa98ed5d6724b325ccca8",
-      "transcript_sha256": "66209323ea47c6f9c32bd6b452a04fff09af37a59b2b8810fd9959174b0b17f3",
+      "bytes": 305312,
+      "sha256": "691cae3e2c016376c42405075e05f4acb0e8a93c08d4ac556f85674099d8be62",
+      "transcript_sha256": "74ad2d0a2784861f70b3db47e1a3ac9b941efa19a174d72d038918c38c96cbb2",
       "lossless_verified": true,
-      "decoded_rgb_sha256": "5d47c0090661a0952827e5e5442f1cc59085a0fe2692ad9642d43d9a52d7c3a5"
+      "decoded_rgb_sha256": "ca4123ff5ca068231562d2c648d353785ef94297a4313209f309e925a7bcd41c"
     },
     {
-      "png": "07-mcp.png",
-      "transcript": "07-mcp.txt",
+      "png": "11-mcp-worker.png",
+      "transcript": "11-mcp-worker.txt",
       "commands": [
         "python3 mcp_demo.py"
       ],
       "acceptance": [
+        "AT-008",
         "AT-026"
       ],
       "columns": 98,
       "window_rows": 42,
-      "content_rows": 27,
+      "content_rows": 28,
       "font_size_pt": 13.0,
       "cell_px": {
         "width": 21,
@@ -313,17 +532,17 @@
         "x": 0,
         "y": 0,
         "width": 2106,
-        "height": 1196
+        "height": 1238
       },
-      "bytes": 236167,
-      "sha256": "2c65315247c386e971759d78e8e8fdf4daec5a6c14e58294c602b82aa40ffc7f",
-      "transcript_sha256": "0ba792e5fee5f1dd693a283721034ba8bfb1af605266ca197feb12eb32b2fce5",
+      "bytes": 263420,
+      "sha256": "8d1837474059d94e955f8f266363a986fcd77a53521f8a9df8aa7ee8a42d7b51",
+      "transcript_sha256": "5067ea2104205fd489aa0304ceb7c0ca5bfb43005de27a11045f101a9b3d5bd9",
       "lossless_verified": true,
-      "decoded_rgb_sha256": "0f90f45f84f64bbdb5c2ffbc19b2f9173659da78adbf4fcab861fc670e963f96"
+      "decoded_rgb_sha256": "b8806cc966181072d65b37ae859bebf269519e19a372dc983499f401ea2dab55"
     },
     {
-      "png": "08-skill.png",
-      "transcript": "08-skill.txt",
+      "png": "12-skill-export.png",
+      "transcript": "12-skill-export.txt",
       "commands": [
         "metamuse skill export --dest host-skill",
         "ls -R host-skill"
@@ -390,11 +609,11 @@
         "width": 1608,
         "height": 989
       },
-      "bytes": 184989,
-      "sha256": "9f195efaeefb086968e6f6ba5445242e051ef91a360d910ba97411f106ea9399",
-      "transcript_sha256": "f60b81ee9bcec77918391849987a77f32a751ed1367e7be6099c833a9af912ef",
+      "bytes": 186554,
+      "sha256": "297b96a810497fb13196a5cc3ddda48f85b5ddebdec42bf0029a8665ff28e8b3",
+      "transcript_sha256": "bc50d0d6223012ed15f50e9c88ecee921e26bf9cadd8f34ae82a740b53f4ded6",
       "lossless_verified": true,
-      "decoded_rgb_sha256": "4f5d4af09e4a0c5d91e1bff0089ca5c5a42df5890dd0fa6ad3c3af6de9a9e793"
+      "decoded_rgb_sha256": "9085bbea2b891ce36da788e5846bf4d64c72920737bf6af70179d496df08cae1"
     }
   ]
 }

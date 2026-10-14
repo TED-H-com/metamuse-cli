@@ -1,0 +1,21 @@
+$ D=$(jq -r .draft_id out/draft.json)
+$ jq -n --arg id "$D" '[{kind:"draft_revision", id:$id, revision:1}]' > inputs/export-refs.json
+$ metamuse --workspace ws export --project "$P" --refs-file inputs/export-refs.json --format bundle --request-key export > out/export.json
+Warning: Local export only; nothing was published or uploaded.
+Warning: Bundle redaction is a guard, not a guarantee; assets are metadata only.
+$ jq -C '.manifest | {format, backend, mock, research_complete, text_policy, asset_policy, redaction_notice}' out/export.json
+{
+  "format": "bundle",
+  "backend": "fixture",
+  "mock": true,
+  "research_complete": false,
+  "text_policy": "redacted",
+  "asset_policy": "metadata_only; opaque media bytes are not included",
+  "redaction_notice": "Automatic redaction is a guard, not a guarantee."
+}
+$ jq -cC '.manifest.files[]' out/export.json
+{"name":"object-0001.md","sha256":"0f718e9219d658bf5e9f08c98fc3b17aed654210c625a4fd4cb96ca7cb4d9ab8","bytes":1006}
+{"name":"object-0002.md","sha256":"52156352383e0bda6336052476f287c04e54596f8f4c3af723cf4f557d0ed046","bytes":340}
+{"name":"object-0003.md","sha256":"068b4e106f492b3e42b4ed2f1b380fb049a4350e481d6712fa3028d73ba4a079","bytes":627}
+{"name":"object-0004.md","sha256":"a229f1f441f24f66b8547e356bf162cb90c6d3ecf76dffa36798ac7e017c7c4e","bytes":627}
+{"name":"records.jsonl","sha256":"3d12c4710c79ee45312d47afa8c7980912b8ccbccadae253203ccec1c2377ae8","bytes":4752}

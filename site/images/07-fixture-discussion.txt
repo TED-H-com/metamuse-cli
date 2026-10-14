@@ -1,0 +1,26 @@
+$ metamuse --workspace ws worker run --once > out/w-open.json
+$ printf '%s' '這份資料有哪些資訊缺口？' > inputs/q1.txt
+$ metamuse --workspace ws --json muse send --discussion "$T" --packet "$K" --question-file inputs/q1.txt --request-key send-1 > out/s1-review.json || test $? -eq 3
+$ metamuse --workspace ws packet preview "$K" > out/p1.json
+$ read R A < <(jq -r ".approval | [.request_file, .action_digest] | @tsv" out/s1-review.json)
+$ jq .approval.request out/s1-review.json > "$R"
+$ metamuse --workspace ws --json permit approve --operation muse.send --request-file "$R" --exact-digest "$A" --request-key sg1 > out/sg1.json 2> out/sg1.txt
+$ G=$(jq -r .data.id out/sg1.json)
+$ metamuse --workspace ws --json muse send --discussion "$T" --packet "$K" --question-file inputs/q1.txt --share-grant "$G" --request-key send-1 > out/s1.json
+$ E=$(jq -r .data.exchange_id out/s1.json)
+$ metamuse --workspace ws worker run --once > out/ws1.json
+$ metamuse --workspace ws --json muse read --exchange "$E" --refresh > out/r1-review.json || test $? -eq 3
+$ read R A < <(jq -r ".approval | [.request_file, .action_digest] | @tsv" out/r1-review.json)
+$ jq .approval.request out/r1-review.json > "$R"
+$ metamuse --workspace ws --json permit approve --operation muse.read --request-file "$R" --exact-digest "$A" --request-key rg1 > out/rg1.json 2> out/rg1.txt
+$ G=$(jq -r .data.id out/rg1.json)
+$ metamuse --workspace ws muse read --exchange "$E" --refresh --access-grant "$G" > out/rf1.json
+$ metamuse --workspace ws worker run --once > out/wr1.json
+$ metamuse --workspace ws --json muse read --exchange "$E" > out/r1.json
+$ jq -cC '.data | {discussion_id, exchange_id, backend, mock, research_complete}' out/r1.json
+{"discussion_id":"dsc_163d149f1468cd1e55ab0a70cc177f7e","exchange_id":"exc_c70851d6a8aa99404b12f2f5b0875162","backend":"fixture","mock":true,"research_complete":false}
+$ jq -cC '.data.messages[] | select(.role == "assistant") | {role, text, association}' out/r1.json
+{"role":"assistant","text":"Fixture reply, part one.","association":"progress"}
+$ metamuse --workspace ws muse close-exchange "$E" --outcome needs_more_data --request-key close-1 > out/c1.json
+$ jq -cC '{outcome, research_complete}' out/c1.json
+{"outcome":"needs_more_data","research_complete":false}

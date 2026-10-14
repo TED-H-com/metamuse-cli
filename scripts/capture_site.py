@@ -761,8 +761,8 @@ Pillow's lossless PNG optimization is checked by decoding and comparing all RGB
 bytes. The manifest records window/crop rectangles in display coordinates,
 cell dimensions, content rows, commands, AT IDs, hashes, sizes and tool versions.
 
-Only the repository's synthetic `comments_mixed_bad.jsonl` and `secrets.jsonl`
-fixtures are used. In the copied secrets input, the first row's synthetic URL
+The CLI inputs use the repository's synthetic `comments_mixed_bad.jsonl` and
+`secrets.jsonl` fixtures. In the copied secrets input, the first row's synthetic URL
 is shortened from `https://example.org/api/v1/feed?` to `https://example.org/?`
 and its label to `存取網址：` so the redaction fits together at 60 columns.
 The synthetic token and source labels are unchanged; this is input data, not an
