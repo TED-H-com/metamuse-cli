@@ -561,12 +561,12 @@ def test_f16_all_core_tools_effective_and_stubs_absent(ctx):
     rows = app.inspect_capabilities(ctx).data["capabilities"]
     effective = {row["name"] for row in rows if row["effective"]}
     # B05 declares metamuse_collect. B07/B11 declares the content tools.
-    # Every other feature tool stays absent.
+    # Muse stays ineffective until explicitly configured.
     assert effective == (
         app.CORE_IMPLEMENTED_TOOLS | collect.IMPLEMENTED_TOOLS | content.IMPLEMENTED_TOOLS
     )
     assert all(not row["effective"] for row in rows if row["implementation"] == "absent")
-    assert len(generated_schemas()) == 40
+    assert len(generated_schemas()) == 41
 
 
 def test_f01_known_job_runs_past_unknown_job(ctx, project):

@@ -151,8 +151,10 @@ def test_schema2_update_replace_cannot_replace_unreferenced_victim(scoped_store,
 
 def test_schema2_fresh_and_upgraded_have_identical_canonical_objects(scoped_store):
     with scoped_store.connection() as conn:
-        core._verify_schema(conn, 2, core.MIGRATIONS)
-        scripts = tuple(core.MIGRATIONS[v].read_text() for v in (1, 2))
+        core._verify_schema(conn, scoped_store.schema_version, core.MIGRATIONS)
+        scripts = tuple(
+            core.MIGRATIONS[v].read_text() for v in range(1, scoped_store.schema_version + 1)
+        )
         assert core._schema_signature(conn) == core._expected_schema(scripts)
     prior = core._expected_schema((core.MIGRATIONS[1].read_text(),))
     current = core._expected_schema(scripts)
@@ -180,11 +182,16 @@ def test_schema2_fresh_and_upgraded_have_identical_canonical_objects(scoped_stor
     ],
 )
 def test_schema2_retained_guards_cannot_be_dropped_in_later_migration(ctx, tmp_path, guard):
-    migration = tmp_path / "003.sql"
+    next_version = core.SCHEMA_VERSION + 1
+    migration = tmp_path / f"{next_version:03}.sql"
     migration.write_text(f"DROP TRIGGER {guard};\n")
     with pytest.raises(m.CoreError, match="guard"):
-        core.Store(ctx.paths, schema_version=3, migrations={**core.MIGRATIONS, 3: migration})
+        core.Store(
+            ctx.paths,
+            schema_version=next_version,
+            migrations={**core.MIGRATIONS, next_version: migration},
+        )
     with closing(sqlite3.connect(ctx.paths.database)) as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == core.SCHEMA_VERSION
         assert conn.execute("SELECT 1 FROM sqlite_master WHERE name=?", (guard,)).fetchone()
-        core._verify_schema(conn, 2, core.MIGRATIONS)
+        core._verify_schema(conn, core.SCHEMA_VERSION, core.MIGRATIONS)

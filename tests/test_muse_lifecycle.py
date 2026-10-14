@@ -541,8 +541,8 @@ def test_signed_cursor_high_water_tampering_rotation_and_restore(fixture_ctx, pr
     from metamuse.paths import WorkspacePaths
     from metamuse.store import Store
 
-    backup = ctx.store.backup(tmp_path / "backup")
-    restored = Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored"))
+    backup = ctx.store.backup(tmp_path / "backup").path
+    restored = Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored")).store
     other = app.AppContext(restored.paths, restored)
     assert (
         app.read_muse_exchange(other, {"exchange_id": exchange.id, "cursor": cursor}).data[
