@@ -572,6 +572,11 @@ class BrowserEgressProxy:
                     self._active_tunnels = max(0, self._active_tunnels - 1)
 
     def check_url_bounded(self, url: str, purpose: safety.URLPurpose) -> safety.CheckedURL:
+        self.egress.check_url_without_dns(url, purpose)
+        if purpose in ("request", "redirect"):
+            barrier = self.egress._classify_navigation_barrier(url)
+            if barrier is not None:
+                raise barrier
         authority = self.egress._authority(url)
         with self.egress._lock:
             pinned = (
@@ -592,15 +597,29 @@ class BrowserEgressProxy:
             raise self.egress.last_proxy_error from None
 
     def _check_target_bounded(self, parsed: ParsedProxyRequest) -> safety.CheckedURL:
-        return self._check_bounded(
-            lambda: self.egress.check_proxy_target(
+        try:
+            self.egress.check_url_without_dns(parsed.check_url, parsed.purpose)
+            if parsed.is_navigation and not parsed.is_connect:
+                barrier = self.egress._classify_navigation_barrier(parsed.check_url)
+                if barrier is not None:
+                    raise barrier
+            return self._check_bounded(
+                lambda: self.egress.check_proxy_target(
+                    parsed.check_url,
+                    method=parsed.method,
+                    is_connect=parsed.is_connect,
+                    purpose=parsed.purpose,
+                    is_navigation=parsed.is_navigation,
+                )
+            )
+        except m.CoreError as error:
+            self.egress.record_proxy_stop(
                 parsed.check_url,
-                method=parsed.method,
+                error,
                 is_connect=parsed.is_connect,
-                purpose=parsed.purpose,
                 is_navigation=parsed.is_navigation,
             )
-        )
+            raise
 
     def _raise_if_byte_limit(self) -> None:
         if self.byte_limit_exceeded:
