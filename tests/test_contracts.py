@@ -95,10 +95,16 @@ def test_design_examples_and_fake_approval():
 def test_all_error_codes_and_exit_mapping(code, retry, expected_exit):
     result = m.failure(m.CoreError(code, "Synthetic error", next_action="Review fixture"))
     assert result.error.retry_class == retry
+    assert result.error.next_action == "Review fixture"
+    default_result = m.failure(m.CoreError(code, "Synthetic error"))
+    assert default_result.error.next_action == m.DEFAULT_NEXT_ACTIONS[code]
+    assert isinstance(default_result.error.next_action, str) and default_result.error.next_action
     assert m.exit_code(result) == expected_exit
     assert m.Envelope.model_validate(result.model_dump(mode="json")).error.code == code
     Draft202012Validator(schema_for(m.Envelope)).validate(result.model_dump(mode="json"))
+    Draft202012Validator(schema_for(m.Envelope)).validate(default_result.model_dump(mode="json"))
     assert len(m.ERROR_POLICY) == 20
+    assert set(m.DEFAULT_NEXT_ACTIONS) == set(m.ErrorCode)
 
 
 def test_envelope_consistency():

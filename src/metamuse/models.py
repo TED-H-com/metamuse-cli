@@ -134,11 +134,88 @@ ERROR_POLICY: dict[ErrorCode, tuple[RetryClass, int]] = {
 }
 
 
+DEFAULT_NEXT_ACTIONS: dict[ErrorCode, str] = {
+    ErrorCode.INPUT_INVALID: (
+        "Correct the request arguments, input files, or workspace configuration and retry."
+    ),
+    ErrorCode.REFERENCE_INVALID: (
+        "Verify that the referenced IDs and targets exist and belong to the expected project."
+    ),
+    ErrorCode.SCOPE_REQUIRED: (
+        "Ask the operator to run the required interactive command or grant the needed permit."
+    ),
+    ErrorCode.SCOPE_DENIED: (
+        "Ask the operator to review workspace policy and permit scope before retrying."
+    ),
+    ErrorCode.AUTH_REQUIRED: (
+        "Ask the operator to configure or refresh credentials for the target provider."
+    ),
+    ErrorCode.DEPENDENCY_MISSING: (
+        "Run metamuse doctor or metamuse_inspect and ask the operator to install "
+        "the missing dependency."
+    ),
+    ErrorCode.UNSUPPORTED: (
+        "Run metamuse doctor or metamuse_inspect to check which capabilities are "
+        "supported in this build."
+    ),
+    ErrorCode.PROTOCOL_MISMATCH: (
+        "Inspect the workspace schema and build version compatibility before retrying."
+    ),
+    ErrorCode.ACCESS_DENIED: (
+        "Inspect the job or source status and ask the operator to verify account "
+        "access on the target platform."
+    ),
+    ErrorCode.CHECKPOINT_REQUIRED: (
+        "Ask the operator to complete the platform verification challenge before "
+        "resuming or retrying."
+    ),
+    ErrorCode.RATE_LIMITED: (
+        "Inspect the job status and wait for the rate limit window before retrying."
+    ),
+    ErrorCode.SELECTOR_DRIFT: (
+        "Inspect the job details and run metamuse doctor or metamuse_inspect; "
+        "do not retry automatically."
+    ),
+    ErrorCode.NETWORK_TIMEOUT: (
+        "Inspect the job status before retrying the read or reconciling external state."
+    ),
+    ErrorCode.JOB_BUSY: (
+        "Inspect the job status and wait for the active worker or pending user action to finish."
+    ),
+    ErrorCode.IDEMPOTENCY_CONFLICT: (
+        "Reuse the original request payload to replay the prior receipt, or supply "
+        "a new request_key for a new mutation."
+    ),
+    ErrorCode.EXTERNAL_STATE_UNKNOWN: (
+        "Inspect the job and reconcile the remote target state before resuming; "
+        "do not resend blindly."
+    ),
+    ErrorCode.STORAGE: (
+        "Inspect the workspace storage, database integrity, and stderr diagnostics before retrying."
+    ),
+    ErrorCode.LIMIT_REACHED: (
+        "Reduce the requested scope or input size within configured workspace limits."
+    ),
+    ErrorCode.DATA_STALE: (
+        "Read the latest stored revision or prepare a fresh packet before retrying."
+    ),
+    ErrorCode.RESOURCE_UNAVAILABLE: (
+        "Inspect the referenced resource or job output to verify whether the resource is available."
+    ),
+}
+
+
 class ErrorDetail(Model):
     code: ErrorCode = Field(strict=False)
     message: Text
     retry_class: RetryClass
     next_action: Text | None = None
+
+    @model_validator(mode="after")
+    def default_next_action(self) -> ErrorDetail:
+        if self.next_action is None:
+            self.next_action = DEFAULT_NEXT_ACTIONS[self.code]
+        return self
 
 
 class CoreError(Exception):
@@ -152,7 +229,10 @@ class CoreError(Exception):
     ):
         super().__init__(message)
         self.detail = ErrorDetail(
-            code=code, message=message, retry_class=ERROR_POLICY[code][0], next_action=next_action
+            code=code,
+            message=message,
+            retry_class=ERROR_POLICY[code][0],
+            next_action=DEFAULT_NEXT_ACTIONS[code] if next_action is None else next_action,
         )
         self.retry_after = max(0, retry_after)
 
@@ -200,7 +280,10 @@ class Envelope(Model):
 
 
 def failure(error: CoreError) -> Envelope:
-    return Envelope(status="error", error=error.detail)
+    detail = error.detail
+    if detail.next_action is None:
+        detail = detail.model_copy(update={"next_action": DEFAULT_NEXT_ACTIONS[detail.code]})
+    return Envelope(status="error", error=detail)
 
 
 def validation_error(error: ValidationError) -> CoreError:
@@ -221,7 +304,11 @@ def validation_error(error: ValidationError) -> CoreError:
                 name = part if re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]{0,63}", str(part)) else "field"
                 path += ("." if path else "") + name
         paths.append(path or "request")
-    return CoreError(ErrorCode.INPUT_INVALID, "Invalid request fields: " + ", ".join(paths))
+    return CoreError(
+        ErrorCode.INPUT_INVALID,
+        "Invalid request fields: " + ", ".join(paths),
+        next_action=DEFAULT_NEXT_ACTIONS[ErrorCode.INPUT_INVALID],
+    )
 
 
 def exit_code(envelope: Envelope) -> int:

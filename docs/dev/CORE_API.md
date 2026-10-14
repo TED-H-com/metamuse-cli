@@ -67,8 +67,11 @@ def submit_collect(ctx: AppContext, request: CollectRequest) -> Envelope:
 `CoreError(ErrorCode, message, next_action=None, retry_after=0)` carries a typed
 `ErrorDetail`. `failure(error)` returns an error envelope. `retry_after` is internal
 scheduler metadata, never an extra error field. The public error includes code,
-message, retry_class and optional nullable next_action. Never include credentials,
-raw transport exceptions or unrestricted source content in error/log/event text.
+message, retry_class and optional nullable next_action (populated from
+`DEFAULT_NEXT_ACTIONS[code]` whenever `ErrorDetail`/`CoreError`/`failure`/`validation_error`
+is constructed without an explicit `next_action`, keeping CLI and MCP envelopes identical).
+Never include credentials, raw transport exceptions or unrestricted source content in
+error/log/event text.
 `Envelope` enforces error/null-data consistency; JSON schemas enforce the same condition.
 `canonical_json(value)` returns UTF-8 bytes with sorted keys, compact separators, no
 string normalization, and rejects nonfinite numbers/non-string object keys.
