@@ -647,7 +647,7 @@ Facebook comment identifiers use the same stripped nonempty ASCII token validati
 Facebook weak-identity resume suppression begins only after an accepted batch has committed. A usage-only checkpoint from a login wall does not suppress a first import of weak comments; cumulative byte/expansion usage still survives.
 
 
-Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetworkConditionsByRule offline rules matching both schemes and all ports. setBlockedURLs alone is insufficient. Page WebSocket routing is supplemental. Workers receive the rules while paused and are terminated before code. Each observed attempt has the fixed websocket_blocked reason; any observed handshake response fails E_PROTOCOL_MISMATCH before import, including events drained at close.
+Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetworkConditionsByRule offline rules matching both schemes and all ports. setBlockedURLs alone is insufficient. Page WebSocket routing is supplemental. Workers are verified paused before their first script and destroyed without any resume command. Each observed attempt has the fixed websocket_blocked reason; any native socket creation or observed handshake response fails E_PROTOCOL_MISMATCH before import, including events drained at close.
 
 
 Facebook navigation failures use only the main-document request/redirect chain and its uncompleted CONNECT authorities. Refusals of WebSockets, workers, subresources or already-responded document authorities do not choose that error. Resolver capacity/timeouts use E_NETWORK_TIMEOUT with DNS-oriented advice, never a permit/policy denial.
@@ -676,6 +676,72 @@ type. Every other script is excluded from body text, even if it carries that mar
 Embedded JSON integer tokens over 128 characters stay lexical for field validation.
 Oversized counts add their fixed *_count_unparsed gap and retain the observed post;
 they do not turn a valid JSON document into a malformed-payload error.
+
+
+Facebook stop markers (`data-fb-state`, `data-page-state`, `data-checkpoint`, login
+and checkpoint form IDs) are inspected on every element, including hidden, head
+and void elements, in both drivers. Completeness evidence such as
+`data-comments-exhausted` counts only in visible subtrees under the shared text
+visibility rules. Chromium snapshots annotate computed invisibility on the clone
+with `data-metamuse-invisible`; they preserve the page's own `hidden` attribute
+and never mutate the live DOM. Head/meta and hidden inputs are invisible in both
+drivers. Text and structural JSON extraction retain their existing rules.
+
+
+Facebook browser routes validate the destination through the shared URL policy
+(scheme, credentials, port, exact host allowlist and all resolved IPs) before
+classifying login/checkpoint or off-post navigation. Denied destinations return
+`E_SCOPE_DENIED` with the fixed message “Facebook browser destination is denied
+by egress policy”. Production requires HTTPS. Chromium route DNS checks share
+the proxy's bounded resolver slots/deadline; DNS capacity and timeout failures
+retain `E_NETWORK_TIMEOUT`. The proxy still independently checks every dial/hop.
+
+
+Facebook guard failures fail closed with fixed `E_PROTOCOL_MISMATCH`: a failed
+close/cancel/abort is ignored only if the target or request is provably gone;
+missing liveness evidence is failure. Worker attachments must report
+`waitingForDebugger=true`, and `Target.getTargets` must confirm destruction. No
+worker resume command exists. The redundant per-worker network-rule step is
+removed: no untrusted worker source executes, including nested worker creation.
+Dedicated workers need a fixed CDP `Runtime.evaluate("self.close()")` in their
+paused realm because `Target.closeTarget` alone leaves them alive in this build.
+Shared workers use `Target.closeTarget`. Destruction is checked after callbacks
+return, before import, with a bounded five-second wait; no resume command is sent. Popups,
+downloads, route aborts and session teardown use the same fail-closed rule.
+
+
+Facebook requires Chromium `--block-new-web-contents`: renderer popup creation
+returns null, including URL/blank `window.open`, target=_blank links/forms,
+noopener, pristine iframe open and nested popup attempts. Before init scripts or
+navigation, the same sandbox verification blank page tests native and fresh
+iframe open; the proxy is bound but closed (not listening) and Chromium DNS is
+disabled. A failed or inconclusive check returns fixed `E_DEPENDENCY_MISSING`
+“Facebook browser popup creation control is unavailable”, with no operator opt-out.
+CDP `Page.windowOpen` counts refused attempts as `popup_blocked`; refusal alone
+permits success. Browser-level auto-attach pauses foreign page/iframe targets
+before their first script, installs network event detection and closes them.
+Native WebSocket creation or handshake responses in any attached target stop
+with the existing fixed `E_PROTOCOL_MISMATCH` before import. Workers never resume.
+The `WebSocketStream` init shim is defense in depth alongside Playwright's
+ordinary WebSocket routing; it is not the popup or socket boundary.
+
+
+A Facebook proxy byte cutoff immediately shuts down both client and upstream
+sockets for all active tunnels and refuses subsequent dials/registrations. A
+50 ms browser-loop watcher closes the affected page to interrupt in-flight
+navigation, click and expansion operations, instead of waiting for the full
+`read_timeout_seconds`. All browser operation exceptions recheck the byte latch
+and return `E_LIMIT_REACHED` with partial coverage; already observed data remains
+available. The watcher uses the pinned Playwright implementation loop, as does
+the existing async WebSocket close adapter. Tests bound hangs at an independent
+90-second subprocess deadline, with 300-second read and job budgets.
+
+
+Route validation pins its validated address set by authority for this bounded
+Facebook session. Every later URL still passes the shared scheme/credential/port/
+host/IP policy, using that pinned set through the proxy dial and peer check. The
+proxy does not resolve a different address between the browser check and its
+validated dial. Redirect destinations on new authorities get independent checks.
 
 ---
 
@@ -1416,8 +1482,8 @@ from that document is stored or reported. Script/meta navigation is route-blocke
 Page WebSockets and WebSocketStream are refused by Chromium per-URL offline
 network rules for ws/wss and all ports. Network.setBlockedURLs alone is insufficient;
 context.route_web_socket is supplemental. Any observed handshake response yields a
-fixed E_PROTOCOL_MISMATCH before import; creation attempts count websocket_blocked.
-Workers receive the rules while paused, then are terminated before executing code.
+fixed E_PROTOCOL_MISMATCH before import; native creation and handshake events stop with the same fixed error; attempts count websocket_blocked.
+Workers are verified debugger-paused, then destroyed without resuming.
 CONNECT host/IP checks remain a separate boundary.
 
 Proxy policy/resolution waits are bounded by the read timeout and interruptible on
@@ -1485,7 +1551,7 @@ Facebook comment identifiers use the same stripped nonempty ASCII token validati
 Facebook weak-identity resume suppression begins only after an accepted batch has committed. A usage-only checkpoint from a login wall does not suppress a first import of weak comments; cumulative byte/expansion usage still survives.
 
 
-Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetworkConditionsByRule offline rules matching both schemes and all ports. setBlockedURLs alone is insufficient. Page WebSocket routing is supplemental. Workers receive the rules while paused and are terminated before code. Each observed attempt has the fixed websocket_blocked reason; any observed handshake response fails E_PROTOCOL_MISMATCH before import, including events drained at close.
+Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetworkConditionsByRule offline rules matching both schemes and all ports. setBlockedURLs alone is insufficient. Page WebSocket routing is supplemental. Workers are verified paused before their first script and destroyed without any resume command. Each observed attempt has the fixed websocket_blocked reason; any native socket creation or observed handshake response fails E_PROTOCOL_MISMATCH before import, including events drained at close.
 
 
 Facebook navigation failures use only the main-document request/redirect chain and its uncompleted CONNECT authorities. Refusals of WebSockets, workers, subresources or already-responded document authorities do not choose that error. Resolver capacity/timeouts use E_NETWORK_TIMEOUT with DNS-oriented advice, never a permit/policy denial.
@@ -1514,6 +1580,72 @@ type. Every other script is excluded from body text, even if it carries that mar
 Embedded JSON integer tokens over 128 characters stay lexical for field validation.
 Oversized counts add their fixed *_count_unparsed gap and retain the observed post;
 they do not turn a valid JSON document into a malformed-payload error.
+
+
+Facebook stop markers (`data-fb-state`, `data-page-state`, `data-checkpoint`, login
+and checkpoint form IDs) are inspected on every element, including hidden, head
+and void elements, in both drivers. Completeness evidence such as
+`data-comments-exhausted` counts only in visible subtrees under the shared text
+visibility rules. Chromium snapshots annotate computed invisibility on the clone
+with `data-metamuse-invisible`; they preserve the page's own `hidden` attribute
+and never mutate the live DOM. Head/meta and hidden inputs are invisible in both
+drivers. Text and structural JSON extraction retain their existing rules.
+
+
+Facebook browser routes validate the destination through the shared URL policy
+(scheme, credentials, port, exact host allowlist and all resolved IPs) before
+classifying login/checkpoint or off-post navigation. Denied destinations return
+`E_SCOPE_DENIED` with the fixed message “Facebook browser destination is denied
+by egress policy”. Production requires HTTPS. Chromium route DNS checks share
+the proxy's bounded resolver slots/deadline; DNS capacity and timeout failures
+retain `E_NETWORK_TIMEOUT`. The proxy still independently checks every dial/hop.
+
+
+Facebook guard failures fail closed with fixed `E_PROTOCOL_MISMATCH`: a failed
+close/cancel/abort is ignored only if the target or request is provably gone;
+missing liveness evidence is failure. Worker attachments must report
+`waitingForDebugger=true`, and `Target.getTargets` must confirm destruction. No
+worker resume command exists. The redundant per-worker network-rule step is
+removed: no untrusted worker source executes, including nested worker creation.
+Dedicated workers need a fixed CDP `Runtime.evaluate("self.close()")` in their
+paused realm because `Target.closeTarget` alone leaves them alive in this build.
+Shared workers use `Target.closeTarget`. Destruction is checked after callbacks
+return, before import, with a bounded five-second wait; no resume command is sent. Popups,
+downloads, route aborts and session teardown use the same fail-closed rule.
+
+
+Facebook requires Chromium `--block-new-web-contents`: renderer popup creation
+returns null, including URL/blank `window.open`, target=_blank links/forms,
+noopener, pristine iframe open and nested popup attempts. Before init scripts or
+navigation, the same sandbox verification blank page tests native and fresh
+iframe open; the proxy is bound but closed (not listening) and Chromium DNS is
+disabled. A failed or inconclusive check returns fixed `E_DEPENDENCY_MISSING`
+“Facebook browser popup creation control is unavailable”, with no operator opt-out.
+CDP `Page.windowOpen` counts refused attempts as `popup_blocked`; refusal alone
+permits success. Browser-level auto-attach pauses foreign page/iframe targets
+before their first script, installs network event detection and closes them.
+Native WebSocket creation or handshake responses in any attached target stop
+with the existing fixed `E_PROTOCOL_MISMATCH` before import. Workers never resume.
+The `WebSocketStream` init shim is defense in depth alongside Playwright's
+ordinary WebSocket routing; it is not the popup or socket boundary.
+
+
+A Facebook proxy byte cutoff immediately shuts down both client and upstream
+sockets for all active tunnels and refuses subsequent dials/registrations. A
+50 ms browser-loop watcher closes the affected page to interrupt in-flight
+navigation, click and expansion operations, instead of waiting for the full
+`read_timeout_seconds`. All browser operation exceptions recheck the byte latch
+and return `E_LIMIT_REACHED` with partial coverage; already observed data remains
+available. The watcher uses the pinned Playwright implementation loop, as does
+the existing async WebSocket close adapter. Tests bound hangs at an independent
+90-second subprocess deadline, with 300-second read and job budgets.
+
+
+Route validation pins its validated address set by authority for this bounded
+Facebook session. Every later URL still passes the shared scheme/credential/port/
+host/IP policy, using that pinned set through the proxy dial and peer check. The
+proxy does not resolve a different address between the browser check and its
+validated dial. Redirect destinations on new authorities get independent checks.
 
 ---
 
