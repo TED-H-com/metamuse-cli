@@ -18,7 +18,7 @@ Each row uses one of four states: implemented with offline tests; implemented bu
 
 | Capability | State | Note |
 |---|---|---|
-| Local import | implemented with offline tests | Local files and text. A remote URL is rejected before a job exists. |
+| Local import | implemented with offline tests | Local files and text. |
 | Local media and subtitles | implemented with offline tests | `ffprobe` is optional. Tests that need the binary skip when it is absent. |
 | Search | implemented with offline tests | Project-scoped search over imported evidence. |
 | Packets | implemented with offline tests | Selection file to a pre-share preview. |
@@ -30,9 +30,9 @@ Each row uses one of four states: implemented with offline tests; implemented bu
 | MCP attached worker | implemented with offline tests | `metamuse mcp` starts one worker; `--no-worker` opts out. The workspace OS lock allows one executor. |
 | Approval previews and `metamuse permit approve` | implemented with offline tests | Human-only approval of the exact action; no MCP approval tool. |
 | Remote media (B12) | implemented with offline tests | Exact-action approval preview and human `permit approve`. OFFLINE and FIXTURE evidence; AT-040 LIVE has not been run. |
-| Facebook posts (B13) | not done | Not implemented on `main` yet. |
+| Facebook posts (B13) | implemented with offline tests | One operator-approved post per job, rendered in sandboxed Chromium through a policy-checked local proxy. Tested only on synthetic loopback pages; requires the `facebook` extra and Playwright Chromium. Human approval uses `metamuse permit create`; Facebook approval preview is not wired yet. No real-account run. |
 | Publishing | not done | Not started. |
-| CI | implemented with offline tests | GitHub Actions `check` runs the offline gates and wheel smoke on every PR and `main` push; required status check on `main` since 2026-10-14. |
+| CI | implemented with offline tests | GitHub Actions `check` runs the offline gates, sandboxed loopback Chromium browser tests (browser skips fail CI), and wheel smoke on every PR and `main` push; required status check on `main` since 2026-10-14. |
 
 Automated coverage of the fixture journey is `tests/test_at042_slice.py` and `tests/test_at042_evidence.py`. No real account integration is claimed.
 
