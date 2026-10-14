@@ -52,6 +52,7 @@ import math
 import os
 import re
 import shutil
+import stat
 import sys
 import time
 import unicodedata
@@ -732,6 +733,96 @@ def _cookie_header(cookies: tuple[Any, ...], url: str, allowed_hosts: frozenset[
     return "; ".join(pairs)
 
 
+def _secret_error() -> m.CoreError:
+    return m.CoreError(
+        m.ErrorCode.AUTH_REQUIRED,
+        "Secret file or reference is unavailable or unsafe",
+        next_action="Import an owned regular file with mode 0600 using metamuse auth import",
+    )
+
+
+def _check_cookie_metadata(ref: str, provider: str, account: str, secret_store: Any) -> None:
+    """Read only the native private-file metadata prefix, never secret_b64 bytes.
+
+    B08 has no public metadata reader yet. Its canonical file format writes metadata
+    first. Use the existing no-symlink directory walk without creation/chmod, and
+    unbuffered reads ending at the metadata object's closing brace.
+    """
+    if re.fullmatch(r"auth_[0-9a-f]{32}", ref) is None:
+        raise _secret_error()
+    store = secret_store or safety.SecretStore()
+    try:
+        directory = safety._open_directory(store.root)
+        try:
+            fd = os.open(
+                ref + ".json", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=directory
+            )
+        finally:
+            os.close(directory)
+        with os.fdopen(fd, "rb", buffering=0) as stream:
+            before = os.fstat(stream.fileno())
+            if (
+                not stat.S_ISREG(before.st_mode)
+                or before.st_uid != os.getuid()
+                or before.st_mode & 0o077
+                or not 0 < before.st_size <= safety.SECRET_MAX_BYTES * 2
+                or stream.read(12) != b'{"metadata":'
+            ):
+                raise _secret_error()
+            encoded = bytearray()
+            depth = 0
+            quoted = False
+            escaped = False
+            while len(encoded) < 8192:
+                byte = stream.read(1)
+                if not byte or not encoded and byte != b"{":
+                    raise _secret_error()
+                encoded.extend(byte)
+                if quoted:
+                    if escaped:
+                        escaped = False
+                    elif byte == b"\\":
+                        escaped = True
+                    elif byte == b'"':
+                        quoted = False
+                elif byte == b'"':
+                    quoted = True
+                elif byte == b"{":
+                    depth += 1
+                elif byte == b"}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+            else:
+                raise _secret_error()
+            metadata = json.loads(encoded)
+            after = os.fstat(stream.fileno())
+            if (
+                (before.st_size, before.st_mtime_ns, before.st_ctime_ns)
+                != (after.st_size, after.st_mtime_ns, after.st_ctime_ns)
+                or metadata["auth_ref"] != ref
+                or metadata["storage_kind"] != "private_file"
+                or metadata["provider"] != provider
+                or metadata["account"] != account
+            ):
+                raise _secret_error()
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        raise _secret_error() from None
+
+
+def _load_bound_cookies(
+    approvals: list[Any], provider: str, account: str, secret_store: Any
+) -> dict[str, tuple[Any, ...]]:
+    return {
+        ref: _parse_cookie_secret(
+            safety.resolve_secret(
+                ref, provider=provider, account=account, secret_store=secret_store
+            )
+        )
+        for ref in sorted({approval.auth_ref for approval in approvals if approval.auth_ref})
+    }
+
+
 def _bind_cookies(net: _Net, approval: Any, provider: str, account: str, secret_store: Any) -> None:
     """Load this approval's secret before its first dial. Set-Cookie is never stored."""
 
@@ -739,6 +830,11 @@ def _bind_cookies(net: _Net, approval: Any, provider: str, account: str, secret_
     net.cookie_hosts = frozenset(_hosts(approval.hosts))
     ref = getattr(approval, "auth_ref", None)
     if not ref:
+        return
+    if net.bound_cookies is not None:
+        if ref not in net.bound_cookies:
+            raise _secret_error()
+        net.cookies = net.bound_cookies[ref]
         return
     secret = safety.resolve_secret(
         ref, provider=provider, account=account, secret_store=secret_store
@@ -916,6 +1012,17 @@ def prepare_remote_media(
         keys,
         approvals=approvals,
     )
+    if conn is None and (not isinstance(ctx, StepContext) or ctx.target == target):
+        # A changed table reaches the step's fresh-preview refusal before inspecting
+        # new, unbound credentials. The DB-only verifier rebuild reuses checks that
+        # already ran on this workspace snapshot, outside its transaction.
+        secret_store = (
+            ctx.executor.secret_store if isinstance(ctx, StepContext) else ctx.secret_store
+        )
+        for ref in sorted({approval.auth_ref for approval in approvals if approval.auth_ref}):
+            _check_cookie_metadata(
+                ref, workspace.remote_media.provider, workspace.remote_media.account, secret_store
+            )
     limits = request.limits.model_dump(mode="json")
     for name in ("safe_read_retries", "read_timeout_seconds", "media_max_bytes", "text_max_bytes"):
         limits[name] = getattr(workspace.limits, name)
@@ -1110,6 +1217,7 @@ class _Net:
     secret_store: Any = None
     provider: str = ""
     account: str = ""
+    bound_cookies: dict[str, tuple[Any, ...]] | None = None
 
 
 def _peer(value: Any) -> str:
@@ -2696,6 +2804,7 @@ def run_remote_media(step: StepContext) -> m.JobResult:
             )
         return current.payload
 
+    bound_cookies = _load_bound_cookies(approvals, provider, account, step.executor.secret_store)
     step.before_external_action(
         step.target,
         verify=safety.external_action_verifier(
@@ -2723,6 +2832,7 @@ def run_remote_media(step: StepContext) -> m.JobResult:
         secret_store=step.executor.secret_store,
         provider=provider,
         account=account,
+        bound_cookies=bound_cookies,
     )
     staging = _claim_staging(step.store, step.job.id)
     _sweep(step.store, step.job.id, remove_current=False)
@@ -2733,7 +2843,7 @@ def run_remote_media(step: StepContext) -> m.JobResult:
             approval = _approval_for(keys[index], urls[index], approvals)
             if approval is None:
                 raise _host_denied()
-            # Resolve this approval's secret before its first dial.
+            # Select only cookies already parsed before permit consumption.
             _bind_cookies(net, approval, provider, account, step.executor.secret_store)
             net.checker = _checker_factory(tuple(approval.hosts), _system_resolver)
             if state.phase in ("", "start") or state.current is None and state.phase == "start":

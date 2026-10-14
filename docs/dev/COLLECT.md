@@ -567,11 +567,13 @@ mobile host allows the hop and then the checker refuses the desktop host.
 Cookies, netrc, the yt-dlp cache, usernames, passwords, and client certificates
 stay off in the fixed parameters. `cookiefile` stays unset. `CollectRequest`
 has no `auth_ref`: model content cannot choose credentials. An operator may
-set `auth_ref` on one approval. The job resolves it with
+set `auth_ref` on an approval. Preparation checks the metadata of every bound
+reference without reading secret bytes: it must exist and match the configured
+provider/account. A failure is the B08 `E_AUTH_REQUIRED` secret error with no
+approval preview. At the step, every bound secret is resolved with
 `resolve_secret(auth_ref, provider=<permit provider>, account=<permit account>)`
-before the first dial of that approval. A missing secret or a provider or
-account mismatch is the B08 `E_AUTH_REQUIRED` secret error, and that input
-does not dial. The imported bytes must be a Netscape cookie file. A secret
+and parsed before the external-action boundary consumes the permit, including
+bindings for later hops that this run might never use. The imported bytes must be a Netscape cookie file. A secret
 that is a `Cookie:` header line is `E_INPUT_INVALID` with message `A Netscape
 cookie file is required`. The message does not echo the file. Parsing strips
 only the line terminator, so an empty seventh field stays an empty value.
@@ -592,8 +594,8 @@ checkpoint, step result, job request, events, logs, envelopes, exceptions,
 and the database. The secret behind `auth_ref` is that Netscape file. Putting
 `auth_ref` only on `FacebookReel` does not send the cookie on the `Facebook`
 watch hop. Put the same reference on both approvals when the share GET and
-the watch GET should both carry it. A bad secret stops that approval before
-its dial.
+the watch GET should both carry it. Any broken bound secret stops the run
+before permit consumption and before any dial.
 
 ```toml
 [[remote_media.approvals]]

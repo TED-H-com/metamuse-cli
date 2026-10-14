@@ -1,6 +1,8 @@
 """OFFLINE/FIXTURE regressions from the independent B12 rounds 5/6 review."""
 
+import base64
 import json
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import anyio
@@ -11,6 +13,7 @@ from test_remote_approval import (
     approval_key,
     collect,
     collect_cli,
+    configure,
     no_created_objects,
     request,
 )
@@ -19,7 +22,7 @@ from test_remote_approval import entry as remote_entry
 entry = remote_entry
 
 
-def import_cookies(entry, *, account=ACCOUNT, content=None):
+def import_cookies(entry, *, account=ACCOUNT, provider=PROVIDER, content=None):
     marker = f"SYNTHETIC_{'HOP'}_COOKIE_VALUE"
     path = entry.inputs / "cookies.txt"
     path.write_text(content or f".facebook.com\tTRUE\t/\tTRUE\t0\tsid\t{marker}\n")
@@ -30,7 +33,7 @@ def import_cookies(entry, *, account=ACCOUNT, content=None):
         "--file",
         path,
         "--provider",
-        PROVIDER,
+        provider,
         "--account",
         account,
         operator=True,
@@ -222,3 +225,55 @@ def test_review_structural_display_preserves_path_query_and_masks_only_secret_va
     entry.approve(preview, body, approval_key(preview))
     assert "Destination: " + expected in entry.diagnostics[-1]
     assert url not in entry.diagnostics[-1]
+
+
+@pytest.mark.parametrize("binding", ["missing", "account", "provider"])
+@pytest.mark.parametrize("placement", ["first", "later"])
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+def test_review_cookie_metadata_failure_has_no_preview(entry, binding, placement, channel):
+    if binding == "missing":
+        ref = "auth_" + "a" * 32
+    else:
+        ref, _marker = import_cookies(
+            entry,
+            account="other-account" if binding == "account" else ACCOUNT,
+            provider="other-provider" if binding == "provider" else PROVIDER,
+        )
+    if placement == "later":
+        add_hop(entry, ref)
+    else:
+        configure(entry, auth_ref=ref)
+    envelope = collect(entry, request(entry), channel)
+    assert envelope["error"]["code"] == "E_AUTH_REQUIRED"
+    assert envelope["error"]["message"] == "Secret file or reference is unavailable or unsafe"
+    assert envelope["approval"] is None
+    no_created_objects(entry)
+
+
+@pytest.mark.parametrize("secret", ["base64", "cookie"])
+@pytest.mark.parametrize("placement", ["first", "later"])
+def test_review_broken_bound_secret_fails_before_consumption(entry, secret, placement):
+    ref, marker = import_cookies(entry)
+    if placement == "later":
+        add_hop(entry, ref)
+    else:
+        configure(entry, auth_ref=ref)
+    body = request(entry)
+    preview = collect(entry, body)["approval"]
+    grant = entry.approve(preview, preview["request"], approval_key(preview))["data"]["id"]
+    accepted = submit(entry, {**body, "access_grant_id": grant})
+    path = Path(entry.env["XDG_CONFIG_HOME"]) / "metamuse" / "auth" / (ref + ".json")
+    data = json.loads(path.read_bytes())
+    data["secret_b64"] = (
+        "invalid!base64"
+        if secret == "base64"
+        else base64.b64encode(f"Cookie: sid={marker}".encode()).decode()
+    )
+    path.write_text(json.dumps(data, sort_keys=True, separators=(",", ":")))
+    entry.cli("worker", "run", "--once")
+    job = entry.cli("jobs", "get", accepted["data"]["job_id"])["data"]["job"]
+    assert job["state"] == ("awaiting_user" if secret == "base64" else "failed")
+    assert job["error"]["code"] == ("E_AUTH_REQUIRED" if secret == "base64" else "E_INPUT_INVALID")
+    assert permit(entry, grant)["used"] == 0
+    assert not entry.egress.exists()
+    assert marker not in json.dumps(job) and all(marker not in raw for raw in entry.diagnostics)

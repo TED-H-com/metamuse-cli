@@ -1938,6 +1938,7 @@ def netscape(domain, flag, path, secure, expiry, name, value) -> bytes:
 def put_secret(tmp_path, ctx, secret, *, provider=PROVIDER, account=ACCOUNT):
     store = safety.SecretStore(root=tmp_path / "secrets")
     meta = store.put(secret, provider=provider, account=account, created_at=ctx.clock())
+    ctx.secret_store = store
     return store, meta["auth_ref"]
 
 
@@ -2724,14 +2725,14 @@ def test_cookie_binding_mismatch_dials_nothing(ctx, project, origin, tmp_path, m
         [("MetamuseFixture", ["media.fixture.test"], auth_ref)],
         ["MetamuseFixture"],
     )
-    job = run(ctx, req, secret_store=store)
-    assert job.state == "awaiting_user"
-    assert job.error["code"] == m.ErrorCode.AUTH_REQUIRED.value
-    assert job.error["message"] == "Secret file or reference is unavailable or unsafe"
+    envelope = app.submit_collect(ctx, req)
+    assert envelope.error.code == m.ErrorCode.AUTH_REQUIRED
+    assert envelope.error.message == "Secret file or reference is unavailable or unsafe"
+    assert envelope.approval is None
+    assert ctx.store.get(m.Permit, _permit).used == 0
     assert dials == []
     assert origin.hits == []
-    assert marker not in json.dumps(job.error)
-    assert stored_rows(ctx) == 0
+    assert marker not in envelope.model_dump_json()
 
 
 def test_set_cookie_is_not_replayed(ctx, project, origin, tmp_path):
