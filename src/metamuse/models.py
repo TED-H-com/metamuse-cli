@@ -508,6 +508,15 @@ class Draft(Model):
     stale: bool = False
 
 
+class DraftPreferences(Model):
+    """Short explicit values for this draft; no permanent policy is learned."""
+
+    language: Annotated[str, Field(min_length=1, max_length=35)] = "und"
+    emoji: Annotated[str, Field(min_length=1, max_length=32)] = "unspecified"
+    format: Literal["plain_text", "markdown"] = "plain_text"
+    scope: Literal["this_draft"] = "this_draft"
+
+
 class DraftRevision(Model):
     draft_id: ID
     revision: Revision
@@ -516,14 +525,7 @@ class DraftRevision(Model):
     variant: dict[str, Any] = Field(default_factory=dict)
     facts_refs: list[EvidenceRef] = Field(default_factory=list)
     assets: list[ID] = Field(default_factory=list)
-    preferences: dict[str, Any] = Field(
-        default_factory=lambda: {
-            "language": "und",
-            "emoji": "unspecified",
-            "format": "plain_text",
-            "scope": "this_draft",
-        }
-    )
+    preferences: DraftPreferences = Field(default_factory=DraftPreferences)
     digest: Digest
 
 
@@ -608,7 +610,7 @@ class JobControlRequest(Model):
 
 
 class SearchRequest(JobListRequest):
-    query: Text
+    query: Annotated[str, Field(min_length=1, max_length=1_000_000)]
 
 
 class PacketPrepareRequest(Model):
@@ -645,15 +647,6 @@ class MuseCloseExchangeRequest(Model):
     exchange_id: ID
     outcome: Literal["answered", "needs_more_data", "abandoned"]
     request_key: RequestKey
-
-
-class DraftPreferences(Model):
-    """Explicit preferences for this draft; saving never learns a permanent policy."""
-
-    language: Text = "und"
-    emoji: Text = "unspecified"
-    format: Literal["plain_text", "markdown"] = "plain_text"
-    scope: Literal["this_draft"] = "this_draft"
 
 
 class DraftSaveRequest(Model):

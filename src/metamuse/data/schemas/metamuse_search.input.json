@@ -29,6 +29,7 @@
     },
     "query": {
       "maxLength": 1000000,
+      "minLength": 1,
       "title": "Query",
       "type": "string"
     }

@@ -1530,6 +1530,7 @@
           },
           "query": {
             "maxLength": 1000000,
+            "minLength": 1,
             "title": "Query",
             "type": "string"
           }
@@ -2954,17 +2955,19 @@
         "$defs": {
           "DraftPreferences": {
             "additionalProperties": false,
-            "description": "Explicit preferences for this draft; saving never learns a permanent policy.",
+            "description": "Short explicit values for this draft; no permanent policy is learned.",
             "properties": {
               "language": {
                 "default": "und",
-                "maxLength": 1000000,
+                "maxLength": 35,
+                "minLength": 1,
                 "title": "Language",
                 "type": "string"
               },
               "emoji": {
                 "default": "unspecified",
-                "maxLength": 1000000,
+                "maxLength": 32,
+                "minLength": 1,
                 "title": "Emoji",
                 "type": "string"
               },

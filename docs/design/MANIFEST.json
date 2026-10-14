@@ -84,8 +84,8 @@
     },
     {
       "path": "contracts/mcp-tools.json",
-      "bytes": 98069,
-      "sha256": "715e94c141f3789f4f86ab0e058d43a409a5dddb2312a5868a76e1ddfc8caa43"
+      "bytes": 98144,
+      "sha256": "ba7d0322274a0b5b0a589df87ee19bdf6bf1f9d2828d606f2114a0e58cfcd9e5"
     },
     {
       "path": "contracts/requirements.json",

@@ -1,6 +1,43 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$defs": {
+    "DraftPreferences": {
+      "additionalProperties": false,
+      "description": "Short explicit values for this draft; no permanent policy is learned.",
+      "properties": {
+        "language": {
+          "default": "und",
+          "maxLength": 35,
+          "minLength": 1,
+          "title": "Language",
+          "type": "string"
+        },
+        "emoji": {
+          "default": "unspecified",
+          "maxLength": 32,
+          "minLength": 1,
+          "title": "Emoji",
+          "type": "string"
+        },
+        "format": {
+          "default": "plain_text",
+          "enum": [
+            "plain_text",
+            "markdown"
+          ],
+          "title": "Format",
+          "type": "string"
+        },
+        "scope": {
+          "const": "this_draft",
+          "default": "this_draft",
+          "title": "Scope",
+          "type": "string"
+        }
+      },
+      "title": "DraftPreferences",
+      "type": "object"
+    },
     "EvidenceRef": {
       "additionalProperties": false,
       "properties": {
@@ -78,9 +115,7 @@
       "type": "array"
     },
     "preferences": {
-      "additionalProperties": true,
-      "title": "Preferences",
-      "type": "object"
+      "$ref": "#/$defs/DraftPreferences"
     },
     "digest": {
       "pattern": "^[0-9a-f]{64}$",
