@@ -108,6 +108,7 @@ B10實作補充：零bytes證據只接受同process內transport記帳；持久�
 discussion固定snapshot。fixture backend須明示選擇，discussion/message/observation及content envelope標mock，
 inspect只fixture_passed。read預設local；refresh排safe_read job＋current access grant。open對帳可明示原discussion_id，
 unknown只排list job，不再create；已mapped discussion則排history baseline read。cursor由workspace key簽名，綁discussion/exchange與observation高水位。
+open在提交與boundary兩次檢查同project/account的未解create；已queued的第二次create也不得越過，grant未使用、step本地failed。
 
 ## 7. 分享與草稿
 
