@@ -171,3 +171,10 @@ observations add weak_identity_expansion/partial instead of text or position mer
 The pinned Playwright 1.63 sync WebSocket callback runs on its asyncio loop; the
 close handler awaits the underlying route implementation instead of nesting a
 synchronous API call. The local WSS regression covers page and worker closures.
+
+The pinned browser does not route worker WebSockets through Playwright's WebSocket
+hook. Dedicated/shared/service workers are therefore paused by CDP before their
+first script and terminated, in addition to blocking service-worker registration.
+This intentionally disables worker-backed page features; unavailable content remains
+a coverage gap. Real loopback tests prove both dedicated and shared worker WSS
+cannot issue a handshake, while an approved page WSS receives a closed event.

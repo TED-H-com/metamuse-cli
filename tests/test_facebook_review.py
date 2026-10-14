@@ -343,7 +343,10 @@ def test_finding_03_browser_navigation_identity_stops_before_import(tmp_path, mo
             assert all(request != other for request, _ in hits)
 
 
-def test_finding_04_approved_wss_and_worker_wss_closed_before_handshake(tmp_path, monkeypatch):
+@pytest.mark.parametrize("worker_kind", ["Worker", "SharedWorker"])
+def test_finding_04_approved_wss_and_worker_wss_closed_before_handshake(
+    tmp_path, monkeypatch, worker_kind
+):
     script = """<script>
     window.states = [];
     const socket = new WebSocket('wss://' + location.host + '/ws');
@@ -354,6 +357,7 @@ def test_finding_04_approved_wss_and_worker_wss_closed_before_handshake(tmp_path
     const worker = new Worker(URL.createObjectURL(new Blob([source], {type: 'text/javascript'})));
     worker.onmessage = (event) => states.push(event.data);
     </script>"""
+    script = script.replace("new Worker(", f"new {worker_kind}(")
     markup = _synthetic_post_html().replace("</body>", script + "</body>")
     with browser_fixture(tmp_path, monkeypatch, {"/synth.lab/posts/pfbid0101synth": markup}) as env:
         ctx, _, _, _, hits, guard, driver = env
@@ -366,8 +370,10 @@ def test_finding_04_approved_wss_and_worker_wss_closed_before_handshake(tmp_path
         session = driver.open_session(state, guard, timeout_ms=2000, **options)
         try:
             session.goto_post(URL)
-            session._page.wait_for_function("window.states.length === 2", timeout=2000)
-            assert session._page.evaluate("window.states") == ["closed", "closed"]
+            session._page.wait_for_function("window.states.includes('closed')", timeout=2000)
+            session._page.wait_for_timeout(200)
+            assert session._page.evaluate("window.states") == ["closed"]
+            assert session.workers_blocked >= 1
             assert not any(upgrade for _, upgrade in hits)
             assert guard.summary()["aborted"] >= 2
         finally:
