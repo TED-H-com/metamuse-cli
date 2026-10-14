@@ -33,7 +33,7 @@ app.AppContext.open = classmethod(lambda cls, workspace=None, **kw:
 def fixture_class():
     from yt_dlp.extractor.common import InfoExtractor
     class MetamuseFixtureIE(InfoExtractor):
-        _VALID_URL = r'https://media\\.fixture\\.test/(?P<id>[a-z]+)'
+        _VALID_URL = r'(?i)https://media\\.fixture\\.test(?::\\d+)?/(?P<id>[a-z]+)'
         def _real_extract(self, url):
             return self._download_json(url, self._match_id(url), note=False)
     return MetamuseFixtureIE

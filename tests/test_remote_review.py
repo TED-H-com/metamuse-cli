@@ -5,7 +5,15 @@ from urllib.parse import parse_qs, urlsplit
 
 import anyio
 import pytest
-from test_remote_approval import ACCOUNT, PROVIDER, approval_key, collect, collect_cli, request
+from test_remote_approval import (
+    ACCOUNT,
+    PROVIDER,
+    approval_key,
+    collect,
+    collect_cli,
+    no_created_objects,
+    request,
+)
 from test_remote_approval import entry as remote_entry
 
 entry = remote_entry
@@ -141,3 +149,76 @@ def test_review_approval_edits_stop_before_consumption_and_egress(entry, change,
     assert not entry.egress.exists()
     fresh = collect(entry, request(entry, key="fresh"), channel)["approval"]
     assert fresh["action_digest"] != preview["action_digest"]
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://www.facebook.com/x=1;y=2/videos/111",
+        "https://www.facebook.com/x=1;y=2/videos/222",
+        "https://www.facebook.com/watch/?v=111;x=1",
+        "https://www.facebook.com/watch/?v=222;x=1",
+        "https://www.facebook.com./share/r/AAAA/",
+        "https://www.facebook.com./share/r/BBBB/",
+        "https://media.fixture.test/one/x=1;y=2/path-material",
+    ],
+)
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+def test_review_hidden_destinations_are_refused_without_preview(entry, url, channel):
+    path = entry.workspace / "metamuse.toml"
+    path.write_text(
+        path.read_text()
+        + ('\n[[remote_media.approvals]]\nextractor = "Facebook"\nhosts = ["www.facebook.com"]\n')
+    )
+    body = request(entry, url=url)
+    envelope = collect(entry, body, channel, code=2)
+    assert envelope["error"]["code"] == "E_INPUT_INVALID"
+    assert envelope["error"]["message"] == "Remote URL cannot be reviewed safely"
+    assert envelope["approval"] is None
+    assert url not in json.dumps(envelope) and all(url not in raw for raw in entry.diagnostics)
+    no_created_objects(entry)
+
+
+def test_review_permit_approve_refuses_cli_d_hidden_destination(entry):
+    body = request(entry, url="https://media.fixture.test/one/x=1;y=2/path-material")
+    path = entry.inputs / "original-request.json"
+    path.write_text(json.dumps(body))
+    refused = entry.cli(
+        "permit",
+        "approve",
+        "--operation",
+        "collect.remote",
+        "--request-file",
+        path,
+        "--exact-digest",
+        "a" * 64,
+        "--request-key",
+        "review-hidden",
+        operator=True,
+        code=2,
+    )
+    assert refused["error"]["message"] == "Remote URL cannot be reviewed safely"
+    assert refused["approval"] is None
+    assert "path-material" not in entry.diagnostics[-1]
+    no_created_objects(entry)
+
+
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+@pytest.mark.parametrize("port", [443, 4443])
+def test_review_structural_display_preserves_path_query_and_masks_only_secret_values(
+    entry, channel, port
+):
+    url = (
+        f"https://MEDIA.fixture.test:{port}/one;public=1?note=visible&token=synthetic&oe=synthetic"
+    )
+    body = request(entry, url=url)
+    preview = collect(entry, body, channel)["approval"]
+    authority = "media.fixture.test" + ("" if port == 443 else ":" + str(port))
+    expected = f"https://{authority}/one;public=1?note=visible&token=[REDACTED]&oe=[REDACTED]"
+    assert preview["destination"] == expected
+    assert preview["request"]["inputs"][0]["url"] == expected
+    assert "synthetic" not in preview["destination"]
+    # Exact approval reviews the original bytes and shows precisely the structural display.
+    entry.approve(preview, body, approval_key(preview))
+    assert "Destination: " + expected in entry.diagnostics[-1]
+    assert url not in entry.diagnostics[-1]

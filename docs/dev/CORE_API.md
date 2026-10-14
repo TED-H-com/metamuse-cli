@@ -862,6 +862,13 @@ registers the sole dispatcher with `CollectRequest`; `_remote_route` selects the
 `remote_media.preview_remote_media`, using `prepare_remote_media` at all three boundaries.
 B13 adds its route to that selector/table rather than registering another callback.
 
+B12 displays destinations structurally, with normalized hosts, non-default ports,
+complete paths (including semicolon parameters) and queries. Only known secret query
+values are masked using shared url_token rules. Request echo and operator review use
+the same display; trailing-dot hosts or other material structure hidden by free-text
+redaction are refused with fixed E_INPUT_INVALID and no preview. Exact digests bind
+the original URL bytes, including when the public display copy differs.
+
 AppContext.worker_status is an optional process-owned callback installed by MCP startup.
 Shared wrappers replace worker availability fields with attached-worker truth there;
 CLI contexts use the existing Linux FLOCK observation. No feature sets this callback.

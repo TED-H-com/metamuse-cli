@@ -302,8 +302,10 @@ An empty approvals list disables this backend. No request or grant chooses the a
 
 1. Submit the intended collection without `--access-grant`, through `metamuse add`
    or `metamuse_collect`. `E_SCOPE_REQUIRED` includes `approval`, with null `data`.
-   Show its summary and `next_action` to the human. Save `approval.request` at
-   `approval.request_file`; the preview itself creates no file, permit, receipt,
+   Show its summary and `next_action` to the human. Save the request at
+   `approval.request_file`. `approval.request` is the public display copy; if
+   masking or URL normalization changed its bytes, the operator's private file
+   must retain the original request for exact-digest approval. The preview creates no file, permit, receipt,
    job or intent and makes no network call or account discovery.
 2. The human reviews the destinations, configured provider/account, cookie binding
    label (if any), extractor/host allowlist, limits and stored resources. Run the
@@ -330,8 +332,15 @@ The job selects hops only from its bound entries. Even an unrelated approval edi
 invalidates outstanding grants before consumption or egress; this fail-closed trade-off
 is intentional. Grant IDs and request keys are excluded from the action digest.
 Current workspace limits and extractor/host approvals are checked again at execution.
-Each displayed text field, including nested input URLs, is redacted before JSON encoding.
-The digest still binds original bytes: a redacted copy needs a new review and digest.
+Remote destinations use URL structure: scheme, normalized host, non-default port,
+the complete path including `;` parameters, and query. Only values of known secret
+query parameters are masked, using the shared `url_token` key rules. The public request
+echo and `permit approve` stderr use this same display. A trailing-dot request host,
+or any remaining free-text redaction that would hide other URL structure, returns fixed
+`E_INPUT_INVALID` / `Remote URL cannot be reviewed safely`, without echoing the URL or
+producing a preview. Fragments are not fetched and are omitted from the display.
+Other text fields are redacted separately before JSON encoding. The digest still binds
+original bytes: a normalized or masked display copy cannot reuse the original digest.
 Cookie bytes are never read by the preview, and only the reference label and account
 appear in its summary. Share previews bind the original share URL and state that
 checked resolution and at most two approved extractor hops happen during execution.

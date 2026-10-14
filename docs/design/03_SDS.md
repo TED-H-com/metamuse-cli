@@ -635,3 +635,10 @@ keys are also bound. The preview identifies first-hop and later-hop entries, hos
 cookie labels/accounts. Execution selects hops only from the bound entries. A change
 to any entry, including an unrelated approval, invalidates the grant before use or
 egress and requires a fresh preview. No network-derived resolved URL enters the digest.
+
+Remote destinations are constructed from URL structure, retaining non-default ports,
+the full path with semicolon parameters and the query. Only shared url_token secret
+parameter values are masked; request echo and operator stderr use the same display.
+Preparation refuses trailing-dot hosts and remaining free-text redaction of material
+URL structure with a fixed E_INPUT_INVALID and no preview or URL echo. Fragments are
+not fetched. The action digest continues to bind original bytes.
