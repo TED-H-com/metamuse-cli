@@ -235,6 +235,15 @@ metamuse mcp
 
 CLI add預設持久化；--run前景執行。沒有長駐worker時前景命令結束不代表工作會在背景繼續。MCP可附同套件worker，但同workspace只能一個executor。
 
+B08 local safety commands: `auth import --file PATH [--provider LABEL] [--account LABEL]`;
+`permit create --project ID --kind access|share --scope-file PATH --provider LABEL
+--account LABEL --issuer LABEL --expires-at TIMESTAMP --max-uses N --request-key KEY
+[--exact-digest SHA256]`; `permit revoke ID --request-key KEY`; `permit list --project ID`.
+Expiry is required, timezone-aware, and at most 30 days after issuance; uses are 1–1000.
+Exact access targets, exact packets or an immutable displayed evidence snapshot bind
+project/provider/account. [Safety API](../dev/SAFETY_API.md) defines scope formats and
+backend obligations. These are human-only commands, never MCP self-approval tools.
+
 JSON envelope：contract_version、request_id、status(ok/accepted/partial/error)、data、error、warnings、next_cursor。exit 0代表本命令成功，可能僅queued；2輸入錯、3需要人／權限、4backend不相容、5部分或等待逾時、6需對帳、7儲存／內部錯、130中止。
 
 ## 9. MCP與Skill
@@ -497,6 +506,23 @@ The initial schema adds `request_receipts` for synchronous mutation idempotency;
 schema transitions. Job `started_at` persists the first-claim wall-clock boundary;
 step `uncertain_state` persists the recovery classification independently of registry
 availability. These are additions to the tables above, not separate stores/queues.
+
+### B08 safety implementation clarifications
+
+[Safety API](../dev/SAFETY_API.md) defines the URL request/redirect/subresource hook,
+separately named localhost fixture checker, private-file secret fallback and typed
+access/share scope formats. There is no OS-keyring implementation in this build.
+Access scopes bind exact action digests; share scopes bind stored packet digests or
+an immutable displayed set of original evidence refs. Operator/host question semantics
+remain a stated responsibility, not an automatic legality/privacy proof.
+
+The standard external verifier reserves use inside `before_external_action`'s
+transaction alongside submission intent. Durable identifier/hash-only reservation events
+use the existing `events` table; do not prune them while recoverable/uncertain work needs
+them. Uncertain intent/action checks block fresh request keys and permits. No schema or
+migration is added. Per-request policy alone cannot constrain an unguarded dependency's
+DNS, proxy or subresources: un-interceptable backends require process egress controls
+and a tested host set before exposing arbitrary URL acquisition.
 
 Job-list cursors fix creation-order membership using a row high-water mark; statuses
 are read live and physical job deletion/reordering is not exposed. MCP job_list requires

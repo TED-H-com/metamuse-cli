@@ -1,9 +1,11 @@
+import json
 import socket
+from pathlib import Path
 
 import pytest
 
 from metamuse import models as m
-from metamuse.safety import OutboundURLPolicy, check_fixture_url, check_url
+from metamuse.safety import URL_MAX_BYTES, OutboundURLPolicy, check_fixture_url, check_url
 
 PUBLIC = "93.184.216.34"
 
@@ -209,3 +211,65 @@ def test_fixture_mode_is_explicit_and_only_adds_loopback():
     )
     with pytest.raises(m.CoreError):
         check_fixture_url("http://10.0.0.1/", purpose="request")
+
+
+CORPUS = Path(__file__).parent / "fixtures/corpus/security/urls.jsonl"
+CORPUS_CASES = [json.loads(line) for line in CORPUS.read_text(encoding="utf-8").splitlines()]
+# Corpus remains owned by its producer. These two expectations contradict the B08 contract.
+SPEC_CORPUS_EXPECTATIONS = {
+    "overlong_url": "allow",  # Corpus's 4120 UTF-8 bytes is below the documented 8192-byte bound.
+    "trailing_dot_host": "allow",  # Normalize a single trailing dot, then apply host/IP policy.
+}
+
+
+@pytest.mark.parametrize("case", CORPUS_CASES, ids=[case["reason"] for case in CORPUS_CASES])
+def test_shared_url_corpus_with_explicit_policy_context(case):
+    reason = case["reason"]
+    allowed_hosts = (
+        ("facebook.com",)
+        if reason in {"lookalike_host", "domain_only_in_query", "idn_punycode_homograph"}
+        else ()
+    )
+
+    def resolve(host):
+        # Localhost rows explicitly exercise the loopback DNS case; all other reserved names
+        # resolve to one fixed public address, with no real DNS or network activity.
+        return ["127.0.0.1", "::1"] if reason in {"localhost", "localhost_with_port"} else [PUBLIC]
+
+    try:
+        result = check_url(
+            case["url"], purpose="seed", resolver=resolve, allowed_hosts=allowed_hosts
+        )
+        verdict = "allow"
+    except m.CoreError as error:
+        assert error.detail.code == m.ErrorCode.SCOPE_DENIED
+        verdict = "reject"
+    expected_verdict = SPEC_CORPUS_EXPECTATIONS.get(reason, case["expected_verdict"])
+    assert verdict == expected_verdict
+    if reason in SPEC_CORPUS_EXPECTATIONS:
+        assert case["expected_verdict"] == "reject"  # Detect when the producer corrects these rows.
+    if reason == "overlong_url":
+        assert len(case["url"].encode("utf-8")) == 4120 < URL_MAX_BYTES
+    if reason == "trailing_dot_host":
+        assert result.hostname == "example.com" and result.url == "http://example.com/path"
+
+
+@pytest.mark.parametrize("port", [22, 25, 6379, 8080])
+def test_production_ports_are_http_standard_and_fixture_exceptions_are_loopback_only(port):
+    with pytest.raises(m.CoreError):
+        check_url(
+            f"https://example.test:{port}/", purpose="request", resolver=lambda host: [PUBLIC]
+        )
+    with pytest.raises(m.CoreError):
+        check_fixture_url(
+            f"https://example.test:{port}/", purpose="request", resolver=lambda host: [PUBLIC]
+        )
+    assert check_fixture_url(f"http://127.0.0.1:{port}/", purpose="request")
+
+
+def test_url_byte_limit_accepts_exact_boundary_and_rejects_next_byte():
+    prefix = "https://example.test/"
+    exact = prefix + "a" * (URL_MAX_BYTES - len(prefix.encode("utf-8")))
+    assert check_url(exact, purpose="seed", resolver=lambda host: [PUBLIC])
+    with pytest.raises(m.CoreError):
+        check_url(exact + "a", purpose="seed", resolver=lambda host: [PUBLIC])

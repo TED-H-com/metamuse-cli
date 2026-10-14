@@ -42,6 +42,7 @@ def register_operations(registry: dict[str, Operation] | None = None) -> None:
 
 def import_auth(ctx: AppContext, request: m.AuthImportRequest) -> m.Envelope:
     """Import only the named file. Never discover browser profiles or credentials."""
+    ctx.require_interactive()
     _label(request.provider, optional=True)
     _label(request.account, optional=True)
     secret = _read_secret_file(Path(request.path).expanduser(), SECRET_MAX_BYTES)
@@ -53,6 +54,7 @@ def import_auth(ctx: AppContext, request: m.AuthImportRequest) -> m.Envelope:
 
 def create_permit(ctx: AppContext, request: m.PermitCreateRequest) -> m.Envelope:
     """Issue local operator intent; never call this from source/model/MCP handlers."""
+    ctx.require_interactive()
     scope = _parse_scope(request.kind, request.scope)
     _label(request.provider)
     _label(request.account)
@@ -61,6 +63,13 @@ def create_permit(ctx: AppContext, request: m.PermitCreateRequest) -> m.Envelope
         _scope_error("Permit use limit is too large")
     expires = _timestamp(request.expires_at)
     with ctx.store.transaction() as conn:
+        replayed = (
+            conn.execute(
+                "SELECT 1 FROM request_receipts WHERE operation='permit.create' AND request_key=?",
+                (request.request_key,),
+            ).fetchone()
+            is not None
+        )
 
         def issue() -> dict[str, Any]:
             now = _timestamp(ctx.clock())
@@ -89,6 +98,9 @@ def create_permit(ctx: AppContext, request: m.PermitCreateRequest) -> m.Envelope
             return permit.model_dump(mode="json")
 
         data = ctx.store.mutate_once(conn, "permit.create", request.request_key, request, issue)
+        # Receipt replay identifies the grant; mutable consumption/revocation state is always live.
+        data = ctx.store.get(m.Permit, data["id"], conn=conn).model_dump(mode="json")
+        data["replayed"] = replayed
     return m.Envelope(status="ok", data=data)
 
 
@@ -257,6 +269,18 @@ def _check_url(
             not _public_ip(address, fixture_loopback=fixture_loopback) for address in addresses
         ):
             _url_error()
+        if port not in (80, 443) and not (
+            fixture_loopback
+            and all(
+                (
+                    address.ipv4_mapped
+                    if isinstance(address, _IPv6) and address.ipv4_mapped
+                    else address
+                ).is_loopback
+                for address in addresses
+            )
+        ):
+            _url_error()
         authority = f"[{host}]" if ":" in host else host
         if parsed.port is not None:
             authority += f":{parsed.port}"
@@ -343,7 +367,11 @@ def _secret_error() -> None:
 
 def _open_directory(path: Path, *, create: bool = False) -> int:
     """Walk dirfds with NOFOLLOW, including parents, instead of racing realpath/open."""
-    absolute = Path(os.path.abspath(path.expanduser()))
+    if ".." in path.parts:
+        _secret_error()
+    absolute = path.expanduser()
+    if not absolute.is_absolute():
+        absolute = Path.cwd() / absolute
     fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
     try:
         for component in absolute.parts[1:]:
@@ -362,6 +390,8 @@ def _open_directory(path: Path, *, create: bool = False) -> int:
 
 
 def _read_secret_file(path: Path, max_bytes: int) -> bytes:
+    if ".." in path.parts:
+        _secret_error()
     try:
         parent = _open_directory(path.parent)
         try:
@@ -401,6 +431,8 @@ class SecretStore:
         )
 
     def _directory(self) -> int:
+        if ".." in self.root.parts:
+            _secret_error()
         try:
             # Config overrides must not put secrets in a checkout.
             WorkspacePaths.resolve(self.root)
@@ -471,9 +503,12 @@ class SecretStore:
                 finally:
                     os.close(directory)
 
-    def resolve(
-        self, auth_ref: str, *, provider: str | None = None, account: str | None = None
-    ) -> bytes:
+    def resolve(self, auth_ref: str, *, provider: str, account: str) -> bytes:
+        try:
+            _label(provider)
+            _label(account)
+        except m.CoreError:
+            _secret_error()
         if not isinstance(auth_ref, str) or not _AUTH_REF.fullmatch(auth_ref):
             _secret_error()
         try:
@@ -484,8 +519,8 @@ class SecretStore:
             if (
                 metadata["auth_ref"] != auth_ref
                 or metadata["storage_kind"] != "private_file"
-                or (provider is not None and provider != metadata["provider"])
-                or (account is not None and account != metadata["account"])
+                or provider != metadata["provider"]
+                or account != metadata["account"]
             ):
                 _secret_error()
             secret = base64.b64decode(value["secret_b64"], validate=True)
@@ -499,8 +534,8 @@ class SecretStore:
 def resolve_secret(
     auth_ref: str,
     *,
-    provider: str | None = None,
-    account: str | None = None,
+    provider: str,
+    account: str,
     secret_store: SecretStore | None = None,
 ) -> bytes:
     """Backend-only API. Never put its result into an envelope, event or diagnostic."""
@@ -613,7 +648,7 @@ def _verify_permit(
         _scope_error("A permit is required", missing=True)
     row = conn.execute("SELECT * FROM permits WHERE id=?", (permit_id,)).fetchone()
     if row is None:
-        _scope_error()
+        _scope_error("Permit does not exist", missing=True)
     permit = store.decode(m.Permit, row)
     if (
         permit.kind != use.kind
@@ -673,10 +708,15 @@ def verify_permit(
         _scope_error("Permit reservation requires the caller's transaction")
     permit = _verify_permit(store, permit_id, use, conn=conn)
     if reserve:
-        changed = conn.execute(
-            "UPDATE permits SET used=used+1 WHERE id=? AND used=? AND revoked=0 AND used<max_uses",
-            (permit.id, permit.used),
-        ).rowcount
+        try:
+            changed = conn.execute(
+                "UPDATE permits SET used=used+1 WHERE id=? AND used=? AND revoked=0 "
+                "AND used<max_uses AND julianday(expires_at)>julianday(metamuse_now())",
+                (permit.id, permit.used),
+            ).rowcount
+        except sqlite3.IntegrityError:
+            # Core's trigger rechecks time at the update itself; a boundary race is a denial.
+            _scope_error("Permit cannot be consumed")
         if changed != 1:
             _scope_error()
         permit = permit.model_copy(update={"used": permit.used + 1})
@@ -684,6 +724,7 @@ def verify_permit(
 
 
 def revoke_permit(ctx: AppContext, permit_id: str, *, request_key: str) -> m.Envelope:
+    ctx.require_interactive()
     with ctx.store.transaction() as conn:
 
         def revoke() -> dict[str, Any]:
@@ -699,6 +740,7 @@ def revoke_permit(ctx: AppContext, permit_id: str, *, request_key: str) -> m.Env
 
 
 def list_permits(ctx: AppContext, *, project_id: str) -> m.Envelope:
+    ctx.require_interactive()
     with ctx.store.connection() as conn:
         ctx.store.get(m.Project, project_id, conn=conn)
         rows = conn.execute(

@@ -31,6 +31,9 @@ The normalized URL uses stdlib IDNA A-labels, lowercase scheme/hostname, canonic
 literals and removes a single trailing hostname dot. Existing punycode is roundtripped;
 malformed labels, ambiguous numeric hosts, backslashes, userinfo, controls (including
 percent-encoded controls), zero/invalid ports and URLs over 8192 UTF-8 bytes are denied.
+Production destinations use port 80 or 443 only; nonstandard ports (including SSH,
+SMTP and Redis ports) are denied. The explicit fixture checker also allows nonstandard
+ports when every resolved address is loopback, never for a public destination.
 Legacy IPv4 decimal/hex/octal/shortened forms use the local stdlib `inet_aton` parser,
 not DNS. IPv4-mapped IPv6 is checked using its IPv4 address. Compatible IPv6, NAT64,
 Teredo and 6to4 are recognized but conservatively denied. Ordinary IPv6 must be public
@@ -65,7 +68,9 @@ or marked effective by B08.
 `import_auth(ctx, AuthImportRequest)` reads exactly the operator-specified file, up to
 1 MiB; no browser-profile discovery or reading occurs. Dirfd traversal and `O_NOFOLLOW`
 reject symlinks in the leaf and parents; `O_NONBLOCK` permits rejecting FIFOs without
-hanging. `fstat` checks regular-file type, current UID, no group/other permission bits,
+hanging. Lexical `..` components are rejected before opening any directory or file;
+relative paths are prefixed with the working directory, never collapsed with abspath.
+`fstat` checks regular-file type, current UID, no group/other permission bits,
 size, and unchanged file metadata after the bounded read. Errors do not echo paths,
 content, auth references or raw transport/storage exceptions.
 
@@ -81,9 +86,12 @@ The returned metadata is only `auth_ref`, optional non-secret `provider`/`accoun
 labels, `storage_kind=private_file`, and `created_at`. Each import creates a new reference.
 There is no browser-profile reader, secret-export command or secret-returning MCP tool.
 
-`resolve_secret(auth_ref, *, provider=None, account=None, secret_store=None)` returns
-bytes for backend use only. Always pass the actual provider/account labels in a backend;
-wrong labels, unsafe/missing/corrupt files and invalid references fail with `E_AUTH_REQUIRED`.
+`resolve_secret(auth_ref, *, provider, account, secret_store=None)` returns bytes for
+backend use only. Both nonempty provider/account labels are required keyword arguments,
+including on `SecretStore.resolve`; None/empty/mismatched labels fail before secret read.
+Wrong labels, unsafe/missing/corrupt files and invalid references fail with `E_AUTH_REQUIRED`.
+An import without both labels cannot be resolved by a backend; re-import with both labels
+to bind it. There is no unlabeled test escape or CLI/MCP path to secret bytes.
 Do not put bytes into envelopes, logs, exceptions, prompts, packets or diagnostics.
 `SecretStore(root=...)` is an explicit dependency-injection seam for synthetic tests,
 not a remotely configurable workspace or MCP input. POSIX/Linux is the tested target;
@@ -98,8 +106,10 @@ provider/account/issuer labels, a timezone-aware expiry strictly after issuance 
 more than 30 days away, and `max_uses` in 1–1000. Scope schemas reject extra fields and
 wildcards. `exact_digest`, if present, binds the complete `action_digest` below in
 addition to the scope. Human creation uses the existing durable request receipt: the
-same key/payload replays the original grant; a changed payload conflicts. Replay does
-not extend expiry, refill uses or undo revocation; use verification reads current state.
+same key/payload identifies the original grant; a changed payload conflicts. The returned
+data always reloads its current row, including used/revoked/expires_at, and includes
+`replayed: true` on a receipt hit (`false` on issuance). Replay never inserts a new grant,
+extends expiry, refills uses or undoes revocation, including after expiry or exhaustion.
 
 | Kind | Required scope | Allowed use |
 |---|---|---|
@@ -124,10 +134,17 @@ policy in the content/Muse feature implementation; B08 does not generate or reda
 
 `verify_permit(store, permit_id, PermitUse(...), *, conn, reserve=False)` checks current
 kind, project, provider/account, operation, scope, exact digest, expiry, revocation and
-remaining uses. A missing permit/expiry returns `E_SCOPE_REQUIRED`; invalid, expired,
+remaining uses. A missing or unknown permit/expiry returns `E_SCOPE_REQUIRED`; an unknown
+ID has the message `Permit does not exist`. Invalid, expired,
 revoked, exhausted or mismatched permissions return `E_SCOPE_DENIED`. Both carry an
 operator `next_action`. With `reserve=True`, it requires the caller's transaction,
-increments with a conditional SQL update and rolls back with the caller. Use
+increments with a conditional SQL update and rolls back with the caller. The update
+checks expiry using `metamuse_now()` on the Store connection, and core triggers recheck
+expiry/revocation at consumption. Constraint/expiry-boundary rejection becomes a clean
+`E_SCOPE_DENIED` without SQL or submitted values. Authorization columns are immutable,
+used never decreases and revocation is sticky; a changed scope/budget/expiry needs a new
+human grant. SQLite's julianday clock comparison can conservatively deny a use just
+before expiry at submillisecond precision; it never extends or renews the permit. Use
 `store.transaction()` (`BEGIN IMMEDIATE`) for atomic reservations. Do not reserve once
 here and again in the external verifier.
 
@@ -204,6 +221,26 @@ source shareability and quarantine after uncertain abandonment. No automatic ref
 or remote exactly-once guarantee exist; local transactions cannot remove the gap between
 verification and remote submission. Same-UID code that rewrites/deletes intent state or
 bypasses the verifier is outside the stated trust boundary.
+
+Core's interaction guard runs before CLI delegation for all human-only auth/permit
+commands, and safety entry points also call `ctx.require_interactive()`. A non-interactive
+context cannot import, issue, revoke or list via these entry points. No additional prompt
+is introduced. Tests opt into live-mode configuration only for synthetic handlers while
+socket/DNS calls remain blocked; this is FIXTURE/INTEGRATION evidence, never LIVE.
+
+For `settle_uncertain`, read remote evidence outside transactions and supply a separate
+database-only proof callback for definite delivery/refusal. Do not pass the send verifier,
+reserve another send use, refund the original use, or reopen the original submission.
+The settlement callback may use the supplied `TransactionWriter` for domain proof writes;
+no nested Store transaction or network wait belongs there. Revoked/exhausted send grants
+do not erase the original submission or prevent settling reliable proof of that submission.
+Fetching remote history still needs its separate current access permission and URL policy.
+
+The shared URL corpus runs in place with injected DNS, plus explicit allowlists for its
+host-confusion rows and loopback answers for localhost. Its 4120-byte "overlong" and
+single trailing-dot rejection expectations contradict this documented contract. The
+table-driven test declares two explicit spec-based allow expectations; corpus data is
+unchanged. All other corpus expected_verdict values are asserted without overrides.
 
 The verifier also requires the registered side effect to match the action: `muse.open`
 and `muse.send` use `external_submit`; `muse.read` and `collect.remote` use `safe_read`.
