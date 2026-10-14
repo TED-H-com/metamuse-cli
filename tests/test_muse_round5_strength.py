@@ -2,6 +2,7 @@
 
 import pytest
 from test_muse_trust import freeze
+
 from metamuse.models import CoreError, ErrorCode
 
 

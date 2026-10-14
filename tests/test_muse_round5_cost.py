@@ -7,6 +7,7 @@ import time
 import pytest
 from test_muse_round5_identity import attempt
 from test_muse_standard import assignment, response
+
 from metamuse._muse_http import SESSION_RESPONSE_MAX_BYTES, HttpResponse
 from metamuse.models import CoreError, canonical_json
 
@@ -48,14 +49,16 @@ def test_r5_4_unrelated_cycle_is_component_bounded(ctx):
         with pytest.raises(CoreError):
             transport.sessions_list()
         print(
-            f"max-bind number={number} ids={count} cpu={time.process_time() - start:.6f} load={os.getloadavg()}"
+            f"max-bind number={number} ids={count} cpu={time.process_time() - start:.6f} "
+            f"load={os.getloadavg()}"
         )
         assert not connector.urls
         if number in (1, 2, 4):
             spent = statistics.median(cycle(ctx.store) for _ in range(3))
             results.append(spent)
             print(
-                f"unrelated binds={number} baseline={baseline:.6f} cpu={spent:.6f} ratio={spent / baseline:.3f}"
+                f"unrelated binds={number} baseline={baseline:.6f} cpu={spent:.6f} "
+                f"ratio={spent / baseline:.3f}"
             )
         if number == 1:
             start = time.process_time()

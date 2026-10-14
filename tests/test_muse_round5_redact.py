@@ -6,6 +6,7 @@ from urllib.parse import quote, quote_plus
 from uuid import UUID
 
 import pytest
+
 from metamuse._muse_codec import redact
 from metamuse._muse_redact import sanitize_text
 from metamuse.muse import _Secrets

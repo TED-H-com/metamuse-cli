@@ -25,8 +25,8 @@ import math
 import re
 import threading
 import time
-import urllib.parse
 import unicodedata
+import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field

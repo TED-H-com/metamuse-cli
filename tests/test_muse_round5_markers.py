@@ -11,7 +11,7 @@ from metamuse.app import create_project
 
 @pytest.mark.parametrize("fixture_ctx", ["app"], indirect=True)
 @pytest.mark.parametrize("key", _MARKER_KEYS)
-def test_r5_2_marker_echo_keeps_messages(fixture_ctx, key):
+def test_r5_2_marker_echo_keeps_messages(fixture_ctx, key):  # noqa: F811
     ctx = fixture_ctx
     project = create_project(ctx, {"name": "Synthetic project", "request_key": "project-1"}).data[
         "id"

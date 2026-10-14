@@ -79,8 +79,8 @@ def test_r5_1_hint_records_every_identity(ctx, alias, first, where):
 
 
 def test_r5_1_equivalent_aliases_keep_one_wire_identity(ctx):
-    from urllib.parse import parse_qs, urlsplit
     import json
+    from urllib.parse import parse_qs, urlsplit
 
     row = assignment(vm_id=" VM1 ", vmId="vm1", VM_ID="Vm1")
     transport, http, connector = attempt(ctx.store, row)

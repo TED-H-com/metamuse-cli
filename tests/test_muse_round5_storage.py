@@ -3,10 +3,12 @@
 import errno
 import sqlite3
 from contextlib import contextmanager
+
 import pytest
 from test_muse_standard import Connecting, assignment, response, rv
 from test_muse_transport import FakeHttp, build, ok_frames
 from test_muse_trust import freeze
+
 from metamuse.models import CoreError, ErrorCode
 
 ENV = ["IOERR", "CANTOPEN", "PERM", "NOLFS", "READONLY", "FULL", "IOERR_FSYNC", "READONLY_DBMOVED"]
@@ -116,7 +118,7 @@ def test_r5_7_fixed_storage_classes(ctx, monkeypatch, name, path):
 )
 def test_r5_7_types_checked_at_write(tmp_path, version, field, value):
     from metamuse.paths import WorkspacePaths
-    from metamuse.store import Store, MIGRATIONS
+    from metamuse.store import MIGRATIONS, Store
 
     paths = WorkspacePaths.resolve(tmp_path / "ws")
     if version == 4:

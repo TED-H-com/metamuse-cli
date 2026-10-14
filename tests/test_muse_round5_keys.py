@@ -1,6 +1,7 @@
 """Sensitive key components preserve ordinary words and correlation metadata."""
 
 import pytest
+
 from metamuse._muse_redact import sanitize_document, sanitize_text
 from metamuse.safety import redaction_sensitive_key
 

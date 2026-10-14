@@ -1,7 +1,9 @@
 """CPU doubling checks for 128 KiB through 1 MiB; no wall-time assertions."""
 
 import time
+
 import pytest
+
 from metamuse._muse_redact import sanitize_text
 from metamuse.muse import _Secrets
 from metamuse.safety import redact_text
@@ -17,7 +19,8 @@ def growth(call, pair):
         cpu = time.process_time() - start
         rows.append((size, cpu))
         print(
-            f"redact {call.__name__} pair={pair} bytes={size} cpu={cpu:.6f} ratio={cpu / previous if previous else 0:.3f}",
+            f"redact {call.__name__} pair={pair} bytes={size} cpu={cpu:.6f} "
+            f"ratio={cpu / previous if previous else 0:.3f}",
             flush=True,
         )
         if previous is not None:
@@ -34,7 +37,10 @@ def test_r5_5_sensitive_pairs_linear(entry):
 
 @pytest.mark.xfail(
     strict=True,
-    reason="Core change request: safety.redact_text is quadratic for ordinary k=v& pairs; remove this strict xfail when B16a makes it linear",
+    reason=(
+        "Core change request: safety.redact_text is quadratic for ordinary k=v& pairs; "
+        "remove this strict xfail when B16a makes it linear"
+    ),
 )
 def test_r5_5_ordinary_pairs_core_growth():
     growth(redact_text, "vm_id=v1&")

@@ -1,8 +1,9 @@
 """Every residual marker persists at its innermost authenticated identity scope."""
 
 import pytest
-from test_muse_standard import assignment
 from test_muse_round5_identity import attempt
+from test_muse_standard import assignment
+
 from metamuse.models import CoreError, ErrorCode
 
 SHAPES = [
