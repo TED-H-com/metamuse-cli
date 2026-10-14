@@ -361,3 +361,22 @@ def test_review_url_byte_bound_precedes_preview(entry, channel):
     assert refused["error"]["message"] == "Outbound URL is outside the network policy"
     assert refused["approval"] is None
     no_created_objects(entry)
+
+
+@pytest.mark.parametrize("channel", ["cli", "mcp"])
+def test_review_checkpoint_path_parameters_stop_redirect_before_second_dial(
+    entry, monkeypatch, channel
+):
+    redirect = "/checkpoint%3bx=1/"
+    monkeypatch.setenv("REMOTE_TEST_REDIRECT", redirect)
+    entry.env["REMOTE_TEST_REDIRECT"] = redirect
+    body = request(entry)
+    preview = collect(entry, body, channel)["approval"]
+    grant = entry.approve(preview, body, approval_key(preview))["data"]["id"]
+    accepted = submit(entry, {**body, "access_grant_id": grant}, channel)
+    entry.cli("worker", "run", "--once")
+    job = entry.cli("jobs", "get", accepted["data"]["job_id"])["data"]
+    assert job["job"]["state"] == "awaiting_user"
+    assert job["job"]["error"]["code"] == "E_CHECKPOINT_REQUIRED"
+    dials = [json.loads(line) for line in entry.egress.read_text().splitlines()]
+    assert [row["url"] for row in dials if row.get("event") == "dial"] == [body["inputs"][0]["url"]]
