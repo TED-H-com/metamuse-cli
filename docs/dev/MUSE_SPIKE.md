@@ -297,7 +297,9 @@ injected HTTP, clock and an in-process mature-Noise responder; no test opens a n
 
 WSS query is exactly VM ID, opaque route token (legacy or s0 envelope), optional six-segment
 non-delegation notary, `app_id=hatch-web` and fresh request UUID; fixed Muse Origin is sent.
-Hatch body takes validated row endpoint/name. New connection credentials are memory-only;
+Hatch body takes validated row endpoint/name. The local legacy hatch grammar permits only
+ASCII letters/digits and `_~+/=-`, with no dot; this is strict implementation policy,
+not a claim that undocumented token formats are safe. New connection credentials are memory-only;
 known stale timeout hints allow one remint then stop. Redaction includes raw/encoded tokens,
 nonce/proof, connect attempt IDs and wake bodies. Original B10 application handoff,
 uncertainty, no-resend and no-refund rules remain binding. New connect failures cannot turn
@@ -350,3 +352,19 @@ recorded in the task report. OFFLINE/FIXTURE only; AT-038/AT-043 remain unproven
 ### 9.3 Round-3 verification changes (2026-10-14)
 
 The fixed-upstream standard transport now keys durable trust on authenticated remote owners and normalized VMs, independent of operator labels. It commits all hints and RV observations before refusal, including stale or changed bindings, and propagates owner↔VM components set-wise. The 1 MiB session cap and full-Noise RV discriminator precede standard-only limits. Shape drift, secret encodings and deadline tests are expanded. Evidence remains OFFLINE/FIXTURE; AT-038 and AT-043 LIVE have not run. CVM remains unsupported. Earlier spike findings and limits above are history, not new LIVE evidence.
+
+
+### 9.4 Round-4 verification changes (2026-10-14)
+
+The authenticated hint bind now bulk-inserts all observation/VM rows under one barrier,
+materializes the owner/VM closure once, updates the three tables and removes the barrier
+before commit. The exact 1 MiB fixture records 52,420 ids without dialing; the final warm
+measurement is 0.575 s CPU and 1.642 s elapsed, with a 1.529 s bulk domain-lock hold.
+These measured fixture values are not a wall-time guarantee. Busy/locked storage is retryable;
+read-only/full and other operational I/O failures give environment guidance, while integrity
+and schema failures alone advise verified restore. A committed barrier has a human maintenance
+repair that recomputes the whole closure before removing it, without discarding expectations.
+Confidential writes invalidate all workspace listeners. Nested hints use a bounded compact
+key/value scan; false positives remain permanently sticky. Confidential provenance freezes
+in place, and redaction merges decoded known spans and covers the tested alias grammar.
+Evidence is OFFLINE/FIXTURE (timings MEASURE); AT-038 and AT-043 LIVE remain unrun, CVM unsupported.
