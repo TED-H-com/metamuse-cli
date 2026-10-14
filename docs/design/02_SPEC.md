@@ -637,7 +637,8 @@ ordinary WebSocket routing; it is not the popup or socket boundary.
 
 A Facebook proxy byte cutoff immediately shuts down both client and upstream
 sockets for all active tunnels and refuses subsequent dials/registrations. A
-50 ms browser-loop watcher closes the affected page to interrupt in-flight
+50 ms browser-loop watcher reacts to byte cutoff and latched socket/guard
+failures, closing the affected page to interrupt in-flight
 navigation, click and expansion operations, instead of waiting for the full
 `read_timeout_seconds`. All browser operation exceptions recheck the byte latch
 and return `E_LIMIT_REACHED` with partial coverage; already observed data remains
