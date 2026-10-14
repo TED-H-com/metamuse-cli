@@ -106,6 +106,8 @@ def capability_status(ctx: Any) -> dict[str, dict[str, str]]:
         workspace = load_config(ctx.store.paths.root)
         if workspace.app.network_mode != "offline" and workspace.remote_media.approvals:
             permission = "granted_scope"
+    from metamuse import facebook
+
     return {
         "metamuse_collect": {
             "verification": "fixture_passed",
@@ -117,6 +119,7 @@ def capability_status(ctx: Any) -> dict[str, dict[str, str]]:
             "environment": remote_environment,
             "permission": permission,
         },
+        **facebook.capability_status(ctx),
     }
 
 
@@ -150,16 +153,18 @@ def register_operations(registry: dict[jobs.Operation] | None = None) -> None:
         "collect.remote", _remote_approval_preview, request_model=m.CollectRequest
     )
     remote_media.register_operations(registry)
+    from metamuse import facebook
+
     target = jobs.OPERATIONS if registry is None else registry
-    if OPERATION in target:
-        return
-    jobs.register_operation(
-        OPERATION,
-        run_import,
-        "none",
-        request_model=m.CollectRequest,
-        registry=target,
-    )
+    if OPERATION not in target:
+        jobs.register_operation(
+            OPERATION,
+            run_import,
+            "none",
+            request_model=m.CollectRequest,
+            registry=target,
+        )
+    facebook.register_operations(target)
 
 
 def _note_batch(step: StepContext) -> None:
@@ -2324,11 +2329,15 @@ def _check_request(ctx: Any, request: m.CollectRequest) -> None:
 
 
 def submit_collect(ctx: Any, request: m.CollectRequest) -> m.Envelope:
+    from metamuse import facebook
+
     register_operations()
     if _remote_media_request(request):
         from metamuse import remote_media
 
         return remote_media.submit_remote_media(ctx, request)
+    if facebook.is_facebook_post_request(request):
+        return facebook.submit_facebook_collect(ctx, request)
     _check_request(ctx, request)
     roots = list(ctx.policy.app.import_roots)
     if any(item.kind == "local_file" for item in request.inputs) and not roots:
