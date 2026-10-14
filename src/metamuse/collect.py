@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from metamuse import jobs, safety
+from metamuse import jobs, remote_media, safety
 from metamuse import media as media_mod
 from metamuse import models as m
 from metamuse.app import Config
@@ -130,9 +130,25 @@ def _remote_media_request(request: m.CollectRequest) -> bool:
     )
 
 
-def register_operations(registry: dict[jobs.Operation] | None = None) -> None:
-    from metamuse import remote_media
+# B13 adds its fixed route here and in _remote_route; the entrypoint has one callback.
+_REMOTE_APPROVAL_ROUTES = {remote_media.OPERATION: remote_media.preview_remote_media}
 
+
+def _remote_route(request: m.CollectRequest) -> str | None:
+    return remote_media.OPERATION if _remote_media_request(request) else None
+
+
+def _remote_approval_preview(ctx: Any, request: m.CollectRequest) -> m.ApprovalPreview:
+    callback = _REMOTE_APPROVAL_ROUTES.get(_remote_route(request))
+    if callback is None:
+        raise m.CoreError(m.ErrorCode.UNSUPPORTED, "This collection route has no remote approval")
+    return callback(ctx, request)
+
+
+def register_operations(registry: dict[jobs.Operation] | None = None) -> None:
+    safety.register_approval_preview(
+        "collect.remote", _remote_approval_preview, request_model=m.CollectRequest
+    )
     remote_media.register_operations(registry)
     target = jobs.OPERATIONS if registry is None else registry
     if OPERATION in target:

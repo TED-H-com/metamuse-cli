@@ -336,6 +336,9 @@ def configure(ctx, approvals, *, live=True, timeout=2, media_max=None):
     text = text.replace("read_timeout_seconds = 30", f"read_timeout_seconds = {timeout}", 1)
     if media_max is not None:
         text = text.replace("media_max_bytes = 536870912", f"media_max_bytes = {media_max}", 1)
+    text = text.replace(
+        "[remote_media]", f'[remote_media]\nprovider = "{PROVIDER}"\naccount = "{ACCOUNT}"'
+    )
     lines = [text.rstrip("\n")]
     for item in approvals:
         extractor, hosts = item[0], item[1]
