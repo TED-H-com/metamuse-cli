@@ -259,13 +259,15 @@ def _approval_preview(ctx, request):
     topic = question = None
     packet = None
     if isinstance(request, m.MuseOpenRequest) and request.discussion_id is None:
-        ctx.store.get(m.Project, request.project_id)
         prepared = prepare_open(ctx, request)
+        _check_question(request.topic)
+        ctx.store.get(m.Project, request.project_id)
         target, payload = prepared.target, prepared.payload
         topic = request.topic
         operation = "muse.open"
     elif isinstance(request, m.MuseSendRequest):
         prepared = prepare_send(ctx, request)
+        _check_question(request.question)
         target, payload = prepared.target, prepared.payload
         packet = ctx.store.get(m.Packet, request.packet_id)
         topic = ctx.store.get(m.Discussion, request.discussion_id).topic
@@ -273,6 +275,8 @@ def _approval_preview(ctx, request):
         operation = "muse.send"
     else:
         if isinstance(request, m.MuseOpenRequest):
+            _receipt(ctx, "muse.open", request)
+            _check_question(request.topic)
             discussion = ctx.store.get(m.Discussion, request.discussion_id)
             if discussion.project_id != request.project_id or discussion.topic != request.topic:
                 _error(m.ErrorCode.REFERENCE_INVALID, "Reconciliation must name the discussion")
@@ -285,6 +289,8 @@ def _approval_preview(ctx, request):
         target, payload = read_action(discussion, sessions=discussion.remote_session is None)
         topic = discussion.topic
         operation = "muse.open" if isinstance(request, m.MuseOpenRequest) else "muse.read"
+    if topic is not None:
+        _check_question(topic)
     digest = action_digest(target, payload)
     request_file = str(ctx.paths.root / ("approval-" + digest + ".json"))
     # Redact raw fields before JSON encoding can hide nested credential syntax.

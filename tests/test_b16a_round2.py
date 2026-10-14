@@ -468,3 +468,76 @@ def test_handoff_topics_refuse_all_shapes_before_preview(fixture_ctx):
     assert fixture_ctx.muse_gateway.calls == []
 
 
+@pytest.mark.parametrize("layers", [1, 2, 3])
+@pytest.mark.parametrize("form", ["assignment", "json"])
+def test_f12_credential_name_encoding_layers(layers, form):
+    from urllib.parse import quote
+
+    key = "hatch_sess"
+    for _ in range(layers):
+        key = key.replace("_", "%5F") if "%" not in key else quote(key, safe="")
+    marker = f"{form}_{layers}_MARKER_SYNTHETIC_ONLY"
+    text = f"{key}={marker}" if form == "assignment" else json.dumps({key: marker})
+    assert marker not in safety.redact_text(text)[0]
+
+
+def test_f12_submit_has_its_own_guard(fixture_ctx, monkeypatch):
+    from metamuse import _muse_lifecycle as lifecycle
+
+    marker = f"{fixture_ctx._frontend}_MARKER_SYNTHETIC_ONLY"
+    monkeypatch.setattr(
+        lifecycle, "prepare_send", lambda *a: pytest.fail("Submit skipped its check")
+    )
+    result = invoke(
+        fixture_ctx,
+        "send",
+        {
+            "discussion_id": "missing",
+            "packet_id": "missing",
+            "question": f"hatch_sess={marker}",
+            "request_key": "submit-check",
+        },
+    )
+    assert result.error.code == m.ErrorCode.INPUT_INVALID and result.approval is None
+
+
+def test_f12_wire_binds_checked_text_to_actual_body(fixture_ctx, project):
+    from test_muse_lifecycle import opened, packet
+    from metamuse._muse_lifecycle import _wire, prepare_send
+
+    opening, _ = opened(fixture_ctx, project)
+    prepared = prepare_send(
+        fixture_ctx,
+        m.MuseSendRequest(
+            discussion_id=opening.data["discussion_id"],
+            packet_id=packet(fixture_ctx, project).id,
+            question="Checked question",
+            request_key="body-check",
+        ),
+    )
+    body = {**prepared.body, "text": "Different unchecked body"}
+    changed = prepared.model_copy(
+        update={"body": body, "payload": {**prepared.payload, "body": body}}
+    )
+    with pytest.raises(m.CoreError) as refusal:
+        _wire(changed)
+    assert refusal.value.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
+    assert refusal.value.detail.message == "Prepared send body differs from checked inputs"
+
+
+def test_f12_preview_refuses_before_project_lookup(fixture_ctx, monkeypatch):
+    marker = f"{fixture_ctx._frontend}_MARKER_SYNTHETIC_ONLY"
+    monkeypatch.setattr(
+        fixture_ctx.store, "get", lambda *a, **kw: pytest.fail("Preview read before refusal")
+    )
+    with pytest.raises(m.CoreError) as refusal:
+        safety.approval_preview(
+            fixture_ctx,
+            "muse.open",
+            {
+                "project_id": "missing",
+                "topic": f"hatch_sess={marker}",
+                "request_key": "direct-preview",
+            },
+        )
+    assert refusal.value.detail.code == m.ErrorCode.INPUT_INVALID
