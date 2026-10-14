@@ -149,8 +149,8 @@ _QUESTION_KEYS = ("question", "text")
 _PACKET_KEYS = ("packet_text", "rendered_text")
 
 _VM_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
-# Legacy opaque alphabet: MUSE_SPIKE §2 / REPORT-2 §6.2; S1 uses s0 JWS,
-# not a dotted legacy credential. Access grammar is kept separate.
+# Legacy opaque alphabet and s0 envelope: docs/dev/MUSE_SPIKE.md §9.1.
+# Dotted legacy credentials are undocumented; access grammar is separate.
 _HATCH_LEGACY = re.compile(r"^[A-Za-z0-9_~+/=-]{1,4096}$")
 _TOKEN = re.compile(r"^[A-Za-z0-9._~+/=-]{1,4096}$")
 _MARKER = re.compile(r"^[A-Za-z0-9._~-]{1,128}$")
@@ -1339,7 +1339,8 @@ class MuseTransport:
                 "The Muse HTTPS endpoint is unavailable",
                 next_action="Retry later. This is not an authentication failure.",
             )
-        # Success: spike §2/§5 bootstrap 200; S1 §Finding 3 wake 200.
+        # Success: docs/dev/MUSE_SPIKE.md §2/§5 (bootstrap 200), §9.1
+        # (wake 200 observed in an operator LIVE probe; evidence outside this repository).
         # Wake 202/204 are explicitly admitted by the round-2 operator contract;
         # they indicate accepted/no-content activation, not a running VM.
         accepted = {200, 202, 204} if path == "/api/hatch/vm/wake" else {200}
@@ -1552,8 +1553,9 @@ class MuseTransport:
             )
             if not _notary_stale(hatch.get("notary_token"), self._wall_clock()):
                 return hatch
-        # REPORT-2 §6.2 specifies unavailable after one remint; neither it nor
-        # S1 establishes that refreshing a session repairs a twice-stale notary.
+        # docs/dev/MUSE_SPIKE.md §9.1 documents one remint then stop.
+        # Resource-unavailable/retry-later is an inference: no evidence establishes
+        # that session refresh repairs a twice-stale notary.
         raise _error(
             ErrorCode.RESOURCE_UNAVAILABLE,
             "Muse minted credentials remain stale",

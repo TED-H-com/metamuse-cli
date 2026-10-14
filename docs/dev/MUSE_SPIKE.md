@@ -262,7 +262,7 @@ The fake gateway is `FakeGateway` on `InProcessLink`. It never listens on a port
 ### 9.1 Standard transport update, 2026-10-14
 
 The original spike above remains a historical record. One orchestrator-authorized LIVE
-S1 observation confirmed msg1 nonce field 1 (32 bytes), msg2 outer bytes field 2 (68 bytes),
+An operator LIVE probe (evidence kept outside this repository) confirmed msg1 nonce field 1 (32 bytes), msg2 outer bytes field 2 (68 bytes),
 and exactly nested fields 1/2 (32 bytes each): key equals responder Noise static and nonce
 equals this attempt's fresh challenge. Msg3 and application frames were not sent. This is
 one observation, not LIVE lifecycle acceptance. The independently documented protocol facts
@@ -285,7 +285,7 @@ rotation, has a sticky active-account expectation and refuses stale CAS/corrupt 
 Connect/retry does not reselect a VM or clear security state. An account file lock serializes
 committed observation and msg3 against context changes; generation changes invalidate sockets.
 
-S1 also exposed two adapter defects: curl RESOLVE now has one comma-joined host:port entry
+The operator probe also exposed two adapter defects: curl RESOLVE now has one comma-joined host:port entry
 with bracketed IPv6, preserving checked-address order; upgrade errors now distinguish
 401/403, 429, 5xx and transport failures without leaking URL/query/body. Session reads use
 `?vm_state=live`. Connect performs one activation wake and at most 20 bounded redials/240s
@@ -324,7 +324,7 @@ All credential aliases are validated. Case-insensitive delegation/endorsement pr
 malformed/oversized s0 and conflicting notary aliases refuse with protocol/never; legacy
 opaque tokens no longer admit dots. Nonpositive budgets stop before wake/dial/msg1. Only
 endpoint-specific success statuses are admitted: bootstrap 200 from the spike contract,
-wake 200 from S1, plus operator-authorized 202/204 (not LIVE observed here).
+wake 200 observed in an operator LIVE probe (evidence outside this repository), plus operator-authorized 202/204 (not LIVE observed here).
 
 Shared maintenance.lock ends at commit before msg3 I/O; provider/account trust locks remain.
 Confidential expectation precedes generation equality. Actual schema signatures are compared

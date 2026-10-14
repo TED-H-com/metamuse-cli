@@ -585,7 +585,7 @@ POST /api/hatch/vm/wake {vm_id,retry_count:0}後dial。upgrade 502/503/504在每
 {vm_id,retry_count:n,connect_attempt_id:UUID4}，delay=max(2s,min(0.2s×1.5^(n−1),8s))，最多20
 redials或240s，超界E_RESOURCE_UNAVAILABLE並請操作者VM尚未running、稍後再試。
 401/403→E_AUTH_REQUIRED；429→E_RATE_LIMITED；connect/DNS/TLS→E_NETWORK_TIMEOUT，guard refusal
-→E_SCOPE_REQUIRED。bootstrap只收200（spike§2/5）；wake 200（S1 Finding 3）或operator round-2
+→E_SCOPE_REQUIRED。bootstrap只收200（spike§2/5）；wake 200（operator LIVE probe，evidence在repository之外）或operator round-2
 contract的202/204（非本task LIVE observation）不要求JSON。session/wake 404/409/410 unavailable，
 其他unexpected 2xx/4xx protocol，只有401/403 auth。每次wake/dial/handshake前重查remaining budget；
 耗盡回resource unavailable、不傳nonpositive curl timeout、不send msg1。offline/fixture gateway
@@ -611,7 +611,7 @@ E_STORAGE/never並請重connect；integrity/schema才建議repair/verified resto
 rollback）會丟backup後的confidential expectations。無in-place reset。schema一次verify、每boundary比signature。
 msg2 decrypt上限65535、先full RV discriminator再standard 8192 cap；session cap 1 MiB，超界不record也不dial。
 HTTP 200 missing/malformed fields是protocol/never；explicit ok:false或401/403才auth；twice-stale
-notary依spike§6.2 unavailable guidance回resource/retry later，無session refresh修復證據。
+notary依公開MUSE_SPIKE §9.1 one-remint後stop；resource/retry-later是inference，無session refresh修復證據。
 
 ### Session建立
 

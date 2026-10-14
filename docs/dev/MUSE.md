@@ -172,7 +172,7 @@ A protocol error, an authentication failure, or a failed encrypted write poisons
 ## HTTP status
 
 Success status is endpoint-specific: auth/check, session and hatch/token accept exactly
-200 (spike §2/§5 bootstrap); wake accepts 200 (supplied S1 Finding 3), plus 202 and 204 as
+200 (spike §2/§5 bootstrap); wake accepts 200 (observed in an operator LIVE probe; evidence kept outside this repository), plus 202 and 204 as
 explicitly authorized in the round-2 operator contract. 202/204 indicate accepted/no-content
 activation, not a running VM. They were not observed LIVE by this task. Wake success needs
 no JSON body. Read/mint success still requires bounded valid JSON and its own field checks.
@@ -186,7 +186,7 @@ no JSON body. Read/mint success still requires bounded valid JSON and its own fi
 | 404, 409, 410 on session or wake | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | Other unexpected 2xx/4xx or unsupported response shape | `E_PROTOCOL_MISMATCH` | `never` |
 | 200 explicit `ok: false` on auth | `E_AUTH_REQUIRED` | `user_action` |
-| Twice-stale notary after one remint (spike §6.2 unavailable guidance) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
+| Twice-stale notary after one remint (MUSE_SPIKE §9.1 one-remint stop; unavailable/retry-later is an inference) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | 200 session status `unavailable`, or missing `vm_id`, without confidential hints | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | CVM/RV/delegation/endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
 
@@ -451,7 +451,7 @@ proofs. This checkpoint boundary is exercised by the real subprocess worker test
 
 Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and account are local connection labels; neither partitions owner or VM expectations. The shared trust-domain lock serializes all labels.
 
-HTTP 200 with missing, malformed or drifted credential/context fields is interface drift: E_PROTOCOL_MISMATCH / never. Explicit `ok: false` and HTTP 401/403 remain E_AUTH_REQUIRED. A twice-stale notary after one remint is E_RESOURCE_UNAVAILABLE with a retry-later action (REPORT-2 §6.2 specifies unavailable; neither the spike nor S1 proves session refresh repairs it).
+HTTP 200 with missing, malformed or drifted credential/context fields is interface drift: E_PROTOCOL_MISMATCH / never. Explicit `ok: false` and HTTP 401/403 remain E_AUTH_REQUIRED. A twice-stale notary after one remint is E_RESOURCE_UNAVAILABLE with a retry-later action (MUSE_SPIKE §9.1 supports one remint then stop; unavailable/retry-later is an inference, with no evidence that session refresh repairs it).
 
 Authenticated CVM hints commit label-independent owner/VM observations before binding, generation, status, uniqueness or selection refusals. Every usable VM id in the response is recorded, including non-selected rows. Owner mismatch never drops that observation; the existing local binding is still refused.
 
