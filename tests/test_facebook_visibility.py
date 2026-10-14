@@ -91,7 +91,7 @@ def test_r7_page_cannot_hide_visible_evidence(tmp_path, monkeypatch, real_browse
         assert job["state"] == "partial"
 
 
-@pytest.mark.parametrize("hiding", ["hidden", 'style="display:none"', 'aria-hidden="true"'])
+@pytest.mark.parametrize("hiding", ["hidden", 'style="display:none"'])
 def test_r7_subtree_hiding_cannot_be_overridden(tmp_path, monkeypatch, hiding):
     markup = (
         _synthetic_post_html(post_text="BODY", comments_exhausted=False)

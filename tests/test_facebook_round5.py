@@ -589,7 +589,7 @@ def test_r5_n10_visible_text_and_emoji_have_driver_parity(tmp_path, monkeypatch,
         'before <img alt="😀" src="/emoji.png"> after'
         "<script>var injected=1;</script><style>.x{color:red}</style>"
         "<template>TEMPLATE</template><span hidden>HIDDEN1</span>"
-        '<span aria-hidden="true">HIDDEN2</span>'
+        '<span aria-hidden="true">PAINTED</span>'
         '<span style="display: none"><b>HIDDEN3</b></span>'
         '<span style="visibility:hidden">HIDDEN4</span>'
         "<div>visible<br>line</div>tail"
@@ -604,7 +604,7 @@ def test_r5_n10_visible_text_and_emoji_have_driver_parity(tmp_path, monkeypatch,
         ctx, job = fixture_job(tmp_path, markup)
         result = rows(ctx)
     assert job["error"] is None
-    assert result[0]["text"] == "before 😀 after\nvisible\nline\ntail"
+    assert result[0]["text"] == "before 😀 afterPAINTED\nvisible\nline\ntail"
 
 
 @pytest.mark.parametrize("real_browser", [False, True], ids=["fixture", "chromium"])

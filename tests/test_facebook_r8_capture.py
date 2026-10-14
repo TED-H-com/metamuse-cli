@@ -1,0 +1,384 @@
+"""Hostile page code and Chromium rendering parity, loopback only."""
+
+# ruff: noqa: E501
+
+import json
+
+import pytest
+from test_facebook import _synthetic_post_html
+from test_facebook_review import browser_fixture, finish
+from test_facebook_round5 import POST_PATH, fixture_job, rows, submit
+from test_facebook_round6 import reset_seams  # noqa: F401
+
+CASES = {
+    "void-hidden": ("<bgsound hidden><span>VISIBLE</span>", True),
+    "svg-marker": ("<svg><text data-metamuse-display-none>VISIBLE</text></svg>", True),
+    "ordinary": ("<span>VISIBLE</span>", True),
+    "opacity": ('<span style="opacity:0">VISIBLE</span>', True),
+    "offscreen": ('<span style="position:absolute;left:-99999px">VISIBLE</span>', True),
+    "zero-clipped": (
+        '<span style="display:block;width:0;height:0;overflow:hidden">VISIBLE</span>',
+        True,
+    ),
+    "auto": (
+        '<div style="content-visibility:auto;position:absolute;top:99999px"><span>VISIBLE</span></div>',
+        True,
+    ),
+    "aria": ('<span aria-hidden="true">VISIBLE</span>', True),
+    "hidden-override": ('<span hidden style="display:inline">VISIBLE</span>', True),
+    "display-none": ('<span style="display:none">VISIBLE</span>', False),
+    "hidden": ("<span hidden>VISIBLE</span>", False),
+    "until-found": ('<span hidden="until-found">VISIBLE</span>', False),
+    "cv-hidden": (
+        '<span style="content-visibility:hidden;display:block"><span>VISIBLE</span></span>',
+        False,
+    ),
+    "details": ("<details><summary></summary><span>VISIBLE</span></details>", False),
+    "details-open": ("<details open><summary></summary><span>VISIBLE</span></details>", True),
+    "summary": ("<details><summary>VISIBLE</summary>HIDDEN</details>", True),
+    "noscript": ("<noscript><span>VISIBLE</span></noscript>", False),
+    "template": ("<template><span>VISIBLE</span></template>", False),
+    "visibility-hidden": ('<span style="visibility:hidden">VISIBLE</span>', False),
+    "collapse": ('<span style="visibility:collapse">VISIBLE</span>', False),
+    "visible-child": (
+        '<span style="visibility:hidden">HIDDEN<span style="visibility:visible">VISIBLE</span></span>',
+        True,
+    ),
+    "contents": ('<span style="display:contents">VISIBLE</span>', True),
+    "bgsound": (
+        '<span style="visibility:hidden"><b style="visibility:visible"><bgsound></b>VISIBLE</span>',
+        False,
+    ),
+    "foreign-input": (
+        '<span style="visibility:hidden"><svg><input></input></svg>VISIBLE</span>',
+        False,
+    ),
+    "noscript-marker": (
+        "<noscript><span data-metamuse-display-none><span></noscript>VISIBLE",
+        True,
+    ),
+}
+
+
+def run(tmp_path, monkeypatch, markup, driver):
+    if driver == "fixture":
+        ctx, job = fixture_job(tmp_path, markup)
+        return job, rows(ctx)
+    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False) as (
+        ctx,
+        project,
+        permit,
+        _,
+        _,
+        _,
+        _,
+    ):
+        job = finish(ctx, submit(ctx, project, permit))
+        return job, rows(ctx)
+
+
+@pytest.mark.parametrize("case", list(CASES))
+def test_r8_rendering_table_parity(tmp_path, monkeypatch, case):
+    inner, visible = CASES[case]
+    markup = _synthetic_post_html(post_text="BODY").replace(
+        ">BODY</div>", ">LEAD" + inner + "</div>"
+    )
+    outcomes = []
+    for driver in ["fixture", "chromium"]:
+        job, stored = run(tmp_path / driver, monkeypatch, markup, driver)
+        assert job["error"] is None, job
+        text = stored[0]["text"]
+        assert ("VISIBLE" in text) == visible, (driver, case, text)
+        assert "HIDDEN" not in text, (driver, case, text)
+        outcomes.append(
+            (
+                job["state"],
+                job["coverage_status"],
+                job["missing_fields"],
+                [(r["native_id"], r["text"]) for r in stored],
+            )
+        )
+    assert outcomes[0] == outcomes[1]
+
+
+TAMPERS = {
+    "remove": "const o=Element.prototype.removeAttribute;Element.prototype.removeAttribute=function(n){if(n.toLowerCase().startsWith('data-metamuse-'))return;return o.call(this,n)};",
+    "style": "const g=getComputedStyle;window.getComputedStyle=n=>n.matches('[data-comment-id]')?{display:'none',visibility:'hidden'}:g(n);",
+    "serialize": "const d=Object.getOwnPropertyDescriptor(Element.prototype,'outerHTML');Object.defineProperty(Element.prototype,'outerHTML',{get(){return this.tagName==='HTML'&&!this.isConnected?'FAKE':d.get.call(this)}});",
+    "constructor": "customElements.define('x-tamper',class extends HTMLElement{constructor(){super();if(!this.isConnected){let b=this.getRootNode().querySelector('[data-fb-role=post-body]');if(b)b.textContent='FORGED'}}});",
+    "callback": "customElements.define('x-hider',class extends HTMLElement{static get observedAttributes(){return ['data-metamuse-visibility']}attributeChangedCallback(){if(!this.isConnected&&!this.hasAttribute('data-metamuse-display-none'))this.setAttribute('data-metamuse-display-none','')}});",
+    "remove-node": "customElements.define('x-tamper',class extends HTMLElement{constructor(){super();if(!this.isConnected)this.getRootNode().querySelector('[data-comment-id]')?.remove()}});",
+    "namespace": "document.querySelector('[data-fb-role=post-body] span').setAttributeNS(null,'DATA-METAMUSE-DISPLAY-NONE','');",
+    "walker": "Element.prototype.checkVisibility=()=>false;window.getComputedStyle=()=>({display:'none',visibility:'hidden'});Object.defineProperty(Node.prototype,'childNodes',{get(){return []}});Object.defineProperty(Element.prototype,'shadowRoot',{get(){return null}});HTMLSlotElement.prototype.assignedNodes=()=>[];",
+}
+TAMPERS["combined"] = "".join(TAMPERS[k] for k in ["remove", "style", "constructor", "callback"])
+
+
+@pytest.mark.parametrize("tamper", list(TAMPERS))
+def test_r8_capture_cannot_be_forged(tmp_path, monkeypatch, tamper):
+    markup = (
+        _synthetic_post_html(post_text="BODY", comments=[{"id": "c1", "text": "COMMENT"}])
+        .replace(
+            ">BODY</div>",
+            ">Lead<span data-metamuse-display-none> VISIBLE</span><x-hider> PAINTED</x-hider></div>",
+        )
+        .replace("</body>", "<x-tamper></x-tamper></body>")
+    )
+    results = []
+    for label, script in [("control", ""), ("tamper", TAMPERS[tamper])]:
+        page = markup.replace("</body>", "<script>" + script + "</script></body>")
+        job, stored = run(tmp_path / label, monkeypatch, page, "chromium")
+        assert job["error"] is None, job
+        results.append(
+            (
+                job["state"],
+                job["coverage_status"],
+                job["missing_fields"],
+                [(r["native_id"], r["text"]) for r in stored],
+            )
+        )
+    assert results[0] == results[1]
+    assert results[1][3][0][1] == "Lead VISIBLE PAINTED"
+
+
+@pytest.mark.parametrize("mode", ["open", "closed", "declarative", "slotted", "unslotted"])
+def test_r8_shadow_rendering(tmp_path, monkeypatch, mode):
+    if mode == "declarative":
+        inner = '<span><template shadowrootmode="open">SHADOW</template></span>'
+        script = ""
+    else:
+        inner = '<span id="host"><span slot="chosen">SLOTTED</span><span>UNSLOTTED</span></span>'
+        content = '<slot name="chosen"></slot>' if mode in {"slotted", "unslotted"} else "SHADOW"
+        script = f"document.getElementById('host').attachShadow({{mode:{json.dumps('closed' if mode == 'closed' else 'open')}}}).innerHTML={json.dumps(content)};"
+    markup = (
+        _synthetic_post_html(post_text="BODY")
+        .replace(">BODY</div>", ">LEAD" + inner + "</div>")
+        .replace("</body>", "<script>" + script + "</script></body>")
+    )
+    job, stored = run(tmp_path, monkeypatch, markup, "chromium")
+    assert job["error"] is None, job
+    assert "UNSLOTTED" not in stored[0]["text"]
+    assert ("SLOTTED" if mode in {"slotted", "unslotted"} else "SHADOW") in stored[0]["text"]
+    assert job["coverage_status"] == "scope_satisfied", job
+
+
+@pytest.mark.parametrize(
+    "location", ["head", "meta", "hidden", "unslotted", "template", "open-shadow", "closed-shadow"]
+)
+def test_r8_barriers_in_every_tree(tmp_path, monkeypatch, location):
+    marker = '<i data-page-state="login_wall"></i>'
+    markup = _synthetic_post_html()
+    if location == "head":
+        markup = markup.replace("<body>", '<head data-page-state="login_wall"></head><body>')
+    elif location == "meta":
+        markup = markup.replace("<body>", '<head><meta data-page-state="login_wall"></head><body>')
+    elif location == "template":
+        markup = markup.replace("</body>", "<template>" + marker + "</template></body>")
+    elif location == "hidden":
+        markup = markup.replace("</body>", "<div hidden>" + marker + "</div></body>")
+    else:
+        content = marker if location.endswith("shadow") else ""
+        light = marker if location == "unslotted" else ""
+        mode = "closed" if location == "closed-shadow" else "open"
+        markup = markup.replace(
+            "</body>",
+            '<div id="host">'
+            + light
+            + '</div><script>document.getElementById("host").attachShadow({mode:'
+            + json.dumps(mode)
+            + "}).innerHTML="
+            + json.dumps(content)
+            + "</script></body>",
+        )
+    job, stored = run(tmp_path, monkeypatch, markup, "chromium")
+    assert job["error"]["code"] == "E_AUTH_REQUIRED", job
+    assert job["state"] == "awaiting_user"
+    assert stored == []
+
+
+@pytest.mark.parametrize("kind", ["application/xhtml+xml", "application/xml", "image/svg+xml"])
+def test_r8_non_html_refused(tmp_path, monkeypatch, kind):
+    body = b'<html xmlns="http://www.w3.org/1999/xhtml"><body>synthetic</body></html>'
+
+    def serve(req):
+        req.send_response(200)
+        req.send_header("Content-Type", kind)
+        req.send_header("Content-Length", str(len(body)))
+        req.end_headers()
+        req.wfile.write(body)
+
+    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: serve}, unsandboxed=False) as (
+        ctx,
+        project,
+        permit,
+        _,
+        _,
+        _,
+        _,
+    ):
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["error"]["code"] == "E_SELECTOR_DRIFT", job
+        assert job["state"] == "failed"
+
+
+def test_r8_rendered_control_identity(tmp_path, monkeypatch):
+    markup = _synthetic_post_html(
+        comments=[{"id": "c1", "text": "COMMENT"}], expand_controls=[{"id": "more"}]
+    )
+    markup = markup.replace(
+        "<button ",
+        '<button hidden data-expand-id="more" onclick="throw Error(\'WRONG\')">Hidden</button><button ',
+        1,
+    )
+    markup = markup.replace(
+        "</body>",
+        """<script>document.querySelector('button:not([hidden])').onclick=()=>{
+    document.querySelector('[data-comment-id] [data-fb-role="comment-body"]').textContent='EXPANDED';
+    document.querySelector('button:not([hidden])').remove();};</script></body>""",
+    )
+    job, stored = run(tmp_path, monkeypatch, markup, "chromium")
+    assert job["error"] is None, job
+    assert any(row["text"] == "EXPANDED" for row in stored), stored
+
+
+@pytest.mark.parametrize("driver", ["fixture", "chromium"])
+def test_r8_noscript_cannot_fabricate_evidence(tmp_path, monkeypatch, driver):
+    markup = (
+        _synthetic_post_html()
+        .replace('data-comments-exhausted="true"', 'data-comments-exhausted="false"')
+        .replace(
+            "</body>",
+            '<div style="display:none"><noscript></div></noscript><div data-comments-exhausted="true"></div></div><noscript><article data-fb-role="comment" data-comment-id="fake"><div data-fb-role="comment-body">FAKE</div></article><div data-comments-exhausted="true"></div></noscript></body>',
+        )
+    )
+    job, stored = run(tmp_path, monkeypatch, markup, driver)
+    assert job["error"] is None, job
+    assert job["coverage_status"] == "partial"
+    assert not any(row["native_id"] == "fake" for row in stored)
+
+
+def test_r8_fixture_declarative_shadow_refused(tmp_path):
+    ctx, job = fixture_job(
+        tmp_path,
+        _synthetic_post_html().replace(
+            "</body>", '<div><template shadowrootmode="open">SHADOW</template></div></body>'
+        ),
+    )
+    assert job["error"]["code"] == "E_SELECTOR_DRIFT", job
+    assert job["state"] == "failed"
+
+
+def test_r8_capture_is_read_only(tmp_path, monkeypatch):
+    from metamuse import facebook
+
+    markup = _synthetic_post_html().replace(
+        "</body>",
+        """<x-count></x-count><script>
+    window.constructed=0;window.reactions=0;window.mutations=0;
+    customElements.define('x-count',class extends HTMLElement{
+      constructor(){super();window.constructed++}
+      static get observedAttributes(){return ['data-capture-test']}
+      attributeChangedCallback(){window.reactions++}
+    });
+    new MutationObserver(list=>window.mutations+=list.length).observe(document,{attributes:true,childList:true,subtree:true});
+    </script></body>""",
+    )
+    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False) as (
+        _,
+        _,
+        _,
+        _,
+        _,
+        guard,
+        driver,
+    ):
+        session = driver.open_session(
+            facebook.SanitizedStorageState(
+                cookies=[], origins=[], secret_tokens=(), cookie_hosts=(), dropped_cookie_domains=()
+            ),
+            guard,
+            timeout_ms=300000,
+            max_bytes=1000000,
+        )
+        try:
+            session.goto_post(POST_PATH)
+            before = session._page.evaluate("() => [constructed,reactions,mutations]")
+            for _ in range(3):
+                session._capture()
+            after = session._page.evaluate("() => [constructed,reactions,mutations]")
+            assert after == before
+        finally:
+            session.close()
+
+
+@pytest.mark.parametrize("bound", ["nodes", "bytes"])
+def test_r8_capture_bounds_fixed_error(tmp_path, monkeypatch, bound):
+    # Generate locally in page script, staying below the HTTP/job byte budget.
+    script = (
+        "document.body.append(...Array.from({length:66000},()=>document.createElement('i')));"
+        if bound == "nodes"
+        else "document.body.append('x'.repeat(8388609));"
+    )
+    markup = _synthetic_post_html().replace("</body>", "<script>" + script + "</script></body>")
+    job, stored = run(tmp_path, monkeypatch, markup, "chromium")
+    assert job["error"]["code"] == "E_SELECTOR_DRIFT", job
+    assert job["error"]["message"] == "Facebook structured capture could not be completed"
+    assert job["state"] == "failed"
+    assert stored == []
+
+
+def test_r8_closed_shadow_gap_is_partial(tmp_path, monkeypatch):
+    from metamuse import _facebook_capture
+
+    markup = _synthetic_post_html().replace(
+        "</body>",
+        '<div id="host"></div><script>document.getElementById("host").attachShadow({mode:"closed"}).textContent="SHADOW";</script></body>',
+    )
+    original = _facebook_capture.capture
+
+    def capture(cdp):
+        send = cdp.send
+
+        def refusing(method, params=None):
+            if method == "DOM.resolveNode":
+                raise RuntimeError("synthetic inaccessible root")
+            return send(method, params)
+
+        cdp.send = refusing
+        try:
+            return original(cdp)
+        finally:
+            cdp.send = send
+
+    monkeypatch.setattr(_facebook_capture, "capture", capture)
+    job, _ = run(tmp_path, monkeypatch, markup, "chromium")
+    assert job["error"] is None, job
+    assert job["coverage_status"] == "partial"
+    assert "closed_shadow_capture_unavailable" in job["missing_fields"]
+
+
+@pytest.mark.parametrize(
+    "style", ['aria-hidden="true"', 'style="content-visibility:auto;position:absolute;top:99999px"']
+)
+def test_r8_painted_comments_cannot_disappear(tmp_path, monkeypatch, style):
+    markup = (
+        _synthetic_post_html(comments=[{"id": "c1", "text": "PAINTED COMMENT"}])
+        .replace('data-comment-id="c1"', 'data-comment-id="c1" ' + style)
+        .replace('data-comment-count="1"', 'data-comment-count="0"')
+    )
+    outcomes = []
+    for driver in ["fixture", "chromium"]:
+        job, stored = run(tmp_path / driver, monkeypatch, markup, driver)
+        assert job["error"] is None, job
+        assert any(r["native_id"] == "c1" and r["text"] == "PAINTED COMMENT" for r in stored)
+        assert job["coverage_status"] == "partial"
+        assert "rendered_count_conflict" in job["missing_fields"]
+        outcomes.append(
+            (
+                job["state"],
+                job["coverage_status"],
+                job["missing_fields"],
+                [(r["native_id"], r["text"]) for r in stored],
+            )
+        )
+    assert outcomes[0] == outcomes[1]

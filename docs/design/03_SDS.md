@@ -825,7 +825,7 @@ Facebook cookie path/expiry/boolean/sameSite/name/value shapes are validated bef
 After a Facebook post identity is bound, a main-frame navigation to an unknown non-post shape returns E_CHECKPOINT_REQUIRED with the distinct message “Facebook navigation left the approved post” and browser-session review advice. Unsupported operator inputs retain E_UNSUPPORTED. Share destinations before any post is bound retain the separately documented resolution-type refusal.
 
 
-Facebook HTML text includes inline image alt text (including emoji), excludes script/style/template and hidden subtrees, and retains the existing one-decode/newline/edge-whitespace contract. Real Chromium snapshots mark computed CSS hiding for the common parser; fixtures express hiding through attributes or inline style. JSON text remains unchanged.
+Facebook rendered text includes inline image alt text (including emoji) and follows the structured capture/rendering contract below. JSON text remains unchanged.
 
 Structural JSON scripts require both data-fb-post-payload and application/json MIME
 type. Every other script is excluded from body text, even if it carries that marker.
@@ -835,24 +835,70 @@ Oversized counts add their fixed *_count_unparsed gap and retain the observed po
 they do not turn a valid JSON document into a malformed-payload error.
 
 
-Facebook stop markers (`data-fb-state`, `data-page-state`, `data-checkpoint`, login
-and checkpoint form IDs) are inspected on every element, including hidden, head
-and void elements, in both drivers. Completeness evidence such as
-`data-comments-exhausted` counts only in visible subtrees under the shared text
-visibility rules. Chromium snapshots strip every page-authored `data-metamuse-*` attribute
-case-insensitively from the clone, including case-preserving SVG attributes, then
-stamp separate computed display and visibility markers.
-Only trusted Chromium observations honour those markers; raw HTML and the fixture
-driver ignore them. Snapshots preserve the page's own `hidden` attribute and never
-mutate the live DOM. `display:none` and `hidden` exclude the whole subtree;
-`visibility:hidden`/`collapse` inherit but descendants can restore `visibility:visible`.
-Fixtures apply the same semantics to inline CSS, including declaration order and
-`!important` precedence. Chromium uses computed styles instead of re-reading inline
-CSS, so a stylesheet override cannot be undone by the parser. `aria-hidden=true` deliberately
-excludes the whole subtree in both drivers: accessibility-hidden duplicates are not
-collection evidence even when painted. It cannot be overridden by CSS visibility.
-Barrier markers are always inspected, while hidden completeness evidence never counts. Head/meta and hidden inputs are invisible in both
-drivers. Text and structural JSON extraction retain their existing rules.
+Facebook captures the main HTML document through CDP in an isolated world, never
+through main-world evaluation. An explicit-stack read-only walker uses pristine
+DOM getters, `checkVisibility()` and computed styles. It creates no elements,
+clones no document and writes no attributes, so capture cannot invoke custom-element
+constructors, attribute reactions or mutation observers. CDP discovers closed shadow
+roots and resolves their handles into that world. The same isolated world is scoped
+to the current navigation/frame. Iframe documents are not post evidence.
+
+The observation is a flat structured node list: kind, namespace, tag, ordinary
+attributes, text, light-tree children, composed-tree children and a rendered boolean.
+Expand controls also carry a CDP backend node identity. There is no reserved HTML
+attribute channel or trusted-HTML flag; every page-authored `data-metamuse-*`
+attribute is ordinary markup, regardless of case, namespace or creation method.
+Chromium observations are never HTML-reparsed. Progress compares structured comment
+identities/text, and CDP clicks the exact captured rendered control, including when
+another hidden control has the same identifier. Serialized structured data supplies
+the observation digest and byte accounting; it is not parsed as HTML.
+
+| Content | Rendered evidence |
+| --- | --- |
+| Ordinary laid-out content | yes |
+| Open, declarative and closed shadow content | yes |
+| Light children assigned to a slot | yes |
+| Opacity zero, off-screen, zero-size or clipped | yes; painted-but-not-seen limit |
+| Off-screen `content-visibility:auto` descendants | yes, even without layout nodes |
+| `aria-hidden=true` | yes; accessibility does not determine painting |
+| `hidden` with a CSS display override | yes, by the cascade |
+| `display:none`, or `hidden` without an override | no |
+| `hidden=until-found` | no |
+| `content-visibility:hidden` descendants | no |
+| Closed details content other than its first summary | no |
+| Scripting-on `noscript`, and template content | no |
+| Unslotted light children of a shadow host | no |
+| `visibility:hidden` or `collapse` | no; descendants may restore `visible` |
+| Text, including through `display:contents` | its text box and inherited visible state; skipped auto content remains eligible |
+
+Default `checkVisibility()` preserves auto-skipped content. Text-range boxes exclude
+non-painting direct text in closed details; looking through `display:contents`
+preserves text whose immediate parent has no box. Opacity, clipping, size and viewport
+position do not filter evidence. Possible painted `aria-hidden` duplicates must be
+measured in AT-039, not excluded by assumption. JSON text keeps its existing rules.
+
+Fixtures build the same structured form from static HTML. They use scripting-on
+noscript tokenization, the HTML serializer's exact 18 void tags (only in the HTML
+namespace), foreign SVG/MathML end tags, inline declaration order and `!important`,
+hidden/display overrides, content visibility, details and inherited visibility.
+They do not execute scripts or external CSS. Declarative shadow-root fixtures are
+refused with fixed `E_SELECTOR_DRIFT`; real Chromium composes them. Static rendering
+parity cases compare state, records and coverage in both drivers.
+
+Capture permits at most 65,536 nodes and 8 MiB of UTF-8 text plus attribute names and
+values, independently of the job's normally smaller byte budget. These are explicit
+structural bounds in addition to the existing observation/job byte limit; flat
+records add overhead beyond equivalent HTML. Bounds, unsupported non-HTML main MIME
+types (XHTML/XML/SVG), and capture failures refuse with fixed Facebook-specific
+`E_SELECTOR_DRIFT`, without page text or `E_STORAGE`. Inaccessible closed roots add
+`closed_shadow_capture_unavailable` and force partial coverage. Incomplete captures
+never claim `scope_satisfied`.
+
+Stop markers (`data-fb-state`, `data-page-state`, `data-checkpoint`, login/checkpoint
+form IDs, head/meta states) are inspected across the whole light DOM, unslotted
+children, templates and shadow roots, regardless of rendering. Completeness evidence
+such as `data-comments-exhausted` counts only when rendered. Text retains the existing
+single decode, image-alt, newline and edge-whitespace contract.
 
 
 Facebook browser routes validate the destination through the shared URL policy
