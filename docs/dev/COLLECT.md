@@ -666,3 +666,11 @@ stop the job. HTTP 429 stops and reports `Retry-After` without using the
 safe-read retry loop. Partial coverage stays `partial`. Staging uses the same
 `.collect-owner` marker with operation `collect.remote_media`, and the remote
 sweep does not delete `import.local` directories.
+
+Workspace caps (`safe_read_retries`, `read_timeout_seconds`, `media_max_bytes`,
+`text_max_bytes`) are taken at acceptance and each effective cap at the step boundary
+is the smaller of that snapshot and the current configuration. Lower caps apply to
+queued jobs; raising a cap cannot exceed the reviewed snapshot. Request limits stay
+in the digest and are rechecked against the current workspace before consumption.
+B12 prevents retries beyond its effective cap from making egress; the core executor
+can still schedule a local attempt that immediately stops at that guard.

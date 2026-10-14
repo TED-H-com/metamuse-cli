@@ -1085,6 +1085,10 @@ def preview_remote_media(ctx: Any, request: m.CollectRequest) -> m.ApprovalPrevi
         "Limits: " + "; ".join(f"{key}={value}" for key, value in prepared.limits.items())
     )
     details.append(
+        "Lower workspace caps at run time apply; "
+        "raised caps cannot exceed this acceptance snapshot."
+    )
+    details.append(
         "Stores: source provenance and media metadata; requested subtitle tracks and cues; "
         "media bytes only when media_file is requested. No cookie values are stored."
     )
@@ -2873,6 +2877,29 @@ def run_remote_media(step: StepContext) -> m.JobResult:
             )
         return current.payload
 
+    state = _State.load(step.checkpoint or {})
+    snapshot = state.caps or {
+        name: step.job.limits[name] for name in _WORKSPACE_CAPS if name in step.job.limits
+    }
+    if set(snapshot) != set(_WORKSPACE_CAPS):
+        raise m.CoreError(
+            m.ErrorCode.SCOPE_DENIED,
+            "Remote acceptance caps are unavailable",
+            next_action="Repeat the call without a grant to get a fresh approval preview",
+        )
+    try:
+        checked_caps = m.Limits.model_validate(snapshot)
+    except ValueError:
+        raise m.CoreError(
+            m.ErrorCode.STORAGE, "Stored remote acceptance caps are invalid"
+        ) from None
+    caps = {
+        name: min(getattr(checked_caps, name), getattr(workspace.limits, name))
+        for name in _WORKSPACE_CAPS
+    }
+    state.caps = snapshot
+    if step.step.retries > caps["safe_read_retries"]:
+        raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Remote safe-read retry cap reached")
     bound_cookies = _load_bound_cookies(approvals, provider, account, step.executor.secret_store)
     step.before_external_action(
         step.target,
@@ -2883,13 +2910,10 @@ def run_remote_media(step: StepContext) -> m.JobResult:
             load_payload=load_payload,
         ),
     )
-    state = _State.load(step.checkpoint or {})
     resources = set(request.resources)
-    text_max = int(step.job.limits.get("text_max_bytes") or workspace.limits.text_max_bytes)
-    media_max = int(step.job.limits.get("media_max_bytes") or workspace.limits.media_max_bytes)
-    timeout = int(
-        step.job.limits.get("read_timeout_seconds") or workspace.limits.read_timeout_seconds
-    )
+    text_max = caps["text_max_bytes"]
+    media_max = caps["media_max_bytes"]
+    timeout = caps["read_timeout_seconds"]
     budget = _Budget(used=state.bytes_used, limit=request.limits.max_bytes)
     net = _Net(
         checker=_checker_factory(input_hosts[0] if input_hosts else (), _system_resolver),

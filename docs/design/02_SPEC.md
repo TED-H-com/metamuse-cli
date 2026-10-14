@@ -416,3 +416,9 @@ B12 receipt lookup precedes permit verification: an identical request including 
 returns its original job after consumption or workspace-cap edits. Any changed payload
 is E_IDEMPOTENCY_CONFLICT. Workspace caps do not enter target or job identity; the
 B12-owned step checkpoint stores `remote_media_caps` at atomic job acceptance.
+
+At the B12 boundary each workspace cap is min(acceptance snapshot, current value).
+Lower caps apply to queued jobs; increases cannot exceed the reviewed snapshot.
+Request limits remain digest-bound and are checked against current workspace limits.
+Retries above the effective B12 cap stop before consumption or egress, even if the
+core executor schedules another local attempt.
