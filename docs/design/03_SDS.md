@@ -826,3 +826,6 @@ After a Facebook post identity is bound, a main-frame navigation to an unknown n
 
 
 Facebook HTML text includes inline image alt text (including emoji), excludes script/style/template and hidden subtrees, and retains the existing one-decode/newline/edge-whitespace contract. Real Chromium snapshots mark computed CSS hiding for the common parser; fixtures express hiding through attributes or inline style. JSON text remains unchanged.
+
+Structural JSON scripts require both data-fb-post-payload and application/json MIME
+type. Every other script is excluded from body text, even if it carries that marker.
