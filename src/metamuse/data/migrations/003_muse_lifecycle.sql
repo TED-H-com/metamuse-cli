@@ -99,7 +99,7 @@ WHEN (OLD.job_id IS NOT NULL AND NEW.job_id IS NOT OLD.job_id)
  OR (OLD.delivery_proof IS NOT NULL AND NEW.delivery_proof IS NOT OLD.delivery_proof)
 BEGIN SELECT RAISE(ABORT,'exchange attempt is write once'); END;
 UPDATE exchanges SET state='closed' WHERE outcome IS NOT NULL;
-UPDATE exchanges SET state='send_uncertain' WHERE outcome IS NULL AND state NOT IN ('prepared','submitting','sent','send_uncertain','failed_before_send','reply_observed');
+UPDATE exchanges SET state='send_uncertain' WHERE outcome IS NULL AND state NOT IN ('prepared','submitting','sent','send_uncertain','reply_observed');
 CREATE TRIGGER exchange_state_insert BEFORE INSERT ON exchanges
 WHEN NEW.state NOT IN ('prepared','submitting','sent','send_uncertain','failed_before_send','reply_observed','closed') OR ((NEW.state='closed')<>(NEW.outcome IS NOT NULL)) OR (NEW.state='failed_before_send' AND NEW.bytes_handed_off IS NOT 0)
 BEGIN SELECT RAISE(ABORT,'invalid exchange state'); END;
