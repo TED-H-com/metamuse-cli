@@ -343,9 +343,17 @@ uncommitted/orphan directories are excluded. Copying is followed by export verif
 `Store.restore(backup, fresh_paths)` checks schema version, SQLite integrity/FKs, manifest
 membership, object size/hash/path and complete export directories before copying into a
 fresh workspace with private modes. Export receipts can replay their original artifacts;
-missing/corrupt artifacts fail honestly, and failed backups remove only their new target. It clears stale worker owner metadata. Migration
-uses an exclusive maintenance lock and the worker lock, pre-upgrade online backup, and
-transactional DDL; a failure rolls back without deleting original data. `PRAGMA
+missing/corrupt artifacts fail honestly, and failed backups remove only their new target.
+It clears stale worker owner metadata. Newer-version backups are refused; older backups
+are first verified at their recorded version, then the restored copy follows normal
+forward migration with its own pre-upgrade backup. Store's default schema version is
+resolved at open time. Runtime `restore.incomplete` is created before copying and removed
+only after successful migration/integrity checks; an error/crash leaves the target blocked
+from normal Store/AppContext open. Restore the original verified backup into another fresh
+workspace after resolving a failure; do not remove the marker to pretend a partial restore
+succeeded. The original backup and rolled-back target/pre-upgrade backup are retained.
+Migration uses an exclusive maintenance lock and the worker lock, pre-upgrade online
+backup, and transactional DDL; a failure rolls back without deleting original data. `PRAGMA
 user_version` is schema version 1; older builds refuse newer schemas on every connection.
 Add future migrations only through the core owner. No LIVE, privacy erasure/compaction,
 Windows ACL verification or performance SLA evidence is implied by these APIs.
