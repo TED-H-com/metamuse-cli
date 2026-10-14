@@ -334,16 +334,37 @@ is intentional. Grant IDs and request keys are excluded from the action digest.
 Current workspace limits and extractor/host approvals are checked again at execution.
 Preparation computes one ASCII-only canonical page URL: lower-case scheme,
 lower-case IDNA/punycode host, non-default port only, and UTF-8 percent-encoding
-of every non-ASCII path/query byte. The digest, destination, public request echo,
-`permit approve` stderr and extractor's first hop all use that exact string.
+of non-ASCII path/query bytes. Unreserved escapes are decoded; remaining escapes
+use upper-case hex. Other ASCII characters outside the intersection of the pinned
+yt-dlp `escape_rfc3986` and curl_cffi `requote_uri` safe sets are percent-encoded.
+The digest, destination, public request echo and `permit approve` stderr use this
+string, and the extractor receives exactly the displayed URL. The transport sends
+exactly each URL the checker approved, without requoting or dot-segment removal
+(`quote=False`, `CURLOPT_PATH_AS_IS`, and an explicit `CURLOPT_REQUEST_TARGET`
+that also preserves the hex case of hop escapes). Extractors may derive further requests:
+FacebookReel resolves to a watch URL, and other extractors add query parameters or
+call API endpoints. Each derived request is checked against the bound approval
+entries before any dial. The fixture extractor and FacebookIE watch, video and
+story URL tests prove that the first page request's bytes on the wire equal the
+display. This does not promise that every extractor's first derived request equals
+its input URL.
 The stored job request and `original_url` provenance retain the operator's original
-URL. Canonically equivalent spellings therefore approve the same extraction.
+URL. Canonically equivalent spellings therefore approve the same extractor input.
+Only `m.facebook.com` maps to `www.facebook.com`, matching pinned FacebookIE;
+the preview and host approval check use `www`, so an `m`-only approval is refused.
+Python's IDNA2003 codec maps hosts. Hosts containing the IDNA2008 deviation
+characters `ß` or `ς` are refused, as are ZWJ/ZWNJ and trailing dots after IDNA
+mapping (including `。`, `．`, `｡`).
 Any fragment (even an empty `#`), any query key recognized by the shared `url_token`
-rule (including encoded/case/dash variants), trailing-dot host, or remaining free-text
-redaction of structural URL bytes returns fixed `E_INPUT_INVALID` /
-`Remote URL cannot be reviewed safely`, without echoing the URL or producing a preview.
-Credential-bearing page URLs are not B12 inputs. Signed media and delegation URLs
-can come from the extractor; their existing log/event/error redaction still applies.
+rule, invalid percent escape, dot path segment (including encoded forms and `;`
+parameters), duplicate canonical query key, or remaining free-text redaction of
+structural URL bytes returns fixed `E_INPUT_INVALID` / `Remote URL cannot be reviewed
+safely`, without echoing the URL or producing a preview. At preview and again before
+extraction, require `display == requote_uri(normalize_url(display))` using the pinned
+libraries; a changed normalization fails closed. Existing cheap URL syntax checks
+still refuse raw whitespace. Credential-bearing page URLs are not B12 inputs.
+Signed media and delegation URLs can come from the extractor; their existing
+log/event/error redaction still applies.
 Other text fields are redacted separately before JSON encoding.
 Cookie bytes are never read by the preview, and only the reference label and account
 appear in its summary. Share previews bind the canonical share URL and state that
@@ -365,15 +386,16 @@ requires a fresh preview and approval, before permit consumption. Atomic accepta
 stores exactly those reviewed caps in `remote_media_caps` in the step checkpoint.
 Use a new collection request key for a new run; an accepted key replays its original
 job and cannot be reused with a different grant or payload. Pre-round-8 permits need
-a fresh review because the action digest now binds canonical first hops and reviewed caps. Existing
+a fresh review because the action digest now binds canonical extractor inputs and reviewed caps. Existing
 cookie configurations must set the provider/account labels to match their imported binding.
 
 ### AT-040 operator plan (LIVE remains blocked)
 
 In a separately authorized, permitted real-account environment, the operator first
 reviews every first-hop/later-hop approval, its hosts and cookie label/account, the
-canonical ASCII destination and digest-bound cap snapshot; refuses page fragments
-or credential query keys; saves the reviewed request (or the original equivalent URL);
+canonical ASCII destination and digest-bound cap snapshot; refuses page fragments,
+credential query keys, invalid escapes, dot segments and duplicate canonical query
+keys; checks that mobile Facebook inputs display the approved `www` host; saves the reviewed request (or the original equivalent URL);
 and approves the exact digest with
 `metamuse permit approve --operation collect.remote --request-file REQUEST_FILE
 --exact-digest ACTION_DIGEST --request-key APPROVAL_KEY`. Repeat with the returned
@@ -525,7 +547,8 @@ is `E_AUTH_REQUIRED` only when the body has a login form whose action targets
 a login path. Any other 200 is `E_UNSUPPORTED`, message `The share link did
 not redirect`. A redirect to an unapproved host is `E_SCOPE_DENIED` before that
 host is dialed. Nothing is stored. The source `use_basis` and the step result
-record `requested_url` (the share URL) and `resolved_url` (the canonical URL).
+record `requested_url` (the reviewed canonical share URL) and `resolved_url` (the
+canonical resolved URL). `original_url` keeps the operator's original share spelling.
 A resume that reuses `resolved_url` checks its host against the exact approval
 matched by the original share input and checks the target extractor's
 `suitable()` before any dial. Duplicate approvals for the same extractor do
@@ -696,7 +719,8 @@ URLInput still needs a core-owned schema/validation bound.
 Stop-path comparison percent-decodes once, then strips each path segment at its
 first semicolon before dot-segment normalization and case folding. Thus literal
 `;`, `%3B` and `%3b` parameters cannot hide checkpoint, login or challenge segments.
-The structural approval display shows the complete canonical path, exactly as extracted.
+The structural approval display shows the complete canonical path handed to the
+extractor; each checker-approved transport URL is sent without requoting or path rewriting.
 
 Transparent outer pages may change descriptive titles, but never `channel_id`,
 `uploader_id`, `channel_url` or `uploader_url`. Native identity scope comes only

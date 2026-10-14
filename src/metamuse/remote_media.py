@@ -475,16 +475,37 @@ def _display_url(url: str) -> str:
     """The ASCII canonical URL reviewed by the human and passed to the extractor."""
     parsed = urlsplit(url)
     host = _host_of(url)
+    if host == "m.facebook.com":
+        host = "www.facebook.com"
     scheme = parsed.scheme.lower()
     authority = f"[{host}]" if ":" in host else host
     if parsed.port is not None and parsed.port != (443 if scheme == "https" else 80):
         authority += ":" + str(parsed.port)
-    # Preserve every existing ASCII byte, including percent escapes. Only non-ASCII
-    # code points are encoded; normalizations here also govern the actual first hop.
-    ascii_safe = "".join(chr(value) for value in range(128))
-    path = quote(parsed.path, safe=ascii_safe, encoding="utf-8", errors="strict")
-    query = quote(parsed.query, safe=ascii_safe, encoding="utf-8", errors="strict")
+    # Intersection of the pinned escape_rfc3986/requote_uri safe sets, plus
+    # urllib.quote's implicit RFC 3986 unreserved set. Preserve valid reserved
+    # escapes; decode unreserved ones before the fixed-point assertion below.
+    ascii_safe = "%/;:@&=+$,!~*'()?#[]"
+
+    def component(value: str) -> str:
+        if re.search(r"%(?![0-9a-fA-F]{2})", value):
+            raise _unreviewable_url()
+
+        def escape(match: re.Match[str]) -> str:
+            char = chr(int(match.group()[1:], 16))
+            if char in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~":
+                return char
+            return match.group().upper()
+
+        value = re.sub(r"%[0-9a-fA-F]{2}", escape, value)
+        return quote(value, safe=ascii_safe, encoding="utf-8", errors="strict")
+
+    path = component(parsed.path or "/")
+    query = component(parsed.query)
     return urlunsplit((scheme, authority, path, query, ""))
+
+
+def _unreviewable_url() -> m.CoreError:
+    return m.CoreError(m.ErrorCode.INPUT_INVALID, "Remote URL cannot be reviewed safely")
 
 
 def _require_reviewable_url(url: str) -> str:
@@ -493,12 +514,31 @@ def _require_reviewable_url(url: str) -> str:
     if "#" in url or any(
         _secret_query_key(part.partition("=")[0]) for part in parsed.query.split("&")
     ):
-        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Remote URL cannot be reviewed safely")
+        raise _unreviewable_url()
+    # Python's IDNA2003 codec differs from IDNA2008 on these deviation
+    # characters. Also test the mapped host before normalize_hostname strips dots.
+    if any(char in parsed.hostname for char in ("ß", "ς")) or parsed.hostname.encode("idna").decode(
+        "ascii"
+    ).endswith("."):
+        raise _unreviewable_url()
     display = _display_url(url)
     if len(display) > safety.URL_MAX_BYTES:
         safety._url_error()
-    if parsed.hostname.endswith(".") or safety.redact_text(display)[0] != display:
-        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Remote URL cannot be reviewed safely")
+    canonical = urlsplit(display)
+    if any(segment.partition(";")[0] in (".", "..") for segment in canonical.path.split("/")):
+        raise _unreviewable_url()
+    keys = (
+        [part.partition("=")[0] for part in canonical.query.split("&")] if canonical.query else []
+    )
+    if len(set(keys)) != len(keys):
+        raise _unreviewable_url()
+    if safety.redact_text(display)[0] != display:
+        raise _unreviewable_url()
+    from curl_cffi.requests.utils import requote_uri
+    from yt_dlp.utils.networking import normalize_url
+
+    if display != requote_uri(normalize_url(display)):
+        raise _unreviewable_url()
     return display
 
 
@@ -1418,6 +1458,12 @@ def _dial(
     options = _options(curl_opt, checked)
     bundle = _ca_bundle()
     try:
+        options[curl_opt.PATH_AS_IS] = 1
+        # libcurl still upper-cases escapes in its URL parser with PATH_AS_IS.
+        # Pin the HTTP request-target too, including extractor-derived hop bytes.
+        parsed = urlsplit(checked.url)
+        request_target = (parsed.path or "/") + ("?" + parsed.query if parsed.query else "")
+        options[curl_opt.REQUEST_TARGET] = request_target.encode("utf-8")
         session = session_type(
             verify=bundle,
             trust_env=False,
@@ -1435,6 +1481,7 @@ def _dial(
     response = None
     try:
         kwargs: dict[str, Any] = {
+            "quote": False,
             "headers": headers,
             "verify": bundle,
             "allow_redirects": False,
