@@ -9,11 +9,15 @@ exists. `next_action` names B12/B13 and LIVE. That check happens before the proj
 lookup.
 
 `import.local` has side effect `none`. `collect.remote_media` has side effect
-`safe_read`. Registration is idempotent. `metamuse_collect` reports verification
-`fixture_passed` and permission `granted_scope`. Environment is `ready` when the
-pinned yt-dlp extra imports, and `missing_dependency` when it does not. `ffprobe`
-is optional and does not change that status. `media.py` does not register its own
-operation.
+`safe_read`. Registration is idempotent. `metamuse_collect` stays
+`fixture_passed`, `ready`, and `granted_scope`. `ffprobe` does not change that
+row. `metamuse_collect.remote_media` reports the yt-dlp extra:
+`missing_dependency` without the pin, and `ready` when `yt-dlp==2026.8.19`
+imports. Its permission is `not_configured` while `app.network_mode` is
+`offline` or `remote_media.approvals` is empty, and `granted_scope` when the
+workspace is live and at least one approval is configured. That row is not a
+permit. Every collection still presents `access_grant_id` for `collect.remote`
+at submit. `media.py` does not register its own operation.
 
 ## Accepted bytes
 
@@ -292,10 +296,22 @@ The job uses yt-dlp's Python API with plugins and config disabled. Every request
 including subtitles and media bytes, goes through one MetaMuse request handler.
 That handler calls `OutboundURLPolicy.before_request`, dials only the checked
 addresses with curl_cffi (`CURLOPT_RESOLVE`, no proxy, no impersonation), follows
-redirects itself, and caps the body. A media file is downloaded only when
-`media_file` was requested. Subtitles use method `provided` or `auto`. No cues
-means `unavailable` and does not start ASR. Metadata provenance uses
-`collection_method` `yt-dlp` and the upstream extractor key, never `manual`.
+redirects itself, and caps the body. The `media_max_bytes` cap stays on a media
+download across every hop. Each hop is still checked with purpose `redirect`.
+A media file is downloaded only when `media_file` was requested. Subtitles use
+method `provided` or `auto`. No cues means `unavailable` and does not start ASR.
+Metadata provenance uses `collection_method` `yt-dlp` and the upstream extractor
+key, never `manual`. A remote video item is stored as kind `post` until core
+adds a media kind.
+
+The checkpoint stores the phase, indexes, ids, revision, text hash, and counts.
+It does not store upstream media or subtitle URLs. A resume re-reads the page
+and adds that response to `bytes_used`.
+
+Cookies are not sent. `CollectRequest` has no `auth_ref`: model content must
+not choose credentials. A later cookie binding would be an operator field on
+`remote_media.approvals`, resolved with `resolve_secret(auth_ref, provider=,
+account=)` against the permit. That field is not implemented.
 
 Login, a platform challenge, HTTP 403, geo restriction, and an unavailable item
 stop the job. HTTP 429 stops and reports `Retry-After` without using the

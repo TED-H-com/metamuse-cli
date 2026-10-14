@@ -526,6 +526,34 @@ def test_socket_connect_guard_is_active():
         sock.close()
 
 
+def test_remote_capability_permission_follows_allowlist_and_network(ctx):
+    def backend():
+        rows = app.inspect_capabilities(ctx).data["capabilities"]
+        return next(row for row in rows if row["name"] == "metamuse_collect.remote_media")
+
+    def tool():
+        rows = app.inspect_capabilities(ctx).data["capabilities"]
+        return next(row for row in rows if row["name"] == "metamuse_collect")
+
+    assert backend()["permission"] == "not_configured"
+    assert backend()["effective"] is False
+    assert tool()["environment"] == "ready"
+    assert tool()["effective"] is True
+    configure(ctx, [], live=True)
+    assert backend()["permission"] == "not_configured"
+    assert backend()["effective"] is False
+    configure(ctx, [("MetamuseFixture", ["media.fixture.test"])], live=False)
+    assert backend()["permission"] == "not_configured"
+    assert backend()["effective"] is False
+    configure(ctx, [("MetamuseFixture", ["media.fixture.test"])], live=True)
+    row = backend()
+    assert row["permission"] == "granted_scope"
+    assert row["environment"] == "ready"
+    assert row["effective"] is True
+    assert tool()["permission"] == "granted_scope"
+    assert tool()["effective"] is True
+
+
 def test_config_allowlist_is_empty_by_default():
     assert app.Config().remote_media.approvals == []
     example = tomllib.loads(
