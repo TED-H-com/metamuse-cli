@@ -20,8 +20,10 @@ def test_r3_f_nonce_and_connection_uuid_variants_are_scrubbed():
     transport._remember(attempt)
     variants = [
         nonce.hex().upper(),
+        "".join(char.upper() if i % 2 else char for i, char in enumerate(nonce.hex())),
         base64.b64encode(nonce).decode().rstrip("="),
         request.upper(),
+        "".join(char.upper() if i % 2 else char for i, char in enumerate(request)),
         request.replace("-", ""),
         request.replace("-", "").upper(),
         attempt.upper(),

@@ -80,3 +80,30 @@ def test_r3_d_session_above_1m_names_bound_records_nothing_and_never_dials(ctx):
     with ctx.store.connection() as conn:
         assert not conn.execute("SELECT * FROM muse_trust_observations").fetchall()
         assert not conn.execute("SELECT * FROM muse_trust_accounts").fetchall()
+
+
+def test_r3_d_curl_session_body_uses_the_larger_bound(monkeypatch):
+    from types import SimpleNamespace
+
+    from curl_cffi.const import CurlOpt
+    from test_muse_transport import PEER, checked_url
+
+    from metamuse import _muse_http as http
+
+    class Session:
+        def __init__(self, **kwargs):
+            pass
+
+        def request(self, method, url, **kwargs):
+            kwargs["content_callback"](b"x" * 80000)
+            return SimpleNamespace(status_code=200, primary_ip=PEER, headers={})
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(http, "load_curl", lambda: (Session, None, CurlOpt))
+    url = "https://muse.ai/api/session?vm_state=live"
+    result = http.CurlHttp().request(
+        "GET", url, headers={}, body=None, checked=checked_url(url), timeout=1
+    )
+    assert len(result.body) == 80000

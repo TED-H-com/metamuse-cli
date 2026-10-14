@@ -224,7 +224,9 @@ def test_r2_f1_rowid_conflicts_and_identity_updates_are_guarded(ctx, records, ta
         else:
             incoming = {**row, "rowid": victim}
             if table in PRIMARY:
-                if table.startswith("muse_trust_"):
+                if table == "muse_trust_observations":
+                    incoming["viewer_hash"] = "c" * 64
+                elif table.startswith("muse_trust_"):
                     incoming["account"] = "fresh-account"
                 elif table == "workspace_keys":
                     incoming["name"] = "fresh.key"

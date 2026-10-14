@@ -57,6 +57,13 @@ def sensitive_key(key: str) -> bool:
     return compact in _EXTRA_KEYS or redaction_sensitive_key(key)
 
 
+def _replace_known(value: str, secret: str) -> str:
+    # Hex and UUID diagnostics have no case semantics; base64 and tokens do.
+    if re.fullmatch(r"[0-9a-fA-F]{32}|[0-9a-fA-F]{64}|[0-9a-fA-F-]{36}", secret):
+        return re.sub(re.escape(secret), "redacted", value, flags=re.IGNORECASE)
+    return value.replace(secret, "redacted")
+
+
 def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
     variants = {
         variant
@@ -65,7 +72,7 @@ def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
         for variant in (secret, quote(secret, safe=""), quote_plus(secret, safe=""))
     }
     for variant in sorted(variants, key=len, reverse=True):
-        value = value.replace(variant, "redacted")
+        value = _replace_known(value, variant)
     original = value
     # Decode diagnostic percent-encoding before recognizing envelope/query grammars.
     for _ in range(2):
@@ -73,7 +80,7 @@ def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
     decoded = value
     for secret in sorted(known, key=len, reverse=True):
         if len(secret) >= 4:
-            value = value.replace(secret, "redacted")
+            value = _replace_known(value, secret)
     value = _WAKE_OBJECT.sub(_embedded_wake, value)
     value = _JSON_SECRET.sub(lambda match: match[1] + '"redacted"', value)
     value = _QUERY.sub(lambda match: match[1] + "=redacted", value)
