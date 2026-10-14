@@ -13,9 +13,11 @@ contracts, `paths.py` owns private paths, and `schemas.py` regenerates contracts
 `collect.py`, `media.py`, `muse.py`, `content.py`, `safety.py`, `mcp.py` contain the
 typed feature seams. B07/B11 implements the five content functions; see
 [CONTENT_API.md](CONTENT_API.md). `collect.py` implements local `submit_collect` for
-files and pasted text and declares `metamuse_collect`. Remote URL collection stays
-`E_UNSUPPORTED` until B12/B13. `media.py` provides local media and subtitle helpers and
-registers no operation. `safety.py` owns the local input reader that collect uses.
+files and pasted text and declares `metamuse_collect`. URL inputs that request only
+media metadata, subtitles, or a media file go to `remote_media.py` (`collect.remote_media`).
+Posts, comments, and mixed URL inputs stay `E_UNSUPPORTED` until B13. `media.py` provides
+local media and subtitle helpers and registers no operation. `safety.py` owns the local
+input reader and the outbound URL policy that remote media calls.
 Record formats are in `docs/dev/COLLECT.md`. `muse.py` implements the B10 lifecycle;
 see [MUSE.md](MUSE.md).
 
@@ -38,7 +40,7 @@ No Windows executor support is claimed: this build uses `fcntl` on Linux/WSL2.
 `ctx.store` is the only database owner. `ctx.clock` and `ctx.store.clock` are callables
 returning UTC ISO timestamps; `AppContext.open(clock=...)` sets both. `ctx.logger` is
 a Python logger. `ctx.limits` is `models.Limits`; `ctx.policy` is the complete typed
-`Config` (`app`, `worker`, `limits`, `muse`, `publishing`). `app.import_roots` lists
+`Config` (`app`, `worker`, `limits`, `muse`, `publishing`, `remote_media`). `app.import_roots` lists
 directories a local import may read; an empty list refuses every local file. Offline
 mode, disabled telemetry, disabled Muse/publishing and one executor are defaults. The
 TOML is one workspace configuration, not separate CLI/MCP settings. Higher limits
@@ -49,8 +51,10 @@ never grant scope.
 All fifteen SDS functions exist. Core implements `inspect_capabilities`, `create_project`,
 `get_job`, `list_jobs`, `control_job`; B07/B11 implements `search_evidence`, `prepare_packet`,
 `save_draft`, `preview_draft`, `export_objects`. Local `submit_collect` accepts files and
-pasted text. Remote URLs stay `E_UNSUPPORTED` until B12/B13, and `next_action` names those
-tasks and LIVE. The four Muse functions use the B10 durable lifecycle and explicit
+pasted text. URL inputs for media metadata, subtitles, or a media file are B12
+`collect.remote_media` and require an allowlist plus a `collect.remote` permit.
+Posts, comments, and mixed URL inputs stay `E_UNSUPPORTED`; `next_action` names
+B12/B13 and LIVE. The four Muse functions use the B10 durable lifecycle and explicit
 fixture/live binding. `TOOL_FUNCTIONS` maps the fifteen
 contract names to their functions; MCP should use it rather than shelling out.
 
@@ -572,7 +576,8 @@ are documented above and domain records are typed. Future feature owners must re
 specific typed output additions from core rather than hand-editing generated JSON.
 Dependencies are uv-locked. MCP uses its SDK; Muse imports its curl/Noise dependencies
 lazily. See `THIRD_PARTY_NOTICES.md` for their licenses and native components. B10 adds
-no dependency.
+no dependency. `yt-dlp==2026.8.19` is the optional `remote` extra and a dev-group pin,
+imported lazily by `remote_media.py`. Playwright is not a dependency.
 
 ## Feature seam and core change requests
 
@@ -626,6 +631,10 @@ An optional backend or page type reports its own row named `<declared tool>.<bac
 `metamuse_collect.browser_post`. Backend rows follow the fifteen tool rows in name order.
 A missing browser, extra or login therefore never marks the tool's local function
 unavailable (SPEC §2: missing Muse or browser does not block local features).
+Collect reports `metamuse_collect.remote_media` for the optional yt-dlp extra. Its
+environment is `missing_dependency` without the pinned import and `ready` when
+`yt-dlp==2026.8.19` imports. That row's permission stays `not_configured`: each
+collection still needs `remote_media.approvals` and a `collect.remote` permit.
 Hooks never make network calls. Use the idempotent `register_operations` example above;
 operation names must be unique and preserve side-effect/recovery semantics on restart.
 

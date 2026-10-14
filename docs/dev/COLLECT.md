@@ -1,15 +1,19 @@
-# Local collection (B05/B06)
+# Local collection (B05/B06) and remote media (B12)
 
 `submit_collect` accepts `local_file` and `text` inputs, persists one `import.local`
-job, and returns `accepted`. The executor runs the job. Remote `url` inputs are
-rejected before a job exists with `E_UNSUPPORTED`. `next_action` names B12/B13 and
-LIVE. One URL rejects the whole request, including a mix with local inputs, and this
-check happens before the project lookup.
+job, and returns `accepted`. The executor runs the job. A request whose inputs are
+all `url` and whose resources are a subset of `media_metadata`, `subtitles`, and
+`media_file` is `collect.remote_media` (B12). Any other URL shape, including `post`
+or `comments`, a mix of URL and local inputs, stays `E_UNSUPPORTED` before a job
+exists. `next_action` names B12/B13 and LIVE. That check happens before the project
+lookup.
 
-The operation side effect is `none`. Registration is idempotent. `metamuse_collect`
-reports verification `fixture_passed`, environment `ready`, and permission
-`granted_scope`. `ffprobe` is optional and does not change that status. `media.py`
-does not register its own operation.
+`import.local` has side effect `none`. `collect.remote_media` has side effect
+`safe_read`. Registration is idempotent. `metamuse_collect` reports verification
+`fixture_passed` and permission `granted_scope`. Environment is `ready` when the
+pinned yt-dlp extra imports, and `missing_dependency` when it does not. `ffprobe`
+is optional and does not change that status. `media.py` does not register its own
+operation.
 
 ## Accepted bytes
 
@@ -273,3 +277,28 @@ is rejected instead of being rewritten to a different file. Byte limits count
 reads and do not trust `st_size`. An import root that is itself a symlink is
 rejected. Configure the real directory. A file reached through a symlink is
 rejected even when the link is inside a root.
+
+## Remote media (B12)
+
+`collect.remote_media` runs only for an all-URL request whose resources are
+`media_metadata`, `subtitles`, and `media_file`. It refuses before creating a job
+when yt-dlp is missing (`E_DEPENDENCY_MISSING`), the workspace is offline
+(`E_SCOPE_DENIED`), `remote_media.approvals` is empty (`E_SCOPE_REQUIRED`), the
+extractor or exact host is not approved (`E_SCOPE_DENIED`), or `access_grant_id`
+is missing or does not cover `collect.remote` (`E_SCOPE_REQUIRED` or
+`E_SCOPE_DENIED`). Generic and unknown extractor keys are not approved.
+
+The job uses yt-dlp's Python API with plugins and config disabled. Every request,
+including subtitles and media bytes, goes through one MetaMuse request handler.
+That handler calls `OutboundURLPolicy.before_request`, dials only the checked
+addresses with curl_cffi (`CURLOPT_RESOLVE`, no proxy, no impersonation), follows
+redirects itself, and caps the body. A media file is downloaded only when
+`media_file` was requested. Subtitles use method `provided` or `auto`. No cues
+means `unavailable` and does not start ASR. Metadata provenance uses
+`collection_method` `yt-dlp` and the upstream extractor key, never `manual`.
+
+Login, a platform challenge, HTTP 403, geo restriction, and an unavailable item
+stop the job. HTTP 429 stops and reports `Retry-After` without using the
+safe-read retry loop. Partial coverage stays `partial`. Staging uses the same
+`.collect-owner` marker with operation `collect.remote_media`, and the remote
+sweep does not delete `import.local` directories.
