@@ -517,3 +517,22 @@ def test_finding_07_resume_preserves_cumulative_budgets(tmp_path, budget):
         assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] <= item_cap
         assert conn.execute("SELECT used FROM permits WHERE id=?", (permit,)).fetchone()[0] == 1
     assert job["coverage_status"] in ("bounded", "partial")
+
+
+def test_finding_08_weak_records_never_duplicate_on_resume(tmp_path):
+    ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
+    markup = _synthetic_post_html(comments=[{"text": f"Weak {i}"} for i in range(60)])
+    driver = facebook.FixtureBrowserDriver(observation(markup))
+    facebook.set_driver_factory(lambda: driver)
+    job_id = submit(ctx, project, permit)
+    crash_after_batch(ctx, job_id)
+    job = finish(ctx, job_id)
+    with ctx.store.connection() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM items").fetchone()[0] == 50
+        assert (
+            conn.execute("SELECT COUNT(*) FROM item_revisions WHERE text='Weak 0'").fetchone()[0]
+            == 1
+        )
+        assert conn.execute("SELECT used FROM permits WHERE id=?", (permit,)).fetchone()[0] == 1
+    assert "weak_identity_resume" in job["missing_fields"]
+    assert job["coverage_status"] == "partial"

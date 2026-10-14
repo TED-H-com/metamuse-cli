@@ -576,6 +576,11 @@ budget again; edits remain revisions of the same accepted identity. Fixture byte
 accounting uses cumulative UTF-8 observation bytes; real sessions use the larger
 of that accounting and relayed wire bytes. Wall-clock fencing remains core-owned.
 
+On resume, weak observations without native IDs are never re-imported. Neither text
+nor DOM position is a deduplication key. Previously committed weak items remain; new
+weak observations may be omitted, with weak_identity_resume and partial coverage.
+Reliable identities still support edits and new observations.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
