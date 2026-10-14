@@ -1,6 +1,10 @@
-# Muse transport (B09)
+# Muse transport and lifecycle (B09/B10)
 
-B09 is the gateway transport in `src/metamuse/muse.py`. It authenticates, opens one Noise_XX WebSocket, and performs serial unary calls on four routes. It returns attempt evidence. It does not open a discussion, write the database, or call `open_muse_discussion` / `submit_muse_exchange`. Those four feature functions still raise `E_UNSUPPORTED`. `IMPLEMENTED_TOOLS` is empty.
+B09 supplies the serial Noise gateway transport. B10 implements the four lifecycle
+app functions, shared CLI/MCP tools and durable jobs in `_muse_lifecycle.py`.
+`muse.open` and `muse.send` are external submissions; `muse.history` and
+`muse.sessions` are separately authorized safe reads. `IMPLEMENTED_TOOLS` contains
+only the four lifecycle tools. No background worker is started by a tool call.
 
 The spike under `spikes/muse/` is the historical record. Production code is `muse.py` plus `_muse_codec.py`, `_muse_associate.py`, `_muse_link.py`, `_muse_noise.py`, and `_muse_http.py`. `curl_cffi` and `noiseprotocol` are imported inside those helpers on first use. Importing `metamuse.muse` does not import them. A missing install raises `E_DEPENDENCY_MISSING`.
 
@@ -27,9 +31,9 @@ Default hosts, and the only real hosts in this module:
 
 `wss://{vm_id}.metaaivm.com/` is the `vmAddress` field of the hatch-token body. The transport does not dial it. `vm_id` must match `[A-Za-z0-9._-]{1,128}`.
 
-## What B10 must do before a mutation
+## Committed mutation boundary
 
-The transport does not mint a core token and does not reserve a permit. B10 owns that boundary. The remaining step is to bind `SubmitAuthorization` to the core `ExternalActionToken` minted in `jobs.py` after `before_external_action` commits.
+The transport does not mint a core token and does not reserve a permit. B10 owns that boundary. `SubmitAuthorization` is implemented by the issuer-registered core `ExternalActionToken`, minted in `jobs.py` only after `before_external_action` commits.
 
 1. Persist the exchange intent first, including the caller-supplied marker for both create and send.
 2. Call `step.before_external_action(target, verify=external_action_verifier(...))`. B08's verifier reserves the one-use permit inside that transaction. Do not call `verify_permit(..., reserve=True)` before it.
@@ -132,4 +136,154 @@ After a mutation handoff, a read failure does not use safe-read retry guidance. 
 
 ## Schema
 
-This build does not add columns and does not apply a migration. The core owner adds that migration, registers it, and regenerates the schemas. Do not edit `001_initial.sql`. Do not treat a default of `bytes_handed_off=0` as proof that nothing was sent: a crash after `submitting` and before the transport result leaves delivery unknown. B10 persists the attempt evidence this module returns. It does not rewrite an `app_error` into `acked` from a later history page.
+B10 registers forward migration `003_muse_lifecycle.sql` and regenerated schemas,
+as detailed below. Do not edit `001_initial.sql`. NULL `bytes_handed_off` means unknown:
+a crash after `submitting` and before the transport result provides no zero-handoff
+proof. First attempt evidence is immutable; later history proof never rewrites an
+`app_error` into `acked`.
+
+## Lifecycle API and authorization
+
+`muse_open` persists discussion, exact open payload, binding, job and original step in
+one transaction before returning `accepted`, `queued`, `worker_available:false` when
+no worker owns the workspace. `muse_send` does the same for the exchange. Replays
+use the original request and job; a changed payload is `E_IDEMPOTENCY_CONFLICT`.
+Unknown delivery returns reconciliation instructions and never enqueues a second send.
+An unresolved open also blocks another create under that project/account, including
+under a new request key. This is a refusal, never evidence based on title equality.
+
+Operator preview helpers `_muse_lifecycle.prepare_open(ctx, MuseOpenRequest)` and
+`prepare_send(ctx, MuseSendRequest)` return the exact stored `MusePayload`. Compute
+`safety.action_digest(prepared.target, prepared.payload)` before granting the action.
+The marker is stable for the request key, and the project ID is the stable node ID.
+A live send also requires a recorded successful authorized history job for its baseline;
+use the mapped-discussion read path above before preparing a send. A new fixture session
+has a known empty baseline. Sequence observations never claim full history coverage.
+An access grant covers `muse.open` and its exact action digest. A share grant covers
+an exact packet or displayed snapshot, provider/account, and requires `exact_digest`
+for the full question/packet/destination action. The verified body, headers, verb,
+path, marker and node ID cannot be substituted. Grants are reserved once inside the
+boundary, never before it. Revocation, expiry, account, source revisions and packet
+staleness are checked again there.
+
+The daemon `text` is exactly `question + "\n\n" + packet.rendered_text`; the two host
+texts retain CRLF and Unicode composition. The separator is the only joining text.
+Question and packet are independently capped at 8192/49152 UTF-8 bytes, and their
+exact joined text is checked against the verified payload before transport use.
+Topic is capped at 8192 UTF-8 bytes. No generated questions, follow-ups, strategy,
+persona or action are derived from replies. Replies remain untrusted host data.
+
+`muse_read` without `refresh` performs only local reads, including while Muse is
+unconfigured or offline. With `refresh=true`, a current access grant is required;
+it returns stored data and an accepted `refresh_job_id`, `state`, `worker_available`.
+`read_action(discussion, sessions=False)` previews the exact read scope. A refresh
+fetches one bounded history page from the original session; absence is not proof of
+non-delivery or full history coverage. Raw observations are retained before association.
+The app's opaque HMAC cursor uses the private versioned `content.cursor` workspace key,
+binds discussion/exchange and observation high-water/offset, and survives key rotation
+and backup/restore. Pages contain at most 50 observations; message text/status comes
+from observations within the same high-water mark. Lifecycle state is read live.
+
+For open recovery, pass the original `discussion_id` to `muse_open` (CLI `muse open
+--discussion ID --project ID --topic ORIGINAL --access-grant ID --request-key NEW`).
+When the session is still unknown, this explicitly queues `muse.sessions`, never `session.start`. A mapped discussion queues an authorized `muse.history` read instead. Only an exact original
+request marker with one session ID establishes the mapping. Matching titles, missing
+sessions, or a malformed page remain uncertain. A gateway that does not return marker
+proof remains blocked; LIVE response formats and marker support are unverified.
+
+`muse_close_exchange` records the host outcome and a durable request-key receipt.
+Unknown delivery permits only `abandoned`, and quarantines the discussion against a
+new exchange. Host outcome cannot settle the original step. History proof settles
+that original step through `Executor.settle_uncertain`, without another send, permit
+reservation or requeue. Quarantine clears only after settlement. Late observations
+remain visible and are labeled `late`; `closed` never reopens. Uncalibrated statuses,
+including `completed`, remain progress; an answer never asserts research completion.
+
+## Token and zero-handoff settlement
+
+`ExternalActionToken` cannot be directly constructed, copied or serialized. Its private
+issuer registry binds owner/epoch/job/step/operation/target/action digest; consuming it
+checks fencing, cancellation and exact action identity, then marks it one-use. Reads
+return no token. An entered external step cannot mint again, even under a new verifier.
+This proves the committed trusted boundary, not isolation against hostile same-UID Python.
+
+Only the transport's concrete `failed_before_send` / `bytes_handed_off is False`, or
+`MuseNotSubmitted` from a pre-frame connect failure, can register an opaque in-process
+`NotSubmittedProof` with the issuer. Registration precedes the evidence write; that
+write and checkpoint are fenced and atomic. Core then settles the original uncertain
+step as local `failed`, `remote_state=not_submitted`. The domain exchange remains
+`failed_before_send` until the host closes it. A new attempt requires a new request key
+and grant; permit use is never refunded. A crash after `submitting` but before saving
+transport accounting has NULL handoff and remains uncertain. A timeout is never relabeled
+as a remote refusal. Cancellation after handoff remains local cancelled/remote unknown
+until definite original-session evidence exists.
+
+## Binding, secrets and URL adapter
+
+Config owns `[muse] enabled`, `backend = "live" | "fixture"`, and optional
+`[muse.binding] provider`, `account`, `auth_ref`. No secret value belongs in TOML.
+A live discussion snapshots these labels immutably. Missing binding or secret reports
+`needs_auth` for open/send in inspect and `E_AUTH_REQUIRED` with `next_action`; live
+mode, credentials and permissions are all explicit. A later config change never chooses
+a different account for an existing discussion.
+
+Explicitly import UTF-8 JSON with exactly
+`{"format":"cookie-header","cookie_header":"name=value; name2=value2"}` into B08's
+secret store, labeled with provider/account. `BoundMuseCredentials` calls
+`resolve_secret(auth_ref, provider=..., account=..., secret_store=...)`, rejects duplicate
+keys, unknown format/fields, input over 8192 bytes, controls/CR/LF/NUL/DEL/non-ASCII and
+malformed or empty cookie pairs. It performs no browser/cookie discovery. Failures have
+fixed messages and no credential-bearing exception chains.
+
+`MuseURLGuard` maps all transport purposes to B08 `request`, allows the two exact upstream
+hosts, validates WSS through equivalent HTTPS, and restores only its scheme. Peer checks
+use the original checked address snapshot, with no fresh DNS as proof. Curl pins the
+canonical authority, disables proxies, fixes verified CA material and validates actual
+HTTP/WSS peers before response parsing. Routing `session_id` is preserved in sanitized
+JSON, while known cookie/bearer/hatch/WSS values are removed everywhere, including those
+fields if they contain a known secret. Unknown secret fields and credential-like text
+are redacted. Invalid UTF-8 returns no public body.
+
+## Schema 3 and storage guards
+
+`003_muse_lifecycle.sql` follows B05/B06's 002; it does not amend 001. It uses ALTER/ADD
+and replaces the message identity index to scope it to discussion/account. Legacy rows
+get NULL binding/backend and handoff/evidence, never fabricated zero delivery. Existing
+host outcomes become `closed` without inventing delivery proof.
+
+Exchange columns: marker, typed exact outbound payload/body digest, original submission
+step FK, write-once submit time and positive int64 stream ID, nullable handoff, first
+verdict/detail/SPEC error, separately guarded delivery proof and versioned observation
+memory. Discussion columns snapshot binding/backend, original open intent/permit/step,
+first open attempt accounting and session proof, plus unresolved-step quarantine.
+`muse_observations` stores append-only raw sanitized event JSON, identity, digest,
+discussion/message FKs, observed time and backend. `messages` is the stable projection.
+Distinct IDs sharing a seq remain distinct; enrichment is another observation.
+
+The guard audit includes every registered migration and dropped/recreated trigger.
+Discussion/message/exchange/observation identities reject REPLACE and conflicting UPSERT;
+retention triggers reject delete. Bindings/prepared identity are immutable; attempt fields
+are write-once; outcomes and closed state are sticky; transitions, same-discussion message
+attachment, backend labels, original step and proof references are checked. Observation
+memory retains ambiguity/competing/disqualified keys and a high-water mark, not a second
+raw transcript. Hydration checks count and byte sum before loading (2000 observations,
+2 MiB); overflow is `E_LIMIT_REACHED`, retaining all evidence and never dropping competitors.
+
+## Fixture gateway and handoff
+
+`OfflineMuseGateway(store=None, mode="normal", pages=...)` implements only the four
+allowlisted gateway methods. It is selected by explicit operator config
+`[muse] enabled=true; backend="fixture"` or explicit test DI via `AppContext.muse_gateway`
+and `Executor(..., muse_gateway=...)`. The backend requires the fixture label and persists
+it on every discussion/message/observation. Content envelopes carry `backend="fixture"`,
+`mock=true`, `research_complete=false`; inspect reports `fixture_passed`, never LIVE.
+Fixture mode can run with network mode offline; it still uses real grant/token/job checks.
+
+Modes `open_timeout`, `send_timeout`, `app_error`, `not_submitted`, the `pages` queue,
+`calls`, `sessions` and `events` support deterministic AT-018/019/020/021/037 and AT-042.
+Normal fixture history can reconstruct its deterministic response after CLI restart;
+custom/scripted remote world is in-process and is not a production remote database.
+AT-042's host must carry the mock attribution into its resulting draft/bundle. B16 should
+exercise real process kill at every boundary, restore and key rotation, epoch takeover
+refusal, hydration limits, and repeated uncertain settlement. LIVE/AT-038 remains blocked:
+no operator-authorized account; fixture success is not service verification.

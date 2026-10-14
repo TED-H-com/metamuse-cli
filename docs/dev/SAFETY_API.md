@@ -244,3 +244,10 @@ unchanged. All other corpus expected_verdict values are asserted without overrid
 
 The verifier also requires the registered side effect to match the action: `muse.open`
 and `muse.send` use `external_submit`; `muse.read` and `collect.remote` use `safe_read`.
+
+
+B10 integration: the external verifier returns the recomputed action digest after its
+checks/reservation. Core mints a one-use token after commit. Live Muse credentials use
+an immutable provider/account/auth_ref snapshot and the explicit cookie-header JSON
+format documented in [MUSE.md](MUSE.md). A Muse share also requires exact_digest for
+the prepared question/packet/target action, in addition to its snapshot/packet scope.

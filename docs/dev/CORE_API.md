@@ -1,4 +1,4 @@
-# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 2)
+# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 3)
 
 B02–B04 owns `app.py`, `cli.py`, `models.py`, `store.py`, `jobs.py`, migration SQL and
 generated schemas. Other tasks must build against these APIs without editing them.
@@ -406,7 +406,7 @@ to pretend a partial target succeeded. Original backups and rolled-back targets 
 Migration holds the maintenance/worker locks, disables foreign_keys before BEGIN IMMEDIATE
 for table rebuilds, checks foreign_key_check before commit, and restores enforcement in
 finally. DDL failure rolls back without deleting original data. `PRAGMA
-user_version` is schema version 2; older builds refuse newer schemas on every connection.
+user_version` is schema version 3; older builds refuse newer schemas on every connection.
 Add future migrations only through the core owner.
 Schema 2 adds project-scoped transcript anchors and source_assets. Migration 002 copies
 a v1 transcript only when its asset links to exactly one project; ambiguity aborts safely.
@@ -432,9 +432,10 @@ All JSON column values are text; timestamp values are UTC ISO strings.
 | transcript_segments | `id`, `project_id`, `asset_id`, `item_id`, `source_id`, `revision`, `cue_index`, `start_ms`, `end_ms`, `text`, `language`, `method`, `review`, `overlap` |
 | packets | `id`, `project_id`, `selection`, `rendered_text`, `redactions`, `coverage_status`, `digest`, `created_at`, `stale` |
 | permits | `id`, `project_id`, `kind`, `scope`, `provider`, `account`, `issuer`, `issued_at`, `expires_at`, `max_uses`, `used`, `revoked`, `exact_digest` |
-| discussions | `id`, `project_id`, `provider`, `auth_ref`, `topic`, `remote_session`, `open_attempt_state`, `last_seq`, `state` |
-| exchanges | `id`, `project_id`, `discussion_id`, `job_id`, `request_key`, `question`, `packet_id`, `digest`, `permit_id`, `baseline`, `state`, `outcome` |
-| messages | `id`, `discussion_id`, `exchange_id`, `remote_session`, `remote_message_id`, `seq`, `role`, `raw_status`, `text`, `association`, `observed_at` |
+| discussions | `id`, `project_id`, `provider`, `auth_ref`, `topic`, `remote_session`, `open_attempt_state`, `last_seq`, `state`, plus immutable binding/backend and original open attempt/proof/quarantine fields listed in [MUSE.md](MUSE.md) |
+| exchanges | `id`, `project_id`, `discussion_id`, `job_id`, `request_key`, `question`, `packet_id`, `digest`, `permit_id`, `baseline`, `state`, `outcome`, plus prepared request, original step, attempt accounting, delivery proof and typed observation memory listed in [MUSE.md](MUSE.md) |
+| messages | `id`, `discussion_id`, `exchange_id`, `remote_session`, `remote_message_id`, `seq`, `role`, `raw_status`, `text`, `association`, `observed_at`, `backend`, `identity_key` |
+| muse_observations | `id`, `discussion_id`, `message_id`, `identity_key`, `raw_event`, `observation_digest`, `observed_at`, `backend` (append-only) |
 | drafts | `id`, `project_id`, `current_revision`, `stale` |
 | draft_revisions | `draft_id`, `revision`, `text`, `platform`, `variant`, `facts_refs`, `assets`, `preferences`, `digest` |
 | exports | `id`, `project_id`, `selection`, `format`, `manifest`, `artifact`, `state` |
@@ -477,7 +478,9 @@ fields, and validate the design examples.
 All output schemas currently validate the shared envelope; successful data structures
 are documented above and domain records are typed. Future feature owners must request
 specific typed output additions from core rather than hand-editing generated JSON.
-Dependencies are uv-locked; no MCP SDK, yt-dlp, Playwright or crypto package is present.
+Dependencies are uv-locked. MCP uses its SDK; Muse imports its curl/Noise dependencies
+lazily. See `THIRD_PARTY_NOTICES.md` for their licenses and native components. B10 adds
+no dependency.
 
 ## Feature seam and core change requests
 
@@ -651,7 +654,32 @@ B08 owns verification and atomic consumption on the verifier's supplied connecti
 adds no competing permit API. New scope/expiry/use budgets require a new human grant.
 Ready object reads/inserts verify SHA-256; put_object can repair a corrupt occupant only
 with newly measured/hash-verified bytes and rejects a conflicting MIME classification.
-Failed backups remove only their newly created partial destination. Schema is 2;
+Failed backups remove only their newly created partial destination. Schema is 3;
 001 and 002 are amended pre-release. Canonical v1 workspaces upgrade through 002;
 older development workspaces missing amendments in 001 must be recreated.
 Core still owns all migrations and generated schemas.
+
+
+## B10 core extension
+
+Schema 3 adds the typed Muse lifecycle records and append-only `muse_observations` after
+migration 002. [MUSE.md](MUSE.md) defines the complete column/guard and lifecycle contract.
+`submit_job(..., prepare_domain=...)` receives a TransactionWriter, new Job and JobStep
+list. It runs database-only domain intent creation inside the same submission transaction;
+replay never calls it. Discussion/exchange, job, original step and receipt commit together.
+
+B08 `external_action_verifier` returns its recomputed verified digest. For an external
+submit, `before_external_action` returns an opaque issuer-registered ExternalActionToken
+after commit. Consumers must pass it to the prepared transport request; it is bound to
+owner/epoch/job/step/operation/target/digest and one-use. Safe reads return None. Entered
+steps cannot mint or reserve again. Legacy trusted handlers that return no digest receive
+no token and cannot call the Muse mutation transport.
+
+`record_not_submitted(step, concrete_transport_result)` registers affirmative in-process
+zero-handoff proof before writing accounting. `settle_uncertain(..., not_submitted=proof)`
+settles local failure with remote_state=not_submitted, and never refunds or requeues.
+Without that process-local proof a crash remains uncertain even if a later caller claims
+False. Original delivery proof and host outcome stay separate. No direct boolean/token
+constructor supplies authority. Executor accepts explicit fixture gateway, secret-store
+and resolver DI; fixture network exemption applies only to registered Muse operations and
+an explicitly selected fixture target/backend.

@@ -194,6 +194,12 @@ sent / send_uncertain → reply_observed → closed
 
 abandoned時若外部提交仍不明，discussion應quarantined，不能立即派下一題繞過未解提交。close_exchange不是遠端cancel。side chat不是跨客戶保密隔離；本地path不是Muse可讀資源。分析prompt不是停用Muse既有寫入工具的權限鎖。
 
+B10實作補充：零bytes證據只接受同process內transport記帳；持久化結果前crash仍unknown。
+`not_submitted`不退grant、不requeue；新提交要新key與grant。binding只含provider/account/auth_ref，
+discussion固定snapshot。fixture backend須明示選擇，discussion/message/observation及content envelope標mock，
+inspect只fixture_passed。read預設local；refresh排safe_read job＋current access grant。open對帳可明示原discussion_id，
+unknown只排list job，不再create；已mapped discussion則排history baseline read。cursor由workspace key簽名，綁discussion/exchange與observation高水位。
+
 ## 7. 分享與草稿
 
 Packet固定版本；修正建立新packet。批准可以涵蓋已展示的project snapshot，允許host在其中自行選資料和有限追問；新增來源或帳號需新範圍。不需要每個讀取都打斷使用者，但每次實際外送內容要可回查。
@@ -221,7 +227,7 @@ metamuse jobs cancel ID --request-key KEY
 metamuse worker run [--once]
 metamuse search --project ID --query TEXT [--cursor CURSOR] [--limit N]
 metamuse packet prepare --project ID --selection-file PATH --request-key KEY
-metamuse muse open --project ID --topic TEXT --access-grant ID --request-key KEY
+metamuse muse open --project ID --topic TEXT --access-grant ID --request-key KEY [--discussion ID]
 metamuse muse send --discussion ID --packet ID --question-file PATH --share-grant ID --request-key KEY
 metamuse muse read --exchange ID [--refresh] [--cursor CURSOR]
 metamuse muse close-exchange ID --outcome answered|needs_more_data|abandoned --request-key KEY
@@ -453,6 +459,21 @@ Browser context一個控制者，原生登入／2FA由人類處理。人接手�
 同discussion一個open exchange；host選answered/needs_more_data/abandoned。未知提交被abandon後discussion隔離，不藉close繼續派工。遠端cancel未驗證就not_supported/unknown。晚到訊息保留，不能配到下一題。
 
 模型拒絕不以改來源、假身份或重寫同目的prompt迴避。兩個Agent同讀一份資料的共識不是獨立證據。分析prompt不會收回Muse原生工具權限，操作者需在服務本身設定。
+
+### B10持久化與boundary補充
+
+003_muse_lifecycle.sql在002後forward ALTER，不改001。exchanges保存精確prepared payload/marker/body digest、
+original submission_step_id、submit time、stream ID、nullable handoff、first attempt evidence、獨立delivery proof，
+及versioned association memory。discussions固定provider/account/auth_ref/backend與open intent/step/proof及quarantine。
+messages按discussion/account隔離identity；append-only muse_observations保存每次raw sanitized observation、digest、
+message/discussion FK與backend。legacy handoff與binding保持NULL；closed不reopen，proof不覆寫first evidence。
+新identity有BEFORE INSERT replacement/UPSERT guard與retention trigger；migration guard audit涵蓋所有版本。
+
+before_external_action transaction完成verifier/reservation/intent後才mint one-use issuer-registered token，
+consume綁owner/epoch/job/step/operation/target/action digest。read不mint。transport affirmative zero-handoff可同process
+record_not_submitted，原step經settle_uncertain變local failed/remote not_submitted；crash則unknown，不退用量。
+history/list在另一safe_read job，讀取current access grant；原step settlement不再reserve/send/requeue。
+live send先有已完成、授權的history baseline；已mapped discussion_id的open走history read，不做第二次create。
 
 ## 9. Grant與packet
 

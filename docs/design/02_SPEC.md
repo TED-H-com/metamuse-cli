@@ -103,6 +103,12 @@ sent / send_uncertain → reply_observed → closed
 
 abandoned時若外部提交仍不明，discussion應quarantined，不能立即派下一題繞過未解提交。close_exchange不是遠端cancel。side chat不是跨客戶保密隔離；本地path不是Muse可讀資源。分析prompt不是停用Muse既有寫入工具的權限鎖。
 
+B10實作補充：零bytes證據只接受同process內transport記帳；持久化結果前crash仍unknown。
+`not_submitted`不退grant、不requeue；新提交要新key與grant。binding只含provider/account/auth_ref，
+discussion固定snapshot。fixture backend須明示選擇，discussion/message/observation及content envelope標mock，
+inspect只fixture_passed。read預設local；refresh排safe_read job＋current access grant。open對帳可明示原discussion_id，
+unknown只排list job，不再create；已mapped discussion則排history baseline read。cursor由workspace key簽名，綁discussion/exchange與observation高水位。
+
 ## 7. 分享與草稿
 
 Packet固定版本；修正建立新packet。批准可以涵蓋已展示的project snapshot，允許host在其中自行選資料和有限追問；新增來源或帳號需新範圍。不需要每個讀取都打斷使用者，但每次實際外送內容要可回查。
@@ -130,7 +136,7 @@ metamuse jobs cancel ID --request-key KEY
 metamuse worker run [--once]
 metamuse search --project ID --query TEXT [--cursor CURSOR] [--limit N]
 metamuse packet prepare --project ID --selection-file PATH --request-key KEY
-metamuse muse open --project ID --topic TEXT --access-grant ID --request-key KEY
+metamuse muse open --project ID --topic TEXT --access-grant ID --request-key KEY [--discussion ID]
 metamuse muse send --discussion ID --packet ID --question-file PATH --share-grant ID --request-key KEY
 metamuse muse read --exchange ID [--refresh] [--cursor CURSOR]
 metamuse muse close-exchange ID --outcome answered|needs_more_data|abandoned --request-key KEY
