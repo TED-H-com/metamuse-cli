@@ -635,11 +635,13 @@ def _mutate(step):
                 (_millis(step.store.clock), discussion.id),
             )
         else:
+            high_water = conn.execute(
+                "SELECT COALESCE(MAX(rowid),0) FROM muse_observations"
+            ).fetchone()[0]
             conn.execute(
                 "UPDATE exchanges SET state='submitting',submitted_at_ms=?,"
-                "submitted_observation_high_water=(SELECT COALESCE(MAX(rowid),0) "
-                "FROM muse_observations) WHERE id=?",
-                (_millis(step.store.clock), exchange.id),
+                "submitted_observation_high_water=? WHERE id=?",
+                (_millis(step.store.clock), high_water, exchange.id),
             )
         return digest
 
