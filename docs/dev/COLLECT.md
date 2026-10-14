@@ -292,6 +292,65 @@ extractor or exact host is not approved (`E_SCOPE_DENIED`), or `access_grant_id`
 is missing or does not cover `collect.remote` (`E_SCOPE_REQUIRED` or
 `E_SCOPE_DENIED`). Generic and unknown extractor keys are not approved.
 
+### Operator approval: preview, approve, repeat
+
+Set `[remote_media] provider` and `account` to explicit non-secret operator labels.
+Their defaults are `remote-media` and `anonymous` for public unauthenticated reads.
+Cookie-authenticated reads use the same provider/account labels as the human's
+`auth import`; `auth_ref` remains operator configuration on each extractor approval.
+An empty approvals list disables this backend. No request or grant chooses the account.
+
+1. Submit the intended collection without `--access-grant`, through `metamuse add`
+   or `metamuse_collect`. `E_SCOPE_REQUIRED` includes `approval`, with null `data`.
+   Show its summary and `next_action` to the human. Save `approval.request` at
+   `approval.request_file`; the preview itself creates no file, permit, receipt,
+   job or intent and makes no network call or account discovery.
+2. The human reviews the destinations, configured provider/account, cookie binding
+   label (if any), extractor/host allowlist, limits and stored resources. Run the
+   exact shell-quoted `approval.next_action`, which uses the shipped command:
+   `metamuse --workspace WORKSPACE --json permit approve --operation collect.remote
+   --request-file REQUEST_FILE --exact-digest ACTION_DIGEST --request-key APPROVAL_KEY`.
+   Only the human CLI can approve. It recomputes the preview, displays the effective
+   expiry and uses on stderr, and refuses an edited request with the old exact digest.
+3. Repeat the unchanged request with the returned permit ID (`--access-grant ID`
+   on CLI, `access_grant_id` on MCP). This returns `accepted`; use `--run`,
+   `worker run`, or MCP's attached worker to execute the job.
+
+Exactly one `collect.remote` preview callback dispatches `CollectRequest` through
+the fixed route table in `collect.py`. B13 will extend the route selector and table.
+Preview, submission and the step boundary call the same `prepare_remote_media`.
+The B08 action digest binds the original URL bytes, project, configured provider/account,
+resources, extractor keys and requested limits; grant IDs and request keys are excluded.
+Current workspace limits and extractor/host approvals are checked again at execution.
+Each displayed text field, including nested input URLs, is redacted before JSON encoding.
+The digest still binds original bytes: a redacted copy needs a new review and digest.
+Cookie bytes are never read by the preview, and only the reference label and account
+appear in its summary. Share previews bind the original share URL and state that
+checked resolution and at most two approved extractor hops happen during execution.
+
+An unknown permit preserves `E_SCOPE_REQUIRED` / `Permit does not exist` and includes
+the preview. Expired, revoked, exhausted or mismatched grants preserve `E_SCOPE_DENIED`
+and its original message, without a preview; repeat without a grant for a fresh review.
+Fresh previews choose the next unused approval key without writing a receipt, so the
+displayed command cannot replay an expired, revoked or exhausted permit. Offline mode,
+disabled backend, missing extra and invalid/unsupported URLs keep their actual errors
+without a preview. A failed preview or approval creates no grant.
+Use a new collection request key for a new run; an accepted key replays its original
+job and cannot be reused with a different grant or payload. Pre-round-6 permits need
+a fresh review because the action digest now also binds the requested limits. Existing
+cookie configurations must set the provider/account labels to match their imported binding.
+
+### AT-040 operator plan (LIVE remains blocked)
+
+In a separately authorized, permitted real-account environment, the operator first
+reviews the remote preview, saves the request, and approves its exact digest with
+`metamuse permit approve --operation collect.remote --request-file REQUEST_FILE
+--exact-digest ACTION_DIGEST --request-key APPROVAL_KEY`. Repeat with the returned
+grant, then compare source metadata, subtitles and any requested media bytes against
+the permitted source, recording limits, omissions, provenance and partial coverage.
+Stop at a login wall or challenge. This plan has not been executed; this branch's
+CLI/MCP tests use synthetic extractors and egress seams, with no network or accounts.
+
 The job uses yt-dlp's Python API with plugins and config disabled. Every request,
 including subtitles and media bytes, goes through one MetaMuse request handler.
 That handler calls `OutboundURLPolicy.before_request`, dials only the checked

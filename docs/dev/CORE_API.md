@@ -856,8 +856,11 @@ and use the identical target/payload in PermitUse and external_action_verifier. 
 callbacks cannot register the same operation with different implementations: coordinate
 that dispatcher with core. Do not accept account labels/digests/approved flags from model
 text. Register previews before returning grant errors, enforce current permit and target
-again at the step boundary, and retain B08 egress/retry rules. This base has no remote
-collector; every grant-requiring route here is covered by Muse open/send/read registration.
+again at the step boundary, and retain B08 egress/retry rules. `collect.register_operations`
+registers the sole dispatcher with `CollectRequest`; `_remote_route` selects the fixed
+`_REMOTE_APPROVAL_ROUTES` table. Today `collect.remote_media` calls
+`remote_media.preview_remote_media`, using `prepare_remote_media` at all three boundaries.
+B13 adds its route to that selector/table rather than registering another callback.
 
 AppContext.worker_status is an optional process-owned callback installed by MCP startup.
 Shared wrappers replace worker availability fields with attached-worker truth there;
