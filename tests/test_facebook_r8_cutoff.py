@@ -68,7 +68,7 @@ def test_r8_fatal_cutoff_outcome_matches_control(tmp_path, code, order):
         lambda: Driver(observation(_synthetic_post_html(expand_controls=[{"id": "more"}])))
     )
     job = finish(ctx, submit(ctx, project, permit))
-    assert job["error"]["code"] == code, job
+    assert (job.get("error") or {}).get("code") == code, job
     assert job["error"]["next_action"] == "Synthetic action"
     assert job["state"] == (
         "awaiting_user"
@@ -194,7 +194,7 @@ def test_r8_denial_after_final_observation(tmp_path, monkeypatch, order, request
 
         monkeypatch.setattr(driver, "open_session", opened)
         job = finish(ctx, submit(ctx, project, permit))
-        assert job["error"]["code"] == "E_SCOPE_DENIED", job
+        assert (job.get("error") or {}).get("code") == "E_SCOPE_DENIED", job
         assert job["state"] == "awaiting_user"
         assert rows(ctx) == []
 
@@ -348,7 +348,11 @@ def test_r8_chromium_fatal_cutoff_pairs(tmp_path, monkeypatch, condition, reques
                 patch.setattr(guard, "check_browser_route", checked)
                 patch.setattr(facebook, "_raise_observation_barrier", classified)
                 job = finish(ctx, submit(ctx, project, permit, url=url))
-                assert job["error"]["code"] == codes[condition], (order, condition, job)
+                assert (job.get("error") or {}).get("code") == codes[condition], (
+                    order,
+                    condition,
+                    job,
+                )
                 outcome = (job["state"], job["error"], rows(ctx))
                 if order == "none":
                     baseline = outcome

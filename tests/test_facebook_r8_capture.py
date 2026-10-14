@@ -198,7 +198,7 @@ def test_r8_barriers_in_every_tree(tmp_path, monkeypatch, location, request):
             + "</script></body>",
         )
     job, stored = run(tmp_path, monkeypatch, markup, "chromium")
-    assert job["error"]["code"] == "E_AUTH_REQUIRED", job
+    assert (job.get("error") or {}).get("code") == "E_AUTH_REQUIRED", job
     assert job["state"] == "awaiting_user"
     assert stored == []
 
@@ -231,7 +231,7 @@ def test_r8_non_html_refused(tmp_path, monkeypatch, kind, request):
         _,
     ):
         job = finish(ctx, submit(ctx, project, permit))
-        assert job["error"]["code"] == "E_SELECTOR_DRIFT", job
+        assert (job.get("error") or {}).get("code") == "E_SELECTOR_DRIFT", job
         assert job["error"]["message"] == "Facebook structured capture could not be completed"
         assert job["state"] == "failed"
 
@@ -281,7 +281,7 @@ def test_r8_fixture_declarative_shadow_refused(tmp_path):
             "</body>", '<div><template shadowrootmode="open">SHADOW</template></div></body>'
         ),
     )
-    assert job["error"]["code"] == "E_SELECTOR_DRIFT", job
+    assert (job.get("error") or {}).get("code") == "E_SELECTOR_DRIFT", job
     assert job["state"] == "failed"
 
 
@@ -342,7 +342,7 @@ def test_r8_capture_bounds_fixed_error(tmp_path, monkeypatch, bound, request):
     )
     markup = _synthetic_post_html().replace("</body>", "<script>" + script + "</script></body>")
     job, stored = run(tmp_path, monkeypatch, markup, "chromium")
-    assert job["error"]["code"] == "E_SELECTOR_DRIFT", job
+    assert (job.get("error") or {}).get("code") == "E_SELECTOR_DRIFT", job
     assert job["error"]["message"] == "Facebook structured capture could not be completed"
     assert job["state"] == "failed"
     assert stored == []
