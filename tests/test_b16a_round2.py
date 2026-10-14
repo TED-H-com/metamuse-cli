@@ -207,3 +207,20 @@ def test_f4_open_replay_and_frozen_topic_refusal(fixture_ctx, project, monkeypat
         and discussion.open_delivery_proof.kind == "not_submitted"
     )
     assert ctx.muse_gateway.calls == []
+
+
+@pytest.mark.parametrize("separator", ["?", "%3F", "%253F", "%25253F", "&", "#", "%2526", "%2523"])
+@pytest.mark.parametrize("sentinel", ["", "[REDACTED]", "%255BREDACTED%255D"])
+def test_f7_original_url_value_boundaries(separator, sentinel):
+    marker = f"{len(separator)}_MARKER_SYNTHETIC_ONLY"
+    text = f"https://example.invalid/?password={sentinel}{separator}{marker}&view=1"
+    output, _ = safety.redact_text(text)
+    if separator == "?":
+        assert marker not in output  # Literal '?' belongs to the password value.
+    else:
+        assert marker in output  # Encoded '?' and all '&/#' delimit a separate field.
+    assert "view=1" in output
+    prefix_value = f"https://example.invalid/?token={sentinel}{marker}&view=1"
+    assert marker not in safety.redact_text(prefix_value)[0]
+    exact = "https://example.invalid/?token=[REDACTED]&view=1"
+    assert safety.redact_text(exact) == (exact, [])

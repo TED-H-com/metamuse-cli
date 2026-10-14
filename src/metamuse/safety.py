@@ -1342,6 +1342,8 @@ def redaction_sensitive_value(key: str, value: Any) -> bool:
     value = value.strip().strip("\"'")
     if not value or value == "[REDACTED]" or value.endswith("()"):
         return False
+    if value.startswith("[REDACTED]"):
+        value = value[len("[REDACTED]") :]
     if value.lower() in {"none", "null", "true", "false"}:
         return False
     if value.isdecimal():
@@ -1491,17 +1493,32 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
     }
     spans = []
     for match in parameters.finditer(decoded):
-        if decoded.startswith("[REDACTED]", match.end()):
-            continue
         name = match["key"].lower()
         if redaction_sensitive_key(name) or name in signed:
             end_match = next(
                 (
                     candidate
                     for candidate in ending.finditer(decoded, match.end())
-                    if candidate.group() in "?&#"
-                    or offsets is None
-                    or offsets[candidate.end()] - offsets[candidate.start()] == 1
+                    if not (
+                        candidate.group() == "]"
+                        and decoded.startswith("[REDACTED]", match.end())
+                        and candidate.start() == match.end() + len("[REDACTED]") - 1
+                    )
+                    and (
+                        candidate.group() in "&#"
+                        or (
+                            candidate.group() == "?"
+                            and offsets is not None
+                            and offsets[candidate.end()] - offsets[candidate.start()] > 1
+                        )
+                        or (
+                            candidate.group() != "?"
+                            and (
+                                offsets is None
+                                or offsets[candidate.end()] - offsets[candidate.start()] == 1
+                            )
+                        )
+                    )
                 ),
                 None,
             )
