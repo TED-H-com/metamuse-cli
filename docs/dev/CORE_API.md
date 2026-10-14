@@ -676,8 +676,15 @@ steps cannot mint or reserve again. Legacy trusted handlers that return no diges
 no token and cannot call the Muse mutation transport.
 
 `record_not_submitted(step, concrete_transport_result)` registers affirmative in-process
-zero-handoff proof before writing accounting. `settle_uncertain(..., not_submitted=proof)`
-settles local failure with remote_state=not_submitted, and never refunds or requeues.
+zero-handoff proof before writing accounting. `step.commit_not_submitted(proof,
+write_batch=...)` atomically saves that accounting and checkpoint before honoring local
+cancellation; owner/epoch/target/step guards still apply. `settle_uncertain(...,
+not_submitted=proof)` settles local failure with remote_state=not_submitted, retaining
+local cancellation, and never refunds or requeues. An optional database-only
+`after_settlement` callback registered with the proof can clear the original quarantine
+after the original step is failed; proof registration is consumed only after commit.
+Accounting/settlement failures leave the step uncertain with a durable
+`step.not_submitted_save_failed` event, and the worker continues other queued jobs.
 Without that process-local proof a crash remains uncertain even if a later caller claims
 False. Original delivery proof and host outcome stay separate. No direct boolean/token
 constructor supplies authority. Executor accepts explicit fixture gateway, secret-store

@@ -683,7 +683,7 @@ def _save_open(step, discussion, result, failure):
     handed = result.bytes_handed_off if result is not None else failure.bytes_handed_off
     zero = handed is False
     if zero:
-        step.executor.record_not_submitted(step, failure)
+        zero_proof = step.executor.record_not_submitted(step, failure)
     verdict = "undecided"
     session = None
     if result is not None:
@@ -738,7 +738,10 @@ def _save_open(step, discussion, result, failure):
             ),
         )
 
-    step.commit_checkpoint({"not_submitted": zero}, write_batch=save)
+    if zero:
+        step.commit_not_submitted(zero_proof, write_batch=save)
+    else:
+        step.commit_checkpoint({"not_submitted": False}, write_batch=save)
     if not reliable:
         _error(
             m.ErrorCode.NETWORK_TIMEOUT if zero else m.ErrorCode.EXTERNAL_STATE_UNKNOWN,
@@ -767,8 +770,6 @@ def _save_send(step, discussion, exchange, result, failure):
             error_code=failure.detail.code.value,
         )
     zero = attempt.bytes_handed_off is False
-    if zero:
-        step.executor.record_not_submitted(step, attempt)
     proof = (
         m.MuseProof(
             kind="not_submitted" if zero else "ack",
@@ -808,7 +809,19 @@ def _save_send(step, discussion, exchange, result, failure):
             ),
         )
 
-    step.commit_checkpoint({"not_submitted": zero}, write_batch=save)
+    if zero:
+
+        def settled(writer):
+            writer.execute(
+                "UPDATE discussions SET quarantine_step_id=NULL "
+                "WHERE id=? AND quarantine_step_id=?",
+                (discussion.id, step.step.id),
+            )
+
+        zero_proof = step.executor.record_not_submitted(step, attempt, after_settlement=settled)
+        step.commit_not_submitted(zero_proof, write_batch=save)
+    else:
+        step.commit_checkpoint({"not_submitted": False}, write_batch=save)
     current = step.store.get(m.Exchange, exchange.id)
     delivered = current.delivery_proof is not None and current.delivery_proof.kind in (
         "ack",

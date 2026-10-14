@@ -7,8 +7,8 @@ import pytest
 from test_muse_lifecycle import fixture_ctx as fixture_ctx
 from test_muse_lifecycle import grant, invoke, opened, packet, run
 
+from metamuse import app, jobs, safety
 from metamuse import models as m
-from metamuse import safety
 from metamuse._muse_lifecycle import prepare_open, prepare_send, read_action
 
 
@@ -214,3 +214,93 @@ def test_history_proof_before_transport_ack_preserves_both(fixture_ctx, project)
     assert exchange.attempt_verdict == "acked" and exchange.bytes_handed_off is True
     assert exchange.delivery_proof.kind == "user_echo"
     assert ctx.store.get(m.JobStep, exchange.submission_step_id).state == "succeeded"
+
+
+@pytest.mark.parametrize("race", ["close", "cancel", "write_failure", "settlement_failure"])
+def test_zero_handoff_races_do_not_wedge_worker(fixture_ctx, project, monkeypatch, race):
+    ctx = fixture_ctx
+    opening, _ = opened(ctx, project)
+    did = opening.data["discussion_id"]
+    original = ctx.muse_gateway.chat_stream
+
+    def send(prepared, *, authorization, **kwargs):
+        result = original(prepared, authorization=authorization, **kwargs)
+        step = authorization._issuer._tokens[authorization][0]
+        if race == "close":
+            closed = app.close_muse_exchange(
+                ctx,
+                {
+                    "exchange_id": step.target["intent_id"],
+                    "outcome": "abandoned",
+                    "request_key": "close-race",
+                },
+            )
+            assert closed.status == "ok"
+        elif race == "cancel":
+            assert (
+                app.control_job(
+                    ctx,
+                    {
+                        "job_id": step.job.id,
+                        "operation": "cancel",
+                        "request_key": "cancel-race",
+                    },
+                ).status
+                == "ok"
+            )
+        return result
+
+    ctx.muse_gateway.chat_stream = send
+    ctx.muse_gateway.mode = "not_submitted"
+    identity = queue_send(ctx, project, did, packet(ctx, project), "send")
+    registry = dict(jobs.OPERATIONS)
+
+    def later(step):
+        step.executor.request_stop()
+        return m.JobResult(coverage_status="bounded", data={"later": True})
+
+    jobs.register_operation("review.later", later, "none", registry=registry)
+    queued = jobs.submit_job(
+        ctx.store, "review.later", "later", {}, project_id=project, registry=registry
+    )
+    assert queued.status == "accepted"
+    if race == "write_failure":
+
+        def fail(*args, **kwargs):
+            raise m.CoreError(m.ErrorCode.STORAGE, "Synthetic accounting failure")
+
+        monkeypatch.setattr(jobs.StepContext, "commit_not_submitted", fail)
+    elif race == "settlement_failure":
+
+        def fail(*args, **kwargs):
+            raise m.CoreError(m.ErrorCode.STORAGE, "Synthetic settlement failure")
+
+        monkeypatch.setattr(jobs.Executor, "settle_uncertain", fail)
+    with jobs.Executor(ctx.store, registry=registry, muse_gateway=ctx.muse_gateway) as executor:
+        assert executor.run() == 2
+        assert not executor._tokens and not executor._zero_handoff and not executor._proofs
+    assert ctx.store.get(m.Job, queued.data["job_id"]).state == "succeeded"
+    exchange = ctx.store.get(m.Exchange, identity)
+    step = ctx.store.get(m.JobStep, exchange.submission_step_id)
+    job = ctx.store.get(m.Job, step.job_id)
+    if race in ("write_failure", "settlement_failure"):
+        assert step.state == "send_uncertain" and job.remote_state == "unknown"
+        with ctx.store.connection() as conn:
+            assert conn.execute(
+                "SELECT 1 FROM events WHERE kind='step.not_submitted_save_failed' AND object_id=?",
+                (step.id,),
+            ).fetchone()
+        if race == "write_failure":
+            assert exchange.bytes_handed_off is None and exchange.delivery_proof is None
+    else:
+        assert step.state == "failed" and job.remote_state == "not_submitted"
+        assert (
+            exchange.bytes_handed_off is False and exchange.delivery_proof.kind == "not_submitted"
+        )
+        assert step.checkpoint["not_submitted"] is True
+        assert ctx.store.get(m.Discussion, did).quarantine_step_id is None
+        if race == "close":
+            assert exchange.state == "closed" and exchange.outcome == "abandoned"
+        else:
+            assert exchange.state == "failed_before_send" and job.state == "cancelled"
+    assert sum(route == "chat.stream" for route, _ in ctx.muse_gateway.calls) == 1
