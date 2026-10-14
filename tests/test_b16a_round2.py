@@ -40,6 +40,7 @@ BENIGN = (
     '{"nextPageToken":"CAUQAA", "eos_token":"end", "bos_token":"start"}',
     '{"session":"Morning keynote"}',
     "active_session=42",
+    "active_session=3.5",
 )
 
 
@@ -541,3 +542,10 @@ def test_f12_preview_refuses_before_project_lookup(fixture_ctx, monkeypatch):
             },
         )
     assert refusal.value.detail.code == m.ErrorCode.INPUT_INVALID
+
+
+@pytest.mark.parametrize("name", ["password", "token", "hatch_sess", "secret"])
+def test_numeric_credentials_are_not_session_counters(name):
+    value = f"{12}{34}"
+    assert value not in safety.redact_text(f"{name}={value}")[0]
+    assert value not in safety.redact_text(f"Cookie: active_session={value}")[0]
