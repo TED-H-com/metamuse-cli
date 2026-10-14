@@ -1386,13 +1386,18 @@ class MuseTransport:
 
         # Scan every authenticated row before status, uniqueness or routing checks.
         ids = [identity(item) for item in items]
+
+        def confidential_marker(key, value):
+            compact = re.sub(r"[^a-z0-9]", "", key.lower())
+            folded = value.strip().casefold() if isinstance(value, str) else ""
+            return (
+                (compact == "vmtype" and folded == "hatch_cvm")
+                or (compact == "vmstate" and folded.startswith("cvm_"))
+                or (compact in {"cvmrequired", "cvmreplacementenabled"} and bool(value))
+            )
+
         confidential = any(
-            item.get("vm_type") == "hatch_cvm"
-            or isinstance(item.get("vm_state"), str)
-            and item["vm_state"].startswith("CVM_")
-            or item.get("cvm_required")
-            or item.get("cvmReplacementEnabled")
-            for item in items
+            confidential_marker(key, value) for item in items for key, value in item.items()
         )
         if confidential:
             usable = tuple(sorted({value for value in ids if value is not None}))
