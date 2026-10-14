@@ -374,6 +374,16 @@ def test_f13_linear_redaction_complexity(case, budget):
     bounded_redaction(text, budget)
 
 
+@pytest.mark.parametrize("case,budget", [("header", 0.18), ("quoted", 0.13)])
+def test_f13_unmatched_value_helpers_are_bounded(case, budget):
+    text = (
+        "Cookie: " + "a" * 49152
+        if case == "header"
+        else '{"password": "' + "a" * 98304 + ' prose"}'
+    )
+    assert bounded_redaction(text, budget) == (text, [])
+
+
 @pytest.mark.parametrize("operation", ["packet", "bundle"])
 def test_f13_redaction_does_not_hold_sqlite_write_lock(ctx, project, monkeypatch, operation):
     from test_b16a_privacy import evidence

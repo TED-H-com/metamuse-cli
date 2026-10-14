@@ -1402,13 +1402,22 @@ def redaction_sensitive_value(key: str, value: Any) -> bool:
         return not normalized.lower().replace("_", "").replace("-", "").endswith("session")
     if re.fullmatch(r"[A-Za-z0-9._~+/%=@:|?\-]+", value, re.ASCII):
         return True
-    return re.search(r"[A-Za-z0-9_.-]+=[^\s;]+|[A-Z0-9_]{8,}", value, re.ASCII) is not None
+    return (
+        re.search(
+            r"(?<![A-Za-z0-9_.-])[A-Za-z0-9_.-]{1,128}+=[^\s;]++|[A-Z0-9_]{8,}+",
+            value,
+            re.ASCII,
+        )
+        is not None
+    )
 
 
 def _cookie_values(text: str) -> bool:
     attributes = {"path", "domain", "expires", "max-age", "samesite"}
     header = text.lower().startswith(("cookie:", "set-cookie:"))
-    for match in re.finditer(r"([A-Za-z0-9_.-]+)=([^;\r\n]+)", text):
+    for match in re.finditer(
+        r"(?<![A-Za-z0-9_.-])([A-Za-z0-9_.-]{1,128}+)=([^;\r\n]++)", text, re.ASCII
+    ):
         key, value = match.groups()
         if key.lower() not in attributes and (
             header
