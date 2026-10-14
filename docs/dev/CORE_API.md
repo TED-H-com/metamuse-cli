@@ -633,8 +633,10 @@ A missing browser, extra or login therefore never marks the tool's local functio
 unavailable (SPEC §2: missing Muse or browser does not block local features).
 Collect reports `metamuse_collect.remote_media` for the optional yt-dlp extra. Its
 environment is `missing_dependency` without the pinned import and `ready` when
-`yt-dlp==2026.8.19` imports. That row's permission stays `not_configured`: each
-collection still needs `remote_media.approvals` and a `collect.remote` permit.
+`yt-dlp==2026.8.19` imports. Permission is `not_configured` while the workspace
+is offline or `remote_media.approvals` is empty, and `granted_scope` when the
+workspace is live and an approval is configured. Each collection still needs
+its own `collect.remote` permit at submit. The capability row is not that permit.
 Hooks never make network calls. Use the idempotent `register_operations` example above;
 operation names must be unique and preserve side-effect/recovery semantics on restart.
 

@@ -89,16 +89,23 @@ log = logging.getLogger(__name__)
 
 
 def capability_status(ctx: Any) -> dict[str, dict[str, str]]:
-    """Local import stays ready. The yt-dlp extra is its own backend row.
+    """Local import stays ready. ffprobe does not change that row.
 
-    Remote collection still needs an operator allowlist and a per-request permit,
-    so the backend row is not a standing grant.
+    ``metamuse_collect.remote_media`` reports the yt-dlp extra. Its permission
+    is ``granted_scope`` only when the workspace is live and
+    ``remote_media.approvals`` is non-empty. Each collection still needs its
+    own ``collect.remote`` permit at submit. This row is not that permit.
     """
 
-    del ctx
     from metamuse import remote_media
+    from metamuse.config import load_config
 
     remote_environment = "ready" if remote_media.dependency_available() else "missing_dependency"
+    permission = "not_configured"
+    if ctx is not None:
+        workspace = load_config(ctx.store.paths.root)
+        if workspace.app.network_mode != "offline" and workspace.remote_media.approvals:
+            permission = "granted_scope"
     return {
         "metamuse_collect": {
             "verification": "fixture_passed",
@@ -108,7 +115,7 @@ def capability_status(ctx: Any) -> dict[str, dict[str, str]]:
         "metamuse_collect.remote_media": {
             "verification": "fixture_passed",
             "environment": remote_environment,
-            "permission": "not_configured",
+            "permission": permission,
         },
     }
 
