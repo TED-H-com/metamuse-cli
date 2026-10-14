@@ -797,3 +797,6 @@ Facebook parent identifiers are stripped and validated against [A-Za-z0-9._:-]{1
 
 
 Facebook comment identifiers use the same stripped nonempty ASCII token validation as parents. An invalid token is absent/weak; distinct weak records are never merged by text or position.
+
+
+Facebook weak-identity resume suppression begins only after an accepted batch has committed. A usage-only checkpoint from a login wall does not suppress a first import of weak comments; cumulative byte/expansion usage still survives.
