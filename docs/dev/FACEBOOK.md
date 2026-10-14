@@ -154,3 +154,9 @@ On resume, weak observations without native IDs are never re-imported. Neither t
 nor DOM position is a deduplication key. Previously committed weak items remain; new
 weak observations may be omitted, with weak_identity_resume and partial coverage.
 Reliable identities still support edits and new observations.
+
+After an expansion, the production browser waits within the read deadline for a
+new relevant comment/reply node or changed identified content, or a classified
+HTTP failure response. An unchanged loaded document or disappearing button is
+not progress evidence. Deadline expiry records expansion_progress_timeout with
+partial coverage and comments_empty=false; HTTP failures retain their own codes.
