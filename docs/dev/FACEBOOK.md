@@ -1,23 +1,23 @@
 # Bounded Facebook Post Collection (B13)
 
-`metamuse.facebook` implements operation `collect.facebook_post` for bounded collection of a single approved Facebook page type (`post_permalink`).
+`metamuse.facebook` implements operation `collect.facebook_post` for bounded collection of a single approved Facebook page type (`post_permalink`), backed by `metamuse._browser_egress` for process-local egress enforcement.
 
 ## Scope, Page Type, and Narrow Dispatch
 
-- **Single page type (`post_permalink`)**: Only single-post permalink URLs on `facebook.com`, `www.facebook.com`, `m.facebook.com`, or `mbasic.facebook.com` are accepted (`/posts/<id>`, `/<actor>/posts/<id>`, `/permalink.php?story_fbid=<id>&id=<actor>`, `/story.php?story_fbid=<id>&id=<actor>`). Profile timelines, groups, watch feeds, search, reels, and other URL shapes are rejected before a job is created with `E_UNSUPPORTED`.
-- **Narrow dispatch**: `collect.submit_collect` delegates to `facebook.submit_facebook_collect` only when `facebook.is_facebook_post_request(request)` is true: every input must have `kind == "url"` with a parsed hostname in `FACEBOOK_POST_HOSTS`, and `resources` must be a non-empty subset of `{"post", "comments"}`. Media-only resource requests (`media_metadata`, `subtitles`, `media_file`) are left to B12 (`remote_media.py`), and non-Facebook URLs retain `collect.py`'s existing `E_UNSUPPORTED` path.
+- **Single page type (`post_permalink`)**: Only single-post permalink URLs on `www.facebook.com`, `facebook.com`, `m.facebook.com`, or `web.facebook.com` are accepted (`/<actor>/posts/<post_id>`, `/permalink.php?story_fbid=<id>&id=<actor>`, `/story.php?story_fbid=<id>&id=<actor>`). Profile timelines, groups, watch feeds, search, reels, stories, photos, and other URL shapes are rejected before a job is created with `E_UNSUPPORTED`.
+- **Narrow dispatch**: `collect.submit_collect` delegates to `facebook.submit_facebook_collect` only when `facebook.is_facebook_post_request(request)` is true: every input must have `kind == "url"` with a parsed hostname in Facebook's domain set, and `resources` must be a non-empty subset of `{"post", "comments"}`. Media-only resource requests (`media_metadata`, `subtitles`, `media_file`) are left to B12 (`remote_media.py`), and non-Facebook URLs retain `collect.py`'s existing `E_UNSUPPORTED` path.
 
-## Bounds and Checkpoints
+## Bounds and Identity-Based Resume
 
-Every job is bounded by both workspace/job limits and `[facebook]` budgets:
+Every job is bounded by workspace/job limits and `[facebook]` budgets:
 
-- `max_items` and `max_bytes`: Enforced per job against workspace ceilings (`[limits]`).
-- `wall_clock_seconds`: Enforced per job via `JobBudget`.
-- `max_pages_per_job` (1–10, default `3`): Maximum page loads per job.
-- `max_expansions_per_page` (0–50, default `5`): Maximum comment/reply expansion actions per page.
-- `action_delay_ms` (0–60,000, default `1500`): Conservative pacing delay between expansion actions (no rate is claimed to be "safe").
-- `read_timeout_seconds` (1–120, default `30`): Navigation and selector timeout.
-- **Checkpoints and resume**: Progress is checkpointed every 50 items (`cursor`). On restart, already-committed input indices and records are skipped without duplicating revisions.
+- `max_urls`: Single post permalink per job (`len(request.inputs) == 1`).
+- `max_items` and `max_bytes`: Enforced per job against workspace ceilings (`[limits]`) and in real time by `BrowserEgressProxy` across both directions of every tunnel/request. Exceeding `max_bytes` immediately stops the proxy tunnel and finishes the job with `coverage_status = "partial"`, `stop_reason = "limit_reached"`, and `E_LIMIT_REACHED`.
+- `wall_clock_seconds`: Enforced per job across navigation and expansion steps.
+- `max_expansions` (`0..100`, default `10`): Maximum comment/reply expansion clicks per job.
+- `pacing_ms` (`0..60_000`, default `1500`): Conservative pacing delay between expansion actions (no rate is claimed to be "safe").
+- `read_timeout_seconds` (`[limits]`, default `30`): Navigation, selector, and proxy idle timeout.
+- **Identity-based checkpoints and resume (AT-013, FR-010)**: Progress is checkpointed every 50 records (`BATCH_SIZE = 50`) with a compact metadata payload (`expansions_used`, `bytes_used`, `halt`, `missing_fields`, `accepted`) without storing rendered HTML in SQLite or slicing by index. On restart/resume, the page is re-fetched and every parsed record is passed through `collect._Book.apply`, which loads already-committed items and revisions from SQLite and turns unchanged items into `unchanged` rows while committing any newly appeared or edited comments without duplicating items or consuming an extra permit use.
 
 ## Configuration Keys (`[facebook]`)
 
@@ -26,15 +26,14 @@ Configured in `metamuse.toml` under `[facebook]` (`extra="forbid"`):
 | Key | Type / Default | Purpose |
 | --- | --- | --- |
 | `enabled` | `bool = False` | Master switch; must be `true` to submit or run jobs. |
-| `approved_page_types` | `tuple[str, ...] = ()` | Must explicitly include `"post_permalink"`. |
-| `auth_ref` | `str \| None = None` | Secret store reference holding Playwright storage state JSON. |
-| `allowed_hosts` | `tuple[str, ...]` | Exact/wildcard HTTPS host allowlist for document and subresource egress. |
-| `max_pages_per_job` | `int = 3` | Page budget per job (`1..10`). |
-| `max_expansions_per_page` | `int = 5` | Expansion click budget per page (`0..50`). |
-| `action_delay_ms` | `int = 1500` | Pacing delay in milliseconds (`0..60000`). |
-| `read_timeout_seconds` | `int = 30` | Per-navigation timeout in seconds (`1..120`). |
+| `approved_page_types` | `list[Literal["post_permalink"]] = []` | Must explicitly include `"post_permalink"`. |
+| `auth_ref` | `str \| None = None` | Secret store reference (`auth_<32hex>`) holding Playwright storage state JSON. |
+| `account` | `str \| None = None` | Account label matching the B08 access permit and secret store entry. |
+| `max_expansions` | `int = 10` | Expansion click budget per job (`0..100`). |
+| `pacing_ms` | `int = 1500` | Pacing delay in milliseconds (`0..60000`). |
+| `allowed_hosts` | `list[str]` | Approved HTTPS host allowlist for document and CDN subresource egress. |
 
-No fixture or loopback switch exists in operator configuration; supplying `fixture_url_mode` (or any unknown key) fails config loading with `E_CONFIG_INVALID`.
+No fixture or loopback switch exists in operator configuration; supplying `fixture_url_mode` (or any unknown key) fails config loading with `E_INPUT_INVALID`.
 
 ## Operator Steps and Capability Status
 
@@ -42,47 +41,62 @@ No fixture or loopback switch exists in operator configuration; supplying `fixtu
    - `uv sync --extra facebook` (installs `playwright==1.63.0` with lazy import).
    - `uv run playwright install chromium` (operator step; code and tests never download browsers).
 2. **Import storage state secret**:
-   - Store a Playwright `storage_state` JSON payload in the B08 `SecretStore` under `auth_ref`.
-   - `sanitize_storage_state` keeps only HTTPS (`secure=True`) cookies whose parsed domain is `facebook.com` or `*.facebook.com`, strips `origins`/localStorage, and never logs, envelopes, exports, or includes cookie values in `repr`. Installed browser profiles are never scanned.
+   - Export a Playwright `storage_state` JSON file outside MetaMuse and import it with `metamuse auth import` (stored in B08 `SecretStore` under `auth_ref`).
+   - `sanitize_storage_state` selects cookies and `https://` origins strictly by parsed hostname (`PRIMARY_FACEBOOK_HOSTS`), drops CDN/lookalike/third-party domains, forces `secure=True`, and redacts secret values from error strings, logs, and `repr`/`str`. Installed browser profiles are never scanned.
 3. **Configure `metamuse.toml`**:
-   - Set `[app] network_mode = "bounded_collect"`.
-   - Set `[facebook] enabled = true`, `approved_page_types = ["post_permalink"]`, and `auth_ref = "<ref>"`.
-4. **Mint B08 `AccessGrant`**:
-   - Issue an active `AccessGrant` in the store with `platform="facebook"`, `account_ref=auth_ref`, `scope` containing `"collect.facebook_post"` and `"post_permalink"`, `target_refs` containing the canonical permalink URL, and `policy_digest = permit_digest(canonical_url, auth_ref)`. Pass `access_grant_id` in the collect request.
+   - Set `[app] network_mode = "live"`.
+   - Set `[facebook] enabled = true`, `approved_page_types = ["post_permalink"]`, `account = "<account>"`, and `auth_ref = "<auth_ref>"`.
+4. **Mint B08 access permit (`access_grant_id`)**:
+   - Issue a B08 `access` permit via `metamuse permit create` scoped to `provider="facebook"`, `account="<account>"`, `operations=["collect.remote"]`, and `target_digests=[facebook.permit_digest(...)]`. Pass the permit ID as `access_grant_id` in the collect request.
 5. **Capability reporting (`metamuse_collect.facebook_post`)**:
-   - `collect.capability_status` keeps `metamuse_collect` unchanged for local collection and adds backend row `metamuse_collect.facebook_post`:
+   - `collect.capability_status` keeps `metamuse_collect` unchanged (`ready` / `granted_scope` / `fixture_passed`) for local imports and adds backend row `metamuse_collect.facebook_post`:
      - `environment`: `missing_dependency` (Playwright not importable or Chromium binary absent), `needs_auth` (missing/invalid storage state for `auth_ref`), or `ready`.
-     - `permission`: `not_configured` (disabled, `"post_permalink"` not approved, or `network_mode == "offline"`) or `granted_scope`.
-     - `verification`: `fixture_passed` (never `live_verified` without authorized LIVE evidence).
+     - `permission`: `not_configured` (disabled, `"post_permalink"` not approved, or `network_mode != "live"`) or `granted_scope`.
+     - `verification`: `fixture_passed` (never `live_verified`).
 
 ## Parsing, Identity, Parents, and Provenance
 
-- **Identity**: Reliable items use `(platform="facebook", native_scope=post_id, native_id)`. Items without a native ID receive a weak `itm_` ID and are always inserted as new items.
-- **Parents (AT-004)**: Top-level comments link to the post's `native_id`; replies link to their parent comment's `native_id`. If a parent ID has not been observed in the same project/platform/scope, `link_status` remains `unresolved_parent`.
-- **Revisions (AT-013)**: Re-observing a reliable item with changed text appends a new revision. Not seeing an item in a subsequent run never marks it deleted.
-- **Provenance (AT-017)**: Sources record `collection_method = "browser_assisted"`, `upstream_collection_method = "browser_session:<session_id>"` (never `manual`), `original_url`, and `fetched_at`.
+- **Identity**: Reliable items use `(platform="facebook", native_scope="<actor>/<post_id>", native_id)`. Comments without a native ID receive `identity_confidence = "weak"`.
+- **Parents (AT-004)**: Top-level comments link to the post's `native_id`; replies link to their parent comment's `native_id`. If a parent comment ID is missing from the observation and store, `parent_id` stays `None` and `unresolved_parent` records the missing native ID (`missing_fields` includes `"parent_comment"`).
+- **Revisions (AT-013)**: Re-observing a reliable item with changed text appends a new `ItemRevision`. Omitting an item in a subsequent observation never deletes existing database rows.
+- **Provenance (AT-017)**: Sources record `collection_method = "browser_playwright"`, `upstream_collection_method = "facebook_post_permalink"` (never `manual`), `assurance = "browser_verified"`, `original_url`, `canonical_url`, and `fetched_at`.
 - **Content is data (AT-032)**: Post and comment text is stored strictly as inert UTF-8 data and never interpreted as prompts, instructions, or permissions.
 
 ## Failure Classes and Coverage Gaps (AT-041)
 
-Unexpanded `"more comments"` or `"more replies"` controls (or reaching `max_expansions_per_page` / `max_items`) record explicit gap entries in `result.gaps`, producing `coverage = "partial"` and job status `partial` (never `complete` or `scope_satisfied`).
+Unexpanded `"more comments"` or `"more replies"` controls, unresolved parent comments, or reaching `max_expansions` / `max_items` / `max_bytes` record explicit gap entries in `missing_fields`, producing `coverage_status = "partial"` and job state `partial` (never `complete` or `scope_satisfied`).
 
-Distinct failure conditions produce explicit error codes and stop reasons without retry or evasion (no stealth plugins, fingerprint spoofing, CAPTCHA solvers, or proxy/account rotation):
+Distinct failure conditions stop immediately (`safe_read_retries = 0`) with explicit error codes and `next_action` guidance, without retry loops, stealth plugins, fingerprint spoofing, CAPTCHA solvers, or proxy/account rotation:
 
-| Failure condition | Error code | Stop reason | Job status |
-| --- | --- | --- | --- |
-| Login wall or redirect to `/login` | `E_AUTH_REQUIRED` | `login_wall` | `failed` |
-| Checkpoint / challenge page or redirect | `E_CHALLENGE_REQUIRED` | `challenge` | `failed` |
-| HTTP 403 response | `E_REMOTE_FORBIDDEN` | `http_403` | `failed` |
-| HTTP 429 or rate-limit notice | `E_RATE_LIMITED` | `rate_limited` | `failed` |
-| Missing post container / malformed structure | `E_PARSE_FAILED` | `parser_failed` | `failed` |
-| Valid post with zero comments and no gaps | — | `input_exhausted` (`empty_input` if post excluded) | `succeeded` |
+| Failure condition | Error code | Job state |
+| --- | --- | --- |
+| Login wall or redirect to `/login` | `E_AUTH_REQUIRED` | `awaiting_user` |
+| Checkpoint / challenge page or redirect | `E_CHECKPOINT_REQUIRED` | `awaiting_user` |
+| HTTP 403 or permission barrier | `E_ACCESS_DENIED` | `awaiting_user` |
+| HTTP 429 or rate-limit barrier | `E_RATE_LIMITED` | `failed` |
+| Missing post/comments container (`selector_drift`) | `E_SELECTOR_DRIFT` | `failed` |
+| Valid post with zero comments and zero expand controls | — (`comments_empty=True`) | `succeeded` (`scope_satisfied`) |
 
-## Egress Interception and Verification Limits (AT-030)
+## Browser Egress Proxy and Verification Boundary (AT-030, FR-019)
 
-- **Pre-job and route interception**: Before a job is created, `submit_facebook_collect` validates every URL with B08 `check_url` / `OutboundURLPolicy` and the real DNS resolver, refusing loopback, RFC1918 private, link-local, and metadata addresses. During execution, `PlaywrightBrowserDriver` attaches `context.route("**/*", ...)` so every main-frame navigation, redirect, XHR/fetch, stylesheet, script, image, and CDN subresource is parsed and checked via `EgressGuard.check_request_url` before `route.continue_()`. Disallowed requests are immediately aborted (`route.abort("blockedbyclient")`).
-- **Browser hardening**: Service workers are blocked (`service_workers="block"`), downloads are disabled (`accept_downloads=False`), popups are immediately closed on creation, and proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) are refused before launch.
-- **Peer address check (`Response.server_addr()`)**: On every HTTP response, `PlaywrightBrowserDriver` inspects `response.server_addr()` and validates the connected IP address against `validate_ip_address` (blocking loopback, private, link-local, multicast, reserved, and unspecified IPs).
-- **What cannot be verified**:
-  1. Chromium performs its own DNS resolution and socket connection inside the browser process after `route.continue_()` is called. Because Playwright does not expose a hook to pin the resolved IP address into Chromium's socket connect call, a theoretical time-of-check-to-time-of-use (TOCTOU) DNS rebinding window exists between Python's pre-request `check_url` DNS lookup and Chromium's TCP handshake. `Response.server_addr()` detects a rebound non-global peer IP as soon as response headers arrive and aborts the run before any content is parsed, but cannot prevent the initial TCP/TLS handshake without an external OS/network-namespace firewall.
-  2. When `response.server_addr()` returns `None` (for example on cached responses or custom non-Playwright test drivers), verification relies on the pre-request `OutboundURLPolicy` DNS resolution check.
+- **Why `context.route` is not the egress boundary**: Playwright invokes a `context.route` handler only for the first URL of a redirect chain; Chromium follows subsequent `3xx` hops internally with its own DNS lookups and socket connections without calling `context.route` again, and `Response.server_addr()` runs only after a request has already been sent.
+- **Local egress proxy (`src/metamuse/_browser_egress.py`)**: Every browser session starts a stdlib `BrowserEgressProxy` listening on `127.0.0.1:0` and stops it in `session.close()`. Chromium is launched with pinned flags from `build_chromium_launch_args(proxy.port)`:
+  - `--proxy-server=http://127.0.0.1:<port>`
+  - `--proxy-bypass-list=<-loopback>` (even loopback traffic cannot bypass the proxy)
+  - `--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1` (disables Chromium's own DNS resolution)
+  - `--disable-quic` (prevents UDP QUIC bypass)
+  - `--force-webrtc-ip-handling-policy=disable_non_proxied_udp` (prevents WebRTC UDP leakage)
+- **Proxy enforcement on every request and redirect hop**:
+  - `CONNECT host:port`: runs `OutboundURLPolicy.before_request("https://host:port/", purpose=...)` (or the test-only `check_fixture_url` checker), opens a TCP connection to `checked.addresses[0]` only without re-resolving DNS, verifies `upstream_sock.getpeername()` against `checked.addresses` (`peer_address=`) and `checked.port`, answers `200 Connection Established`, and splices bytes both ways so end-to-end TLS and certificate verification remain intact between Chromium and the server. Any refusal answers `403 Forbidden`, closes the socket without dialing, and records an aborted `EgressDecision`.
+  - Absolute-form plain-HTTP (`GET` / `HEAD http://host:port/path`): refused in production (`Plain HTTP is refused by the Facebook browser egress proxy`); permitted in local synthetic fixture tests only through `EgressGuard.for_fixture_test`, applying the same policy check, pinned dial to `checked.addresses[0]`, and peer verification on every request and `3xx` redirect hop.
+  - All other proxy inputs are refused (`403`): non-`GET`/`HEAD`/`CONNECT` methods, origin-form requests (`GET /path`), `Upgrade` / WebSocket headers, request bodies, oversized headers, and requests targeting `127.0.0.1:<proxy_port>` / `localhost:<proxy_port>`.
+  - Concurrent tunnels are bounded (`MAX_CONCURRENT_TUNNELS = 16`), socket idle timeouts are bounded by `read_timeout_seconds`, and bytes relayed in both directions are counted against `max_bytes`.
+- **Secondary browser checks and hardening**:
+  - `context.route("**/*", ...)` is retained as a secondary check for browser resource-type blocking (`websocket`, `eventsource`, `manifest`, `service_worker`) and initial navigation page-type validation.
+  - `Response.server_addr()` is retained as a secondary response check confirming that the proxy verified the upstream socket peer.
+  - Service workers (`service_workers="block"`), downloads (`accept_downloads=False`), popups, and ambient proxy environment variables (`HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`) are blocked/refused.
+
+## Known Limitations
+
+1. **HTTPS URL paths inside `CONNECT` tunnels**: Because TLS remains end-to-end between Chromium and the remote server over `CONNECT host:port`, the local egress proxy observes the target hostname, port, resolved IP, connected peer IP/port, and total bytes transferred for every HTTPS hop, while path-level inspection of encrypted redirect targets inside an allowed Facebook host occurs in Chromium/Playwright (`_on_response` / DOM barrier classification). Any redirect to a disallowed host, private/loopback IP, or unapproved port is blocked at the `CONNECT` boundary before any TCP connection is opened.
+2. **Unsandboxed Chromium renderer on Ubuntu (`chromium_sandbox=False`)**: On Ubuntu 24.04+ systems where `kernel.apparmor_restrict_unprivileged_userns=1` is enabled, Chromium's unprivileged user-namespace sandbox fails to launch unless an operator-installed AppArmor profile grants `userns` to the Playwright Chromium binary. `PlaywrightBrowserDriver` therefore launches Chromium with `chromium_sandbox=False` so local integration tests and default operator setups work out of the box. In this mode the renderer process is unsandboxed at the OS user-namespace layer; containment relies on the session-local `BrowserEgressProxy`, disabled Chromium DNS/QUIC/WebRTC, blocked service workers/downloads/popups, and strict session bounds. Operators who require OS-level renderer sandboxing should install an AppArmor profile for the Chromium binary under `/etc/apparmor.d/`.
