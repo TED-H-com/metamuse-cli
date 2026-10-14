@@ -1371,6 +1371,10 @@ ports, credentials, path/query/fragment or malformed authority) fail with fixed
 E_AUTH_REQUIRED: Invalid Facebook storage-state origin. Capability inspection still
 returns the normal needs_auth row; no raw origin value enters diagnostics.
 
+CONNECT port strings are bounded to five ASCII digits before integer conversion.
+Numeric and other parser failures produce a fixed 403 protocol refusal, recorded
+as classification/count only; malformed input never emits a worker traceback.
+
 ---
 
 # 來源與恢復說明

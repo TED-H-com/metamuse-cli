@@ -128,11 +128,14 @@ def _has_forbidden_controls(text: str) -> bool:
 
 
 def _parse_port_str(port_str: str) -> int:
-    if not port_str or not port_str.isascii() or not port_str.isdigit():
+    if not port_str or len(port_str) > 5 or not port_str.isascii() or not port_str.isdigit():
         raise ProxyRequestError("bad_port", "Invalid port in proxy target")
     if port_str.startswith("0"):
         raise ProxyRequestError("bad_port", "Leading zero or zero port is not allowed")
-    port = int(port_str)
+    try:
+        port = int(port_str)
+    except ValueError:
+        raise ProxyRequestError("bad_port", "Invalid port in proxy target") from None
     if not (1 <= port <= 65535):
         raise ProxyRequestError("bad_port", "Port is out of range (1..65535)")
     return port
@@ -530,6 +533,9 @@ class BrowserEgressProxy:
             )
             self._send_forbidden(client_sock)
         except m.CoreError:
+            self._send_forbidden(client_sock)
+        except (ValueError, UnicodeError, OverflowError):
+            self.egress.record_proxy_protocol_refusal(hostname="proxy", reason="malformed_request")
             self._send_forbidden(client_sock)
         except OSError:
             pass
