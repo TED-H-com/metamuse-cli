@@ -892,7 +892,7 @@ def test_r15_v1_backup_restores_through_real_002_with_receipt_replay(tmp_path, m
     assert result.unavailable_export_ids == ((exported.data["id"],) if missing_export else ())
     assert bool(result.warnings) is missing_export
     restored = result.store
-    assert restored.schema_version == 2
+    assert restored.schema_version == SCHEMA_VERSION
     segment = restored.get(m.TranscriptSegment, "seg_v1", revision=1)
     assert segment.project_id == "prj_v1"
     assert segment.text == "舊字幕" and segment.language == "zh-Hant"
@@ -911,7 +911,7 @@ def test_r15_v1_backup_restores_through_real_002_with_receipt_replay(tmp_path, m
             restored.validate_evidence(project_result.data["id"], [ref], conn=conn)
         assert not conn.execute("PRAGMA foreign_key_check").fetchall()
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-        core._verify_schema(conn, 2, MIGRATIONS)
+        core._verify_schema(conn, SCHEMA_VERSION, MIGRATIONS)
     restored_ctx = app.AppContext.open(target.root)
     assert app.create_project(restored_ctx, project_request).data == project_result.data
     replay = app.export_objects(restored_ctx, request)
@@ -946,11 +946,11 @@ def test_r15_v1_backup_restores_through_real_002_with_receipt_replay(tmp_path, m
 def test_v1_transcripts_upgrade_through_app_context_open(tmp_path):
     paths, asset = _v1_transcript_workspace(tmp_path, link_item=True)
     ctx = app.AppContext.open(paths.root)
-    assert ctx.store.schema_version == 2
+    assert ctx.store.schema_version == SCHEMA_VERSION
     segment = ctx.store.get(m.TranscriptSegment, "seg_v1", revision=1)
     assert (segment.project_id, segment.text, segment.asset_id) == ("prj_v1", "舊字幕", asset.id)
     with ctx.store.connection() as conn:
-        core._verify_schema(conn, 2, MIGRATIONS)
+        core._verify_schema(conn, SCHEMA_VERSION, MIGRATIONS)
         ctx.store.validate_evidence(
             "prj_v1", [m.EvidenceRef(kind="transcript_segment", id="seg_v1", revision=1)], conn=conn
         )
