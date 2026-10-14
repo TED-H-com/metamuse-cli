@@ -62,8 +62,18 @@ DROP TABLE transcript_segments;
 ALTER TABLE transcript_segments_v2 RENAME TO transcript_segments;
 -- 001 defines no transcript trigger or secondary index. The rebuild must
 -- still leave (id, revision) append-only, matching item_revisions.
+-- REPLACE deletes the old row, so the UPDATE trigger never sees it. There is
+-- no secondary UNIQUE; transcript_project_item and transcript_asset are not
+-- identities. A new revision is a new primary key and still inserts.
 CREATE TRIGGER transcript_revision_immutable BEFORE UPDATE ON transcript_segments
 BEGIN SELECT RAISE(ABORT,'append-only revision'); END;
+CREATE TRIGGER transcript_revision_no_replace BEFORE INSERT ON transcript_segments
+WHEN EXISTS (
+ SELECT 1 FROM transcript_segments WHERE id=NEW.id AND revision=NEW.revision
+)
+BEGIN
+ SELECT RAISE(ABORT, 'append-only revision; cannot replace existing transcript segment');
+END;
 CREATE INDEX transcript_project_item ON transcript_segments(project_id, item_id);
 CREATE INDEX transcript_asset ON transcript_segments(asset_id);
 
@@ -76,3 +86,16 @@ CREATE TABLE source_assets (
  FOREIGN KEY(source_id, project_id) REFERENCES sources(id, project_id)
 );
 CREATE INDEX source_assets_project ON source_assets(project_id, asset_id);
+-- No column is updated in place. A different relation is a new primary key.
+-- source_assets_project is not unique, and the table has no secondary UNIQUE.
+-- Collect does not update this table. Freeze the whole row.
+CREATE TRIGGER source_assets_no_replace BEFORE INSERT ON source_assets
+WHEN EXISTS (
+ SELECT 1 FROM source_assets
+ WHERE source_id=NEW.source_id AND asset_id=NEW.asset_id AND relation=NEW.relation
+)
+BEGIN
+ SELECT RAISE(ABORT, 'immutable source_asset relation; cannot replace');
+END;
+CREATE TRIGGER source_assets_immutable BEFORE UPDATE ON source_assets
+BEGIN SELECT RAISE(ABORT, 'immutable source_asset relation'); END;

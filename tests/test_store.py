@@ -459,6 +459,9 @@ def test_v1_workspace_upgrades_with_backup(tmp_path):
         "packet_payload_immutable",
         "item_revision_immutable",
         "transcript_revision_immutable",
+        "transcript_revision_no_replace",
+        "source_assets_no_replace",
+        "source_assets_immutable",
         "parent_cycle_insert",
         "parent_cycle_update",
     } <= triggers
@@ -748,6 +751,9 @@ _AMENDED_TRIGGERS = {
     "external_step_no_requeue",
     "external_step_attempts_monotonic",
     "transcript_revision_immutable",
+    "transcript_revision_no_replace",
+    "source_assets_no_replace",
+    "source_assets_immutable",
 }
 
 
@@ -838,3 +844,223 @@ def test_r15_older_backup_restore_reports_protocol_mismatch(tmp_path):
     with pytest.raises(m.CoreError) as error:
         Store.restore(backup, WorkspacePaths.resolve(tmp_path / "restored"))
     assert error.value.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
+
+
+_SEGMENT_COLUMNS = (
+    "id",
+    "project_id",
+    "asset_id",
+    "item_id",
+    "source_id",
+    "revision",
+    "cue_index",
+    "start_ms",
+    "end_ms",
+    "text",
+    "language",
+    "method",
+    "review",
+    "overlap",
+)
+
+
+def _snapshot(store, table: str) -> list[tuple]:
+    with store.connection() as conn:
+        rows = conn.execute(f"SELECT rowid, * FROM {table} ORDER BY rowid").fetchall()
+    return [tuple(row) for row in rows]
+
+
+def _index_names(store, table: str) -> dict[str, tuple[bool, tuple[str, ...]]]:
+    found = {}
+    with store.connection() as conn:
+        for index in conn.execute(f"PRAGMA index_list({table})"):
+            columns = tuple(
+                row["name"] for row in conn.execute(f"PRAGMA index_info({index['name']})")
+            )
+            found[str(index["name"])] = (bool(index["unique"]), columns)
+    return found
+
+
+def _expect_rejected(store, sql: str, params: tuple, marker: str) -> None:
+    with pytest.raises(m.CoreError) as caught:
+        with store.transaction() as conn:
+            conn.execute(sql, params)
+    assert caught.value.detail.code == m.ErrorCode.REFERENCE_INVALID
+    assert caught.value.__cause__ is not None
+    assert marker in str(caught.value.__cause__)
+
+
+def _segment_sql(statement: str) -> str:
+    columns = ", ".join(_SEGMENT_COLUMNS)
+    values = ", ".join("?" * len(_SEGMENT_COLUMNS))
+    if statement == "insert_or_replace":
+        return f"INSERT OR REPLACE INTO transcript_segments ({columns}) VALUES ({values})"
+    if statement == "replace":
+        return f"REPLACE INTO transcript_segments ({columns}) VALUES ({values})"
+    if statement == "upsert":
+        return (
+            f"INSERT INTO transcript_segments ({columns}) VALUES ({values}) "
+            "ON CONFLICT(id, revision) DO UPDATE SET "
+            "text=excluded.text, language=excluded.language"
+        )
+    raise AssertionError(statement)
+
+
+def _segment_params(row) -> tuple:
+    values = {name: row[name] for name in _SEGMENT_COLUMNS}
+    values["text"] = "REPLACED_TEXT"
+    values["language"] = "xx"
+    return tuple(values[name] for name in _SEGMENT_COLUMNS)
+
+
+def _asset_sql(statement: str) -> str:
+    if statement == "insert_or_replace":
+        return (
+            "INSERT OR REPLACE INTO source_assets "
+            "(source_id, project_id, asset_id, relation) VALUES (?,?,?,?)"
+        )
+    if statement == "replace":
+        return (
+            "REPLACE INTO source_assets "
+            "(source_id, project_id, asset_id, relation) VALUES (?,?,?,?)"
+        )
+    if statement == "upsert":
+        return (
+            "INSERT INTO source_assets (source_id, project_id, asset_id, relation) "
+            "VALUES (?,?,?,?) ON CONFLICT(source_id, asset_id, relation) "
+            "DO UPDATE SET project_id=excluded.project_id"
+        )
+    raise AssertionError(statement)
+
+
+@pytest.mark.parametrize("statement", ["insert_or_replace", "replace", "upsert"])
+@pytest.mark.parametrize("origin", ["fresh", "upgraded"])
+def test_rr_h1_replace_cannot_rewrite_transcript_segments(
+    ctx, project, tmp_path, statement, origin
+):
+    from metamuse import collect
+
+    collect_source = Path(collect.__file__).read_text(encoding="utf-8")
+    assert "OR REPLACE" not in collect_source
+    assert "OR IGNORE" not in collect_source
+    assert "ON CONFLICT" not in collect_source
+    if origin == "fresh":
+        src = source(ctx, project, "src_rr_h1")
+        owned = item(ctx, project, src.id, "itm_rr_h1")
+        ctx.store.insert(
+            m.TranscriptSegment(
+                id="tsg_rr_h1",
+                project_id=project,
+                item_id=owned.id,
+                source_id=src.id,
+                revision=1,
+                cue_index=0,
+                start_ms=0,
+                end_ms=1000,
+                text="v1 text",
+                language="zh-Hant",
+                method="provided",
+            )
+        )
+        store, segment_id = ctx.store, "tsg_rr_h1"
+    else:
+        paths, _asset = _v1_transcript_workspace(tmp_path / "legacy", link_item=True)
+        store, segment_id = Store(paths), "seg_v1"
+    indexes = _index_names(store, "transcript_segments")
+    unique = {cols for _name, (is_unique, cols) in indexes.items() if is_unique}
+    assert unique == {("id", "revision")}
+    assert indexes["transcript_project_item"] == (False, ("project_id", "item_id"))
+    assert indexes["transcript_asset"] == (False, ("asset_id",))
+    with store.connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM transcript_segments WHERE id=? AND revision=1", (segment_id,)
+        ).fetchone()
+        names = {
+            item["name"]
+            for item in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")
+        }
+    assert "transcript_revision_no_replace" in names
+    original = row["text"]
+    before = _snapshot(store, "transcript_segments")
+    _expect_rejected(store, _segment_sql(statement), _segment_params(row), "append-only revision")
+    assert _snapshot(store, "transcript_segments") == before
+    assert store.get(m.TranscriptSegment, segment_id, revision=1).text == original
+    store.insert(
+        store.get(m.TranscriptSegment, segment_id, revision=1).model_copy(
+            update={"revision": 2, "text": "新觀察"}
+        )
+    )
+    assert store.get(m.TranscriptSegment, segment_id, revision=1).text == original
+    assert store.get(m.TranscriptSegment, segment_id, revision=2).text == "新觀察"
+
+
+@pytest.mark.parametrize("statement", ["insert_or_replace", "replace", "upsert"])
+@pytest.mark.parametrize("origin", ["fresh", "upgraded"])
+def test_rr_m1_replace_cannot_rewrite_source_assets(ctx, project, tmp_path, statement, origin):
+    if origin == "fresh":
+        src = source(ctx, project, "src_rr_m1")
+        asset = ctx.store.put_object(io.BytesIO(b"rr-media"), mime="text/plain")
+        ctx.store.insert(
+            m.SourceAsset(source_id=src.id, project_id=project, asset_id=asset.id, relation="media")
+        )
+        store, source_id, asset_id, project_id = ctx.store, src.id, asset.id, project
+    else:
+        paths, asset = _v1_transcript_workspace(tmp_path / "legacy", link_item=True)
+        store = Store(paths)
+        store.insert(
+            m.SourceAsset(
+                source_id="src_v1",
+                project_id="prj_v1",
+                asset_id=asset.id,
+                relation="media",
+            )
+        )
+        source_id, asset_id, project_id = "src_v1", asset.id, "prj_v1"
+    indexes = _index_names(store, "source_assets")
+    unique = {cols for _name, (is_unique, cols) in indexes.items() if is_unique}
+    assert unique == {("source_id", "asset_id", "relation")}
+    assert indexes["source_assets_project"] == (False, ("project_id", "asset_id"))
+    with store.connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM source_assets WHERE source_id=? AND relation='media'", (source_id,)
+        ).fetchone()
+        names = {
+            item["name"]
+            for item in conn.execute("SELECT name FROM sqlite_master WHERE type='trigger'")
+        }
+    assert {"source_assets_no_replace", "source_assets_immutable"} <= names
+    before = _snapshot(store, "source_assets")
+    _expect_rejected(
+        store,
+        _asset_sql(statement),
+        (row["source_id"], row["project_id"], row["asset_id"], row["relation"]),
+        "immutable source_asset relation",
+    )
+    _expect_rejected(
+        store,
+        "UPDATE source_assets SET relation='hijacked' "
+        "WHERE source_id=? AND asset_id=? AND relation=?",
+        (source_id, asset_id, "media"),
+        "immutable source_asset relation",
+    )
+    _expect_rejected(
+        store,
+        "INSERT OR REPLACE INTO source_assets "
+        "(source_id, project_id, asset_id, relation) VALUES (?,?,?,?)",
+        (source_id, "prj_other", asset_id, "media"),
+        "cannot replace",
+    )
+    assert _snapshot(store, "source_assets") == before
+    store.insert(
+        m.SourceAsset(
+            source_id=source_id, project_id=project_id, asset_id=asset_id, relation="extra"
+        )
+    )
+    with store.connection() as conn:
+        kept = conn.execute(
+            "SELECT project_id, relation FROM source_assets ORDER BY relation"
+        ).fetchall()
+    assert [(item["relation"], item["project_id"]) for item in kept] == [
+        ("extra", project_id),
+        ("media", project_id),
+    ]

@@ -13,10 +13,13 @@ import math
 import os
 import re
 import shutil
+import signal
 import subprocess
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, BinaryIO
 
 from metamuse import models as m
 from metamuse.paths import private_dir
@@ -47,6 +50,9 @@ FFPROBE_ARGS = (
     "-protocol_whitelist",
     "file",
 )
+# One mebibyte for each stream. Anything larger is killed, not buffered.
+_FFPROBE_OUTPUT_CAP = 1024 * 1024
+_FFPROBE_ENV = {"PATH": "/usr/bin:/bin"}
 
 
 def register_operations(registry: dict[str, Operation] | None = None) -> None:
@@ -214,24 +220,112 @@ def _duration_ms(payload: dict) -> int | None:
     return int(seconds * 1000)
 
 
+def _read_capped(stream: BinaryIO, chunks: list[bytes], overflow: threading.Event) -> None:
+    """Count short reads. A buffered read would wait for a full block or EOF."""
+
+    fd = stream.fileno()
+    size = 0
+    while True:
+        try:
+            block = os.read(fd, 65536)
+        except OSError:
+            return
+        if not block:
+            return
+        size += len(block)
+        if size > _FFPROBE_OUTPUT_CAP:
+            overflow.set()
+            return
+        chunks.append(block)
+
+
+def _stop_ffprobe(proc: subprocess.Popen[bytes], threads: list[threading.Thread]) -> None:
+    if proc.poll() is None:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+    for thread in threads:
+        thread.join(timeout=5)
+
+
+def _run_ffprobe(argv: list[str], *, timeout: float) -> subprocess.CompletedProcess[bytes]:
+    """Run absolute ffprobe with no inherited report environment and a bounded capture."""
+
+    overflow = threading.Event()
+    stdout_chunks: list[bytes] = []
+    stderr_chunks: list[bytes] = []
+    proc = subprocess.Popen(
+        argv,
+        shell=False,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=0,
+        env=dict(_FFPROBE_ENV),
+        start_new_session=True,
+    )
+    assert proc.stdout is not None and proc.stderr is not None
+    threads = [
+        threading.Thread(
+            target=_read_capped, args=(proc.stdout, stdout_chunks, overflow), daemon=True
+        ),
+        threading.Thread(
+            target=_read_capped, args=(proc.stderr, stderr_chunks, overflow), daemon=True
+        ),
+    ]
+    for thread in threads:
+        thread.start()
+    deadline = time.monotonic() + timeout
+    try:
+        while proc.poll() is None:
+            if overflow.is_set():
+                _stop_ffprobe(proc, threads)
+                raise m.CoreError(
+                    m.ErrorCode.INPUT_INVALID, "Media probe output exceeded the byte limit"
+                )
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                _stop_ffprobe(proc, threads)
+                raise subprocess.TimeoutExpired(argv, timeout)
+            try:
+                proc.wait(timeout=min(0.05, remaining))
+            except subprocess.TimeoutExpired:
+                continue
+        for thread in threads:
+            thread.join(timeout=5)
+        if overflow.is_set():
+            raise m.CoreError(
+                m.ErrorCode.INPUT_INVALID, "Media probe output exceeded the byte limit"
+            )
+        code = proc.returncode if proc.returncode is not None else 1
+        return subprocess.CompletedProcess(
+            argv, code, stdout=b"".join(stdout_chunks), stderr=b"".join(stderr_chunks)
+        )
+    except BaseException:
+        _stop_ffprobe(proc, threads)
+        raise
+
+
 def probe_media(path: Path, *, timeout: int) -> tuple[str, int | None]:
     """Run ffprobe when it is installed. Absence is a probe status, not a failure."""
 
     binary = shutil.which("ffprobe")
     if binary is None:
         return "not_installed", None
+    if not os.path.isabs(binary):
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Media probe binary is not an absolute path")
     if not path.is_file():
         raise m.CoreError(
             m.ErrorCode.INPUT_INVALID, "Media probe reported success but the file is missing"
         )
     try:
-        completed = subprocess.run(
-            ffprobe_command(binary, path),
-            shell=False,
-            timeout=timeout,
-            capture_output=True,
-            check=False,
-        )
+        completed = _run_ffprobe(ffprobe_command(binary, path), timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise m.CoreError(m.ErrorCode.NETWORK_TIMEOUT, "Media probe timed out") from exc
     if not path.is_file():

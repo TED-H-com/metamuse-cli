@@ -4,6 +4,7 @@ import csv
 import hashlib
 import io
 import json
+import shutil
 import tomllib
 from pathlib import Path
 
@@ -294,6 +295,7 @@ def test_corpus_reply_tree_and_cross_project(ctx, project):
     )
 
 
+@pytest.mark.skipif(shutil.which("ffprobe") is None, reason="ffprobe is not installed")
 def test_corpus_media_only_null_text(ctx, project):
     allow(ctx, CORPUS)
     path = CORPUS / "import/media_only.jsonl"
@@ -361,6 +363,7 @@ def test_corpus_subtitles(ctx):
     assert all("\ufeff" not in row["text"] for row in stored)
 
 
+@pytest.mark.skipif(shutil.which("ffprobe") is None, reason="ffprobe is not installed")
 def test_corpus_media_readiness(ctx, project):
     allow(ctx, CORPUS)
     files = manifest()["files"]

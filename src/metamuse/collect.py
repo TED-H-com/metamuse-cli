@@ -1911,6 +1911,12 @@ def _import_subtitles(
             cursor += 1
             continue
         try:
+            if len(cue.text) > FIELD_LIMITS["text"]:
+                raise _Invalid(
+                    "text",
+                    m.ErrorCode.LIMIT_REACHED,
+                    f"text exceeds {FIELD_LIMITS['text']} characters",
+                )
             _bound_text(cue.text, runner.text_max)
         except _Invalid as exc:
             stored_all = False

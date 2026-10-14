@@ -178,13 +178,17 @@ truncated MP4 or QuickTime box stream are per-item `E_INPUT_INVALID`. None of th
 become `ready`.
 
 When `ffprobe` is installed it runs with a fixed argument list, `shell=False`, the
-job read timeout, and one `file:` absolute-path argument. A file is `ready` only
-when that probe reports an audio or video stream with a real codec name. A magic
-signature or an MP4 box walk is a pre-filter, not proof. Without `ffprobe`, a
-structurally plausible file is stored `unavailable` with probe `not_installed`.
-A non-zero exit, a timeout, unreadable output, an exit 0 with no usable stream,
-or an exit 0 that leaves no file is a per-item error and not `ready`. An
-`unavailable` asset may later become `ready`. A `ready` asset is not downgraded.
+job read timeout, and one `file:` absolute-path argument. The child is the resolved
+absolute binary, with `stdin` closed and a minimal environment (`PATH` only). It does
+not inherit `FFREPORT`, `AV_LOG_*`, or `FFMPEG_*`. Stdout and stderr are each capped
+at 1 MiB. A larger stream kills the process and the probe fails with a fixed error.
+A file is `ready` only when that probe reports an audio or video stream with a real
+codec name. A magic signature or an MP4 box walk is a pre-filter, not proof. Without
+`ffprobe`, a structurally plausible file is stored `unavailable` with probe
+`not_installed`. A non-zero exit, a timeout, unreadable output, output over the cap,
+an exit 0 with no usable stream, or an exit 0 that leaves no file is a per-item error
+and not `ready`. An `unavailable` asset may later become `ready`. A `ready` asset is
+not downgraded.
 
 The hash path is `objects/sha256/<prefix>/<hash>`. Staged bytes are hashed again
 before they replace the object. A same-size change after measurement is
@@ -236,7 +240,10 @@ They do not by themselves make the job partial. An HTML page named `.vtt` or
 Each kept cue is a transcript segment with method `provided`, review `unreviewed`,
 `cue_index` in kept order, and language from the request, else the WebVTT
 `Language:` header, else `und`. A language longer than 35 characters becomes
-`und`. Segments are project-scoped. The same file in another project gets its own
+`und`. Cue text over 1,000,000 characters is a row error (`E_LIMIT_REACHED`), the
+same character limit as record text. The workspace UTF-8 byte limit still applies.
+Neighboring cues in the same file still commit, and the track stays incomplete.
+Segments are project-scoped. The same file in another project gets its own
 segments. A track is the file hash plus language plus item plus asset. Reimporting
 a completed track reports `unchanged` and does not duplicate cues. A partial or
 interrupted import stays incomplete, and the next import of those bytes inserts
@@ -244,9 +251,13 @@ only the missing cue indexes. A different language or a different item or asset 
 a different track and gets its own source. There is no automatic link to an item
 imported in the same job; pass `--item` or `--asset` for a record that already
 exists. The asset must already be visible in the project through `item_assets` or
-`source_assets`. Transcript rows are append-only. A later observation is a new
-revision and marks packets and drafts that cite the segment stale. Their selection
-and rendered text stay.
+`source_assets`. Transcript rows are append-only. `INSERT OR REPLACE`, `REPLACE`,
+and `INSERT ... ON CONFLICT DO UPDATE` cannot rewrite an existing `(id, revision)`.
+A later observation is a new revision and marks packets and drafts that cite the
+segment stale. Their selection and rendered text stay. `source_assets` rows are
+immutable: those same statements cannot replace an existing
+`(source_id, asset_id, relation)`, and no column is updated in place. A different
+relation is a new row. Neither table has a secondary UNIQUE index.
 
 Unchanged subtitle cues are listed even when they exceed `max_items`, and they do
 not consume that cap. Item imports do count unchanged rows toward that cap.

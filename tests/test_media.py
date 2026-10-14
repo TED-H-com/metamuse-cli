@@ -4,8 +4,10 @@ import hashlib
 import io
 import json
 import os
+import shlex
 import shutil
 import struct
+import time
 
 import pytest
 from test_collect import FIXTURES, allow, data, local, q, request, run
@@ -106,11 +108,11 @@ def test_ffprobe_uses_a_fixed_argv_without_a_shell(tmp_path, monkeypatch):
         return Completed()
 
     monkeypatch.setattr(media.shutil, "which", lambda _name: "/usr/bin/ffprobe")
-    monkeypatch.setattr(media.subprocess, "run", fake_run)
+    monkeypatch.setattr(media, "_run_ffprobe", fake_run)
     info = media.analyze_file(path, max_bytes=100_000, read_timeout_seconds=7)
     assert info.probe == "probed" and info.duration_ms == 1500 and info.mime == "audio/wav"
-    assert seen["kwargs"]["shell"] is False
     assert seen["kwargs"]["timeout"] == 7
+    assert "shell" not in seen["kwargs"]
     assert seen["argv"][:-1] == ["/usr/bin/ffprobe", *media.FFPROBE_ARGS]
     assert seen["argv"][-1] == f"file:{path.resolve()}"
     assert seen["argv"][-1].startswith("file:/")
@@ -138,7 +140,7 @@ def test_probe_failures_and_a_missing_object_are_not_ready(ctx, tmp_path, monkey
 
         return Completed()
 
-    monkeypatch.setattr(media.subprocess, "run", reject)
+    monkeypatch.setattr(media, "_run_ffprobe", reject)
     with pytest.raises(m.CoreError) as rejected:
         media.analyze_file(path, max_bytes=100_000, read_timeout_seconds=5)
     assert rejected.value.detail.message == "Media probe rejected the file"
@@ -147,7 +149,7 @@ def test_probe_failures_and_a_missing_object_are_not_ready(ctx, tmp_path, monkey
         del argv, kwargs
         raise media.subprocess.TimeoutExpired(cmd=["ffprobe"], timeout=5)
 
-    monkeypatch.setattr(media.subprocess, "run", timeout)
+    monkeypatch.setattr(media, "_run_ffprobe", timeout)
     with pytest.raises(m.CoreError) as timed:
         media.analyze_file(path, max_bytes=100_000, read_timeout_seconds=5)
     assert timed.value.detail.code == m.ErrorCode.NETWORK_TIMEOUT
@@ -619,3 +621,140 @@ def test_subtitle_does_not_cross_projects(ctx, project, tmp_path):
         ]
         == 1
     )
+
+
+def _ffprobe_script(path, body: str):
+    path.write_text(body, encoding="utf-8")
+    path.chmod(0o755)
+    return str(path)
+
+
+def test_rr_m2_hidden_ffprobe_stays_unavailable(ctx, project, tmp_path, monkeypatch):
+    empty = tmp_path / "bin"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    assert shutil.which("ffprobe") is None
+    calls = {"n": 0}
+
+    def hidden(name: str):
+        calls["n"] += 1
+        assert name == "ffprobe"
+        return None
+
+    monkeypatch.setattr(media.shutil, "which", hidden)
+    root = tmp_path / "imports"
+    root.mkdir()
+    allow(ctx, root)
+    path = root / "tone.wav"
+    path.write_bytes(wav_bytes())
+    job = run(ctx, request(project, [local(path, "media")], ["media_file"], key="hidden-probe"))
+    assert job.state == "succeeded" and job.error is None
+    assert calls["n"] >= 1
+    assets = q(ctx, "SELECT state FROM assets")
+    assert len(assets) == 1 and assets[0]["state"] == "unavailable"
+    assert assets[0]["state"] != "ready"
+    basis = json.loads(q(ctx, "SELECT use_basis FROM sources")[0]["use_basis"])
+    assert basis["probe"] == "not_installed"
+
+
+def test_rr_l1_ffprobe_does_not_inherit_ffreport(tmp_path, monkeypatch):
+    report = tmp_path / "stray_probe.log"
+    env_sink = tmp_path / "child-env.txt"
+    script = tmp_path / "ffprobe"
+    _ffprobe_script(
+        script,
+        "#!/bin/sh\n"
+        f'if [ -n "$FFREPORT" ]; then echo leaked > {shlex.quote(str(report))}; fi\n'
+        f"env > {shlex.quote(str(env_sink))}\n"
+        'printf \'%s\' \'{"format":{"duration":"1.0"},'
+        '"streams":[{"codec_type":"audio","codec_name":"pcm_s16le"}]}\'\n',
+    )
+    monkeypatch.setenv("FFREPORT", f"file={report}:level=32")
+    monkeypatch.setenv("AV_LOG_FORCE_NOCOLOR", "1")
+    monkeypatch.setenv("FFMPEG_DATADIR", str(tmp_path / "ffmpeg-data"))
+
+    def hidden(name: str):
+        return str(script) if name == "ffprobe" else None
+
+    monkeypatch.setattr(media.shutil, "which", hidden)
+    seen = {}
+    real_popen = media.subprocess.Popen
+
+    def spy(argv, **kwargs):
+        seen["argv"] = list(argv)
+        seen["kwargs"] = kwargs
+        return real_popen(argv, **kwargs)
+
+    monkeypatch.setattr(media.subprocess, "Popen", spy)
+    wav = tmp_path / "tone.wav"
+    wav.write_bytes(wav_bytes())
+    status, duration = media.probe_media(wav, timeout=5)
+    assert status == "probed" and duration == 1000
+    assert not report.exists()
+    child = env_sink.read_text(encoding="utf-8")
+    assert "FFREPORT=" not in child
+    assert "AV_LOG_" not in child
+    assert "FFMPEG_" not in child
+    assert "PATH=/usr/bin:/bin\n" in child or child.strip() == "PATH=/usr/bin:/bin"
+    assert os.environ["FFREPORT"].startswith("file=")
+    assert os.path.isabs(seen["argv"][0])
+    assert seen["kwargs"]["shell"] is False
+    assert seen["kwargs"]["stdin"] is media.subprocess.DEVNULL
+    assert seen["kwargs"]["env"] == {"PATH": "/usr/bin:/bin"}
+    assert seen["kwargs"]["start_new_session"] is True
+    assert seen["kwargs"]["bufsize"] == 0
+    real = shutil.which("ffprobe")
+    if real is None:
+        return
+    real_report = tmp_path / "real-stray.log"
+    monkeypatch.setenv("FFREPORT", f"file={real_report}:level=32")
+
+    def installed(name: str):
+        return real if name == "ffprobe" else None
+
+    monkeypatch.setattr(media.shutil, "which", installed)
+    status, _duration = media.probe_media(wav, timeout=15)
+    assert status == "probed"
+    assert not real_report.exists()
+    assert not list(tmp_path.glob("*.log"))
+    assert not (tmp_path / "stray_probe.log").exists()
+    assert not os.path.exists("stray_probe.log")
+
+
+@pytest.mark.parametrize("stream", ["stdout", "stderr"])
+def test_rr_l1_over_cap_probe_output_is_a_fixed_error(tmp_path, monkeypatch, stream):
+    pidfile = tmp_path / "pid"
+    script = tmp_path / "ffprobe"
+    redirect = "" if stream == "stdout" else " >&2"
+    # Keep writing so a reader that waits for process exit would hit the timeout.
+    _ffprobe_script(
+        script,
+        "#!/bin/sh\n"
+        f"echo $$ > {shlex.quote(str(pidfile))}\n"
+        "while true; do\n"
+        f"  head -c 65536 /dev/zero{redirect} || exit 1\n"
+        "done\n",
+    )
+
+    def hidden(name: str):
+        return str(script) if name == "ffprobe" else None
+
+    monkeypatch.setattr(media.shutil, "which", hidden)
+    wav = tmp_path / "tone.wav"
+    wav.write_bytes(wav_bytes())
+    started = time.monotonic()
+    with pytest.raises(m.CoreError) as error:
+        media.probe_media(wav, timeout=5)
+    assert time.monotonic() - started < 4
+    assert error.value.detail.code == m.ErrorCode.INPUT_INVALID
+    assert error.value.detail.message == "Media probe output exceeded the byte limit"
+    pid = int(pidfile.read_text())
+    deadline = time.monotonic() + 2
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.02)
+    else:
+        raise AssertionError(f"probe process {pid} still running")

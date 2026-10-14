@@ -293,7 +293,7 @@ def test_r05_ready_requires_a_usable_ffprobe_stream(ctx, project, tmp_path, monk
 
         return Completed()
 
-    monkeypatch.setattr(media.subprocess, "run", empty)
+    monkeypatch.setattr(media, "_run_ffprobe", empty)
     with pytest.raises(m.CoreError) as rejected:
         media.analyze_file(tone, max_bytes=100_000, read_timeout_seconds=5)
     assert rejected.value.detail.message == "Media probe found no usable stream"
@@ -307,12 +307,12 @@ def test_r05_ready_requires_a_usable_ffprobe_stream(ctx, project, tmp_path, monk
         "unavailable"
     )
     monkeypatch.setattr(media.shutil, "which", lambda _name: "/usr/bin/ffprobe")
-    monkeypatch.setattr(media.subprocess, "run", _probe("1.5"))
+    monkeypatch.setattr(media, "_run_ffprobe", _probe("1.5"))
     upgraded = run(ctx, request(project, [local(sample, "media")], ["media_file"], key="up"))
     assert upgraded.state == "succeeded"
     row = q(ctx, "SELECT state, duration_ms FROM assets WHERE mime='audio/wav'")[0]
     assert row["state"] == "ready" and row["duration_ms"] == 1500
-    monkeypatch.setattr(media.subprocess, "run", _probe("9"))
+    monkeypatch.setattr(media, "_run_ffprobe", _probe("9"))
     again = run(ctx, request(project, [local(sample, "media")], ["media_file"], key="later"))
     assert again.state == "succeeded"
     row = q(ctx, "SELECT state, duration_ms FROM assets WHERE mime='audio/wav'")[0]
@@ -736,3 +736,34 @@ def test_r19_limit_lookahead_reports_a_row_that_cannot_be_accepted(ctx, project,
     assert data(job)["rows"][1]["field"] == "kind"
     assert data(job)["rows"][1]["code"] == "E_REFERENCE_INVALID"
     assert q(ctx, "SELECT COUNT(*) AS n FROM items")[0]["n"] == 1
+
+
+def test_rr_l2_cue_text_over_one_million_characters_is_a_row_error(ctx, project, tmp_path):
+    root = tmp_path / "imports"
+    root.mkdir()
+    allow(ctx, root)
+    exact = "a" * 1_000_000
+    over = "b" * 1_000_001
+    srt = root / "cues.srt"
+    srt.write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\nlead\n\n"
+        f"2\n00:00:01,000 --> 00:00:02,000\n{exact}\n\n"
+        f"3\n00:00:02,000 --> 00:00:03,000\n{over}\n\n"
+        "4\n00:00:03,000 --> 00:00:04,000\ntail\n",
+        encoding="utf-8",
+    )
+    job = run(ctx, request(project, [local(srt, "srt")], ["subtitles"], key="cue-cap"))
+    assert job.state == "partial" and job.error is None
+    assert job.stop_reason == "row_errors"
+    rows = data(job)["rows"]
+    assert [row["status"] for row in rows] == ["committed", "committed", "rejected", "committed"]
+    assert rows[2]["field"] == "text"
+    assert rows[2]["code"] == "E_LIMIT_REACHED"
+    assert rows[2]["message"] == "text exceeds 1000000 characters"
+    assert over not in rows[2]["message"]
+    stored = [
+        row["text"] for row in q(ctx, "SELECT text FROM transcript_segments ORDER BY cue_index")
+    ]
+    assert stored == ["lead", exact, "tail"]
+    basis = json.loads(q(ctx, "SELECT use_basis FROM sources")[0]["use_basis"])
+    assert basis["complete"] == 0
