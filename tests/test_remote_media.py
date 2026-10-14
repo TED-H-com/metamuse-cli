@@ -806,7 +806,19 @@ def test_auth_ref_is_rejected_until_core_adds_it(ctx, project):
 def test_fixture_collection_stays_on_the_metamuse_handler(
     ctx, project, origin, monkeypatch, caplog
 ):
-    assert shutil.which("ffprobe")
+    probe_installed = shutil.which("ffprobe") is not None
+    probes = []
+    original_analyze = remote_media.media_mod.analyze_file
+
+    def analyze(*args, **kwargs):
+        info = original_analyze(*args, **kwargs)
+        probes.append(info.probe)
+        return info
+
+    monkeypatch.setattr(remote_media.media_mod, "analyze_file", analyze)
+    info = info_dict(origin.server_address[1], "clip")
+    info["formats"][1]["url"] += "?sig=SECRET"
+    origin.routes["clip"]["body"] = dump(info)
     monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
     monkeypatch.setenv("HTTPS_PROXY", "http://127.0.0.1:9")
     monkeypatch.setenv("ALL_PROXY", "http://127.0.0.1:9")
@@ -822,7 +834,6 @@ def test_fixture_collection_stays_on_the_metamuse_handler(
         origin,
         "clip",
         ["media_metadata", "subtitles", "media_file"],
-        query="sig=SECRET",
     )
     job = finish(ctx, req)
     assert job.state == "succeeded"
@@ -850,7 +861,9 @@ def test_fixture_collection_stays_on_the_metamuse_handler(
     assert source["native_scope"] == "channel-1"
     assert source["collection_method"] == "yt-dlp"
     assert source["upstream_collection_method"] == "MetamuseFixture"
-    assert "SECRET" in source["original_url"]
+    assert source["original_url"] == req.inputs[0].url
+    assert "SECRET" not in source["original_url"]
+    assert any(hit["query"] == "sig=SECRET" for hit in origin.hits)
     assert source["upstream_collection_method"] != "manual"
     revision = q(ctx, "SELECT text, raw_time, evidence FROM item_revisions")[0]
     assert revision["text"] == "Synthetic clip"
@@ -864,8 +877,13 @@ def test_fixture_collection_stays_on_the_metamuse_handler(
         ("en", "auto"),
         ("en", "provided"),
     ]
-    assert q(ctx, "SELECT state, mime FROM assets")[0]["state"] == "ready"
-    assert q(ctx, "SELECT mime FROM assets")[0]["mime"] == "audio/wav"
+    asset = q(ctx, "SELECT state, mime FROM assets")[0]
+    if probe_installed:
+        assert asset["state"] == "ready"
+        assert asset["mime"] == "audio/wav"
+    else:
+        assert asset["state"] == "unavailable"
+        assert probes == ["not_installed"]
     assert q(ctx, "SELECT kind FROM items")[0]["kind"] == "post"
     events = q(ctx, "SELECT kind, detail FROM events")
     assert events
