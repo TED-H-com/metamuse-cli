@@ -1374,6 +1374,10 @@ abandoned daemon resolution tasks have no dialing capability and a process-wide
 requests. An already entered dial is bounded by the socket timeout and closure waits
 for it before closing every registered socket.
 
+Facebook checkpoints final wire-byte consumption after transport shutdown, even
+when navigation stops at a barrier before returning a DOM observation. Resume
+allocates only the original budget minus all recorded session consumption.
+
 B13 closes page WSS with Playwright routing and terminates related dedicated/shared
 workers at CDP's pre-script pause because the pinned WebSocket hook omits workers.
 The protocol/worker controls are installed before navigation; worker-dependent

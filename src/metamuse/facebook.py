@@ -3225,6 +3225,10 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     finally:
         if session is not None:
             session.close()
+        # A barrier can stop navigation before an observation is returned. Settle
+        # the final wire counter after closing and retain it for operator resume.
+        bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
+        checkpoint_usage()
 
     final_html = obs.html if obs is not None else ""
     egress_summary = egress.summary()
