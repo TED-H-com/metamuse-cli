@@ -465,6 +465,18 @@ sensitive key is refused by design; it is outside the closed environment-referen
 exemptions. Quoted JSON-style keys can introduce raw-newline scalar values even in
 an incomplete document.
 
+Flags whose names are `authorization`, `proxy-authorization`, `cookie` or
+`set-cookie` use the complete quoted value, or the complete remaining line when
+unquoted, so schemes and cookie-chain members cannot fall outside the mask.
+
+Plain YAML string values extend through the line (excluding a YAML comment);
+TOML triple-quoted strings extend through their closing triple quote. Annotated
+assignment defaults retain the type annotation and redact the actual value.
+Sensitive XML elements may have quoted attributes; their content is redacted
+whole, while a self-closing element has an empty value. Existing secure-cookie
+and cloud-header name prefixes use the same three-layer decoding in structured
+records as in text.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -975,6 +987,18 @@ spaces and split lines. A Kubernetes `valueFrom`/`secretKeyRef` object under a
 sensitive key is refused by design; it is outside the closed environment-reference
 exemptions. Quoted JSON-style keys can introduce raw-newline scalar values even in
 an incomplete document.
+
+Flags whose names are `authorization`, `proxy-authorization`, `cookie` or
+`set-cookie` use the complete quoted value, or the complete remaining line when
+unquoted, so schemes and cookie-chain members cannot fall outside the mask.
+
+Plain YAML string values extend through the line (excluding a YAML comment);
+TOML triple-quoted strings extend through their closing triple quote. Annotated
+assignment defaults retain the type annotation and redact the actual value.
+Sensitive XML elements may have quoted attributes; their content is redacted
+whole, while a self-closing element has an empty value. Existing secure-cookie
+and cloud-header name prefixes use the same three-layer decoding in structured
+records as in text.
 
 ---
 

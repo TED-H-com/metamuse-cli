@@ -63,6 +63,9 @@ UNITS = {
     "cookie_jar": ("", "domain.invalid\tTRUE\t/\tFALSE\t0\tsid\t{value}\n"),
     "json_escaped_doc": ("", "{escaped}\n"),
     "xml": ("", "<password>{value}</password> "),
+    "xml_attributes": ("", '<password note="a>b">{value}</password> '),
+    "yaml_scalar": ("", "password: {value} second word\n"),
+    "toml_triple": ("", 'password = """{value}\nsecond word"""\n'),
     "yaml": ("", "password:\n  nested:\n    value: {value}\n"),
     "flag": ("", "--password {value} "),
     "flag_D": ("", "-Dpassword={value} "),
@@ -112,7 +115,7 @@ if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sizes", default="16384,32768,65536,131072,57344,1048576")
+    parser.add_argument("--sizes", default="16384,32768,65536,131072,57346,1048576")
     parser.add_argument("--case", choices=tuple(UNITS))
     args = parser.parse_args()
     for case in [args.case] if args.case else UNITS:
