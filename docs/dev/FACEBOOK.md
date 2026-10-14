@@ -344,8 +344,12 @@ worker resume command exists. The redundant per-worker network-rule step is
 removed: no untrusted worker source executes, including nested worker creation.
 Dedicated workers need a fixed CDP `Runtime.evaluate("self.close()")` in their
 paused realm because `Target.closeTarget` alone leaves them alive in this build.
-Shared workers use `Target.closeTarget`. Destruction is checked after callbacks
-return, before import, with a bounded five-second wait; no resume command is sent. Popups,
+Shared and service workers use `Target.closeTarget`. Success, refusal and lost
+close replies all enter the same pending-target set: destruction is asynchronous.
+Verification runs after callbacks return, before import, with a bounded five-second
+wait, including dedicated workers already sent the fixed `self.close()`. A browser
+disconnect is never disappearance evidence; a target still listed past the bound
+fails closed. No worker resume or detach-to-run command is sent. Popups,
 downloads, route aborts and session teardown use the same fail-closed rule.
 
 
