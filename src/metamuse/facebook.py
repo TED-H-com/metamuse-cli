@@ -15,10 +15,9 @@ Browser egress boundary (AT-030, FR-019):
   `CONNECT` tunnel and plain-HTTP request (including redirect hops) against B08
   `OutboundURLPolicy`, dials only the checked IP address without re-resolving,
   verifies the connected socket peer, and enforces the job `max_bytes` budget.
-- `context.route` is retained only for browser resource-type blocking
-  (`websocket`, `eventsource`, `manifest`, `service_worker`) and the initial
-  navigation page-type check, and `Response.server_addr()` is retained as a
-  secondary check.
+- `context.route` applies the bounded URL policy before resource and navigation
+  classification, preserving validated addresses for the proxy's pinned dial.
+  `Response.server_addr()` remains a secondary check.
 
 Third-party provenance:
 - Post field checklist (`actor`, `creation_time`, message text, post id,
@@ -1125,6 +1124,7 @@ class EgressGuard:
         self.authorized_permalink: PostPermalinkTarget | None = None
         self.resume_identity: PostPermalinkTarget | None = None
         self._route_url_checker = self._check_route_destination
+        self._route_checked_by_authority: dict[tuple[str, int], safety.CheckedURL] = {}
 
     def authorize_permalink(
         self, target: PostPermalinkTarget, expected_resolution: PostPermalinkTarget | None = None
@@ -1241,13 +1241,36 @@ class EgressGuard:
             )
         return None
 
+    def _checked_destination(self, url: str, purpose: safety.URLPurpose) -> safety.CheckedURL:
+        authority = self._authority(url)
+        with self._lock:
+            pinned = self.checked_by_authority.get(
+                authority
+            ) or self._route_checked_by_authority.get(authority)
+        if pinned is not None:
+            # Revalidate every URL against the shared policy, while retaining the
+            # already validated address set through route -> proxy -> pinned dial.
+            checker = safety.check_fixture_url if self._fixture_url_checker else safety.check_url
+            return checker(
+                url,
+                purpose=purpose,
+                allowed_hosts=self.allowed_hosts,
+                resolver=lambda _: pinned.addresses,
+            )
+        if self._fixture_url_checker is not None:
+            return self._fixture_url_checker(url, purpose)
+        return self.policy.before_request(url, purpose=purpose)
+
     def _check_route_destination(self, url: str, purpose: safety.URLPurpose) -> safety.CheckedURL:
         try:
-            if self._fixture_url_checker is not None:
-                return self._fixture_url_checker(url, purpose)
-            if urlsplit(url).scheme.lower() != "https":
+            if self._fixture_url_checker is None and urlsplit(url).scheme.lower() != "https":
                 raise m.CoreError(m.ErrorCode.SCOPE_DENIED, "HTTPS required")
-            return self.policy.before_request(url, purpose=purpose)
+            checked = self._checked_destination(url, purpose)
+            with self._lock:
+                self._route_checked_by_authority.setdefault(
+                    (checked.hostname, checked.port), checked
+                )
+            return checked
         except (m.CoreError, ValueError):
             raise m.CoreError(
                 m.ErrorCode.SCOPE_DENIED,
@@ -1463,16 +1486,13 @@ class EgressGuard:
             pass
 
         try:
-            if self._fixture_url_checker is not None:
-                checked = self._fixture_url_checker(url, purpose)
-            else:
-                if not is_connect:
-                    raise m.CoreError(
-                        m.ErrorCode.SCOPE_DENIED,
-                        "Plain HTTP is refused by the Facebook browser egress proxy",
-                        next_action="Use HTTPS for all Facebook requests",
-                    )
-                checked = self.policy.before_request(url, purpose=purpose)
+            if self._fixture_url_checker is None and not is_connect:
+                raise m.CoreError(
+                    m.ErrorCode.SCOPE_DENIED,
+                    "Plain HTTP is refused by the Facebook browser egress proxy",
+                    next_action="Use HTTPS for all Facebook requests",
+                )
+            checked = self._checked_destination(url, purpose)
         except m.CoreError as exc:
             with self._lock:
                 self.last_proxy_error = exc
@@ -1648,10 +1668,7 @@ class EgressGuard:
             pass
 
         try:
-            if self._fixture_url_checker is not None:
-                checked = self._fixture_url_checker(url, purpose)
-            else:
-                checked = self.policy.before_request(url, purpose=purpose)
+            checked = self._checked_destination(url, purpose)
         except m.CoreError as exc:
             with self._lock:
                 self.decisions.append(

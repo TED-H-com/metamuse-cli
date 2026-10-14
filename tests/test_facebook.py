@@ -1687,6 +1687,7 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
     assert "--force-webrtc-ip-handling-policy=disable_non_proxied_udp" in args
     assert "--disable-background-networking" in args
     assert "--no-first-run" in args
+    assert "--block-new-web-contents" in args
 
     with pytest.raises(ValueError):
         _browser_egress.build_chromium_launch_args(0)
@@ -1702,16 +1703,28 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
 
     launched: dict[str, Any] = {}
 
+    from types import SimpleNamespace
+
+    def schedule(coroutine):
+        coroutine.close()  # This test records launch parameters, not loop behavior.
+        return SimpleNamespace(cancel=lambda: None)
+
     class _FakePage:
+        _impl_obj = SimpleNamespace(_loop=SimpleNamespace(create_task=schedule))
         url = "https://www.facebook.com/synth.lab/posts/101"
 
         def on(self, event: str, handler: Any) -> None:
             del event, handler
 
+        def evaluate(self, script: str) -> bool:
+            return True
+
         def close(self) -> None:
             pass
 
     class _FakeContext:
+        pages: list[Any] = []
+
         def on(self, event: str, handler: Any) -> None:
             del event, handler
 
@@ -1731,7 +1744,9 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
             return _FakeCDP()
 
         def new_page(self) -> _FakePage:
-            return _FakePage()
+            page = _FakePage()
+            self.pages.append(page)
+            return page
 
         def close(self) -> None:
             pass
@@ -1749,7 +1764,10 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
 
     class _FakeCDP:
         def send(self, method: str, params: Any = None) -> Any:
-            return {"targetInfo": {"targetId": "synthetic-page"}}
+            return {
+                "targetInfo": {"targetId": "synthetic-page"},
+                "targetInfos": [{"targetId": "synthetic-page", "type": "page"}],
+            }
 
         def on(self, event: str, handler: Any) -> None:
             pass

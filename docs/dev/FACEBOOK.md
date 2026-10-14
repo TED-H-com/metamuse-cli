@@ -367,3 +367,10 @@ and return `E_LIMIT_REACHED` with partial coverage; already observed data remain
 available. The watcher uses the pinned Playwright implementation loop, as does
 the existing async WebSocket close adapter. Tests bound hangs at an independent
 90-second subprocess deadline, with 300-second read and job budgets.
+
+
+Route validation pins its validated address set by authority for this bounded
+Facebook session. Every later URL still passes the shared scheme/credential/port/
+host/IP policy, using that pinned set through the proxy dial and peer check. The
+proxy does not resolve a different address between the browser check and its
+validated dial. Redirect destinations on new authorities get independent checks.
