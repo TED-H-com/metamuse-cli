@@ -711,6 +711,8 @@ literal `/`, HTML slash entities `&#47;`/`&#x2f;` and `%2F`. One percent-decodin
 also covers `%5F`; JavaScript `\u005f`/`\x5f` underscore escapes and NFKC fullwidth
 underscores are recognized. Split string literals are not detected; no JavaScript
 is executed or reconstructed.
+Marker normalization scans overlapping 32 KiB blocks, so it does not decode an
+entire media response at once.
 Invalid or credential-shaped `remote_media.provider` / `remote_media.account` labels
 return a fixed E_INPUT_INVALID configuration error naming the setting, never its value.
 
