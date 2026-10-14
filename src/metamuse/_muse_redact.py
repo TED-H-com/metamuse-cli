@@ -25,10 +25,10 @@ _EXTRA_KEYS = frozenset(
 )
 # The same compact sensitive family is used for JSON, headers, repr and queries.
 _ASSIGNMENT = re.compile(
-    r"""((?:["'])?([A-Za-z_][A-Za-z0-9_.-]*)(?:["'])?\s*(?:=>|:|=)\s*)"""
+    r"""(?<![A-Za-z0-9_.-])((?:["'])?([A-Za-z_][A-Za-z0-9_.-]*)(?:["'])?\s*(?:=>|:|=)\s*)"""
     r"""(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,}\]&\s]+)"""
 )
-_XML = re.compile(r"<([A-Za-z_][A-Za-z0-9_.-]*)>(.*?)</\1>", re.DOTALL)
+_XML = re.compile(r"<([A-Za-z_][A-Za-z0-9_.-]*)>([^<]*)</\1>", re.DOTALL)
 _WAKE_OBJECT = re.compile(r"\{[^{}]*\}")
 
 
@@ -102,13 +102,23 @@ def _known_spans(value: str, known: tuple[str, ...]) -> str:
 
 def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
     # Decode first, including lowercase escapes, so encoded containment is intact.
+    original = value
     for _ in range(2):
         value = unquote(value)
+    decoded = value
     value = _known_spans(value, known)
     value = _WAKE_OBJECT.sub(_embedded_wake, value)
-    value = _ASSIGNMENT.sub(
-        lambda match: match[1] + '"redacted"' if sensitive_key(match[2]) else match[0], value
-    )
+    # An ordinary prefix (e.g. wss:) must not consume a later query assignment.
+    spans = []
+    offset = 0
+    while match := _ASSIGNMENT.search(value, offset):
+        if sensitive_key(match[2]):
+            spans.append((match.start(), match.end(), match[1] + '"redacted"'))
+            offset = match.end()
+        else:
+            offset = match.start() + len(match[1])
+    for start, end, replacement in reversed(spans):
+        value = value[:start] + replacement + value[end:]
     value = _XML.sub(
         lambda match: (
             "<" + match[1] + ">redacted</" + match[1] + ">" if sensitive_key(match[1]) else match[0]
@@ -117,7 +127,8 @@ def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
     )
     value = _ENVELOPE.sub("redacted", value)
     value = _NOTARY.sub("redacted", value)
-    return redact_text(value)[0]
+    cleaned = redact_text(value)[0]
+    return original if cleaned == decoded else cleaned
 
 
 def sanitize_document(value: Any, known: tuple[str, ...] = (), depth=0) -> Any:

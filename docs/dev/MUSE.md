@@ -191,14 +191,16 @@ no JSON body. Read/mint success still requires bounded valid JSON and its own fi
 | CVM/RV/delegation/endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
 
 Upgrade 401/403 is `E_AUTH_REQUIRED`, 429 is `E_RATE_LIMITED`; DNS/connect/TLS failure
-is `E_NETWORK_TIMEOUT`, with `E_SCOPE_REQUIRED` when the guard refuses. Corrupt/stale trust
-or failed commit/CAS is `E_STORAGE` (`never`). The upgrade URL, query, response body and raw
+is `E_NETWORK_TIMEOUT`, with `E_SCOPE_REQUIRED` when the guard refuses. Trust races/contention are `E_STORAGE` / `safe_read`; environment and integrity failures use
+`user_action` with cause-specific guidance. Effective confidentiality always stops first. The upgrade URL, query, response body and raw
 curl exception are never copied into any exception, envelope or log. Redaction covers
 the tested compact nonce/token/proof/secret/notary/noise-key/attempt-id/request-id/recovery
 families and existing RV/endorsement/wake aliases, including prefixes/suffixes, snake/camel/hyphen/dotted
 keys in query, header, repr, JSON, arrow and XML forms. Ordinary vm_id/discussion_id/job_id remain visible.
 Known values are decoded through two percent-encoding levels (including quote_plus and lowercase escapes),
-then scrubbed over the union of matching spans. Raw envelopes and embedded wake bodies are scrubbed.
+then scrubbed over the union of matching spans. Alias scanning includes full WSS URLs; an ordinary
+scheme or identifier cannot consume a later query key. Text requiring no redaction preserves its
+original percent encoding. Raw envelopes and embedded wake bodies are scrubbed.
 Triple percent encoding, base32, colon-separated hex and bytes repr are outside this tested scope.
 Handshake nonce hex/base64/base64url and WSS request IDs are held per connection for scrubbing.
 Credential/binding/header/body dataclass reprs suppress those fields.

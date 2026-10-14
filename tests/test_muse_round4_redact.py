@@ -33,7 +33,7 @@ def shapes(key, value):
         "repr": "{'" + key + "': '" + value + "'}",
         "header": key + ": " + value,
         "spaced_eq": key + " = " + value,
-        "query": "x?" + key + "=" + value,
+        "query": "wss://example.invalid/?" + key + "=" + value,
         "json": json.dumps({key: value}),
         "tab_colon": key + "\t:\t" + value,
         "arrow": key + " => " + value,
