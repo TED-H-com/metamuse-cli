@@ -344,7 +344,7 @@ def test_r8_ip_cookie_domain_is_refused(domain):
     assert held.value.detail.message == "Cookie file line 1 is invalid"
 
 
-@pytest.mark.parametrize("unit", ["a", "b=a=", "a=1&"])
+@pytest.mark.parametrize("unit", ["a", "b=a=", "a=b="])
 def test_r8_preview_cpu_at_url_cap_with_canonical_form(ctx, project, unit):
     configure(ctx, [("MetamuseFixture", ["media.fixture.test"])])
     prefix = "https://media.fixture.test/clip?q="

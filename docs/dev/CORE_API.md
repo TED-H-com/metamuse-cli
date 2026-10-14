@@ -873,13 +873,25 @@ and are checked against current workspace limits. Preparation bounds URL UTF-8 b
 at 8192 and checks cheap syntax before redaction, display or digest. The resulting
 ASCII canonical URL must also fit the same outbound bound.
 
-B12 computes one ASCII-only canonical page URL (lower-case scheme and IDNA host,
-non-default port, UTF-8 percent-encoded non-ASCII path/query). The digest, preview,
-request echo, operator stderr and extractor's first hop use exactly that string;
-job payload and original_url provenance keep the original URL. Any fragment (even #),
-shared url_token query key, trailing-dot host or free-text redaction of structural
-bytes is fixed E_INPUT_INVALID without preview or URL echo. Signed extractor-hop URLs
-keep existing redaction. All four displayed workspace caps enter the action digest
+B12 computes one ASCII-only canonical URL: lower-case scheme and
+IDNA2003/punycode host, non-default port only, UTF-8 percent-encoded non-ASCII path/query.
+Decode unreserved escapes, upper-case remaining escapes, and pre-encode ASCII outside
+the pinned yt-dlp/curl_cffi safe-set intersection. Only m.facebook.com maps to www;
+host approval checks www. Refuse IDNA deviation characters ß/ς and mapped trailing dots.
+The digest, preview, request echo and operator stderr bind that string. The extractor
+receives exactly the displayed URL. The transport sends exactly each URL the checker
+approved, without requoting or dot-segment removal (quote=False, PATH_AS_IS and an explicit
+REQUEST_TARGET, preserving escape hex case too). Extractors
+may derive further requests, e.g. FacebookReel watch URLs, added query parameters or
+API endpoints; each is checked against bound approval entries before any dial. Wire
+tests prove that the first page request bytes equal the display for the fixture
+extractor and FacebookIE watch, video and story URLs. The job request and original_url
+provenance retain the original input. Refuse fragments (even empty #), shared url_token
+query keys, invalid escapes, dot segments (including escapes and parameters), duplicate
+canonical query keys and structural redaction, with fixed E_INPUT_INVALID, no preview
+or URL echo. At preview and before extraction, assert the pinned-library fixed point:
+display == requote_uri(normalize_url(display)); drift fails closed. Signed extractor-hop
+URLs retain existing redaction; credential-bearing page URLs are outside B12 inputs. All four displayed workspace caps enter the action digest
 payload; a pre-submission edit requires new approval. At execution, rebuild the digest
 from the reviewed acceptance snapshot and enforce min(snapshot, current caps).
 

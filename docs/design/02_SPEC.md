@@ -217,13 +217,24 @@ The review identifies first-hop and later-hop entries and shows each cookie labe
 Selection uses those bound entries; even an unrelated approval edit invalidates an
 outstanding grant before consumption or egress and requires a fresh review.
 B12 preparation computes one ASCII-only canonical URL: lower-case scheme and
-IDNA/punycode host, non-default port only, UTF-8 percent-encoded non-ASCII path/query.
-The digest, preview, request echo, operator stderr and extractor first hop use exactly
-that string. The job request and original_url provenance retain the original input.
-Refuse any fragment (including empty #), any query key the shared url_token rule would
-mask, trailing-dot hosts, or structural display changed by free-text redaction, with
-fixed E_INPUT_INVALID and no preview or URL echo. Signed extractor-hop URLs retain
-existing redaction; credential-bearing page URLs are outside B12 inputs.
+IDNA2003/punycode host, non-default port only, UTF-8 percent-encoded non-ASCII path/query.
+Decode unreserved escapes, upper-case remaining escapes, and pre-encode ASCII outside
+the pinned yt-dlp/curl_cffi safe-set intersection. Only m.facebook.com maps to www;
+host approval checks www. Refuse IDNA deviation characters ß/ς and mapped trailing dots.
+The digest, preview, request echo and operator stderr bind that string. The extractor
+receives exactly the displayed URL. The transport sends exactly each URL the checker
+approved, without requoting or dot-segment removal (quote=False, PATH_AS_IS and an explicit
+REQUEST_TARGET, preserving escape hex case too). Extractors
+may derive further requests, e.g. FacebookReel watch URLs, added query parameters or
+API endpoints; each is checked against bound approval entries before any dial. Wire
+tests prove that the first page request bytes equal the display for the fixture
+extractor and FacebookIE watch, video and story URLs. The job request and original_url
+provenance retain the original input. Refuse fragments (even empty #), shared url_token
+query keys, invalid escapes, dot segments (including escapes and parameters), duplicate
+canonical query keys and structural redaction, with fixed E_INPUT_INVALID, no preview
+or URL echo. At preview and before extraction, assert the pinned-library fixed point:
+display == requote_uri(normalize_url(display)); drift fails closed. Signed extractor-hop
+URLs retain existing redaction; credential-bearing page URLs are outside B12 inputs.
 The preview's operator command uses the next unused digest-based approval key, so a
 fresh review cannot replay an exhausted/revoked/expired grant. Repeating a previously
 submitted approval command still replays its original permit and mutable use state.
