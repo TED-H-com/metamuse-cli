@@ -1644,7 +1644,10 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         ):
             add(*match.span(), "api_key")
 
-    roots = r"/(?:tmp|var|etc|home|Users|opt|usr|proc|sys|dev|run|srv|mnt|media|root|private|Library|Volumes|app|workspace)(?:/|\b)"
+    roots = (
+        r"/(?:tmp|var|etc|home|Users|opt|usr|proc|sys|dev|run|srv|mnt|media|root|private|"
+        r"Library|Volumes|app|workspace)(?:/|\b)"
+    )
     plausible = r"(?:" + roots + r"|/[A-Za-z0-9._-]++/|[A-Za-z]:[\\/]|\\\\)"
     if "/" in text or "\\" in text:
         public_paths = {"/docs/plan.md", "/etc/hosts"}
