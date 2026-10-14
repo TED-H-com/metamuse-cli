@@ -683,7 +683,8 @@ and checkpoint form IDs) are inspected on every element, including hidden, head
 and void elements, in both drivers. Completeness evidence such as
 `data-comments-exhausted` counts only in visible subtrees under the shared text
 visibility rules. Chromium snapshots strip every page-authored `data-metamuse-*` attribute
-from the clone, then stamp separate computed display and visibility markers.
+case-insensitively from the clone, including case-preserving SVG attributes, then
+stamp separate computed display and visibility markers.
 Only trusted Chromium observations honour those markers; raw HTML and the fixture
 driver ignore them. Snapshots preserve the page's own `hidden` attribute and never
 mutate the live DOM. `display:none` and `hidden` exclude the whole subtree;
@@ -1635,7 +1636,8 @@ and checkpoint form IDs) are inspected on every element, including hidden, head
 and void elements, in both drivers. Completeness evidence such as
 `data-comments-exhausted` counts only in visible subtrees under the shared text
 visibility rules. Chromium snapshots strip every page-authored `data-metamuse-*` attribute
-from the clone, then stamp separate computed display and visibility markers.
+case-insensitively from the clone, including case-preserving SVG attributes, then
+stamp separate computed display and visibility markers.
 Only trusted Chromium observations honour those markers; raw HTML and the fixture
 driver ignore them. Snapshots preserve the page's own `hidden` attribute and never
 mutate the live DOM. `display:none` and `hidden` exclude the whole subtree;

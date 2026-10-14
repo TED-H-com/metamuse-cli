@@ -2479,7 +2479,9 @@ class _PlaywrightSession:
           source.forEach((node, index) => {
             const clone = clones[index];
             for (const attr of [...clone.attributes]) {
-              if (attr.name.startsWith('data-metamuse-')) clone.removeAttribute(attr.name);
+              if (attr.name.toLowerCase().startsWith('data-metamuse-')) {
+                clone.removeAttribute(attr.name);
+              }
             }
             const style = getComputedStyle(node);
             if (style.display === 'none') {
