@@ -560,3 +560,57 @@ def test_r5_n9_off_post_navigation_needs_session_review(tmp_path, monkeypatch, h
         assert job["error"]["message"] == "Facebook navigation left the approved post"
         assert "session in a browser" in job["error"]["next_action"]
         assert not rows(ctx)
+
+
+@pytest.mark.parametrize("real_browser", [False, True], ids=["fixture", "chromium"])
+def test_r5_n10_visible_text_and_emoji_have_driver_parity(tmp_path, monkeypatch, real_browser):
+    body = (
+        'before <img alt="😀" src="/emoji.png"> after'
+        "<script>var injected=1;</script><style>.x{color:red}</style>"
+        "<template>TEMPLATE</template><span hidden>HIDDEN1</span>"
+        '<span aria-hidden="true">HIDDEN2</span>'
+        '<span style="display: none"><b>HIDDEN3</b></span>'
+        '<span style="visibility:hidden">HIDDEN4</span>'
+        "<div>visible<br>line</div>tail"
+    )
+    markup = _synthetic_post_html(post_text="BODY").replace(">BODY</div>", ">" + body + "</div>")
+    if real_browser:
+        with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}) as env:
+            ctx, project, permit, _, _, _, _ = env
+            job = finish(ctx, submit(ctx, project, permit))
+            result = rows(ctx)
+    else:
+        ctx, job = fixture_job(tmp_path, markup)
+        result = rows(ctx)
+    assert job["error"] is None
+    assert result[0]["text"] == "before 😀 after\nvisible\nline\ntail"
+
+
+@pytest.mark.parametrize("real_browser", [False, True], ids=["fixture", "chromium"])
+def test_r5_n10_structural_json_in_head_survives_text_visibility(
+    tmp_path, monkeypatch, real_browser
+):
+    markup = "<html><head>" + json_page(text="  JSON &amp; text  ") + "</head><body></body></html>"
+    if real_browser:
+        with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}) as env:
+            ctx, project, permit, _, _, _, _ = env
+            job = finish(ctx, submit(ctx, project, permit))
+            result = rows(ctx)
+    else:
+        ctx, job = fixture_job(tmp_path, markup)
+        result = rows(ctx)
+    assert job["error"] is None
+    assert result[0]["text"] == "  JSON &amp; text  "
+
+
+def test_r5_n10_chromium_excludes_computed_hidden_text(tmp_path, monkeypatch):
+    markup = (
+        _synthetic_post_html(post_text="BODY")
+        .replace(">BODY</div>", '>Visible<span class="fixture-hidden">Invisible</span></div>')
+        .replace("<body>", "<head><style>.fixture-hidden {display:none}</style></head><body>")
+    )
+    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}) as env:
+        ctx, project, permit, _, _, _, _ = env
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["error"] is None
+        assert rows(ctx)[0]["text"] == "Visible"

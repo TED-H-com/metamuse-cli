@@ -2135,6 +2135,23 @@ class _PlaywrightSession:
                 next_action="Increase limits.max_bytes or narrow the requested resources",
             )
 
+    def _snapshot_html(self) -> str:
+        return self._page.evaluate("""() => {
+          const copy = document.documentElement.cloneNode(true);
+          const source = [document.documentElement,
+            ...document.documentElement.querySelectorAll('*')];
+          const clones = [copy, ...copy.querySelectorAll('*')];
+          source.forEach((node, index) => {
+            const style = getComputedStyle(node);
+            if (style.display === 'none' || style.visibility === 'hidden'
+                || style.visibility === 'collapse') clones[index].setAttribute('hidden', '');
+          });
+          // Embedded payloads remain available to the JSON parser, not body text.
+          copy.querySelectorAll('script[data-fb-post-payload]')
+            .forEach(n => n.removeAttribute('hidden'));
+          return copy.outerHTML;
+        }""")
+
     def goto_post(self, url: str) -> PageObservation:
         target_url = url
         if self._test_origin is not None:
@@ -2197,7 +2214,7 @@ class _PlaywrightSession:
         return PageObservation(
             url=self._page.url,
             status_code=response.status,
-            html=self._page.content(),
+            html=self._snapshot_html(),
             server_addr=response.server_addr(),
         )
 
@@ -2225,7 +2242,7 @@ class _PlaywrightSession:
             return PageObservation(
                 url=self._page.url,
                 status_code=self._document_status,
-                html=self._page.content(),
+                html=self._snapshot_html(),
                 progress_confirmed=False,
                 expansion_failed=True,
             )
@@ -2249,7 +2266,7 @@ class _PlaywrightSession:
         return PageObservation(
             url=self._page.url,
             status_code=self._document_status,
-            html=self._page.content(),
+            html=self._snapshot_html(),
             server_addr=None,
             progress_confirmed=progress,
             expansion_failed=self._expansion_response_status is not None,
@@ -2548,6 +2565,7 @@ class _DOMExtractor(HTMLParser):
         self.meta_state: str | None = None
         self.json_scripts: list[str] = []
         self._in_json_script = False
+        self._hidden_depth = 0
         self._json_buf: list[str] = []
         self.post_attrs: dict[str, str] | None = None
         self.post_text_parts: list[str] = []
@@ -2566,6 +2584,33 @@ class _DOMExtractor(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = {k.lower(): (v or "") for k, v in attrs}
         tag = tag.lower()
+        # Structural JSON evidence is independent of rendered-body visibility.
+        if (
+            tag == "script"
+            and attr_map.get("type", "").lower() == "application/json"
+            and "data-fb-post-payload" in attr_map
+        ):
+            self._in_json_script = True
+            self._json_buf = []
+            return
+        if self._hidden_depth:
+            if tag not in self._VOID_TAGS:
+                self._hidden_depth += 1
+            return
+        is_payload = tag == "script" and "data-fb-post-payload" in attr_map
+        style = attr_map.get("style", "").lower()
+        hidden = (
+            "hidden" in attr_map
+            or attr_map.get("aria-hidden", "").lower() == "true"
+            or re.search(r"(?:^|;)\s*display\s*:\s*none(?:\s*!important)?\s*(?:;|$)", style)
+            or re.search(
+                r"(?:^|;)\s*visibility\s*:\s*(?:hidden|collapse)(?:\s*!important)?\s*(?:;|$)", style
+            )
+        )
+        if hidden or (tag in {"script", "style", "template"} and not is_payload):
+            if tag not in self._VOID_TAGS:
+                self._hidden_depth = 1
+            return
         # Void elements still carry barrier and source metadata; only body depth
         # and stack tracking must exclude them.
         if attr_map.get("data-comments-exhausted") == "true":
@@ -2590,6 +2635,11 @@ class _DOMExtractor(HTMLParser):
                 }
             )
         if tag in self._VOID_TAGS:
+            if tag == "img" and "alt" in attr_map:
+                if self._in_post_body:
+                    self.post_text_parts.append(attr_map["alt"])
+                if self._in_comment_body and self._current_comment is not None:
+                    self._current_comment["text_parts"].append(attr_map["alt"])
             if tag == "br":
                 if self._in_post_body:
                     self.post_text_parts.append("\n")
@@ -2599,15 +2649,6 @@ class _DOMExtractor(HTMLParser):
         if tag in {"div", "p", "section", "article", "li", "blockquote", "pre", "h1", "h2", "h3"}:
             self._block_boundary()
         self._stack.append((tag.lower(), attr_map))
-
-        if (
-            tag.lower() == "script"
-            and attr_map.get("type", "").lower() == "application/json"
-            and "data-fb-post-payload" in attr_map
-        ):
-            self._in_json_script = True
-            self._json_buf = []
-            return
 
         role = attr_map.get("role", "").lower()
         fb_role = attr_map.get("data-fb-role", "").lower()
@@ -2676,6 +2717,15 @@ class _DOMExtractor(HTMLParser):
             )
 
     def handle_endtag(self, tag: str) -> None:
+        if self._in_json_script and tag.lower() == "script":
+            self._in_json_script = False
+            self.json_scripts.append("".join(self._json_buf))
+            self._json_buf = []
+            return
+        if self._hidden_depth:
+            if tag.lower() not in self._VOID_TAGS:
+                self._hidden_depth -= 1
+            return
         if tag.lower() in {
             "div",
             "p",
@@ -2689,10 +2739,6 @@ class _DOMExtractor(HTMLParser):
             "h3",
         }:
             self._block_boundary(nested_only=True)
-        if self._in_json_script and tag.lower() == "script":
-            self._in_json_script = False
-            self.json_scripts.append("".join(self._json_buf))
-            self._json_buf = []
         if self._in_post_body > 0:
             self._in_post_body -= 1
         if self._in_comment_body > 0:
@@ -2727,6 +2773,8 @@ class _DOMExtractor(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._in_json_script:
             self._json_buf.append(data)
+            return
+        if self._hidden_depth:
             return
         if self._in_post_body > 0:
             self.post_text_parts.append(data)
