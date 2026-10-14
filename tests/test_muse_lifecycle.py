@@ -926,3 +926,30 @@ def test_r2_lifecycle_factory_wires_store_and_reaches_currentness(ctx, monkeypat
         transport.sessions_list()
     assert exc.value.detail.code == ErrorCode.STORAGE
     assert len(checks) == 1 and len(http.calls) == 2
+
+
+def test_live_transport_without_store_refuses_before_any_request():
+    from test_muse_transport import Credentials, FakeHttp, Guard
+
+    from metamuse.models import CoreError, ErrorCode
+    from metamuse.muse import MuseTransport
+
+    http = FakeHttp()
+
+    class Connector:
+        def connect(self, *args, **kwargs):
+            pytest.fail("unbound transport must stop before dial")
+
+    transport = MuseTransport(
+        network_mode="live",
+        auth_ref="synthetic-auth-ref",
+        credentials=Credentials(),
+        guard=Guard(),
+        http=http,
+        connector=Connector(),
+    )
+    with pytest.raises(CoreError) as caught:
+        transport.sessions_list()
+    assert caught.value.detail.code == ErrorCode.STORAGE
+    assert caught.value.detail.retry_class == "never"
+    assert not http.calls
