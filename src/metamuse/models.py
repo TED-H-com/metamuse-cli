@@ -649,6 +649,7 @@ class Exchange(Model):
     outbound_digest: Digest | None = None
     submission_step_id: ID | None = None
     submitted_at_ms: Annotated[int, Field(ge=0)] | None = None
+    submitted_observation_high_water: Annotated[int, Field(ge=0)] | None = None
     stream_id: Annotated[int, Field(ge=1, le=9223372036854775807)] | None = None
     bytes_handed_off: bool | None = None
     attempt_verdict: Literal["acked", "app_error", "undecided"] | None = None

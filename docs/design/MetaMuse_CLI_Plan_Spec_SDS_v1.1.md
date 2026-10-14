@@ -191,6 +191,7 @@ sent / send_uncertain → reply_observed → closed
 一個discussion同時一個未結算exchange。新topic本身也會外送，open需要存取範圍。send須驗packet和分享grant，保存intent後只送一次。timeout先查原session；沒有看見回覆不等於沒有送達。
 
 保留progress、多段回答與晚到訊息。關聯必須檢查session、baseline、可辨識user echo、role和時間，不能只靠最新一則assistant訊息。歧義保存為ambiguous，不直接配對。回覆存在不等於研究完成；由host結算answered/needs_more_data/abandoned。
+prepared與已證明not_submitted的exchange不參與關聯。訊息首次observation必須晚於該send boundary的高水位；enrichment不改首次時間。無marker且同文符合多個已提交exchange時保存sticky ambiguous，不認領訊息或建立echo proof。history proof與第一次transport outcome分開保存，後到ack不可丟失。
 
 abandoned時若外部提交仍不明，discussion應quarantined，不能立即派下一題繞過未解提交。close_exchange不是遠端cancel。side chat不是跨客戶保密隔離；本地path不是Muse可讀資源。分析prompt不是停用Muse既有寫入工具的權限鎖。
 
@@ -199,6 +200,7 @@ B10實作補充：零bytes證據只接受同process內transport記帳；持久�
 discussion固定snapshot。fixture backend須明示選擇，discussion/message/observation及content envelope標mock，
 inspect只fixture_passed。read預設local；refresh排safe_read job＋current access grant。open對帳可明示原discussion_id，
 unknown只排list job，不再create；已mapped discussion則排history baseline read。cursor由workspace key簽名，綁discussion/exchange與observation高水位。
+open在提交與boundary兩次檢查同project/account的未解create；已queued的第二次create也不得越過，grant未使用、step本地failed。
 
 ## 7. 分享與草稿
 
@@ -473,7 +475,9 @@ before_external_action transaction完成verifier/reservation/intent後才mint on
 consume綁owner/epoch/job/step/operation/target/action digest。read不mint。transport affirmative zero-handoff可同process
 record_not_submitted，原step經settle_uncertain變local failed/remote not_submitted；crash則unknown，不退用量。
 history/list在另一safe_read job，讀取current access grant；原step settlement不再reserve/send/requeue。
+send boundary持久化write-once submitted_observation_high_water；history關聯排除prepared/zero-handoff，並要求訊息首次observation在此高水位之後。多個同文exchange共享markerless echo時保持ambiguous，不按rowid先後認領。user_echo SQL guard也檢查已提交與首次observation；transport首結果保留既有history proof、另存真實ack/verdict，不reopen closed。
 live send先有已完成、授權的history baseline；已mapped discussion_id的open走history read，不做第二次create。
+open boundary在reservation與token之前重查未解create；拒絕時transaction rollback，不接觸remote、不標uncertain。
 
 ## 9. Grant與packet
 

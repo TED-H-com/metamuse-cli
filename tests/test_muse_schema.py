@@ -413,6 +413,7 @@ def test_v3_binding_and_unique_identity_freeze_on_unreferenced_rows(
         ("discussions", "open_verdict", "undecided", "acked"),
         ("discussions", "open_error_code", "E_NETWORK_TIMEOUT", "E_PROTOCOL_MISMATCH"),
         ("exchanges", "submitted_at_ms", 1, 2),
+        ("exchanges", "submitted_observation_high_water", 0, 1),
         ("exchanges", "stream_id", 1, 2),
         ("exchanges", "bytes_handed_off", 0, 1),
         ("exchanges", "attempt_verdict", "undecided", "acked"),

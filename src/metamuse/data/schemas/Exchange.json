@@ -369,6 +369,19 @@
       "default": null,
       "title": "Submitted At Ms"
     },
+    "submitted_observation_high_water": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Submitted Observation High Water"
+    },
     "stream_id": {
       "anyOf": [
         {

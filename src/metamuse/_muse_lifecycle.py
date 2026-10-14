@@ -634,7 +634,9 @@ def _mutate(step):
             )
         else:
             conn.execute(
-                "UPDATE exchanges SET state='submitting',submitted_at_ms=? WHERE id=?",
+                "UPDATE exchanges SET state='submitting',submitted_at_ms=?,"
+                "submitted_observation_high_water=(SELECT COALESCE(MAX(rowid),0) "
+                "FROM muse_observations) WHERE id=?",
                 (_millis(step.store.clock), exchange.id),
             )
         return digest
@@ -778,14 +780,24 @@ def _save_send(step, discussion, exchange, result, failure):
     )
 
     def save(writer):
+        current = writer.get(m.Exchange, exchange.id)
+        state = (
+            current.state
+            if current.state in ("closed", "reply_observed")
+            else "sent"
+            if current.delivery_proof is not None
+            and current.delivery_proof.kind in ("ack", "user_echo")
+            else attempt.state
+        )
         writer.execute(
             (
                 "UPDATE exchanges SET state=?,stream_id=?,bytes_handed_off=?,attempt_ve"
-                "rdict=?,attempt_detail=?,attempt_error_code=?,delivery_proof=? WHERE i"
+                "rdict=?,attempt_detail=?,attempt_error_code=?,"
+                "delivery_proof=COALESCE(delivery_proof,?) WHERE i"
                 "d=?"
             ),
             (
-                attempt.state,
+                state,
                 attempt.stream_id,
                 int(attempt.bytes_handed_off),
                 attempt.evidence.verdict,
@@ -797,7 +809,12 @@ def _save_send(step, discussion, exchange, result, failure):
         )
 
     step.commit_checkpoint({"not_submitted": zero}, write_batch=save)
-    if attempt.state != "sent":
+    current = step.store.get(m.Exchange, exchange.id)
+    delivered = current.delivery_proof is not None and current.delivery_proof.kind in (
+        "ack",
+        "user_echo",
+    )
+    if attempt.state != "sent" and not delivered:
         _error(
             m.ErrorCode.NETWORK_TIMEOUT if zero else m.ErrorCode.EXTERNAL_STATE_UNKNOWN,
             "Request failed before frame handoff" if zero else "Muse send remains uncertain",
@@ -1014,6 +1031,18 @@ def _observe(step, discussion, events):
     step.commit_checkpoint({"history_saved": True}, write_batch=save)
 
 
+def _may_be_delivered(exchange):
+    return (
+        exchange.state not in ("prepared", "failed_before_send")
+        and exchange.bytes_handed_off is not False
+        and exchange.submitted_at_ms is not None
+        and exchange.submitted_observation_high_water is not None
+        and exchange.submission_step_id is not None
+        and exchange.outbound_payload is not None
+        and (exchange.delivery_proof is None or exchange.delivery_proof.kind != "not_submitted")
+    )
+
+
 def _hydrate(store, discussion, exchange, conn):
     count, total = conn.execute(
         "SELECT count(*),COALESCE(sum(length(CAST(raw_event AS BLOB))),0) "
@@ -1030,7 +1059,18 @@ def _hydrate(store, discussion, exchange, conn):
         "SELECT rowid,* FROM muse_observations WHERE discussion_id=? ORDER BY rowid",
         (discussion.id,),
     ).fetchall()
-    events = [json.loads(row["raw_event"]) for row in rows]
+    first_seen = {}
+    for row in rows:
+        key = row["message_id"] or row["identity_key"]
+        first_seen.setdefault(key, row["rowid"])
+    # Enrichment cannot make an already-observed message younger than this attempt.
+    eligible = [
+        row
+        for row in rows
+        if first_seen[row["message_id"] or row["identity_key"]]
+        > exchange.submitted_observation_high_water
+    ]
+    events = [json.loads(row["raw_event"]) for row in eligible]
     memory = ObservationMemory()
     if exchange.observation_memory:
         memory.ambiguous = exchange.observation_memory.ambiguous
@@ -1038,12 +1078,37 @@ def _hydrate(store, discussion, exchange, conn):
         memory.disqualified = {tuple(key) for key in exchange.observation_memory.disqualified}
     prior = Association("none", None, 0, memory=memory)
     view = _exchange_view(store, discussion, exchange, conn)
+    others = [
+        store.decode(m.Exchange, row)
+        for row in conn.execute(
+            "SELECT * FROM exchanges WHERE discussion_id=? AND id<>?",
+            (discussion.id, exchange.id),
+        )
+    ]
+    for row, event in zip(eligible, events, strict=True):
+        if user_echo(view, [event]) is None:
+            continue
+        for other in others:
+            if (
+                _may_be_delivered(other)
+                and first_seen[row["message_id"] or row["identity_key"]]
+                > other.submitted_observation_high_water
+                and user_echo(_exchange_view(store, discussion, other, conn), [event]) is not None
+            ):
+                memory.ambiguous = True
+                memory.competing.add(tuple(json.loads(_event_key(event))))
+                break
     association = associate_reply(view, events, prior=prior)
-    echo = user_echo(view, list(association.memory.events.values()))
+    blocked = view.earlier_unresolved or association.state == "ambiguous"
+    if association.state == "ambiguous":
+        association.memory.ambiguous = True
+    echo = None if blocked else user_echo(view, list(association.memory.events.values()))
     return rows, view, association, echo
 
 
 def _associate(step, discussion, exchange):
+    if not _may_be_delivered(exchange):
+        return
     proof = None
     with step.store.connection() as conn:
         rows, view, association, echo = _hydrate(step.store, discussion, exchange, conn)
@@ -1072,7 +1137,7 @@ def _associate(step, discussion, exchange):
     )
     candidates = (
         []
-        if view.earlier_unresolved
+        if view.earlier_unresolved or association.state == "ambiguous"
         else list(association.progress) + ([association.reply] if association.reply else [])
     )
     state = exchange.state
