@@ -265,3 +265,5 @@ A committed muse_trust_propagating marker is always invalid and has a specific E
 HTTP 200 session: status=unavailable或missing vm_id回resource；其他非assigned status（含missing/type/case drift）回protocol/never。non-object response action標session/hatch/auth path。
 
 Confidential write後notify全部workspace live listeners，跨local labels立即close sockets；下一call仍重查durable state。
+
+Round 4 hint scan walks the authenticated session object iteratively, once, to depth 32 within the 1 MiB body. Compact/casefold key family: vm_type, type, vm_state, state, kind, vm_kind, vm_resolution_issue, cvm_required, cvm_replacement_enabled. A compact string containing cvm or confidentialvm is a marker; the two boolean keys also count any truthy value. Nested metadata and nested vms containers are scanned. A marker within a VM row records its nearest usable row id (including compact vmId aliases); a marker outside rows records the owner seed and all usable ids. With no id, owner-only evidence is committed. A false positive permanently refuses standard for the connected owner/VM component: this deliberately errs toward confidentiality. Invalid depth or an oversized body is refused before dialing.

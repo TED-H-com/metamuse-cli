@@ -1400,47 +1400,82 @@ class MuseTransport:
 
     def _session_payload(self, payload: dict[str, Any], auth: dict[str, Any]) -> dict[str, Any]:
         rows = payload.get("vms")
-        items = [payload] + (
-            [item for item in rows if isinstance(item, dict)] if isinstance(rows, list) else []
-        )
+
+        def compact(value):
+            return re.sub(r"[^a-z0-9]", "", value.casefold())
 
         def identity(item):
-            value = item.get("vm_id")
-            return (
-                value.strip().lower()
-                if isinstance(value, str) and _VM_ID.fullmatch(value.strip())
-                else None
-            )
+            for key, value in item.items():
+                if compact(key) == "vmid":
+                    return (
+                        value.strip().lower()
+                        if isinstance(value, str) and _VM_ID.fullmatch(value.strip())
+                        else None
+                    )
+            return None
 
-        # Scan every authenticated row before status, uniqueness or routing checks.
-        ids = [identity(item) for item in items]
+        marker_keys = {
+            "vmtype",
+            "type",
+            "vmstate",
+            "state",
+            "kind",
+            "vmkind",
+            "vmresolutionissue",
+            "cvmrequired",
+            "cvmreplacementenabled",
+        }
 
         def confidential_marker(key, value):
-            compact = re.sub(r"[^a-z0-9]", "", key.lower())
-            folded = value.strip().casefold() if isinstance(value, str) else ""
-            return (
-                (compact == "vmtype" and folded == "hatch_cvm")
-                or (compact == "vmstate" and folded.startswith("cvm_"))
-                or (compact in {"cvmrequired", "cvmreplacementenabled"} and bool(value))
+            name = compact(key)
+            folded = compact(value) if isinstance(value, str) else ""
+            return name in marker_keys and (
+                "cvm" in folded
+                or "confidentialvm" in folded
+                or (name in {"cvmrequired", "cvmreplacementenabled"} and bool(value))
             )
 
-        confidential = any(
-            confidential_marker(key, value) for item in items for key, value in item.items()
-        )
+        # One bounded iterative walk: row metadata keeps its nearest row identity.
+        # Markers outside vms rows conservatively cover all usable authenticated ids.
+        usable, marked = set(), set()
+        outside_marker = False
+        confidential = False
+        stack = [(payload, 0, False, None)]
+        while stack:
+            node, depth, in_rows, row_id = stack.pop()
+            if depth > _JSON_DEPTH:
+                raise protocol_stop()
+            if isinstance(node, dict):
+                node_id = identity(node)
+                if node_id is not None:
+                    usable.add(node_id)
+                    if in_rows:
+                        row_id = node_id
+                for key, value in node.items():
+                    if confidential_marker(key, value):
+                        confidential = True
+                        if not in_rows:
+                            outside_marker = True
+                        elif row_id is not None:
+                            marked.add(row_id)
+                    if isinstance(value, (dict, list)):
+                        stack.append((value, depth + 1, in_rows or compact(key) == "vms", row_id))
+            elif isinstance(node, list):
+                stack.extend((child, depth + 1, in_rows, row_id) for child in node)
         if confidential:
-            usable = tuple(sorted({value for value in ids if value is not None}))
+            ids = tuple(sorted(usable if outside_marker else marked))
             self._trust.store.muse_freeze(
                 provider=self._trust.provider,
                 account=self._trust.account,
-                vm_id=ids[0] or (usable[0] if usable else None),
+                vm_id=ids[0] if ids else None,
                 viewer_id=auth["viewer_id"],
                 session_binding_id=auth["session_binding_id"],
                 confidential=True,
-                confidential_vm_ids=usable,
+                confidential_vm_ids=ids,
             )
             raise protocol_stop()
         vm_id = payload.get("vm_id")
-        normalized = ids[0]
+        normalized = identity(payload)
         if payload.get("status") == "unavailable" or vm_id is None:
             raise _error(
                 ErrorCode.RESOURCE_UNAVAILABLE,
