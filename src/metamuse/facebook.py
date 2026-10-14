@@ -222,6 +222,7 @@ class PageObservation:
     redirect_chain: tuple[str, ...] = ()
     progress_confirmed: bool = True
     expansion_failed: bool = False
+    snapshot_visibility: bool = False
 
 
 @dataclass(frozen=True)
@@ -2408,11 +2409,15 @@ class _PlaywrightSession:
             ...document.documentElement.querySelectorAll('*')];
           const clones = [copy, ...copy.querySelectorAll('*')];
           source.forEach((node, index) => {
-            const style = getComputedStyle(node);
-            if (style.display === 'none' || style.visibility === 'hidden'
-                || style.visibility === 'collapse') {
-              clones[index].setAttribute('data-metamuse-invisible', '');
+            const clone = clones[index];
+            for (const attr of [...clone.attributes]) {
+              if (attr.name.startsWith('data-metamuse-')) clone.removeAttribute(attr.name);
             }
+            const style = getComputedStyle(node);
+            if (style.display === 'none') {
+              clone.setAttribute('data-metamuse-display-none', '');
+            }
+            clone.setAttribute('data-metamuse-visibility', style.visibility);
           });
           return copy.outerHTML;
         }""")
@@ -2488,6 +2493,7 @@ class _PlaywrightSession:
             url=self._page.url,
             status_code=response.status,
             html=self._snapshot_html(),
+            snapshot_visibility=True,
             server_addr=response.server_addr(),
         )
 
@@ -2524,6 +2530,7 @@ class _PlaywrightSession:
                 url=self._page.url,
                 status_code=self._document_status,
                 html=self._snapshot_html(),
+                snapshot_visibility=True,
                 progress_confirmed=False,
                 expansion_failed=True,
             )
@@ -2548,6 +2555,7 @@ class _PlaywrightSession:
             url=self._page.url,
             status_code=self._document_status,
             html=self._snapshot_html(),
+            snapshot_visibility=True,
             server_addr=None,
             progress_confirmed=progress,
             expansion_failed=self._expansion_response_status is not None,
@@ -2765,6 +2773,7 @@ class _FixtureSession:
         self._seq_index = 0
 
     def _run_observation(self, obs: PageObservation, *, request_url: str) -> PageObservation:
+        obs = replace(obs, snapshot_visibility=False)
         prev_url: str | None = None
         for hop_url in obs.redirect_chain:
             self._egress.check_request(
@@ -2855,8 +2864,10 @@ class _DOMExtractor(HTMLParser):
         "wbr",
     }
 
-    def __init__(self) -> None:
+    def __init__(self, *, snapshot_visibility: bool = False) -> None:
         super().__init__(convert_charrefs=True)
+        self._snapshot_visibility = snapshot_visibility
+        self._visibility_stack: list[bool] = []
         self.meta_state: str | None = None
         self.json_scripts: list[str] = []
         self._in_json_script = False
@@ -2915,25 +2926,43 @@ class _DOMExtractor(HTMLParser):
         style = attr_map.get("style", "").lower()
         hidden = (
             "hidden" in attr_map
-            or "data-metamuse-invisible" in attr_map
+            or (self._snapshot_visibility and "data-metamuse-display-none" in attr_map)
             or tag in {"head", "meta"}
             or (tag == "input" and attr_map.get("type", "").lower() == "hidden")
             or attr_map.get("aria-hidden", "").lower() == "true"
             or re.search(r"(?:^|;)\s*display\s*:\s*none(?:\s*!important)?\s*(?:;|$)", style)
-            or re.search(
-                r"(?:^|;)\s*visibility\s*:\s*(?:hidden|collapse)(?:\s*!important)?\s*(?:;|$)", style
-            )
         )
         if hidden or tag in {"script", "style", "template"}:
             if tag not in self._VOID_TAGS:
                 self._hidden_depth = 1
             return
+        # CSS visibility inherits but can be overridden by a descendant. Unlike
+        # display/hidden/aria-hidden, it must never suppress traversal of a subtree.
+        visibility = self._visibility_stack[-1] if self._visibility_stack else True
+        if self._snapshot_visibility:
+            computed = attr_map.get("data-metamuse-visibility")
+            if computed is not None:
+                visibility = computed == "visible"
+        else:
+            declarations = re.findall(
+                r"(?:^|;)\s*visibility\s*:\s*(visible|hidden|collapse|inherit|initial|unset)"
+                r"\s*(!important)?\s*(?=;|$)",
+                style,
+            )
+            if declarations:
+                important = [entry for entry in declarations if entry[1]]
+                value = (important or declarations)[-1][0]
+                if value not in {"inherit", "unset"}:
+                    visibility = value in {"visible", "initial"}
+        if tag not in self._VOID_TAGS:
+            self._visibility_stack.append(visibility)
         # Void elements still carry barrier and source metadata; only body depth
         # and stack tracking must exclude them.
-        if attr_map.get("data-comments-exhausted") == "true":
+        if visibility and attr_map.get("data-comments-exhausted") == "true":
             self.comments_exhausted = True
         if (
-            attr_map.get("data-fb-role", "").lower() == "attachment"
+            visibility
+            and attr_map.get("data-fb-role", "").lower() == "attachment"
             and "data-attachment-url" in attr_map
         ):
             self.attachments.append(
@@ -2943,6 +2972,8 @@ class _DOMExtractor(HTMLParser):
                 }
             )
         if tag in self._VOID_TAGS:
+            if not visibility:
+                return
             if tag == "img" and "alt" in attr_map:
                 if self._in_post_body:
                     self.post_text_parts.append(attr_map["alt"])
@@ -2954,7 +2985,18 @@ class _DOMExtractor(HTMLParser):
                 if self._in_comment_body and self._current_comment is not None:
                     self._current_comment["text_parts"].append("\n")
             return
-        if tag in {"div", "p", "section", "article", "li", "blockquote", "pre", "h1", "h2", "h3"}:
+        if visibility and tag in {
+            "div",
+            "p",
+            "section",
+            "article",
+            "li",
+            "blockquote",
+            "pre",
+            "h1",
+            "h2",
+            "h3",
+        }:
             self._block_boundary()
         self._stack.append((tag.lower(), attr_map))
 
@@ -2965,7 +3007,7 @@ class _DOMExtractor(HTMLParser):
             if self.post_attrs is None:
                 self.post_attrs = dict(attr_map)
         if fb_role == "post-body" or attr_map.get("data-ad-preview") == "message":
-            self.post_body_present = True
+            self.post_body_present |= visibility
             self._in_post_body += 1
         elif self._in_post_body > 0:
             self._in_post_body += 1
@@ -2996,19 +3038,20 @@ class _DOMExtractor(HTMLParser):
                 "mention_tag": attr_map.get("data-mention") or None,
                 "text_parts": [],
                 "body_present": False,
+                "visible": visibility,
             }
             self.comments.append(self._current_comment)
 
         if self._current_comment is not None and (
             fb_role == "comment-body" or attr_map.get("data-comment-body") is not None
         ):
-            self._current_comment["body_present"] = True
+            self._current_comment["body_present"] |= visibility
             self._in_comment_body += 1
         elif self._in_comment_body > 0:
             self._in_comment_body += 1
 
         expand_kind = attr_map.get("data-expand-kind", "").lower()
-        if expand_kind in ("more_comments", "more_replies"):
+        if visibility and expand_kind in ("more_comments", "more_replies"):
             self.comments_section_present = True
             control_id = attr_map.get("data-expand-id") or f"expand_{len(self.expand_controls) + 1}"
             hint_raw = attr_map.get("data-remaining-count")
@@ -3034,7 +3077,8 @@ class _DOMExtractor(HTMLParser):
             if tag.lower() not in self._VOID_TAGS:
                 self._hidden_depth -= 1
             return
-        if tag.lower() in {
+        visibility = self._visibility_stack.pop() if self._visibility_stack else True
+        if visibility and tag.lower() in {
             "div",
             "p",
             "section",
@@ -3082,11 +3126,14 @@ class _DOMExtractor(HTMLParser):
         if self._in_json_script:
             self._json_buf.append(data)
             return
-        if self._hidden_depth:
+        if self._hidden_depth or (self._visibility_stack and not self._visibility_stack[-1]):
             return
         if self._in_post_body > 0:
+            self.post_body_present = True
             self.post_text_parts.append(data)
         if self._in_comment_body > 0 and self._current_comment is not None:
+            self._current_comment["visible"] = True
+            self._current_comment["body_present"] = True
             self._current_comment["text_parts"].append(data)
 
 
@@ -3152,7 +3199,7 @@ def classify_and_parse_observation(
     barrier = EgressGuard._classify_navigation_barrier(obs.url)
     if barrier is not None:
         raise barrier
-    extractor = _DOMExtractor()
+    extractor = _DOMExtractor(snapshot_visibility=obs.snapshot_visibility)
     try:
         extractor.feed(obs.html)
     except Exception as exc:
@@ -3242,6 +3289,8 @@ def classify_and_parse_observation(
 
     parsed_comments: list[ParsedComment] = []
     for c in extractor.comments:
+        if not c["visible"]:
+            continue
         c_text = "".join(c["text_parts"]) if c["body_present"] else None
         c_kind: Literal["comment", "reply"] = "reply" if c["kind"] == "reply" else "comment"
         parent_native = c["parent_native_id"]

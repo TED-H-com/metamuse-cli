@@ -314,9 +314,16 @@ Facebook stop markers (`data-fb-state`, `data-page-state`, `data-checkpoint`, lo
 and checkpoint form IDs) are inspected on every element, including hidden, head
 and void elements, in both drivers. Completeness evidence such as
 `data-comments-exhausted` counts only in visible subtrees under the shared text
-visibility rules. Chromium snapshots annotate computed invisibility on the clone
-with `data-metamuse-invisible`; they preserve the page's own `hidden` attribute
-and never mutate the live DOM. Head/meta and hidden inputs are invisible in both
+visibility rules. Chromium snapshots strip every page-authored `data-metamuse-*` attribute
+from the clone, then stamp separate computed display and visibility markers.
+Only trusted Chromium observations honour those markers; raw HTML and the fixture
+driver ignore them. Snapshots preserve the page's own `hidden` attribute and never
+mutate the live DOM. `display:none` and `hidden` exclude the whole subtree;
+`visibility:hidden`/`collapse` inherit but descendants can restore `visibility:visible`.
+Fixtures apply the same semantics to inline CSS. `aria-hidden=true` deliberately
+excludes the whole subtree in both drivers: accessibility-hidden duplicates are not
+collection evidence even when painted. It cannot be overridden by CSS visibility.
+Barrier markers are always inspected, while hidden completeness evidence never counts. Head/meta and hidden inputs are invisible in both
 drivers. Text and structural JSON extraction retain their existing rules.
 
 
