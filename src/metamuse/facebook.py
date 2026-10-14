@@ -49,11 +49,11 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from functools import lru_cache
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Literal, Protocol
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
+from metamuse import _facebook_capture as capture
 from metamuse import collect, jobs, safety
 from metamuse import models as m
 from metamuse._browser_egress import (
@@ -222,7 +222,8 @@ class PageObservation:
     redirect_chain: tuple[str, ...] = ()
     progress_confirmed: bool = True
     expansion_failed: bool = False
-    snapshot_visibility: bool = False
+    capture_nodes: list[dict[str, Any]] | None = None
+    capture_gaps: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -2563,27 +2564,29 @@ class _PlaywrightSession:
                 next_action="Increase limits.max_bytes or narrow the requested resources",
             )
 
-    def _snapshot_html(self) -> str:
-        return self._page.evaluate("""() => {
-          const copy = document.documentElement.cloneNode(true);
-          const source = [document.documentElement,
-            ...document.documentElement.querySelectorAll('*')];
-          const clones = [copy, ...copy.querySelectorAll('*')];
-          source.forEach((node, index) => {
-            const clone = clones[index];
-            for (const attr of [...clone.attributes]) {
-              if (attr.name.toLowerCase().startsWith('data-metamuse-')) {
-                clone.removeAttribute(attr.name);
-              }
-            }
-            const style = getComputedStyle(node);
-            if (style.display === 'none') {
-              clone.setAttribute('data-metamuse-display-none', '');
-            }
-            clone.setAttribute('data-metamuse-visibility', style.visibility);
-          });
-          return copy.outerHTML;
-        }""")
+    def _capture(self) -> tuple[str, list[dict[str, Any]], tuple[str, ...]]:
+        nodes, world, gaps = capture.capture(self._network_cdp)
+        self._capture_world = world
+        self._capture_controls = {
+            node["attrs"].get("data-expand-id"): node["backend"]
+            for node in nodes
+            if "backend" in node
+        }
+        return capture.encode(nodes), nodes, gaps
+
+    def _progress_signature(self) -> set[str]:
+        _, nodes, _ = self._capture()
+        extractor = _DOMExtractor()
+        extractor.walk(nodes)
+        return {
+            json.dumps([comment["native_id"], "".join(comment["text_parts"])])
+            for comment in extractor.comments
+            if comment["visible"]
+        }
+
+    def _observation(self, **kwargs: Any) -> PageObservation:
+        serialized, nodes, gaps = self._capture()
+        return PageObservation(html=serialized, capture_nodes=nodes, capture_gaps=gaps, **kwargs)
 
     def goto_post(self, url: str) -> PageObservation:
         try:
@@ -2652,11 +2655,9 @@ class _PlaywrightSession:
                 m.ErrorCode.NETWORK_TIMEOUT,
                 "Browser navigation returned no HTTP response",
             )
-        return PageObservation(
+        return self._observation(
             url=self._page.url,
             status_code=response.status,
-            html=self._snapshot_html(),
-            snapshot_visibility=True,
             server_addr=response.server_addr(),
         )
 
@@ -2678,22 +2679,61 @@ class _PlaywrightSession:
         self._active_control = control_id
         self._pending_expansion_urls.clear()
         self._expansion_requests.clear()
-        signature = """() => Array.from(document.querySelectorAll(
-          '[data-fb-role="comment"], [data-fb-role="reply"], [data-comment-id]'))
-          .map(node => JSON.stringify([node.getAttribute('data-comment-id'), node.textContent]))"""
-        before = set(self._page.evaluate(signature))
-        locator = self._page.locator(f'[data-expand-id="{control_id}"]').first
+        backend = self._capture_controls.get(control_id)
+        if backend is None:
+            raise capture.failure()
+        before = self._progress_signature()
+        # Scroll and click this exact backend node; duplicate attribute values
+        # cannot redirect the click. CDP Input events remain trusted for XHR provenance.
+        cdp = self._network_cdp
+
+        def click() -> None:
+            cdp.send("DOM.scrollIntoViewIfNeeded", {"backendNodeId": backend})
+            quad = cdp.send("DOM.getContentQuads", {"backendNodeId": backend})["quads"][0]
+            x, y = sum(quad[::2]) / 4, sum(quad[1::2]) / 4
+            hit = cdp.send(
+                "DOM.getNodeForLocation",
+                {"x": int(x), "y": int(y), "includeUserAgentShadowDOM": True},
+            )["backendNodeId"]
+            control_object = cdp.send(
+                "DOM.resolveNode",
+                {"backendNodeId": backend, "executionContextId": self._capture_world},
+            )["object"]["objectId"]
+            hit_object = cdp.send(
+                "DOM.resolveNode", {"backendNodeId": hit, "executionContextId": self._capture_world}
+            )["object"]["objectId"]
+            same = cdp.send(
+                "Runtime.callFunctionOn",
+                {
+                    "objectId": control_object,
+                    "functionDeclaration": (
+                        "function(node){return this===node || this.contains(node)}"
+                    ),
+                    "arguments": [{"objectId": hit_object}],
+                    "returnByValue": True,
+                },
+            )
+            if same.get("result", {}).get("value") is not True:
+                raise capture.failure()
+            cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+            cdp.send(
+                "Input.dispatchMouseEvent",
+                {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1},
+            )
+            cdp.send(
+                "Input.dispatchMouseEvent",
+                {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1},
+            )
+
         try:
-            locator.click(timeout=self._timeout_ms)
+            click()
         except Exception:
             if self._egress.navigation_error is not None:
                 raise self._egress.navigation_error from None
             self._active_control = None
-            return PageObservation(
+            return self._observation(
                 url=self._page.url,
                 status_code=self._document_status,
-                html=self._snapshot_html(),
-                snapshot_visibility=True,
                 progress_confirmed=False,
                 expansion_failed=True,
             )
@@ -2710,15 +2750,13 @@ class _PlaywrightSession:
             if self._expansion_response_status is not None:
                 progress = True  # Classified failure response, never an empty-data inference.
                 break
-            if set(self._page.evaluate(signature)) - before:
+            if self._progress_signature() - before:
                 progress = True
                 break
         self._active_control = None
-        return PageObservation(
+        return self._observation(
             url=self._page.url,
             status_code=self._document_status,
-            html=self._snapshot_html(),
-            snapshot_visibility=True,
             server_addr=None,
             progress_confirmed=progress,
             expansion_failed=self._expansion_response_status is not None,
@@ -2948,7 +2986,7 @@ class _FixtureSession:
         self._seq_index = 0
 
     def _run_observation(self, obs: PageObservation, *, request_url: str) -> PageObservation:
-        obs = replace(obs, snapshot_visibility=False)
+        obs = replace(obs, capture_nodes=None, capture_gaps=())
         prev_url: str | None = None
         for hop_url in obs.redirect_chain:
             self._egress.check_request(
@@ -3019,50 +3057,16 @@ class _FixtureSession:
         self._driver.closed = True
 
 
-def _inline_visibility_property(style: str, name: str) -> str | None:
-    # Fixtures cover inline display/visibility, with CSS declaration order and
-    # !important precedence. Chromium snapshots supply computed values instead.
-    values = (
-        "visible|hidden|collapse|inherit|initial|unset"
-        if name == "visibility"
-        else "none|block|inline|inline-block|flex|inline-flex|grid|inline-grid|contents|"
-        "flow-root|list-item|table|table-row|table-cell|inherit|initial|unset"
-    )
-    declarations = re.findall(
-        rf"(?:^|;)\s*{name}\s*:\s*({values})\s*(!important)?\s*(?=;|$)", style
-    )
-    important = [entry for entry in declarations if entry[1]]
-    return (important or declarations)[-1][0] if declarations else None
+class _DOMExtractor:
+    """Walk structured nodes, with broad stop evidence and composed rendered text."""
 
+    _VOID_TAGS = capture.VOID
 
-class _DOMExtractor(HTMLParser):
-    """Lightweight stdlib HTML parser for synthetic and Facebook post permalink DOMs."""
-
-    _VOID_TAGS = {
-        "area",
-        "base",
-        "br",
-        "col",
-        "embed",
-        "hr",
-        "img",
-        "input",
-        "link",
-        "meta",
-        "param",
-        "source",
-        "track",
-        "wbr",
-    }
-
-    def __init__(self, *, snapshot_visibility: bool = False) -> None:
-        super().__init__(convert_charrefs=True)
-        self._snapshot_visibility = snapshot_visibility
+    def __init__(self) -> None:
         self._visibility_stack: list[bool] = []
         self.meta_state: str | None = None
         self.json_scripts: list[str] = []
         self._in_json_script = False
-        self._hidden_depth = 0
         self._json_buf: list[str] = []
         self.post_attrs: dict[str, str] | None = None
         self.post_text_parts: list[str] = []
@@ -3078,7 +3082,7 @@ class _DOMExtractor(HTMLParser):
         self.expand_controls: list[ExpandControl] = []
         self._stack: list[tuple[str, dict[str, str]]] = []
 
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+    def _barrier(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = {k.lower(): (v or "") for k, v in attrs}
         tag = tag.lower()
         # Stop evidence is independent of rendering, including head/void elements.
@@ -3101,50 +3105,73 @@ class _DOMExtractor(HTMLParser):
             state = (raw_state or "").strip().lower()
             if priority.get(state, 99) < priority.get(self.meta_state, 99):
                 self.meta_state = state
-        # Structural JSON evidence is independent of rendered-body visibility.
-        if (
-            tag == "script"
-            and attr_map.get("type", "").lower() == "application/json"
-            and "data-fb-post-payload" in attr_map
-        ):
-            self._in_json_script = True
-            self._json_buf = []
-            return
-        if self._hidden_depth:
-            if tag not in self._VOID_TAGS:
-                self._hidden_depth += 1
-            return
-        style = attr_map.get("style", "").lower()
-        hidden = (
-            "hidden" in attr_map
-            or (self._snapshot_visibility and "data-metamuse-display-none" in attr_map)
-            or tag in {"head", "meta"}
-            or (tag == "input" and attr_map.get("type", "").lower() == "hidden")
-            or attr_map.get("aria-hidden", "").lower() == "true"
-            or (
-                not self._snapshot_visibility
-                and _inline_visibility_property(style, "display") == "none"
-            )
-        )
-        if hidden or tag in {"script", "style", "template"}:
-            if tag not in self._VOID_TAGS:
-                self._hidden_depth = 1
-            return
-        # CSS visibility inherits but can be overridden by a descendant. Unlike
-        # display/hidden/aria-hidden, it must never suppress traversal of a subtree.
-        visibility = self._visibility_stack[-1] if self._visibility_stack else True
-        if self._snapshot_visibility:
-            computed = attr_map.get("data-metamuse-visibility")
-            if computed is not None:
-                visibility = computed == "visible"
-        else:
-            value = _inline_visibility_property(style, "visibility")
-            if value is not None and value not in {"inherit", "unset"}:
-                visibility = value in {"visible", "initial"}
-        if tag not in self._VOID_TAGS:
+
+    def feed(self, markup: str) -> None:
+        self.walk(capture.fixture_capture(markup))
+
+    def walk(self, nodes: list[dict[str, Any]]) -> None:
+        # Discovery includes non-composed light nodes, template contents, head,
+        # and every shadow root. Visibility never suppresses a stop marker.
+        for node in nodes:
+            self._barrier(node["tag"], list(node["attrs"].items()))
+            if (
+                node["tag"] == "script"
+                and node["attrs"].get("type", "").lower() == "application/json"
+                and "data-fb-post-payload" in node["attrs"]
+            ):
+                self.json_scripts.append(
+                    "".join(nodes[i]["text"] for i in node["children"] if nodes[i]["kind"] == 3)
+                )
+        useful = [False] * len(nodes)
+        # Composed order can differ from DOM order (slots); compute bottom-up
+        # with explicit exit events, without Python or JavaScript recursion.
+        events = [(0, False)]
+        while events:
+            i, exiting = events.pop()
+            if exiting:
+                useful[i] = nodes[i]["rendered"] or any(useful[j] for j in nodes[i]["composed"])
+                continue
+            events.append((i, True))
+            events.extend((j, False) for j in reversed(nodes[i]["composed"]))
+        events = [(0, False)]
+        while events:
+            i, exiting = events.pop()
+            node = nodes[i]
+            if not useful[i]:
+                continue
+            if node["kind"] == 3:
+                if node["rendered"]:
+                    self.handle_data(node["text"])
+                continue
+            element = node["kind"] == 1
+            if exiting:
+                if element and not (node["ns"] == capture.HTML and node["tag"] in self._VOID_TAGS):
+                    self.handle_endtag(node["tag"])
+                continue
+            if element:
+                self.handle_starttag(
+                    node["tag"],
+                    list(node["attrs"].items()),
+                    visible=node["rendered"],
+                    void=node["ns"] == capture.HTML and node["tag"] in self._VOID_TAGS,
+                )
+            events.append((i, True))
+            events.extend((j, False) for j in reversed(node["composed"]))
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+        *,
+        visible: bool = True,
+        void: bool | None = None,
+    ) -> None:
+        attr_map = {k.lower(): (v or "") for k, v in attrs}
+        visibility = visible
+        if void is None:
+            void = tag in self._VOID_TAGS
+        if not void:
             self._visibility_stack.append(visibility)
-        # Void elements still carry barrier and source metadata; only body depth
-        # and stack tracking must exclude them.
         if visibility and attr_map.get("data-comments-exhausted") == "true":
             self.comments_exhausted = True
         if (
@@ -3158,7 +3185,7 @@ class _DOMExtractor(HTMLParser):
                     "kind": attr_map.get("data-attachment-kind", "image"),
                 }
             )
-        if tag in self._VOID_TAGS:
+        if void:
             if not visibility:
                 return
             if tag == "img" and "alt" in attr_map:
@@ -3259,15 +3286,6 @@ class _DOMExtractor(HTMLParser):
             )
 
     def handle_endtag(self, tag: str) -> None:
-        if self._in_json_script and tag.lower() == "script":
-            self._in_json_script = False
-            self.json_scripts.append("".join(self._json_buf))
-            self._json_buf = []
-            return
-        if self._hidden_depth:
-            if tag.lower() not in self._VOID_TAGS:
-                self._hidden_depth -= 1
-            return
         visibility = self._visibility_stack.pop() if self._visibility_stack else True
         if visibility and tag.lower() in {
             "div",
@@ -3317,7 +3335,7 @@ class _DOMExtractor(HTMLParser):
         if self._in_json_script:
             self._json_buf.append(data)
             return
-        if self._hidden_depth or (self._visibility_stack and not self._visibility_stack[-1]):
+        if self._visibility_stack and not self._visibility_stack[-1]:
             return
         if self._in_post_body > 0:
             self.post_body_present = True
@@ -3431,13 +3449,16 @@ def classify_and_parse_observation(
     barrier = EgressGuard._classify_navigation_barrier(obs.url)
     if barrier is not None:
         raise barrier
-    extractor = _DOMExtractor(snapshot_visibility=obs.snapshot_visibility)
+    extractor = _DOMExtractor()
     try:
-        extractor.feed(obs.html)
+        if obs.capture_nodes is None:
+            extractor.feed(obs.html)
+        else:
+            extractor.walk(obs.capture_nodes)
     except Exception as exc:
         raise m.CoreError(
             m.ErrorCode.SELECTOR_DRIFT,
-            "Facebook response HTML could not be parsed",
+            "Facebook post structure could not be parsed",
             next_action="Inspect the page markup against the approved post_permalink parser",
         ) from exc
 
@@ -3534,6 +3555,7 @@ def classify_and_parse_observation(
                     )
                 )
                 | extractor.count_gaps
+                | set(obs.capture_gaps)
             )
         ),
     )
