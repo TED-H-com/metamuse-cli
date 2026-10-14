@@ -636,13 +636,14 @@ cookie labels/accounts. Execution selects hops only from the bound entries. A ch
 to any entry, including an unrelated approval, invalidates the grant before use or
 egress and requires a fresh preview. No network-derived resolved URL enters the digest.
 
-Remote destinations are constructed from URL structure, retaining non-default ports,
-the full path with semicolon parameters and the query. Only shared url_token secret
-parameter values are masked; request echo and operator stderr use the same display.
-Preparation refuses trailing-dot hosts and remaining free-text redaction of material
-URL structure with a fixed E_INPUT_INVALID and no preview or URL echo. Fragments are
-not fetched. The action digest continues to bind original bytes.
-
+B12 preparation computes one ASCII-only canonical URL: lower-case scheme and
+IDNA/punycode host, non-default port only, UTF-8 percent-encoded non-ASCII path/query.
+The digest, preview, request echo, operator stderr and extractor first hop use exactly
+that string. The job request and original_url provenance retain the original input.
+Refuse any fragment (including empty #), any query key the shared url_token rule would
+mask, trailing-dot hosts, or structural display changed by free-text redaction, with
+fixed E_INPUT_INVALID and no preview or URL echo. Signed extractor-hop URLs retain
+existing redaction; credential-bearing page URLs are outside B12 inputs.
 B12 preparation checks metadata for all bound cookie references without reading secret
 bytes: existence and provider/account must match, otherwise E_AUTH_REQUIRED without a
 preview. Execution resolves and parses every bound secret before permit consumption,
@@ -650,23 +651,32 @@ including unused later-hop bindings. Parsed cookies are scoped to bound entries.
 
 B12 receipt lookup precedes permit verification: an identical request including its grant
 returns its original job after consumption or workspace-cap edits. Any changed payload
-is E_IDEMPOTENCY_CONFLICT. Workspace caps do not enter target or job identity; the
-B12-owned step checkpoint stores `remote_media_caps` at atomic job acceptance.
+is E_IDEMPOTENCY_CONFLICT. Workspace caps stay outside target and job identity, but the four displayed caps
+(safe_read_retries, read_timeout_seconds, media_max_bytes, text_max_bytes) enter the
+action digest payload. Any edit before grant submission requires new approval.
+Atomic acceptance stores exactly the reviewed values in the B12-owned step checkpoint
+`remote_media_caps`. Execution recomputes the digest from that snapshot.
 
-At the B12 boundary each workspace cap is min(acceptance snapshot, current value).
+At the B12 boundary each workspace cap is min(reviewed snapshot, current value).
 Lower caps apply to queued jobs; increases cannot exceed the reviewed snapshot.
 Request limits remain digest-bound and are checked against current workspace limits.
 Retries above the effective B12 cap stop before consumption or egress, even if the
-core executor schedules another local attempt.
+core executor schedules another local attempt. That terminal local guard preserves
+the original read error code/message, sets retry_class=never, and explains the accepted
+retry cap in next_action.
 
 B12 preparation enforces the shared 8192-byte UTF-8 URL bound and cheap HTTP(S)
 syntax checks before redaction, display, digest, preview or job creation. One byte
 over the bound returns the same outbound-policy error as the dial-time guard,
-without a preview. URLInput still needs a core-owned schema/validation bound.
+without a preview. The ASCII canonical URL must also fit this outbound bound.
+URLInput still needs a core-owned schema/validation bound.
 
 Remote configuration labels that are invalid or credential-shaped return fixed
 E_INPUT_INVALID naming only the setting. Approval callback Exceptions preserve the
 original refusal without a preview; logging contains only a fixed line and type.
-Login form actions honor the first base href. Challenge token __rd_verify matches
-case-insensitively regardless of preceding slash encoding. Cookie domains require
-at least two labels; multi-label public suffix detection needs a public-suffix list.
+Login forms honor the first parsable base href, skipping unparsable hrefs/actions.
+Challenge token __rd_verify matches case-insensitively with or without a preceding
+slash, after HTML entities, one percent-decoding, JavaScript \u005f/\x5f underscore
+escapes and NFKC folding. Split JavaScript string literals are not detected.
+Cookie domains require at least two labels and cannot normalize to IP literals;
+multi-label public suffix detection needs a public-suffix list.

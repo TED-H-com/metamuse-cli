@@ -303,9 +303,9 @@ An empty approvals list disables this backend. No request or grant chooses the a
 1. Submit the intended collection without `--access-grant`, through `metamuse add`
    or `metamuse_collect`. `E_SCOPE_REQUIRED` includes `approval`, with null `data`.
    Show its summary and `next_action` to the human. Save the request at
-   `approval.request_file`. `approval.request` is the public display copy; if
-   masking or URL normalization changed its bytes, the operator's private file
-   must retain the original request for exact-digest approval. The preview creates no file, permit, receipt,
+   `approval.request_file`. `approval.request` contains the canonical destination
+   and can be approved directly. The original equivalent URL can also be approved
+   and repeated to retain its original spelling in provenance. The preview creates no file, permit, receipt,
    job or intent and makes no network call or account discovery.
 2. The human reviews the destinations, configured provider/account, cookie binding
    label (if any), extractor/host allowlist, limits and stored resources. Run the
@@ -321,8 +321,8 @@ An empty approvals list disables this backend. No request or grant chooses the a
 Exactly one `collect.remote` preview callback dispatches `CollectRequest` through
 the fixed route table in `collect.py`. B13 will extend the route selector and table.
 Preview, submission and the step boundary call the same `prepare_remote_media`.
-The B08 action digest binds the original URL bytes, project, configured provider/account,
-resources, extractor keys, requested limits and the entire configured approval table.
+The B08 action digest binds the canonical URL bytes, project, configured provider/account,
+resources, extractor keys, requested limits, reviewed workspace caps and the entire configured approval table.
 The table is sorted canonically by extractor key, normalized sorted hosts and opaque
 `auth_ref` (or null). Entries sharing an extractor use canonical order, so reordering
 them cannot switch the chosen cookie binding. Configured extractor priority is retained;
@@ -332,17 +332,21 @@ The job selects hops only from its bound entries. Even an unrelated approval edi
 invalidates outstanding grants before consumption or egress; this fail-closed trade-off
 is intentional. Grant IDs and request keys are excluded from the action digest.
 Current workspace limits and extractor/host approvals are checked again at execution.
-Remote destinations use URL structure: scheme, normalized host, non-default port,
-the complete path including `;` parameters, and query. Only values of known secret
-query parameters are masked, using the shared `url_token` key rules. The public request
-echo and `permit approve` stderr use this same display. A trailing-dot request host,
-or any remaining free-text redaction that would hide other URL structure, returns fixed
-`E_INPUT_INVALID` / `Remote URL cannot be reviewed safely`, without echoing the URL or
-producing a preview. Fragments are not fetched and are omitted from the display.
-Other text fields are redacted separately before JSON encoding. The digest still binds
-original bytes: a normalized or masked display copy cannot reuse the original digest.
+Preparation computes one ASCII-only canonical page URL: lower-case scheme,
+lower-case IDNA/punycode host, non-default port only, and UTF-8 percent-encoding
+of every non-ASCII path/query byte. The digest, destination, public request echo,
+`permit approve` stderr and extractor's first hop all use that exact string.
+The stored job request and `original_url` provenance retain the operator's original
+URL. Canonically equivalent spellings therefore approve the same extraction.
+Any fragment (even an empty `#`), any query key recognized by the shared `url_token`
+rule (including encoded/case/dash variants), trailing-dot host, or remaining free-text
+redaction of structural URL bytes returns fixed `E_INPUT_INVALID` /
+`Remote URL cannot be reviewed safely`, without echoing the URL or producing a preview.
+Credential-bearing page URLs are not B12 inputs. Signed media and delegation URLs
+can come from the extractor; their existing log/event/error redaction still applies.
+Other text fields are redacted separately before JSON encoding.
 Cookie bytes are never read by the preview, and only the reference label and account
-appear in its summary. Share previews bind the original share URL and state that
+appear in its summary. Share previews bind the canonical share URL and state that
 checked resolution and at most two approved extractor hops happen during execution.
 
 An unknown permit preserves `E_SCOPE_REQUIRED` / `Permit does not exist` and includes
@@ -355,19 +359,22 @@ without a preview. A failed preview or approval creates no grant.
 Receipt lookup precedes permit verification. An exact accepted request, including its
 grant ID, replays the original job even after consumption or a workspace-cap edit.
 Any payload difference, including another grant, is E_IDEMPOTENCY_CONFLICT. Workspace
-caps are outside both the action digest and job identity; B12 stores their acceptance
-snapshot in `remote_media_caps` in the step checkpoint.
+caps stay outside job identity and target, but all four displayed caps are in the
+action digest payload. Any cap edit between review and grant-bearing submission
+requires a fresh preview and approval, before permit consumption. Atomic acceptance
+stores exactly those reviewed caps in `remote_media_caps` in the step checkpoint.
 Use a new collection request key for a new run; an accepted key replays its original
-job and cannot be reused with a different grant or payload. Pre-round-6 permits need
-a fresh review because the action digest now also binds the requested limits. Existing
+job and cannot be reused with a different grant or payload. Pre-round-8 permits need
+a fresh review because the action digest now binds canonical first hops and reviewed caps. Existing
 cookie configurations must set the provider/account labels to match their imported binding.
 
 ### AT-040 operator plan (LIVE remains blocked)
 
 In a separately authorized, permitted real-account environment, the operator first
 reviews every first-hop/later-hop approval, its hosts and cookie label/account, the
-structural destination and cap snapshot; saves the original request bytes when the
-review echo normalizes or masks them; and approves its exact digest with
+canonical ASCII destination and digest-bound cap snapshot; refuses page fragments
+or credential query keys; saves the reviewed request (or the original equivalent URL);
+and approves the exact digest with
 `metamuse permit approve --operation collect.remote --request-file REQUEST_FILE
 --exact-digest ACTION_DIGEST --request-key APPROVAL_KEY`. Repeat with the returned
 grant, then compare source metadata, subtitles and any requested media bytes against
@@ -411,7 +418,8 @@ retry it.`:
 
 - a `cf-mitigated` header whose value contains `challenge`;
 - a reason phrase that contains `challenge`;
-- `/__rd_verify` anywhere in the response body or in a `Refresh` or `Location`
+- `__rd_verify` (case-insensitive, with or without a preceding slash)
+  anywhere in the response body or in a `Refresh` or `Location`
   header.
 
 Each request path is normalized before it is tested: percent-decode, collapse
@@ -493,7 +501,7 @@ port, query, or fragment. MetaMuse resolves them. They are not a yt-dlp
 extractor, a plugin, or the generic extractor. `/share/r/` targets
 `FacebookReel`. `/share/v/` targets `Facebook`. Submit requires an approval
 for that key whose hosts contain the share URL's exact host. The permit stores
-the target key. The share URL is kept exactly as requested.
+the target key. The stored request keeps the original share URL; extraction uses its reviewed canonical form.
 `/share/p/<token>` is refused at submit with `E_UNSUPPORTED` and next action
 `Use the Facebook post collector for /share/p/ links.`
 
@@ -556,8 +564,7 @@ Inner, always: `id`, `extractor`, `extractor_key`, `webpage_url`,
 
 Outer, only when the outer value is not null: `title`, `fulltitle`,
 `alt_title`, `description`, `timestamp`, `upload_date`, `release_timestamp`,
-`release_date`, `duration`, `channel`, `channel_id`, `channel_url`,
-`uploader`, `uploader_id`, `uploader_url`, `creator`, `artist`, `album`,
+`release_date`, `duration`, `channel`, `uploader`, `creator`, `artist`, `album`,
 `track`, `genre`, `categories`, `tags`, `thumbnail`, `thumbnails`,
 `view_count`, `like_count`, `comment_count`, `availability`, `age_limit`,
 `live_status`, `series`, `season`, `episode`, `episode_number`,
@@ -670,37 +677,47 @@ safe-read retry loop. Partial coverage stays `partial`. Staging uses the same
 sweep does not delete `import.local` directories.
 
 Workspace caps (`safe_read_retries`, `read_timeout_seconds`, `media_max_bytes`,
-`text_max_bytes`) are taken at acceptance and each effective cap at the step boundary
-is the smaller of that snapshot and the current configuration. Lower caps apply to
+`text_max_bytes`) are digest-bound at review. Any change before grant submission
+requires new approval. Acceptance stores the reviewed snapshot; the step recomputes
+the digest from that snapshot and uses the smaller of it and the current configuration. Lower caps apply to
 queued jobs; raising a cap cannot exceed the reviewed snapshot. Request limits stay
 in the digest and are rechecked against the current workspace before consumption.
 B12 prevents retries beyond its effective cap from making egress; the core executor
-can still schedule a local attempt that immediately stops at that guard.
+can still schedule a local attempt that immediately stops at that guard. The final
+error preserves the original read error's code/message, sets terminal `retry_class=never`,
+and says in `next_action` that the accepted retry cap was reached.
 
 B12 preparation enforces the shared 8192-byte UTF-8 URL bound and cheap HTTP(S)
 syntax checks before redaction, display, digest, preview or job creation. One byte
 over the bound returns the same outbound-policy error as the dial-time guard,
-without a preview. URLInput still needs a core-owned schema/validation bound.
+without a preview. The ASCII canonical URL must also fit this outbound bound.
+URLInput still needs a core-owned schema/validation bound.
 
 Stop-path comparison percent-decodes once, then strips each path segment at its
 first semicolon before dot-segment normalization and case folding. Thus literal
 `;`, `%3B` and `%3b` parameters cannot hide checkpoint, login or challenge segments.
-The structural approval display still shows the complete original path.
+The structural approval display shows the complete canonical path, exactly as extracted.
 
 Transparent outer pages may change descriptive titles, but never `channel_id`,
 `uploader_id`, `channel_url` or `uploader_url`. Native identity scope comes only
 from the final inner result, so collecting the inner URL and an outer delegation
 reuses the same source.
 
-Login form actions resolve against the document's first `<base href>`; missing or
-empty actions use the document URL. Challenge detection matches `__rd_verify` without
-regard to case or a preceding slash spelling, including relative and encoded paths.
+Login form actions resolve against the document's first parsable `<base href>`;
+unparsable actions/hrefs are skipped and later ones are still checked. Missing or
+empty actions use the document URL. Challenge detection matches `__rd_verify`
+(case-insensitive, with or without a preceding slash), including relative paths,
+literal `/`, HTML slash entities `&#47;`/`&#x2f;` and `%2F`. One percent-decoding
+also covers `%5F`; JavaScript `\u005f`/`\x5f` underscore escapes and NFKC fullwidth
+underscores are recognized. Split string literals are not detected; no JavaScript
+is executed or reconstructed.
 Invalid or credential-shaped `remote_media.provider` / `remote_media.account` labels
 return a fixed E_INPUT_INVALID configuration error naming the setting, never its value.
 
-Cookie domains must have at least two labels: `.com`, `com` and `localhost` are refused.
+Cookie domains must be non-IP hostnames with at least two labels: `.com`, `com` and `localhost` are refused.
 Without a public-suffix list, B12 does not detect multi-label public suffixes such as
-`co.uk`. Browser exports never contain public-suffix cookies; use an unmodified
+`co.uk`. IP literals and numeric shortenings such as `127.0.0.1` and `.1` are refused.
+Browser exports never contain public-suffix cookies; use an unmodified
 Netscape browser export and never synthesize a broad-domain cookie.
 
 The digest-based approval-key ordinal is shared with journey. Two simultaneous

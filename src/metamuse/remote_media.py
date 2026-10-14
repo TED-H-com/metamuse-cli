@@ -23,7 +23,8 @@ observation on the source ``use_basis``.
 A platform challenge stops the job inside the handler, before yt-dlp can
 answer it. The stop does not depend on HTTP status. A ``cf-mitigated`` value
 containing ``challenge``, a reason phrase containing ``challenge``, or
-``/__rd_verify`` in a body, ``Refresh``, or ``Location`` is
+``__rd_verify`` (case-insensitive, with or without a preceding slash) in a
+body, ``Refresh``, or ``Location`` is
 ``E_CHECKPOINT_REQUIRED``. The same code is used for a normalized path segment
 that starts with ``__rd_verify``, a ``challenge.html`` segment, or a
 ``hash429`` query, and it is raised before that URL is dialed. A plain 403
@@ -60,10 +61,11 @@ from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
+from html import unescape as html_unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qs, quote, unquote, urljoin, urlsplit, urlunsplit
 
 from metamuse import jobs, safety
 from metamuse import media as media_mod
@@ -471,26 +473,34 @@ def _secret_query_key(key: str) -> bool:
 
 
 def _display_url(url: str) -> str:
-    """Display fetched URL structure, masking only known secret query values."""
+    """The ASCII canonical URL reviewed by the human and passed to the extractor."""
     parsed = urlsplit(url)
     host = _host_of(url)
+    scheme = parsed.scheme.lower()
     authority = f"[{host}]" if ":" in host else host
-    if parsed.port is not None and parsed.port != (443 if parsed.scheme == "https" else 80):
+    if parsed.port is not None and parsed.port != (443 if scheme == "https" else 80):
         authority += ":" + str(parsed.port)
-    parameters = []
-    for part in parsed.query.split("&"):
-        key, equal, value = part.partition("=")
-        if equal and _secret_query_key(key):
-            value = "[REDACTED]"
-        parameters.append(key + equal + value)
-    return urlunsplit((parsed.scheme.lower(), authority, parsed.path, "&".join(parameters), ""))
+    # Preserve every existing ASCII byte, including percent escapes. Only non-ASCII
+    # code points are encoded; normalizations here also govern the actual first hop.
+    ascii_safe = "".join(chr(value) for value in range(128))
+    path = quote(parsed.path, safe=ascii_safe, encoding="utf-8", errors="strict")
+    query = quote(parsed.query, safe=ascii_safe, encoding="utf-8", errors="strict")
+    return urlunsplit((scheme, authority, path, query, ""))
 
 
-def _require_reviewable_url(url: str) -> None:
+def _require_reviewable_url(url: str) -> str:
     _host_of(url)
-    display = _display_url(url)
-    if urlsplit(url).hostname.endswith(".") or safety.redact_text(display)[0] != display:
+    parsed = urlsplit(url)
+    if "#" in url or any(
+        _secret_query_key(part.partition("=")[0]) for part in parsed.query.split("&")
+    ):
         raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Remote URL cannot be reviewed safely")
+    display = _display_url(url)
+    if len(display) > safety.URL_MAX_BYTES:
+        safety._url_error()
+    if parsed.hostname.endswith(".") or safety.redact_text(display)[0] != display:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Remote URL cannot be reviewed safely")
+    return display
 
 
 def _share_parts(url: str) -> tuple[str, str, str] | None:
@@ -658,6 +668,12 @@ def _parse_netscape_line(line: str, line_no: int) -> _Cookie:
         domain = safety.normalize_hostname(domain)
     except m.CoreError:
         raise _cookie_line_invalid(line_no) from None
+    try:
+        ipaddress.ip_address(domain)
+    except ValueError:
+        pass
+    else:
+        raise _cookie_line_invalid(line_no)
     if len(domain.split(".")) < 2:
         raise _cookie_line_invalid(line_no)
     if _COOKIE_NAME.fullmatch(name) is None or not _cookie_value_ok(value):
@@ -929,10 +945,13 @@ def action_parts(
     extractors: list[str],
     *,
     approvals: Iterable[Any] = (),
+    urls: list[str] | None = None,
+    workspace_caps: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Bind original request bytes and the entire canonical operator approval table."""
+    """Bind the canonical first hops, approval table and displayed limits."""
 
-    urls = [item.url for item in request.inputs if item.kind == "url"]
+    if urls is None:
+        urls = [_require_reviewable_url(item.url) for item in request.inputs if item.kind == "url"]
     resources = sorted(request.resources)
     target = {
         "project_id": request.project_id,
@@ -948,7 +967,7 @@ def action_parts(
         "urls": urls,
         "resources": resources,
         "extractors": list(extractors),
-        "limits": request.limits.model_dump(mode="json"),
+        "limits": {**request.limits.model_dump(mode="json"), **(workspace_caps or {})},
     }
     return target, payload
 
@@ -975,7 +994,12 @@ class _PreparedRemote:
 
 
 def prepare_remote_media(
-    ctx: Any, request: m.CollectRequest, *, workspace: Any = None, conn: Any = None
+    ctx: Any,
+    request: m.CollectRequest,
+    *,
+    workspace: Any = None,
+    conn: Any = None,
+    workspace_caps: dict[str, Any] | None = None,
 ) -> _PreparedRemote:
     """Read-only preparation shared by operator review, submission and execution."""
 
@@ -1018,13 +1042,14 @@ def prepare_remote_media(
             _canonical_approvals(configured), key=lambda e: priority[e["extractor"]]
         )
     ]
-    for item in request.inputs:
-        if item.kind == "url":
-            _require_reviewable_url(item.url)
+    urls = [_require_reviewable_url(item.url) for item in request.inputs if item.kind == "url"]
+    caps = {name: getattr(workspace.limits, name) for name in _WORKSPACE_CAPS}
+    if workspace_caps is not None:
+        caps = dict(workspace_caps)
     try:
         if not approvals:
             raise _allowlist_required()
-        matched = [_select(item.url, approvals) for item in request.inputs if item.kind == "url"]
+        matched = [_select(url, approvals) for url in urls]
     except m.CoreError:
         if isinstance(ctx, StepContext) and ctx.target.get("approvals") != _canonical_approvals(
             approvals
@@ -1044,6 +1069,8 @@ def prepare_remote_media(
         workspace.remote_media.account,
         keys,
         approvals=approvals,
+        urls=urls,
+        workspace_caps=caps,
     )
     if conn is None and (not isinstance(ctx, StepContext) or ctx.target == target):
         # A changed table reaches the step's fresh-preview refusal before inspecting
@@ -1057,16 +1084,13 @@ def prepare_remote_media(
                 ref, workspace.remote_media.provider, workspace.remote_media.account, secret_store
             )
     limits = request.limits.model_dump(mode="json")
-    for name in _WORKSPACE_CAPS:
-        limits[name] = getattr(workspace.limits, name)
+    limits.update(caps)
     return _PreparedRemote(workspace, matched, target, payload, limits)
 
 
 def _safe_display(value: Any) -> Any:
     """Redact every raw text field before JSON encoding can hide credentials."""
     if isinstance(value, str):
-        if value.startswith(("http://", "https://")):
-            return _display_url(value)
         return safety.redact_text(value)[0]
     if isinstance(value, list):
         return [_safe_display(item) for item in value]
@@ -1078,7 +1102,10 @@ def _safe_display(value: Any) -> Any:
 def preview_remote_media(ctx: Any, request: m.CollectRequest) -> m.ApprovalPreview:
     prepared = prepare_remote_media(ctx, request)
     digest = safety.action_digest(prepared.target, prepared.payload)
-    safe_request = _safe_display(request.model_dump(mode="json"))
+    review_request = request.model_dump(mode="json")
+    for item, url in zip(review_request["inputs"], prepared.target["urls"], strict=True):
+        item["url"] = url
+    safe_request = _safe_display(review_request)
     safe_request["access_grant_id"] = None
     provider = _safe_display(prepared.target["provider"])
     account = _safe_display(prepared.target["account"])
@@ -1117,17 +1144,17 @@ def preview_remote_media(ctx: Any, request: m.CollectRequest) -> m.ApprovalPrevi
         "Limits: " + "; ".join(f"{key}={value}" for key, value in prepared.limits.items())
     )
     details.append(
-        "Lower workspace caps at run time apply; "
-        "raised caps cannot exceed this acceptance snapshot."
+        "Workspace caps are part of this approval. Lower workspace caps at run time apply; "
+        "a raised cap needs a new approval and cannot exceed this reviewed snapshot."
     )
     details.append(
         "Stores: source provenance and media metadata; requested subtitle tracks and cues; "
         "media bytes only when media_file is requested. No cookie values are stored."
     )
-    if any(_share_parts(item.url) for item in request.inputs):
+    if any(_share_parts(url) for url in prepared.target["urls"]):
         details.append(
             "Share links resolve only during execution through checked redirects and at most "
-            "two approved extractor hops. This digest binds the original share URL."
+            "two approved extractor hops. This digest binds the canonical share URL."
         )
     request_file = str(ctx.paths.root / ("approval-" + digest + ".json"))
     approval_key = "approve-" + digest
@@ -1618,11 +1645,17 @@ def _challenge_marked(status: int, headers: dict[str, str], payload: bytes, reas
             return True
     if "challenge" in (reason or "").lower():
         return True
-    if b"__rd_verify" in payload.lower():
+
+    def marked(value: str) -> bool:
+        decoded = unquote(html_unescape(value))
+        decoded = re.sub(r"\\(?:u005f|x5f)", "_", decoded, flags=re.IGNORECASE)
+        return "__rd_verify" in unicodedata.normalize("NFKC", decoded).lower()
+
+    if marked(payload.decode("utf-8", "replace")):
         return True
     for name in ("refresh", "location"):
         for value in _header_values(headers, name):
-            if "__rd_verify" in value.lower():
+            if marked(value):
                 return True
     return False
 
@@ -2865,10 +2898,27 @@ def _result(step: StepContext, state: _State, resources: set[str]) -> m.JobResul
 
 def run_remote_media(step: StepContext) -> m.JobResult:
     request = m.CollectRequest.model_validate(step.payload)
-    prepared = prepare_remote_media(step, request)
+    state = _State.load(step.checkpoint or {})
+    snapshot = state.caps or {
+        name: step.job.limits[name] for name in _WORKSPACE_CAPS if name in step.job.limits
+    }
+    if set(snapshot) != set(_WORKSPACE_CAPS):
+        raise m.CoreError(
+            m.ErrorCode.SCOPE_DENIED,
+            "Remote acceptance caps are unavailable",
+            next_action="Repeat the call without a grant to get a fresh approval preview",
+        )
+    try:
+        checked_caps = m.Limits.model_validate(snapshot)
+    except ValueError:
+        raise m.CoreError(
+            m.ErrorCode.STORAGE, "Stored remote acceptance caps are invalid"
+        ) from None
+    prepared = prepare_remote_media(step, request, workspace_caps=snapshot)
     workspace = prepared.workspace
     approvals = _bound_approvals(step.target)
-    urls = [item.url for item in request.inputs if item.kind == "url"]
+    original_urls = [item.url for item in request.inputs if item.kind == "url"]
+    urls = prepared.target["urls"]
     keys = list(step.target.get("extractors") or [])
     if len(keys) != len(urls):
         raise m.CoreError(
@@ -2899,7 +2949,11 @@ def run_remote_media(step: StepContext) -> m.JobResult:
         # Use the boundary's policy snapshot: verification does no file/network IO
         # inside its transaction, while rebuilding the actual persisted request.
         current = prepare_remote_media(
-            step, m.CollectRequest.model_validate(stored.payload), workspace=workspace, conn=conn
+            step,
+            m.CollectRequest.model_validate(stored.payload),
+            workspace=workspace,
+            conn=conn,
+            workspace_caps=snapshot,
         )
         if current.target != target:
             raise m.CoreError(
@@ -2909,29 +2963,29 @@ def run_remote_media(step: StepContext) -> m.JobResult:
             )
         return current.payload
 
-    state = _State.load(step.checkpoint or {})
-    snapshot = state.caps or {
-        name: step.job.limits[name] for name in _WORKSPACE_CAPS if name in step.job.limits
-    }
-    if set(snapshot) != set(_WORKSPACE_CAPS):
-        raise m.CoreError(
-            m.ErrorCode.SCOPE_DENIED,
-            "Remote acceptance caps are unavailable",
-            next_action="Repeat the call without a grant to get a fresh approval preview",
-        )
-    try:
-        checked_caps = m.Limits.model_validate(snapshot)
-    except ValueError:
-        raise m.CoreError(
-            m.ErrorCode.STORAGE, "Stored remote acceptance caps are invalid"
-        ) from None
     caps = {
         name: min(getattr(checked_caps, name), getattr(workspace.limits, name))
         for name in _WORKSPACE_CAPS
     }
     state.caps = snapshot
     if step.step.retries > caps["safe_read_retries"]:
-        raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Remote safe-read retry cap reached")
+        previous = m.ErrorDetail.model_validate(
+            step.step.error
+            or {
+                "code": m.ErrorCode.LIMIT_REACHED,
+                "message": "Remote safe-read retry cap reached",
+                "retry_class": "never",
+            }
+        )
+        error = m.CoreError(
+            previous.code,
+            previous.message,
+            next_action="The accepted retry cap was reached; start a newly approved request",
+        )
+        # This is a terminal local guard, even when the underlying read error is
+        # normally retryable. Keep its original code/message for the operator.
+        error.detail = error.detail.model_copy(update={"retry_class": "never"})
+        raise error
     bound_cookies = _load_bound_cookies(approvals, provider, account, step.executor.secret_store)
     step.before_external_action(
         step.target,
@@ -2989,6 +3043,7 @@ def run_remote_media(step: StepContext) -> m.JobResult:
                     approvals,
                     provider,
                     account,
+                    original_url=original_urls[index],
                 )
                 if state.halt:
                     break
@@ -3163,26 +3218,33 @@ def _login_form(payload: bytes, url: str) -> bool:
     class LoginForms(HTMLParser):
         def __init__(self) -> None:
             super().__init__()
-            self.base: str | None = None
+            self.bases: list[str] = []
             self.actions: list[str | None] = []
 
         def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
             values = dict(attrs)
-            if tag == "base" and self.base is None and values.get("href") is not None:
-                self.base = values["href"]
+            if tag == "base" and values.get("href") is not None:
+                self.bases.append(values["href"])
             if tag == "form":
                 self.actions.append(values.get("action"))
 
     parser = LoginForms()
     parser.feed(payload.decode("utf-8", "replace"))
-    try:
-        base = urljoin(url, parser.base) if parser.base is not None else url
-        # Missing/empty actions submit to the document URL, independent of base.
-        return any(
-            _login_target(urljoin(base, action) if action else url) for action in parser.actions
-        )
-    except ValueError:
-        return False
+    base = url
+    for href in parser.bases:
+        try:
+            base = urljoin(url, href)
+            break
+        except ValueError:
+            continue
+    for action in parser.actions:
+        try:
+            # Missing/empty actions submit to the document URL, independent of base.
+            if _login_target(urljoin(base, action) if action else url):
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _resolve_share(net: _Net, url: str, key: str, approval: Any) -> str:
@@ -3526,6 +3588,8 @@ def _extract_one(
     approvals: list[Any],
     provider: str,
     account: str,
+    *,
+    original_url: str | None = None,
 ) -> None:
     del provider, account
     if (
@@ -3541,5 +3605,5 @@ def _extract_one(
     )
     if record is None:
         return
-    _store_metadata(step, state, record, url, text_max)
+    _store_metadata(step, state, record, url if original_url is None else original_url, text_max)
     state.bytes_used = net.budget.used
