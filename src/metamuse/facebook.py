@@ -2792,6 +2792,33 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     obs: PageObservation | None = None
     parsed: ParsedPostPage | None = None
     byte_limit_error: m.ErrorDetail | None = None
+    accumulated_records: list[collect.Record] = []
+    observed_identities: set[str] = set()
+    observed_states: set[tuple[str, str]] = set()
+    observation_gaps: set[str] = set()
+    pages_seen = 0
+
+    def accumulate_page(page: ParsedPostPage) -> None:
+        nonlocal pages_seen
+        records, _ = _records_from_page(page, permalink=permalink, resources=resources)
+        for record in records:
+            if record.native_id is None:
+                if pages_seen:
+                    observation_gaps.add("weak_identity_expansion")
+                    continue
+                identity = m.new_id("observation")  # No text/position identity is inferred.
+            else:
+                identity = m.payload_digest([record.platform, record.scope, record.native_id])
+            state = m.payload_digest([record.kind, record.text, record.parent_native_id])
+            if (identity, state) in observed_states:
+                continue
+            if identity not in observed_identities and len(observed_identities) >= max_items + 1:
+                observation_gaps.add("uncollected_items_budget")
+                break
+            observed_identities.add(identity)
+            observed_states.add((identity, state))
+            accumulated_records.append(record)
+        pages_seen += 1
 
     def checkpoint_usage() -> None:
         step.commit_checkpoint(
@@ -2832,6 +2859,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             require_comments_section=require_comments,
         )
 
+        accumulate_page(parsed)
         while require_comments and parsed.expand_controls:
             step.guard()
             elapsed = time.monotonic() - started
@@ -2841,7 +2869,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             if expansions_used >= max_expansions:
                 halt = "expand_budget_exhausted"
                 break
-            projected_items = (1 if "post" in resources else 0) + len(parsed.comments)
+            projected_items = accepted + len(observed_identities - accepted_identities)
             if projected_items >= max_items:
                 halt = "limit_reached"
                 break
@@ -2866,6 +2894,7 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 permalink=permalink,
                 require_comments_section=require_comments,
             )
+            accumulate_page(parsed)
             if not obs.progress_confirmed:
                 halt = "expansion_timeout"
                 break
@@ -2906,11 +2935,8 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 unexpanded_gaps.append(gap_name)
 
     if parsed is not None:
-        records, post_media = _records_from_page(
-            parsed,
-            permalink=permalink,
-            resources=resources,
-        )
+        records = accumulated_records
+        post_media = parsed.attachments or None
         post_extra_evidence: dict[str, Any] = {
             "canonical_url": permalink.canonical_url,
             "original_url": permalink.original_url,
@@ -2934,7 +2960,9 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
     # through book.apply; items committed in an earlier batch before a crash are already in
     # book.by_key and become "unchanged" without index slicing or storing HTML in checkpoints.
     rows: list[dict[str, Any]] = []
-    missing: set[str] = set(saved.get("missing_fields", [])) | set(unexpanded_gaps)
+    missing: set[str] = (
+        set(saved.get("missing_fields", [])) | set(unexpanded_gaps) | observation_gaps
+    )
     if byte_limit_error is not None:
         missing.add("byte_budget_exceeded")
     if halt == "expansion_timeout":
@@ -3101,10 +3129,13 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         or "byte_budget_exceeded" in missing
         or "uncollected_items_budget" in missing
         or "parent_comment" in missing
+        or "weak_identity_expansion" in missing
         or "weak_identity_resume" in missing
         or "expansion_progress_timeout" in missing
     )
-    comments_observed = sum(1 for r in records[:accepted] if r.kind in ("comment", "reply"))
+    comments_observed = len(
+        {r.native_id for r in records if r.kind in ("comment", "reply") and r.native_id}
+    ) + sum(r.kind in ("comment", "reply") and r.native_id is None for r in records)
     comments_empty = (
         parsed is not None
         and require_comments
