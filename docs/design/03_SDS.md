@@ -204,6 +204,11 @@ events只記必要去秘密狀態，完整來源和對話留私人store。診斷
 刪除先預覽影響→批准→刪內容／索引、撤銷未用grants、標記派生stale；別的source仍引用同asset時保留bytes。audit不保留被刪原文。SQLite WAL與備份可能仍含資料，說明保留與compaction，不保證鑑識抹除或遠端Muse清除。
 
 備份用SQLite一致backup加ready object及ready export manifests；每個export保留manifest與payload，驗bytes/hash並拒unexpected members；在新workspace做FK/hash/schema檢查。migration維護鎖＋升級前備份；不能只複製live DB主檔或刪庫假成功。舊版程式遇新schema拒絕寫入。
+Restore refuses newer-version backups; older backups are verified at their recorded
+schema version before forward migration through normal guarded open, including its own
+pre-upgrade backup. A private runtime/restore.incomplete marker blocks failed/interrupted
+targets; only successful migration and integrity checks remove it. The original backup
+is retained, and migration failure rolls back the restored database without claiming success.
 
 ## 13. 驗收與決策
 
