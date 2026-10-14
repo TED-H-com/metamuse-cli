@@ -627,7 +627,10 @@ paused realm because `Target.closeTarget` alone leaves them alive in this build.
 Shared and service workers use `Target.closeTarget`. Success, refusal and lost
 close replies all enter the same pending-target set: destruction is asynchronous.
 Verification runs after callbacks return, before import, with a bounded five-second
-wait, including dedicated workers already sent the fixed `self.close()`. A browser
+wait, including dedicated workers already sent the fixed `self.close()`. The verifier
+iterates a copy and discards targets only after proving disappearance. Attachments
+delivered while checking are included in that same five-second deadline; new targets
+never extend it. Unexpected verification exceptions become the fixed guard failure. A browser
 disconnect is never disappearance evidence; a target still listed past the bound
 fails closed. No worker resume or detach-to-run command is sent. Popups,
 downloads, route aborts and session teardown use the same fail-closed rule.
@@ -660,16 +663,22 @@ navigation, click and expansion operations, instead of waiting for the full
 cutoff become `E_LIMIT_REACHED` with partial coverage. Existing fatal errors are
 never rewritten merely because the byte latch is set. Error precedence is guard
 failure or unverified target shutdown, denied destination (`E_SCOPE_DENIED`),
-login/checkpoint/challenge/rate-limit barrier, off-post navigation, then the byte
-budget. When HTML has been observed, barrier classification runs before the byte
+login/checkpoint/challenge/rate-limit barrier, off-post navigation (including share-link
+`E_UNSUPPORTED` and `E_DATA_STALE`), then the byte budget. Every other CoreError also
+outranks the cutoff. Only the named aborted-navigation, closed-socket and interrupted-wait
+errors caused by the cutoff may be dropped. Error recording retains the strongest
+stop, including at close after the final observation with no expansion. When HTML has been observed, barrier classification runs before the byte
 budget decision. Fatal stops preserve their normal job state, error, records and
 next action. Every operation checks guard state first, and close always verifies
 pending target destruction before tearing down CDP, including after a cutoff.
 Already pinned authorities are revalidated synchronously through the complete URL
 policy using their pinned addresses, without resolving or dialing, even after a
 cutoff. This permits completed observations to reach barrier classification before
-the budget decision while preserving destination checks. Unpinned policy/DNS waits
-remain bounded and interruptible. The watcher uses the pinned Playwright
+the budget decision while preserving destination checks. For unpinned URLs, all
+DNS-free syntax, scheme, credential, hostname/IP-literal and port checks run before
+the latch; port validation therefore precedes DNS. Allowlisted navigation paths are
+then classified, so an allowlisted login URL retains its login barrier. Only the
+remaining DNS-requiring allow path is interruptible by the latch. Its wait remains bounded. The watcher uses the pinned Playwright
 implementation loop, as does the existing async WebSocket close adapter. Tests
 bound hangs at an independent 90-second subprocess deadline, with 300-second read
 and job budgets.

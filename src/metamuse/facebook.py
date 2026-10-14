@@ -1080,6 +1080,51 @@ def _normalize_allowed_hosts(configured_hosts: Iterable[str]) -> tuple[str, ...]
     return tuple(validate_facebook_hosts(list(configured_hosts)))
 
 
+def _stop_priority(error: m.CoreError) -> int:
+    code = error.detail.code
+    if code == m.ErrorCode.PROTOCOL_MISMATCH and error.detail.message in {
+        "Facebook browser guard could not verify target shutdown",
+        "Facebook WebSocket handshake bypassed browser blocking",
+    }:
+        return -1
+    if code == m.ErrorCode.SCOPE_DENIED:
+        return 0
+    if code in {
+        m.ErrorCode.AUTH_REQUIRED,
+        m.ErrorCode.ACCESS_DENIED,
+        m.ErrorCode.CHECKPOINT_REQUIRED,
+        m.ErrorCode.RATE_LIMITED,
+    }:
+        return 2 if error.detail.message == "Facebook navigation left the approved post" else 1
+    if code in {m.ErrorCode.REFERENCE_INVALID, m.ErrorCode.UNSUPPORTED, m.ErrorCode.DATA_STALE}:
+        return 2
+    return 4 if code == m.ErrorCode.LIMIT_REACHED else 3
+
+
+def _keep_stop(previous: m.CoreError | None, incoming: m.CoreError) -> m.CoreError:
+    return (
+        incoming
+        if previous is None or _stop_priority(incoming) < _stop_priority(previous)
+        else previous
+    )
+
+
+# Only these fixed, named interruptions may be caused by the byte watcher. All
+# other CoreErrors remain fatal, even if their code is NETWORK_TIMEOUT.
+_CUTOFF_INTERRUPTION_MESSAGES = {
+    "aborted_navigation": "Browser navigation to Facebook post permalink failed",
+    "closed_socket": "Facebook browser socket closed during byte cutoff",
+    "interrupted_wait": "Facebook browser wait interrupted by byte cutoff",
+}
+
+
+def _cutoff_interruption(error: m.CoreError) -> bool:
+    return (
+        error.detail.code == m.ErrorCode.NETWORK_TIMEOUT
+        and error.detail.message in _CUTOFF_INTERRUPTION_MESSAGES.values()
+    )
+
+
 class EgressGuard:
     """Egress validator backing BrowserEgressProxy and secondary browser checks (AT-030, FR-019).
 
@@ -1242,6 +1287,27 @@ class EgressGuard:
             )
         return None
 
+    def check_url_without_dns(self, url: str, purpose: safety.URLPurpose) -> None:
+        # Use the shared policy with a synthetic resolver answer only to validate
+        # URL syntax, credentials, hostname/IP policy and port. This answer is
+        # never pinned or dialled. The actual allow path still resolves and pins.
+        try:
+            if self._fixture_url_checker is None and urlsplit(url).scheme.lower() != "https":
+                raise ValueError
+            checker = safety.check_fixture_url if self._fixture_url_checker else safety.check_url
+            checker(
+                url,
+                purpose=purpose,
+                allowed_hosts=self.allowed_hosts,
+                resolver=lambda _: (
+                    ["127.0.0.1"] if self._fixture_url_checker else ["93.184.216.34"]
+                ),
+            )
+        except (m.CoreError, ValueError):
+            raise m.CoreError(
+                m.ErrorCode.SCOPE_DENIED, "Facebook browser destination is denied by egress policy"
+            ) from None
+
     def _checked_destination(self, url: str, purpose: safety.URLPurpose) -> safety.CheckedURL:
         authority = self._authority(url)
         with self._lock:
@@ -1266,6 +1332,7 @@ class EgressGuard:
         try:
             if self._fixture_url_checker is None and urlsplit(url).scheme.lower() != "https":
                 raise m.CoreError(m.ErrorCode.SCOPE_DENIED, "HTTPS required")
+            self.check_url_without_dns(url, purpose)
             checked = self._checked_destination(url, purpose)
             with self._lock:
                 self._route_checked_by_authority.setdefault(
@@ -1310,7 +1377,7 @@ class EgressGuard:
         except m.CoreError as exc:
             with self._lock:
                 if is_navigation:
-                    self.navigation_error = exc
+                    self.navigation_error = _keep_stop(self.navigation_error, exc)
                 self.decisions.append(
                     EgressDecision(
                         hostname=host_guess,
@@ -1342,7 +1409,7 @@ class EgressGuard:
             barrier = self._classify_navigation_barrier(url)
             if barrier is not None:
                 with self._lock:
-                    self.navigation_error = barrier
+                    self.navigation_error = _keep_stop(self.navigation_error, barrier)
                     self.decisions.append(
                         EgressDecision(
                             hostname=host_guess,
@@ -1376,7 +1443,7 @@ class EgressGuard:
                         ),
                     )
                 with self._lock:
-                    self.navigation_error = exc
+                    self.navigation_error = _keep_stop(self.navigation_error, exc)
                     self.decisions.append(
                         EgressDecision(
                             hostname=host_guess,
@@ -1413,14 +1480,15 @@ class EgressGuard:
     def navigation_proxy_error(self, urls: Iterable[str]) -> m.CoreError | None:
         # CONNECT has no document path. Only DNS/policy errors for an authority in
         # this document's own request chain can explain its failed connection.
+        found = None
         with self._lock:
             for url in reversed(tuple(urls)):
                 error = self.aborted_urls.get(url) or self.proxy_errors_by_authority.get(
                     self._authority(url)
                 )
                 if error is not None:
-                    return error
-        return None
+                    found = _keep_stop(found, error)
+        return found
 
     def record_proxy_protocol_refusal(
         self, *, hostname: str, reason: str, url: str | None = None
@@ -1440,11 +1508,15 @@ class EgressGuard:
             else None,
         )
         with self._lock:
-            self.last_proxy_error = exc  # Compatibility diagnostic; never navigation attribution.
+            self.last_proxy_error = _keep_stop(
+                self.last_proxy_error, exc
+            )  # Compatibility diagnostic; never navigation attribution.
             if dns_failure and url is not None:
                 authority = self._authority(url)
                 if authority is not None:
-                    self.proxy_errors_by_authority[authority] = exc
+                    self.proxy_errors_by_authority[authority] = _keep_stop(
+                        self.proxy_errors_by_authority.get(authority), exc
+                    )
             self.decisions.append(
                 EgressDecision(
                     hostname=hostname,
@@ -1467,6 +1539,19 @@ class EgressGuard:
                     reason="max_bytes_exceeded",
                 )
             )
+
+    def record_proxy_stop(
+        self, url: str, error: m.CoreError, *, is_connect: bool, is_navigation: bool
+    ) -> None:
+        with self._lock:
+            self.last_proxy_error = _keep_stop(self.last_proxy_error, error)
+            self.aborted_urls[url] = _keep_stop(self.aborted_urls.get(url), error)
+            if is_connect and (authority := self._authority(url)) is not None:
+                self.proxy_errors_by_authority[authority] = _keep_stop(
+                    self.proxy_errors_by_authority.get(authority), error
+                )
+            if is_navigation:
+                self.navigation_error = _keep_stop(self.navigation_error, error)
 
     def check_proxy_target(
         self,
@@ -1493,15 +1578,18 @@ class EgressGuard:
                     "Plain HTTP is refused by the Facebook browser egress proxy",
                     next_action="Use HTTPS for all Facebook requests",
                 )
+            self.check_url_without_dns(url, purpose)
             checked = self._checked_destination(url, purpose)
         except m.CoreError as exc:
             with self._lock:
-                self.last_proxy_error = exc
-                self.aborted_urls[url] = exc
+                self.last_proxy_error = _keep_stop(self.last_proxy_error, exc)
+                self.aborted_urls[url] = _keep_stop(self.aborted_urls.get(url), exc)
                 if is_connect and (authority := self._authority(url)) is not None:
-                    self.proxy_errors_by_authority[authority] = exc
-                if is_navigation and self.navigation_error is None:
-                    self.navigation_error = exc
+                    self.proxy_errors_by_authority[authority] = _keep_stop(
+                        self.proxy_errors_by_authority.get(authority), exc
+                    )
+                if is_navigation:
+                    self.navigation_error = _keep_stop(self.navigation_error, exc)
                 self.decisions.append(
                     EgressDecision(
                         hostname=host_guess,
@@ -1517,10 +1605,9 @@ class EgressGuard:
             barrier = self._classify_navigation_barrier(url)
             if barrier is not None:
                 with self._lock:
-                    self.last_proxy_error = barrier
-                    self.aborted_urls[url] = barrier
-                    if self.navigation_error is None:
-                        self.navigation_error = barrier
+                    self.last_proxy_error = _keep_stop(self.last_proxy_error, barrier)
+                    self.aborted_urls[url] = _keep_stop(self.aborted_urls.get(url), barrier)
+                    self.navigation_error = _keep_stop(self.navigation_error, barrier)
                     self.decisions.append(
                         EgressDecision(
                             hostname=checked.hostname,
@@ -1543,10 +1630,9 @@ class EgressGuard:
                     self.validate_navigation_identity(url)
                 except m.CoreError as exc:
                     with self._lock:
-                        self.last_proxy_error = exc
-                        self.aborted_urls[url] = exc
-                        if self.navigation_error is None:
-                            self.navigation_error = exc
+                        self.last_proxy_error = _keep_stop(self.last_proxy_error, exc)
+                        self.aborted_urls[url] = _keep_stop(self.aborted_urls.get(url), exc)
+                        self.navigation_error = _keep_stop(self.navigation_error, exc)
                         self.decisions.append(
                             EgressDecision(
                                 hostname=checked.hostname,
@@ -1559,7 +1645,6 @@ class EgressGuard:
                     raise
 
         with self._lock:
-            self.proxy_errors_by_authority.pop((checked.hostname, checked.port), None)
             self.checked_by_url[url] = checked
             self.checked_by_url[checked.url] = checked
             self.checked_by_authority[(checked.hostname, checked.port)] = checked
@@ -1669,6 +1754,7 @@ class EgressGuard:
             pass
 
         try:
+            self.check_url_without_dns(url, purpose)
             checked = self._checked_destination(url, purpose)
         except m.CoreError as exc:
             with self._lock:
@@ -1966,6 +2052,7 @@ class _PlaywrightSession:
         self._navigation_urls: list[str] = []
         self._navigation_responded: set[str] = set()
         self._document_status = 200
+        self._status_error: m.CoreError | None = None
         self._expansion_response_status: int | None = None
         self._active_control: str | None = None
         self._pending_expansion_urls: list[str] = []
@@ -2050,20 +2137,27 @@ class _PlaywrightSession:
             main_navigation = req.is_navigation_request() and req.frame == self._page.main_frame
             if main_navigation:
                 self._document_status = response.status
+                try:
+                    _raise_observation_barrier(response.status, None)
+                except m.CoreError as exc:
+                    self._status_error = _keep_stop(self._status_error, exc)
             with self._egress._lock:
                 aborted_err = self._egress.aborted_urls.get(response.url)
             aborted_by_proxy = (
                 response.headers.get("x-metamuse-proxy-aborted") == "1" or aborted_err is not None
             )
             if aborted_by_proxy:
-                if main_navigation and self._egress.navigation_error is None:
-                    self._egress.navigation_error = (
-                        aborted_err
-                        or self._egress.navigation_proxy_error([req.url])
-                        or m.CoreError(
-                            m.ErrorCode.SCOPE_DENIED,
-                            "Outbound navigation blocked by egress proxy",
-                        )
+                if main_navigation:
+                    self._egress.navigation_error = _keep_stop(
+                        self._egress.navigation_error,
+                        (
+                            aborted_err
+                            or self._egress.navigation_proxy_error([req.url])
+                            or m.CoreError(
+                                m.ErrorCode.SCOPE_DENIED,
+                                "Outbound navigation blocked by egress proxy",
+                            )
+                        ),
                     )
                 return
             if main_navigation:
@@ -2087,15 +2181,22 @@ class _PlaywrightSession:
                     server_addr=response.server_addr(),
                 )
             except m.CoreError as exc:
-                if main_navigation and self._peer_error is None:
-                    self._peer_error = exc
+                if main_navigation:
+                    self._peer_error = _keep_stop(self._peer_error, exc)
 
         def _on_frame_navigated(frame: Any) -> None:
-            if frame == self._page.main_frame and self._egress.navigation_error is None:
+            # Chromium's internal error document is the result of our refusal,
+            # not another requested destination. Keep the causal route stop.
+            if (
+                frame.url.startswith("chrome-error://")
+                and self._egress.navigation_error is not None
+            ):
+                return
+            if frame == self._page.main_frame:
                 try:
                     self._egress.check_browser_route(frame.url, is_navigation=True)
                 except m.CoreError as exc:
-                    self._egress.navigation_error = exc
+                    self._egress.navigation_error = _keep_stop(self._egress.navigation_error, exc)
 
         async def _on_web_socket(route: Any) -> None:
             self._egress.record_browser_refusal("websocket_blocked")
@@ -2265,10 +2366,13 @@ class _PlaywrightSession:
 
     def _unexpected_websocket(self, _: Any) -> None:
         self._egress.record_browser_refusal("websocket_blocked")
-        self._transport_error = m.CoreError(
-            m.ErrorCode.PROTOCOL_MISMATCH,
-            "Facebook WebSocket handshake bypassed browser blocking",
-            next_action="Stop collection and inspect the installed Chromium network controls",
+        self._transport_error = _keep_stop(
+            self._transport_error,
+            m.CoreError(
+                m.ErrorCode.PROTOCOL_MISMATCH,
+                "Facebook WebSocket handshake bypassed browser blocking",
+                next_action="Stop collection and inspect the installed Chromium network controls",
+            ),
         )
 
     def _finish_route(self, route: Any, *, abort: bool) -> None:
@@ -2419,32 +2523,14 @@ class _PlaywrightSession:
         if self._transport_error is not None:
             raise self._transport_error
 
-        # More specific fatal outcomes outrank a socket/wait interrupted by cutoff.
-        def priority(error: m.CoreError) -> int:
-            code = error.detail.code
-            if code == m.ErrorCode.SCOPE_DENIED:
-                return 0
-            if code in {
-                m.ErrorCode.AUTH_REQUIRED,
-                m.ErrorCode.ACCESS_DENIED,
-                m.ErrorCode.CHECKPOINT_REQUIRED,
-                m.ErrorCode.RATE_LIMITED,
-            }:
-                return (
-                    2 if error.detail.message == "Facebook navigation left the approved post" else 1
-                )
-            if code == m.ErrorCode.REFERENCE_INVALID:
-                return 2
-            return 3
-
         proxy_error = self._egress.navigation_proxy_error(
             url for url in self._navigation_urls if url not in self._navigation_responded
         )
-        status_error = None
+        status_error = getattr(self, "_status_error", None)
         try:
             _raise_observation_barrier(self._document_status, None)
         except m.CoreError as exc:
-            status_error = exc
+            status_error = _keep_stop(status_error, exc)
         errors = [
             error
             for error in (
@@ -2453,12 +2539,18 @@ class _PlaywrightSession:
                 proxy_error,
                 status_error,
             )
-            if error is not None and priority(error) < 3
+            if error is not None
+            and error.detail.code != m.ErrorCode.LIMIT_REACHED
+            and not (
+                (
+                    self._egress.byte_limit_exceeded
+                    or (self._proxy is not None and self._proxy.byte_limit_exceeded)
+                )
+                and _cutoff_interruption(error)
+            )
         ]
-        if status_error is not None and status_error.detail.code == m.ErrorCode.PROTOCOL_MISMATCH:
-            errors.append(status_error)  # An observed HTTP failure is not a cutoff interruption.
         if errors:
-            raise min(errors, key=priority)
+            raise min(errors, key=_stop_priority)
 
     def _raise_if_byte_limit(self) -> None:
         self._raise_if_fatal_stop()
@@ -2510,14 +2602,11 @@ class _PlaywrightSession:
             parsed = urlsplit(url)
             suffix = f"?{parsed.query}" if parsed.query else ""
             target_url = f"{self._test_origin}{parsed.path}{suffix}"
-        self._egress.navigation_error = None
-        self._egress.last_proxy_error = None
         self._navigation_urls = []
         self._navigation_responded.clear()
         with self._egress._lock:
             self._egress.aborted_urls.clear()
             self._egress.proxy_errors_by_authority.clear()
-        self._peer_error = None
         try:
             response = self._page.goto(target_url, wait_until="load", timeout=self._timeout_ms)
         except Exception as exc:
@@ -2585,9 +2674,6 @@ class _PlaywrightSession:
     def _expand_next(self, control_id: str) -> PageObservation:
         if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", control_id):
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid expand control identifier")
-        self._egress.navigation_error = None
-        self._egress.last_proxy_error = None
-        self._peer_error = None
         self._expansion_response_status = None
         self._active_control = control_id
         self._pending_expansion_urls.clear()
@@ -2640,6 +2726,11 @@ class _PlaywrightSession:
 
     def close(self) -> None:
         # Verify before tearing down CDP, even if cutoff already closed the page.
+        fatal = None
+        try:
+            self._raise_if_fatal_stop()
+        except m.CoreError as exc:
+            fatal = exc
         try:
             self._verify_target_shutdown()
         except Exception:
@@ -2670,6 +2761,8 @@ class _PlaywrightSession:
                 self._guard_failed()
         if self._transport_error is not None:
             raise self._transport_error
+        if fatal is not None:
+            raise fatal
 
 
 class PlaywrightBrowserDriver:
@@ -4100,9 +4193,17 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 retry_after=exc.retry_after,
             ) from None
     finally:
+        active_error = sys.exc_info()[1]
         try:
             if session is not None:
-                session.close()
+                try:
+                    session.close()
+                except m.CoreError as close_error:
+                    if isinstance(active_error, m.CoreError) and _stop_priority(
+                        active_error
+                    ) <= _stop_priority(close_error):
+                        raise active_error from None
+                    raise
         finally:
             # Settle bytes even if late WebSocket detection stops close/import.
             bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
