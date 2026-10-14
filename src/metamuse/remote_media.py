@@ -1018,12 +1018,25 @@ def prepare_remote_media(
             _canonical_approvals(configured), key=lambda e: priority[e["extractor"]]
         )
     ]
-    if not approvals:
-        raise _allowlist_required()
     for item in request.inputs:
         if item.kind == "url":
             _require_reviewable_url(item.url)
-    matched = [_select(item.url, approvals) for item in request.inputs if item.kind == "url"]
+    try:
+        if not approvals:
+            raise _allowlist_required()
+        matched = [_select(item.url, approvals) for item in request.inputs if item.kind == "url"]
+    except m.CoreError:
+        if isinstance(ctx, StepContext) and ctx.target.get("approvals") != _canonical_approvals(
+            approvals
+        ):
+            # Removing access must invalidate the old grant with the same recovery
+            # instruction as adding access, even when no current extractor matches.
+            raise m.CoreError(
+                m.ErrorCode.SCOPE_DENIED,
+                "Permit does not cover this action",
+                next_action="Repeat the call without a grant to get a fresh approval preview",
+            ) from None
+        raise
     keys = [cls.ie_key() for cls, _approval in matched]
     target, payload = action_parts(
         request,
