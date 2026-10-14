@@ -601,7 +601,7 @@ Expand controls also carry a CDP backend node identity. There is no reserved HTM
 attribute channel or trusted-HTML flag; every page-authored `data-metamuse-*`
 attribute is ordinary markup, regardless of case, namespace or creation method.
 Chromium observations are never HTML-reparsed. Progress compares structured comment
-identities/text, and CDP clicks the exact captured rendered control, including when
+identities/text and immediately classifies new barrier evidence during polling. CDP clicks the exact captured rendered control, including when
 another hidden control has the same identifier. Serialized structured data supplies
 the observation digest and byte accounting; it is not parsed as HTML.
 
@@ -643,7 +643,9 @@ structural bounds in addition to the existing observation/job byte limit; flat
 records add overhead beyond equivalent HTML. Bounds, unsupported non-HTML main MIME
 types (XHTML/XML/SVG), and capture failures refuse with fixed Facebook-specific
 `E_SELECTOR_DRIFT`, without page text or `E_STORAGE`. Inaccessible closed roots add
-`closed_shadow_capture_unavailable` and force partial coverage. Incomplete captures
+`closed_shadow_capture_unavailable` and force partial coverage. DOM mutations observed
+across CDP discovery/capture commands add `capture_changed_during_observation`, so
+a closed root created during handle discovery cannot be silently omitted. Incomplete captures
 never claim `scope_satisfied`.
 
 Stop markers (`data-fb-state`, `data-page-state`, `data-checkpoint`, login/checkpoint

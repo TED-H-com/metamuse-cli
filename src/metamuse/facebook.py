@@ -2578,6 +2578,14 @@ class _PlaywrightSession:
         _, nodes, _ = self._capture()
         extractor = _DOMExtractor()
         extractor.walk(nodes)
+        # A newly observed wall is a stop, not a reason to wait for comment
+        # progress until the production timeout. Keep it alongside route/status
+        # stops so the common resolver still applies guard and denial priority.
+        try:
+            _raise_observation_barrier(self._document_status, extractor.meta_state)
+        except m.CoreError as error:
+            self._status_error = _keep_stop(self._status_error, error)
+        self._raise_if_fatal_stop()
         return {
             json.dumps([comment["native_id"], "".join(comment["text_parts"])])
             for comment in extractor.comments

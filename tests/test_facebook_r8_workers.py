@@ -64,11 +64,13 @@ def test_r8_interval_workers_eight_runs(tmp_path, monkeypatch):
     </script>"""
     baseline = None
     for i in range(9):
+        run_script = script.replace(">2500", ">7000") if i > 4 else script
         markup = _synthetic_post_html(
             comments=[{"id": "c1", "text": "First"}], expand_controls=[{"id": "more"}]
         ).replace(
             "</body>",
-            (script if i else script.replace("new Worker(u);", "")) + '<img src="/hold"></body>',
+            (run_script if i else run_script.replace("new Worker(u);", ""))
+            + '<img src="/hold"></body>',
         )
         with browser_fixture(
             tmp_path / str(i),
@@ -76,7 +78,16 @@ def test_r8_interval_workers_eight_runs(tmp_path, monkeypatch):
             {POST_PATH: markup, "/hold": "ok"},
             delays={"/hold": 0.3},
             unsandboxed=False,
-        ) as (ctx, project, permit, _, hits, _, _):
+        ) as (ctx, project, permit, _, hits, _, driver):
+            original = driver.open_session
+            sessions = []
+
+            def opened(*args, original=original, sessions=sessions, **kwargs):
+                session = original(*args, **kwargs)
+                sessions.append(session)
+                return session
+
+            monkeypatch.setattr(driver, "open_session", opened)
             job = finish(ctx, submit(ctx, project, permit))
             assert job["error"] is None, (i, job)
             outcome = (
@@ -88,4 +99,6 @@ def test_r8_interval_workers_eight_runs(tmp_path, monkeypatch):
             if i == 0:
                 baseline = outcome
             assert outcome == baseline, (i, outcome, baseline)
+            if i:
+                assert sessions[-1].workers_blocked > 0
             assert not any("escape" in path or upgrade for path, upgrade in hits), hits

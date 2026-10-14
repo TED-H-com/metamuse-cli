@@ -3,6 +3,7 @@
 # ruff: noqa: E501
 
 import pytest
+from browser_deadline import browser_deadline
 from test_facebook import _setup_fb_env, _synthetic_post_html
 from test_facebook_review import URL, browser_fixture, finish, observation
 from test_facebook_round5 import POST_PATH, rows, submit
@@ -165,7 +166,8 @@ def test_r8_recorded_fatal_not_overwritten(site):
 
 
 @pytest.mark.parametrize("order", ["none", "cutoff-first", "fatal-first"])
-def test_r8_denial_after_final_observation(tmp_path, monkeypatch, order):
+@browser_deadline
+def test_r8_denial_after_final_observation(tmp_path, monkeypatch, order, request):
     with browser_fixture(
         tmp_path, monkeypatch, {POST_PATH: _synthetic_post_html()}, unsandboxed=False
     ) as (ctx, project, permit, _, _, guard, driver):
@@ -211,7 +213,8 @@ def test_r8_denial_after_final_observation(tmp_path, monkeypatch, order):
         "share-stale",
     ],
 )
-def test_r8_chromium_fatal_cutoff_pairs(tmp_path, monkeypatch, condition):
+@browser_deadline
+def test_r8_chromium_fatal_cutoff_pairs(tmp_path, monkeypatch, condition, request):
     import json
 
     codes = {
@@ -263,7 +266,9 @@ def test_r8_chromium_fatal_cutoff_pairs(tmp_path, monkeypatch, condition):
                     "/share/p/SyntheticCode1/": (302, destination),
                     destination: _synthetic_post_html(),
                 }
-            with browser_fixture(tmp_path / order, patch, pages, url=url, unsandboxed=False) as (
+            with browser_fixture(
+                tmp_path / order, patch, pages, url=url, unsandboxed=False, read_timeout=300
+            ) as (
                 ctx,
                 project,
                 permit,
@@ -274,7 +279,7 @@ def test_r8_chromium_fatal_cutoff_pairs(tmp_path, monkeypatch, condition):
             ):
                 original = driver.open_session
                 check = guard.check_browser_route
-                classify = facebook.classify_and_parse_observation
+                classify = facebook._raise_observation_barrier
                 sessions = []
 
                 def latch(sessions=sessions, guard=guard):
@@ -325,21 +330,15 @@ def test_r8_chromium_fatal_cutoff_pairs(tmp_path, monkeypatch, condition):
                             latch()
                         raise
 
-                def classified(obs, classify=classify, order=order, **kwargs):
-                    trigger = condition in {"challenge", "rate"} and any(
-                        n["attrs"].get("data-page-state") in {"challenge", "rate_limited"}
-                        for n in getattr(obs, "capture_nodes", None) or []
-                    )
-                    if (
-                        condition in {"challenge", "rate"}
-                        and getattr(obs, "capture_nodes", None) is None
-                    ):
-                        state = "challenge" if condition == "challenge" else "rate_limited"
-                        trigger = f'data-page-state="{state}"' in obs.html
+                def classified(status, state, classify=classify, order=order):
+                    trigger = condition in {"challenge", "rate"} and state in {
+                        "challenge",
+                        "rate_limited",
+                    }
                     if trigger and order == "cutoff-first":
                         latch()
                     try:
-                        return classify(obs, **kwargs)
+                        return classify(status, state)
                     except m.CoreError:
                         if trigger and order == "fatal-first":
                             latch()
@@ -347,7 +346,7 @@ def test_r8_chromium_fatal_cutoff_pairs(tmp_path, monkeypatch, condition):
 
                 patch.setattr(driver, "open_session", opened)
                 patch.setattr(guard, "check_browser_route", checked)
-                patch.setattr(facebook, "classify_and_parse_observation", classified)
+                patch.setattr(facebook, "_raise_observation_barrier", classified)
                 job = finish(ctx, submit(ctx, project, permit, url=url))
                 assert job["error"]["code"] == codes[condition], (order, condition, job)
                 outcome = (job["state"], job["error"], rows(ctx))

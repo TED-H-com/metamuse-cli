@@ -5,6 +5,7 @@
 import json
 
 import pytest
+from browser_deadline import browser_deadline
 from test_facebook import _synthetic_post_html
 from test_facebook_review import browser_fixture, finish
 from test_facebook_round5 import POST_PATH, fixture_job, rows, submit
@@ -64,7 +65,9 @@ def run(tmp_path, monkeypatch, markup, driver):
     if driver == "fixture":
         ctx, job = fixture_job(tmp_path, markup)
         return job, rows(ctx)
-    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False) as (
+    with browser_fixture(
+        tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False, read_timeout=300
+    ) as (
         ctx,
         project,
         permit,
@@ -78,7 +81,8 @@ def run(tmp_path, monkeypatch, markup, driver):
 
 
 @pytest.mark.parametrize("case", list(CASES))
-def test_r8_rendering_table_parity(tmp_path, monkeypatch, case):
+@browser_deadline
+def test_r8_rendering_table_parity(tmp_path, monkeypatch, case, request):
     inner, visible = CASES[case]
     markup = _synthetic_post_html(post_text="BODY").replace(
         ">BODY</div>", ">LEAD" + inner + "</div>"
@@ -115,7 +119,8 @@ TAMPERS["combined"] = "".join(TAMPERS[k] for k in ["remove", "style", "construct
 
 
 @pytest.mark.parametrize("tamper", list(TAMPERS))
-def test_r8_capture_cannot_be_forged(tmp_path, monkeypatch, tamper):
+@browser_deadline
+def test_r8_capture_cannot_be_forged(tmp_path, monkeypatch, tamper, request):
     markup = (
         _synthetic_post_html(post_text="BODY", comments=[{"id": "c1", "text": "COMMENT"}])
         .replace(
@@ -142,7 +147,8 @@ def test_r8_capture_cannot_be_forged(tmp_path, monkeypatch, tamper):
 
 
 @pytest.mark.parametrize("mode", ["open", "closed", "declarative", "slotted", "unslotted"])
-def test_r8_shadow_rendering(tmp_path, monkeypatch, mode):
+@browser_deadline
+def test_r8_shadow_rendering(tmp_path, monkeypatch, mode, request):
     if mode == "declarative":
         inner = '<span><template shadowrootmode="open">SHADOW</template></span>'
         script = ""
@@ -165,7 +171,8 @@ def test_r8_shadow_rendering(tmp_path, monkeypatch, mode):
 @pytest.mark.parametrize(
     "location", ["head", "meta", "hidden", "unslotted", "template", "open-shadow", "closed-shadow"]
 )
-def test_r8_barriers_in_every_tree(tmp_path, monkeypatch, location):
+@browser_deadline
+def test_r8_barriers_in_every_tree(tmp_path, monkeypatch, location, request):
     marker = '<i data-page-state="login_wall"></i>'
     markup = _synthetic_post_html()
     if location == "head":
@@ -197,8 +204,13 @@ def test_r8_barriers_in_every_tree(tmp_path, monkeypatch, location):
 
 
 @pytest.mark.parametrize("kind", ["application/xhtml+xml", "application/xml", "image/svg+xml"])
-def test_r8_non_html_refused(tmp_path, monkeypatch, kind):
-    body = b'<html xmlns="http://www.w3.org/1999/xhtml"><body>synthetic</body></html>'
+@browser_deadline
+def test_r8_non_html_refused(tmp_path, monkeypatch, kind, request):
+    body = (
+        _synthetic_post_html()
+        .replace("<html>", '<html xmlns="http://www.w3.org/1999/xhtml">')
+        .replace("</body>", "<noscript><i>NOT HTML EVIDENCE</i></noscript></body>")
+    ).encode()
 
     def serve(req):
         req.send_response(200)
@@ -207,7 +219,9 @@ def test_r8_non_html_refused(tmp_path, monkeypatch, kind):
         req.end_headers()
         req.wfile.write(body)
 
-    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: serve}, unsandboxed=False) as (
+    with browser_fixture(
+        tmp_path, monkeypatch, {POST_PATH: serve}, unsandboxed=False, read_timeout=300
+    ) as (
         ctx,
         project,
         permit,
@@ -218,10 +232,12 @@ def test_r8_non_html_refused(tmp_path, monkeypatch, kind):
     ):
         job = finish(ctx, submit(ctx, project, permit))
         assert job["error"]["code"] == "E_SELECTOR_DRIFT", job
+        assert job["error"]["message"] == "Facebook structured capture could not be completed"
         assert job["state"] == "failed"
 
 
-def test_r8_rendered_control_identity(tmp_path, monkeypatch):
+@browser_deadline
+def test_r8_rendered_control_identity(tmp_path, monkeypatch, request):
     markup = _synthetic_post_html(
         comments=[{"id": "c1", "text": "COMMENT"}], expand_controls=[{"id": "more"}]
     )
@@ -242,7 +258,8 @@ def test_r8_rendered_control_identity(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("driver", ["fixture", "chromium"])
-def test_r8_noscript_cannot_fabricate_evidence(tmp_path, monkeypatch, driver):
+@browser_deadline
+def test_r8_noscript_cannot_fabricate_evidence(tmp_path, monkeypatch, driver, request):
     markup = (
         _synthetic_post_html()
         .replace('data-comments-exhausted="true"', 'data-comments-exhausted="false"')
@@ -268,7 +285,8 @@ def test_r8_fixture_declarative_shadow_refused(tmp_path):
     assert job["state"] == "failed"
 
 
-def test_r8_capture_is_read_only(tmp_path, monkeypatch):
+@browser_deadline
+def test_r8_capture_is_read_only(tmp_path, monkeypatch, request):
     from metamuse import facebook
 
     markup = _synthetic_post_html().replace(
@@ -283,7 +301,9 @@ def test_r8_capture_is_read_only(tmp_path, monkeypatch):
     new MutationObserver(list=>window.mutations+=list.length).observe(document,{attributes:true,childList:true,subtree:true});
     </script></body>""",
     )
-    with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False) as (
+    with browser_fixture(
+        tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False, read_timeout=300
+    ) as (
         _,
         _,
         _,
@@ -312,7 +332,8 @@ def test_r8_capture_is_read_only(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("bound", ["nodes", "bytes"])
-def test_r8_capture_bounds_fixed_error(tmp_path, monkeypatch, bound):
+@browser_deadline
+def test_r8_capture_bounds_fixed_error(tmp_path, monkeypatch, bound, request):
     # Generate locally in page script, staying below the HTTP/job byte budget.
     script = (
         "document.body.append(...Array.from({length:66000},()=>document.createElement('i')));"
@@ -327,7 +348,8 @@ def test_r8_capture_bounds_fixed_error(tmp_path, monkeypatch, bound):
     assert stored == []
 
 
-def test_r8_closed_shadow_gap_is_partial(tmp_path, monkeypatch):
+@browser_deadline
+def test_r8_closed_shadow_gap_is_partial(tmp_path, monkeypatch, request):
     from metamuse import _facebook_capture
 
     markup = _synthetic_post_html().replace(
@@ -360,7 +382,8 @@ def test_r8_closed_shadow_gap_is_partial(tmp_path, monkeypatch):
 @pytest.mark.parametrize(
     "style", ['aria-hidden="true"', 'style="content-visibility:auto;position:absolute;top:99999px"']
 )
-def test_r8_painted_comments_cannot_disappear(tmp_path, monkeypatch, style):
+@browser_deadline
+def test_r8_painted_comments_cannot_disappear(tmp_path, monkeypatch, style, request):
     markup = (
         _synthetic_post_html(comments=[{"id": "c1", "text": "PAINTED COMMENT"}])
         .replace('data-comment-id="c1"', 'data-comment-id="c1" ' + style)
@@ -382,3 +405,40 @@ def test_r8_painted_comments_cannot_disappear(tmp_path, monkeypatch, style):
             )
         )
     assert outcomes[0] == outcomes[1]
+
+
+@browser_deadline
+def test_r8_closed_root_created_during_capture_is_partial(tmp_path, monkeypatch, request):
+    markup = _synthetic_post_html().replace("</body>", '<div id="late-host"></div></body>')
+    with browser_fixture(
+        tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False, read_timeout=300
+    ) as (ctx, project, permit, _, _, _, driver):
+        original = driver.open_session
+
+        def opened(*a, **k):
+            session = original(*a, **k)
+            cdp = session._network_cdp
+            send = cdp.send
+            injected = False
+
+            def changed(method, params=None):
+                nonlocal injected
+                result = send(method, params)
+                if method == "DOM.getDocument" and not injected:
+                    injected = True
+                    send(
+                        "Runtime.evaluate",
+                        {
+                            "expression": 'document.getElementById("late-host").attachShadow({mode:"closed"}).textContent="LATE"'
+                        },
+                    )
+                return result
+
+            monkeypatch.setattr(cdp, "send", changed)
+            return session
+
+        monkeypatch.setattr(driver, "open_session", opened)
+        job = finish(ctx, submit(ctx, project, permit))
+        assert job["error"] is None, job
+        assert job["coverage_status"] == "partial"
+        assert "capture_changed_during_observation" in job["missing_fields"]

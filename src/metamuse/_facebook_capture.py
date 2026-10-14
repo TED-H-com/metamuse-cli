@@ -128,7 +128,23 @@ WALK = r"""() => {
 
 def capture(cdp: Any) -> tuple[list[dict[str, Any]], int, tuple[str, ...]]:
     """One isolated world for the current main-frame document; no iframe evidence."""
+    changed = []
+    events = (
+        "DOM.childNodeInserted",
+        "DOM.childNodeRemoved",
+        "DOM.shadowRootPushed",
+        "DOM.shadowRootPopped",
+        "DOM.attributeModified",
+        "DOM.characterDataModified",
+    )
+
+    def mutation(_event):
+        if not changed:
+            changed.append(True)
+
     try:
+        for event in events:
+            cdp.on(event, mutation)
         frame = cdp.send("Page.getFrameTree")["frameTree"]["frame"]
         world = cdp.send(
             "Page.createIsolatedWorld", {"frameId": frame["id"], "worldName": "metamuse-read-only"}
@@ -199,11 +215,19 @@ def capture(cdp: Any) -> tuple[list[dict[str, Any]], int, tuple[str, ...]]:
                 node["backend"] = cdp.send("DOM.describeNode", {"objectId": obj})["node"][
                     "backendNodeId"
                 ]
+        if changed:
+            gaps.add("capture_changed_during_observation")
         return nodes, world, tuple(sorted(gaps))
     except m.CoreError:
         raise
     except Exception:
         raise failure() from None
+    finally:
+        try:
+            for event in events:
+                cdp.remove_listener(event, mutation)
+        except Exception:
+            raise failure() from None
 
 
 def validate(nodes: list[dict[str, Any]]) -> None:
