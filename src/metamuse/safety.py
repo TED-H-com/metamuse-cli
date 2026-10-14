@@ -486,6 +486,12 @@ def _hostname(value: str) -> str:
     return str(literal) if literal is not None else host
 
 
+def normalize_hostname(value: str) -> str:
+    """IDNA A-label. One trailing dot is stripped. A second trailing dot is refused."""
+
+    return _hostname(value)
+
+
 def _public_ip(address: _IP, *, fixture_loopback: bool = False) -> bool:
     if isinstance(address, _IPv6) and address.ipv4_mapped is not None:
         return _public_ip(address.ipv4_mapped, fixture_loopback=fixture_loopback)

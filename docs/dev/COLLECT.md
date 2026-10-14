@@ -321,16 +321,87 @@ Approvals are not unioned across the job. A checked delegation hop uses only
 the hopped extractor's approval.
 
 A platform challenge stops the job inside the request handler, before yt-dlp
-can answer it. MetaMuse does not solve, retry, or POST a challenge. A response
-with status 403, 429, or 503 stops the input when the body contains
-`fetch(…"/__rd_verify…")`, a `cf-mitigated: challenge` header is present, or
-the dial layer reports a reason phrase containing "challenge". Any request
-whose path starts with `/__rd_verify` is refused before the dial, on any host.
-The error is `E_CHECKPOINT_REQUIRED`, message `Platform challenge`, next action
-`Stop. Do not solve a challenge or retry it.` The job is `awaiting_user`.
-Nothing new is stored for that input. The received body still counts against
-`max_bytes`, and the permit use stays at the one already reserved. A 403
-without a challenge marker stays `E_ACCESS_DENIED`.
+can answer it. MetaMuse does not solve, retry, or POST a challenge. The stop
+does not depend on the HTTP status. Any of these is `E_CHECKPOINT_REQUIRED`,
+message `Platform challenge`, next action `Stop. Do not solve a challenge or
+retry it.`:
+
+- a `cf-mitigated` header whose value contains `challenge`;
+- a reason phrase that contains `challenge`;
+- `/__rd_verify` anywhere in the response body or in a `Refresh` or `Location`
+  header.
+
+Each request path is normalized before it is tested: percent-decode, collapse
+repeated `/`, resolve `.` and `..`, lowercase. A segment that starts with
+`__rd_verify`, a segment equal to `challenge.html`, or a query containing
+`hash429` is the same error, and it is raised before that URL is dialed. The
+same check runs on every redirect `Location`, including the share resolver,
+before the target is dialed. The job is `awaiting_user`. Nothing new is stored
+for that input. The received body still counts against `max_bytes`, and the
+permit use stays at the one already reserved. A 403 without a challenge marker
+stays `E_ACCESS_DENIED`.
+
+Before a redirect is followed, the target is checked in this order: host
+approval, challenge, checkpoint, then login. A checkpoint segment is
+`E_CHECKPOINT_REQUIRED`. A login segment (`login`, `login.php`, or a segment
+that starts with `login.`) is `E_AUTH_REQUIRED`, including a locale prefix such
+as `/zh_TW/login/`. Media and subtitle fetches use that same check, so a login
+redirect is not stored as a silent `partial` with `missing_fields`.
+
+Pinned distribution **yt-dlp 2026.8.19**, runtime version **2026.08.19**, was
+audited from the installed package without network access. The full search was
+`grep -RniE --include='*.py' 'challenge|hash429|captcha|cf_clearance|__rd_verify|JSInterpreter' <site-packages>/yt_dlp`:
+348 keyword hits in 34 files. The table classifies every matching line,
+including fixture text and normal player deciphering. `cf_clearance` has no
+hits. `JSInterpreter` has one extractor constructor call, `vk.py:61`.
+The existing third-party notice records yt-dlp's Unlicense, version and source;
+this audit copies no upstream implementation.
+
+An extractor key in a solver row cannot be approved for execution. Submit,
+resume and delegation hops refuse it with `E_UNSUPPORTED` and fixed message
+`The extractor answers platform challenges`. Base keys are refused as well
+as all concrete subclasses that inherit the solver. `TikTokVM`, `VKPlay`,
+`VKPlayLive` and `VKPlayBase` do not inherit these solver methods. `Facebook`
+and `FacebookReel` remain usable. The request guard additionally stops the
+audited `/challenge.html`, `hash429` and `/__rd_verify` endpoints before dialing.
+
+| Installed yt-dlp file and matching lines | Classification and decision |
+| --- | --- |
+| `extractor/amcnetworks.py:23` | Synthetic upstream test title/description/URL contains the word; no challenge handling or answer. |
+| `extractor/boosty.py:167, 168` | Fixture expected warnings from delegated YouTube player nsig deciphering; not an anti-bot answer. |
+| `extractor/brightcove.py:65` | Synthetic upstream test title/description/URL contains the word; no challenge handling or answer. |
+| `extractor/cbsnews.py:283, 287` | Synthetic upstream test title/description/URL contains the word; no challenge handling or answer. |
+| `extractor/ciscowebex.py:64` | Captcha refusal message; no answer computed. |
+| `extractor/common.py:2054, 2057, 2058` | Akamai player verification is unsupported; returns no formats rather than computing an answer. |
+| `extractor/dplay.py:744` | Synthetic upstream test title/description/URL contains the word; no challenge handling or answer. |
+| `extractor/facebook.py:1110, 1115, 1117, 1118, 1119, 1123` | **Solver.** `FacebookAdsIE` answers the 403 client challenge with an empty POST to `/__rd_verify`, then retries. Refuse `FacebookAds`. `FacebookIE` and `FacebookReelIE` do not inherit this method. |
+| `extractor/generic.py:829, 838` | Detects Cloudflare and raises; no answer. Generic is already refused. |
+| `extractor/goplay.py:218, 220, 223, 224, 225, 226, 227, 231, 258, 259, 261, 264, 267, 268, 269, 270, 271, 293, 299` | Cognito `PASSWORD_VERIFIER` account SRP authentication; not an anti-bot, rate-limit or captcha answer. No solver refusal. |
+| `extractor/kicker.py:26` | Synthetic upstream test title/description/URL contains the word; no challenge handling or answer. |
+| `extractor/likee.py:75` | Synthetic upstream test title/description/URL contains the word; no challenge handling or answer. |
+| `extractor/mtv.py:231, 235` | Synthetic upstream test title/description/URL contains the word; no challenge handling or answer. |
+| `extractor/niconico.py:98` | Reports failed account MFA authentication; does not solve an anti-bot challenge. |
+| `extractor/nytimes.py:244` | Synthetic upstream test title/description/URL contains the word; no challenge handling or answer. |
+| `extractor/panopto.py:98` | Synthetic upstream test title/description/URL contains the word; no challenge handling or answer. |
+| `extractor/peekvids.py:19` | Bot/captcha refusal message; no answer computed. |
+| `extractor/playsuisse.py:170, 179, 180` | OAuth PKCE `code_challenge`; not an anti-bot answer. No solver refusal. |
+| `extractor/slideslive.py:44` | Synthetic upstream test title/description/URL contains the word; no challenge handling or answer. |
+| `extractor/soundcloud.py:196, 197` | Inactive triple-quoted login payload; captcha fields are not executed. |
+| `extractor/tiktok.py:223, 224, 228, 230, 233, 235, 237, 239, 241, 248, 251, 254, 256, 259, 305, 312, 313, 1290, 1309, 1503` | **Solver** at 223–313: `TikTokBaseIE` brute-forces SHA-256 proof of work, sets answer cookies and retries. Refuse `TikTok`, `TikTokUser`, `TikTokSound`, `TikTokEffect`, `TikTokTag`, `TikTokCollection`, `Douyin`, `TikTokLive`, `TikTokBase`, `TikTokBaseList`. At 1290/1309, “challenge” means hashtag content, not an anti-bot endpoint. At 1503, the Douyin signature-cookie solver is only a TODO; it still inherits the implemented base solver. |
+| `extractor/udemy.py:135, 137, 138` | Captcha detection and operator-facing refusal; no answer computed. |
+| `extractor/vk.py:12, 45, 46, 51, 54, 55, 59, 61, 65, 66, 68, 70, 71` | **Solver.** `VKBaseIE` runs `JSInterpreter`, computes MD5 of `hash429:salt`, submits `key`, and retries. Refuse `VK`, `VKUserVideos`, `VKWallPost`, `VKBase`. |
+| `extractor/yandexmusic.py:22, 23, 26, 29, 32, 39` | Captcha detection and operator-facing refusal; no answer computed. |
+| `extractor/youtube/_tab.py:2136, 2137` | Upstream test tags contain “challenge”; no challenge handling or answer. |
+| `extractor/youtube/jsc/_builtin/bun.py:19, 20, 21, 65, 73, 154, 164` | YouTube player signature / nsig deciphering infrastructure (`N` / `SIG` only); **not an anti-bot challenge answer**. No solver refusal. MetaMuse separately disables JS runtimes, remote components and subprocesses. |
+| `extractor/youtube/jsc/_builtin/deno.py:17, 18, 19, 53, 70, 118, 130` | YouTube player signature / nsig deciphering infrastructure (`N` / `SIG` only); **not an anti-bot challenge answer**. No solver refusal. MetaMuse separately disables JS runtimes, remote components and subprocesses. |
+| `extractor/youtube/jsc/_builtin/ejs.py:13, 14, 15, 16, 17, 18, 19, 20, 34, 75, 77, 80, 148, 149, 166, 172, 179, 181, 182, 183, 185, 188, 207, 230, 239, 246, 252, 253, 273, 284, 296, 297, 307` | YouTube player signature / nsig deciphering infrastructure (`N` / `SIG` only); **not an anti-bot challenge answer**. No solver refusal. MetaMuse separately disables JS runtimes, remote components and subprocesses. |
+| `extractor/youtube/jsc/_builtin/node.py:9, 10, 11, 54, 69` | YouTube player signature / nsig deciphering infrastructure (`N` / `SIG` only); **not an anti-bot challenge answer**. No solver refusal. MetaMuse separately disables JS runtimes, remote components and subprocesses. |
+| `extractor/youtube/jsc/_builtin/quickjs.py:10, 11, 12, 30, 58, 66` | YouTube player signature / nsig deciphering infrastructure (`N` / `SIG` only); **not an anti-bot challenge answer**. No solver refusal. MetaMuse separately disables JS runtimes, remote components and subprocesses. |
+| `extractor/youtube/jsc/_director.py:13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 37, 40, 43, 44, 47, 50, 53, 60, 61, 62, 71, 72, 74, 78, 81, 86, 91, 95, 96, 98, 109, 114, 123, 132, 138, 148, 151, 163, 187, 192, 225, 239, 240, 241, 246, 248, 249, 251, 256, 257, 258, 259, 260, 262, 265, 267, 268, 269, 270, 272, 274, 275, 276, 277, 281, 283, 284, 285, 286, 287` | YouTube player signature / nsig deciphering infrastructure (`N` / `SIG` only); **not an anti-bot challenge answer**. No solver refusal. MetaMuse separately disables JS runtimes, remote components and subprocesses. |
+| `extractor/youtube/jsc/provider.py:20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 36, 42, 43, 44, 49, 51, 55, 57, 61, 66, 71, 72, 73, 78, 79, 80, 83, 84, 91, 92, 95, 98, 100, 102, 109, 110, 112, 113, 119, 120, 125, 137, 138, 141, 142, 145, 150, 151, 153, 160` | YouTube player signature / nsig deciphering infrastructure (`N` / `SIG` only); **not an anti-bot challenge answer**. No solver refusal. MetaMuse separately disables JS runtimes, remote components and subprocesses. |
+| `jsinterp.py:162, 271` | Interpreter implementation/comment, not an extractor. Its only extractor constructor call is `vk.py:61` (refused above). |
+| `extractor/youtube/_video.py:28, 3293, 3296, 3299, 3301, 3302, 3304, 3305, 3306, 3307, 3308, 3309, 3311, 3312, 3314, 3317, 3319, 3320, 3322, 3323, 3326, 3327, 3328, 3329, 3330, 3334, 3335, 3337, 3338, 3339, 3340, 3341, 3343, 3344, 3347, 3350, 3354, 3356, 3359, 3360, 3361, 3363, 3368, 3372, 3374, 3375, 3377, 3378, 3381, 3382, 3384, 3562, 3571, 3576, 3577, 3578, 3694, 3695, 3696, 3697, 3699, 3713, 3732, 3733, 3734, 3735, 3737, 3751` | Player signature / nsig deciphering and warnings (`N` / `SIG`); **not an anti-bot challenge answer**. No solver refusal. |
+| `extractor/youtube/_video.py:4067, 4068` | Playback captcha detection/error message; no answer. |
 
 `https://<approved host>/share/r/<token>` and
 `https://<approved host>/share/v/<token>` are accepted when the token is one
@@ -345,32 +416,75 @@ the target key. The share URL is kept exactly as requested.
 
 Resolution is one checked GET of the share URL through the same handler:
 checker, byte budget, wall clock, cancel, the HTTPS-to-HTTP refusal, and no
-request body. Redirects are not followed. The first 30x `Location` is accepted
-only when it is `https`, its exact host is in the target approval, and the
-target extractor's `suitable()` accepts the canonical form. `/reel/<digits>`
-and `/<page>/videos/<digits>` drop the query and fragment. `/watch/?v=<digits>`
-keeps only `v`. A 200 page or a redirect to `/login` or `checkpoint` is
-`E_AUTH_REQUIRED`, message `Login required`, next action
-`Stop. Do not retry a login wall.` Anything else is `E_UNSUPPORTED`, message
-`Share link did not resolve to an approved media URL`. A redirect to an
-unapproved host is `E_SCOPE_DENIED` before that host is dialed. Nothing is
-stored. The source `use_basis` and the step result record `requested_url` (the
-share URL) and `resolved_url` (the canonical URL).
+request body. Redirects are not followed. The first 30x `Location` is classified
+before any further dial, in this order: host approval, challenge, checkpoint,
+login. An unapproved host is `E_SCOPE_DENIED` even when its path is `/login`.
+A challenge `Location`, including a percent-encoded `/__rd_verify` segment, is
+`E_CHECKPOINT_REQUIRED`, not `E_UNSUPPORTED`. A checkpoint path is
+`E_CHECKPOINT_REQUIRED`. A login path is `E_AUTH_REQUIRED`, message
+`Login required`, next action `Stop. Do not retry a login wall.` The target is
+then accepted only when it is `https`, its exact host is in the target
+approval, and the target extractor's `suitable()` accepts the canonical form.
+`/reel/<digits>` and `/<page>/videos/<digits>` drop the query and fragment.
+`/watch/?v=<digits>` keeps only `v`. HTTP 429 uses the same rate-limit result
+as any other dial: `E_RATE_LIMITED`, `Retry-After`, partial coverage, and an
+empty job error. HTTP 404 and 410 are `E_RESOURCE_UNAVAILABLE`. HTTP 401 stays
+`E_AUTH_REQUIRED`. A 200 is a challenge when it carries a challenge marker. It
+is `E_AUTH_REQUIRED` only when the body has a login form whose action targets
+a login path. Any other 200 is `E_UNSUPPORTED`, message `The share link did
+not redirect`. A redirect to an unapproved host is `E_SCOPE_DENIED` before that
+host is dialed. Nothing is stored. The source `use_basis` and the step result
+record `requested_url` (the share URL) and `resolved_url` (the canonical URL).
+A resume that reuses `resolved_url` checks its host against the exact approval
+matched by the original share input and checks the target extractor's
+`suitable()` before any dial. Duplicate approvals for the same extractor do
+not union their hosts. A mismatch is `E_SCOPE_DENIED`.
+
+Share hosts, approval hosts, request hosts, and cookie domains use one
+normalization, `safety.normalize_hostname`: strip one trailing dot, refuse a
+second, encode an IDNA A-label, and lowercase. A share URL whose host ends in
+`..` is refused at submit.
 
 Extraction uses `extract_info(..., download=False, process=False)` and a
 MetaMuse hop loop, so yt-dlp does not follow `url` or `url_transparent`
-results itself. A hop whose `ie_key` has an approval containing the hop URL's
-exact host runs as a new extraction with `allowed_extractors` set to that key
-only and a checker built from that approval's hosts only. At most two hops are
-allowed. Each hop is a dial: budget, wall clock, and cancel apply. A
-`url_transparent` result merges the way yt-dlp does: non-None outer fields
-override inner ones, except `_type`, `url`, `ie_key`, and, when the outer
-result has no section, `id`, `extractor`, and `extractor_key`. The source
-`use_basis` and the step result record the extractor chain, for example
-`["FacebookReel", "Facebook"]`. `upstream_collection_method` is the final
-extractor. A hop to an unapproved key or host is `E_SCOPE_DENIED`. The next
-action names the extractor key and the exact host. Nothing is stored. A third
-hop is `E_UNSUPPORTED`. `FacebookIE` rewrites `m.facebook.com` to
+results itself. `process_ie_result` runs in that same `try` and `_extracting`
+block, so its errors are classified and the process audit stays armed. A video
+with no formats is a classified extraction error (`E_UNSUPPORTED`, message
+`Extractor failed`), not `E_STORAGE`. Before `process_ie_result`, a `playlist`,
+`multi_video`, or `compat_list` with more than one entry is `E_UNSUPPORTED`
+(message `The upstream result is a playlist`). `additional_urls` is removed.
+Nested single-entry lists are unwrapped under the same audit guard. One
+`url` or `url_transparent` entry is sent back through the hop loop, so
+`MAX_HOPS`, the approval, the host check, and `suitable()` apply. No URL is
+extracted outside `_extract_chain`. A hop whose `ie_key` has an approval
+containing the hop URL's exact host runs as a new extraction with
+`allowed_extractors` set to that key only and a checker built from that
+approval's hosts only. At most two hops are allowed. Each hop is a dial:
+budget, wall clock, and cancel apply.
+
+`_merge_transparent` keeps the inner result for identity and media. The outer
+result may replace only descriptive fields. The stored `canonical_url`,
+`platform`, extractor chain, and `upstream_collection_method` come from the
+final inner extractor.
+
+Inner, always: `id`, `extractor`, `extractor_key`, `webpage_url`,
+`original_url`, `url`, `formats`, `requested_formats`, `subtitles`,
+`requested_subtitles`, `automatic_captions`, `additional_urls`, `http_headers`.
+
+Outer, only when the outer value is not null: `title`, `fulltitle`,
+`alt_title`, `description`, `timestamp`, `upload_date`, `release_timestamp`,
+`release_date`, `duration`, `channel`, `channel_id`, `channel_url`,
+`uploader`, `uploader_id`, `uploader_url`, `creator`, `artist`, `album`,
+`track`, `genre`, `categories`, `tags`, `thumbnail`, `thumbnails`,
+`view_count`, `like_count`, `comment_count`, `availability`, `age_limit`,
+`live_status`, `series`, `season`, `episode`, `episode_number`,
+`season_number`, `section_start`, `section_end`.
+
+The source `use_basis` and the step result record the extractor chain, for
+example `["FacebookReel", "Facebook"]`. `upstream_collection_method` is the
+final inner extractor. A hop to an unapproved key or host is `E_SCOPE_DENIED`.
+The next action names the extractor key and the exact host. Nothing is stored.
+A third hop is `E_UNSUPPORTED`. `FacebookIE` rewrites `m.facebook.com` to
 `www.facebook.com` before its page GET, so an approval that only lists the
 mobile host allows the hop and then the checker refuses the desktop host.
 
@@ -381,16 +495,29 @@ set `auth_ref` on one approval. The job resolves it with
 `resolve_secret(auth_ref, provider=<permit provider>, account=<permit account>)`
 before the first dial of that approval. A missing secret or a provider or
 account mismatch is the B08 `E_AUTH_REQUIRED` secret error, and that input
-does not dial. The imported bytes must be a Netscape cookie file or one
-`Cookie:` header line. Anything else is `E_INPUT_INVALID` and the message does
-not echo the file. Cookies are parsed in memory. A `Cookie` header is added
-only when the request's exact host is in that approval's hosts and the cookie
-matches by domain, host-only, path, `Secure`, and expiry. A hop or redirect
-to a host outside that approval does not receive the cookie. Subtitle and
-media CDN hosts do not receive it unless they are in that approval and match.
-`Set-Cookie` is ignored. The job stores no new credential. Cookie values are
-absent from the checkpoint, step result, job request, events, logs, envelopes,
-exceptions, and the database.
+does not dial. The imported bytes must be a Netscape cookie file. A secret
+that is a `Cookie:` header line is `E_INPUT_INVALID` with message `A Netscape
+cookie file is required`. The message does not echo the file. Parsing strips
+only the line terminator, so an empty seventh field stays an empty value.
+`#` comments and the `#HttpOnly_` prefix are unchanged. Every name must be an
+RFC 6265 token. Every value must be RFC 6265 cookie-octets, optionally wrapped
+in one pair of double quotes: no controls, whitespace, `;`, `,`, `\`, or a
+stray `"`. Every domain must pass `safety.normalize_hostname`. Any invalid
+line rejects the whole file with `E_INPUT_INVALID`. The message names the
+1-based line number and never the line. Cookies are parsed in memory. A
+`Cookie` header is added only when every condition holds: the request host is
+in that approval's hosts, the cookie domain-matches and path-matches, and a
+`Secure` cookie is sent only over `https`. A `.facebook.com` cookie does not
+match an `fbcdn.net` host in the same approval. A non-`Secure` cookie is the
+only kind that may be sent over `http`, and it still does not leave its
+domain. Subtitle and media fetches use the same rule. `Set-Cookie` is ignored.
+The job stores no new credential. Cookie values are absent from the
+checkpoint, step result, job request, events, logs, envelopes, exceptions,
+and the database. The secret behind `auth_ref` is that Netscape file. Putting
+`auth_ref` only on `FacebookReel` does not send the cookie on the `Facebook`
+watch hop. Put the same reference on both approvals when the share GET and
+the watch GET should both carry it. A bad secret stops that approval before
+its dial.
 
 ```toml
 [[remote_media.approvals]]
@@ -401,10 +528,17 @@ auth_ref = "auth_0123456789abcdef0123456789abcdef"
 [[remote_media.approvals]]
 extractor = "Facebook"
 hosts = ["m.facebook.com", "www.facebook.com"]
+auth_ref = "auth_0123456789abcdef0123456789abcdef"
 ```
 
 `auth_ref` is optional. The value above is a synthetic reference, not a
-secret. A token left under `XDG_CACHE_HOME` is not read.
+secret. The bytes it names must be a Netscape cookie file. A `Cookie:` header
+line is refused. The same reference on both approvals is what sends that file
+on the share GET and on the Facebook watch hop for
+`https://www.facebook.com/share/r/ReelTokenOne/` and
+`https://www.facebook.com/share/r/ReelTokenTwo/`. A token left under
+`XDG_CACHE_HOME` is not read. Without `auth_ref`, those two inputs are still
+the same two approvals and no cookie is sent.
 
 A process-wide audit hook, installed once at import, refuses `subprocess.Popen`,
 `os.system`, `os.posix_spawn`, `os.exec*`, and `os.fork*` while extraction or
