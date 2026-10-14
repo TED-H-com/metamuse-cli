@@ -211,6 +211,11 @@ mismatched or non-exact share grants retain E_SCOPE_DENIED and their actual mess
 without a preview; repeat the call without a grant for a fresh review. Stale packets
 return E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in submit and preview.
 Policy and authentication failures retain their actual errors without a preview.
+For B12 remote media, the exact digest also binds the whole configured approval table:
+canonical sorted extractor keys, normalized sorted hosts and opaque auth_ref or null.
+The review identifies first-hop and later-hop entries and shows each cookie label/account.
+Selection uses those bound entries; even an unrelated approval edit invalidates an
+outstanding grant before consumption or egress and requires a fresh review.
 The preview's operator command uses the next unused digest-based approval key, so a
 fresh review cannot replay an exhausted/revoked/expired grant. Repeating a previously
 submitted approval command still replays its original permit and mutable use state.

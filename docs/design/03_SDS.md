@@ -626,3 +626,12 @@ Owned scanning passes. On this main, core safety.redact_text is still quadratic
 for k=> and ordinary ampersand pairs. Strict xfails name B16a and fail on XPASS;
 no safety.py change is included. The 1 MiB CPU ceiling is 12 s, allowing ample
 margin above the passing sub-second measurements, while rejecting minute-long work.
+
+
+B12's target includes the complete canonical remote-media approval table: extractor key,
+normalized sorted hosts, and opaque auth_ref or null. Preparation preserves configured
+extractor priority and orders entries within each key canonically; selected first-hop
+keys are also bound. The preview identifies first-hop and later-hop entries, hosts and
+cookie labels/accounts. Execution selects hops only from the bound entries. A change
+to any entry, including an unrelated approval, invalidates the grant before use or
+egress and requires a fresh preview. No network-derived resolved URL enters the digest.

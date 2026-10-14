@@ -320,7 +320,15 @@ Exactly one `collect.remote` preview callback dispatches `CollectRequest` throug
 the fixed route table in `collect.py`. B13 will extend the route selector and table.
 Preview, submission and the step boundary call the same `prepare_remote_media`.
 The B08 action digest binds the original URL bytes, project, configured provider/account,
-resources, extractor keys and requested limits; grant IDs and request keys are excluded.
+resources, extractor keys, requested limits and the entire configured approval table.
+The table is sorted canonically by extractor key, normalized sorted hosts and opaque
+`auth_ref` (or null). Entries sharing an extractor use canonical order, so reordering
+them cannot switch the chosen cookie binding. Configured extractor priority is retained;
+the chosen first-hop keys are also bound. The preview names first-hop entries
+and every entry that may serve later hops, including hosts and cookie label/account.
+The job selects hops only from its bound entries. Even an unrelated approval edit
+invalidates outstanding grants before consumption or egress; this fail-closed trade-off
+is intentional. Grant IDs and request keys are excluded from the action digest.
 Current workspace limits and extractor/host approvals are checked again at execution.
 Each displayed text field, including nested input URLs, is redacted before JSON encoding.
 The digest still binds original bytes: a redacted copy needs a new review and digest.

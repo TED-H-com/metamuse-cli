@@ -38,8 +38,18 @@ def fixture_class():
             return self._download_json(url, self._match_id(url), note=False)
     return MetamuseFixtureIE
 original_class = remote_media._extractor_class
-remote_media._extractor_class = lambda key: (fixture_class()
-    if key == 'MetamuseFixture' else original_class(key))
+def extractor(key):
+    if key == 'MetamuseFixture':
+        return fixture_class()
+    if key == 'Facebook' and os.environ.get('REMOTE_TEST_HOP'):
+        from yt_dlp.extractor.common import InfoExtractor
+        class FacebookIE(InfoExtractor):
+            _VALID_URL = r'https://(?:www|m)\\.facebook\\.com/watch/\\?v=(?P<id>\\d+)'
+            def _real_extract(self, url):
+                return self._download_json(url, self._match_id(url), note=False)
+        return FacebookIE
+    return original_class(key)
+remote_media._extractor_class = extractor
 if os.environ.get('REMOTE_TEST_MISSING_EXTRA'):
     remote_media.dependency_available = lambda: False
 def forbidden(*args, **kwargs):
@@ -55,6 +65,9 @@ def factory(hosts, resolver):
     return check
 remote_media._checker_factory = factory
 def dial(method, url, headers, body, checked, timeout, limit):
+    with Path(os.environ['REMOTE_TEST_EGRESS']).open('a') as handle:
+        handle.write(json.dumps({'event': 'dial', 'url': url,
+            'cookie': headers.get('Cookie'), 'limit': limit}) + '\\n')
     payload = {'id': urlsplit(url).path.strip('/'), 'title': 'Synthetic media',
         'webpage_url': url, 'formats': [{'format_id': 'fixture', 'ext': 'mp4',
         'url': 'https://media.fixture.test/media.mp4'}]}
