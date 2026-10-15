@@ -81,13 +81,13 @@ expressions remain unchanged. Quoted JSON keeps its delimiters; container/numeri
 JSON uses a quoted sentinel. Findings contain only category and count.
 
 The shared redactor performs at most four applications: three changing passes and
-one confirming pass. A fourth changing pass adds `redaction_unstable`. Packets and
-bundles refuse it with fixed E_INPUT_INVALID before hashing or writing any state.
+one confirming pass. A fourth changing pass adds `redaction_unstable` and masks the
+entire output. Packets and bundles refuse it with fixed E_INPUT_INVALID before hashing or writing any state.
 Raw canonical size checks precede rendering; packet/bundle redaction runs outside the
 write transaction, whose snapshot validation remains database-only. Sparse decoding
 maps up to three percent and JSON-escape layers to original value spans and literal
-plus is form/query whitespace. Forward scans and interval closure prevent suffix
-rescanning and newly exposed values. Output uses one join. Current-rule changes to an
+plus is whitespace only within an actual URL query or complete form-body region.
+Forward scans and interval closure prevent suffix rescanning and newly exposed values. Output uses one join. Current-rule changes to an
 older packet refuse Muse prepare/preview/submit/wire with E_REFERENCE_INVALID, without
 rewriting stored text or issuing an approval preview. Original exports remain
 original_private. Original local search continues exposing selected source snippets;
@@ -243,8 +243,8 @@ an incomplete document.
 
 Human `packet preview` refuses text rendered by older rules with the fixed
 `E_REFERENCE_INVALID` stale-packet error before exposing it. URL userinfo stops at
-the literal authority boundary (`/`, `?` or `#`); encoded characters remain inside
-the mapped password span. Scheme scanning has a forward anchor and accepts custom
+the WHATWG authority boundary (`/`, `?`, `#`, whitespace, and backslash for special
+schemes); deeper encoded delimiters remain inside the mapped password span. Scheme scanning has a forward anchor and accepts custom
 schemes of any length.
 
 Flags whose names are `authorization`, `proxy-authorization`, `cookie` or
@@ -259,19 +259,10 @@ whole, while a self-closing element has an empty value. Existing secure-cookie
 and cloud-header name prefixes use the same three-layer decoding in structured
 records as in text.
 
-One call to `redact_text` applies the single pass at most four times (three changing
-passes and one confirming pass). For every input without `redaction_unstable`,
-`redact_text(redact_text(x)[0])[0] == redact_text(x)[0]`. The fourth changing
-application reports `redaction_unstable`; packet/bundle rendering refuses with the
-fixed "Packet redaction did not stabilize" E_INPUT_INVALID before hashing or writes.
-Muse text refuses the finding; nonrefusable displays and error details mask the whole
-value. There is no separate packet iteration bound.
-
-Unquoted assignment values end at whitespace, contextual list separators, or a
-closing enclosing string. A raw quote, ] or } inside the value is data. URL userinfo
-uses the WHATWG authority: the first /, ?, #, whitespace, or a backslash for special
-schemes ends it. Passwords run from the first userinfo colon to the last @ in that
-authority; raw authority terminators cannot occur in a URL password. Query values
-end at &, #, whitespace, a same-layer encoded ?, or the URL's enclosing quote/bracket.
-Namespaced XML elements use their local name and mask CDATA whole. Quoted subscript
-keys, single-dash flags and quoted type annotations with defaults are supported.
+For every input without `redaction_unstable`,
+`redact_text(redact_text(x)[0])[0] == redact_text(x)[0]`. Packet source text is
+redacted with its original form-body scope before labels are joined. Structured
+sensitive values are replaced whole regardless of type; HAR name/value objects and
+cookies, CDATA/namespaced XML, flags, subscript keys and private-key formats follow
+[SPEC FR-019](../design/02_SPEC.md). The layer rule treats deeper decoded delimiters
+as value data, and original spans are never discarded for containing percent escapes.

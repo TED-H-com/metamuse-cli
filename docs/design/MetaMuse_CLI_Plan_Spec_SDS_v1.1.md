@@ -209,64 +209,99 @@ Packet固定版本；修正建立新packet。批准可以涵蓋已展示的proje
 Question也是分享資料。去姓名不代表匿名，URL和原文仍可能識別人物。來源內容和Muse回答都不能建立grant、執行shell、修改取得方式或擴大授權。
 
 B16a privacy guard classifies credentials by name and syntax, never by the value's
-alphabet. The existing name list remains, with normalized suffixes `sess`, `sessid`,
-`session`, `token`, `secret`, `cookie`, `password`, `passwd`, `pwd`, `pass`, and names
+alphabet. Keep the existing name list; normalize case, punctuation and up to three
+percent-encoding layers. Sensitive suffixes include `sess`, `sessid`, `session`,
+`token`, `secret`, `cookie`, `password`, `passwd`, `pwd`, `pass`, `api_key`/`apikey`,
+`secret_key`, `access_key` and `private_key`. Whole names include `sid`, `passphrase`,
 `auth`, `credentials`, `x-api-key`, `cookie_header` and `Proxy-Authorization`.
-Case, hyphens, underscores and up to three percent-encoding layers are normalized.
-Assignments (`=`, `:`, `=>`), JSON/TOML/YAML fields, XML elements and command flags
-(`--name=value`, `--name value`, `-Dname=value`, `curl -u user:value`) identify values.
-Quoted values end at their closing quote; unquoted values end at whitespace or a
-contextual list separator. Sensitive JSON strings, numbers, arrays and objects are
-redacted whole, including embedded, escaped, truncated and multiline documents.
-Structured packet/bundle records apply the same exemptions to every value type.
 
-Authorization and Proxy-Authorization values with a scheme and following material
-are private through end of line (or their enclosing string), regardless of scheme.
-A bare standard scheme such as `Authorization: Bearer` has no credential. Opaque
-Cookie/Set-Cookie values, folded headers, cookie chains joined by `;`, `,` or `&`,
-and Netscape cookie-jar value fields are covered. Unknown assignments outside cookie
-chains remain ordinary data. Userinfo passwords in any URL scheme run from the first
-colon after `//` to the last `@` before the authority ends, including empty users.
-Sensitive query values end at literal/encoded `&` or `#`, or an encoded `?`; a literal
-`?` remains in the value. Encoded spaces and quotes remain part of query values.
+Assignment operators are `=`, `:`, `=>`, `＝` and `：`. Values in JSON/TOML/YAML,
+XML local-name elements (including namespaces and CDATA), quoted subscript keys,
+flags (`--name`, `-name`, `-Dname`), and quoted type annotations with defaults are
+covered. Sensitive structured strings, numbers, arrays and objects are redacted
+whole. YAML indented containers/block scalars and TOML triple-quoted strings retain
+their enclosing extent, including incomplete and escaped documents. HAR name/value
+objects follow the sensitive-name rule, and every HAR cookies-array entry is private.
+SQL IDENTIFIED BY/WITH PASSWORD, sshpass -p, mysql/mariadb/mysqldump attached -p,
+and curl -u identify credential values.
 
-Only these value exemptions apply: empty values; `null`, `None`, `nil`, `true`, `false`;
-`<...>`, `${...}`, `$VAR`, `%VAR%`, `{{...}}`, `{}`, `{name}`, `%s`; exact `[REDACTED]`
-and `REDACTED`; three or more `*`, `x` or `X`; `...` or `…`; the same identifier as
-the key, or a dotted attribute whose final segment matches it ignoring case/underscores;
-`os.environ[...]`, `os.getenv(...)`, `process.env.X`; closed type names `str`, `string`,
-`bytes`, `int`, `bool`, `Any`, `None`, `SecretStr`, their `Optional[...]` forms and
-unions of these with `None`. Numeric signs, decimals and percentages are exempt only
-for session counter names ending in `session`. Other calls and `changeme` are credentials.
-Names excluded altogether are pagination `*page*token`, `next*token`,
-`continuation*token`, `sync*token`, `cursor`, and tokenizer `pad/eos/bos/unk/sep/cls/mask_token`,
-`max_tokens`, `max_new_tokens`, `num_tokens`, `*_token_id` (including dotted attributes).
+Quoted values end at their closing quote. Unquoted values end at whitespace, a
+contextual list separator, or a closing enclosing string. A quote, ] or } that does
+not close an enclosing string/container is value data. List separators are &/; in
+query/form context, commas between call arguments, and ;/, in cookie contexts.
+Ambiguous raw assignments extend conservatively rather than exposing a password
+suffix; code equality comparisons with spaces around the operator are not assignments.
 
-Self-identifying values also count: bare case-insensitive Bearer followed by token68
-of at least 16 characters with a digit or mixed case, or a JWT; separators include
-spaces, tabs, NBSP, newline, `+` and encodings. Vendor prefixes cover GitHub classic
-and fine-grained tokens, GitLab, Slack, AWS, Google, Stripe live keys, npm, Hugging Face,
-OpenAI/Anthropic-style keys and three-segment JWTs. PEM private-key blocks extend
-through their matching END line, or to end of text when unterminated. A bare English
-phrase such as "The bearer instrument was signed" remains unchanged.
+Authorization/Proxy-Authorization with a scheme and following material is private
+through end of line or its enclosing string, for every scheme. A bare standard scheme
+such as Authorization: Bearer has no credential. Any nonempty Cookie/Set-Cookie value
+is private. Outside cookie contexts a chain requires at least two name=value pairs
+joined by semicolons and optional spaces; commas, ampersands and spaces alone do not
+make a chain. Call arguments and signatures are never chains. Generic members are
+private only in chains or Cookie/Set-Cookie, document.cookie, curl -b/--cookie,
+Netscape jars and HAR cookies contexts. Sensitive names remain private independently.
 
-Canonical percent and JSON-escape views use at most three layers each, with literal
-`+` treated as a space in query/form contexts before percent decoding. `%2B` remains
-literal plus. Spans map to their smallest enclosing original spans; unaffected original
-bytes are preserved. `[REDACTED]` is opaque up to the syntax terminator; appended
-material is covered as part of the value. Forward interval closure covers a complete
-value when an intersecting rule masks part of it, so redaction is idempotent.
-Counts expose only rule class and count, never values, lengths, hashes or offsets.
+URL passwords in every scheme extend from the first userinfo colon to the last @ in
+the WHATWG authority. The authority ends at /, ?, #, whitespace, or a backslash for
+special schemes; those raw terminators cannot occur inside a URL password. Sensitive
+query values end at &, #, whitespace, encoded ?, or an enclosing URL quote/bracket;
+a literal ? remains data. A decoded delimiter ends a value only at the operator's
+layer or a shallower layer; deeper percent/JSON/form-plus characters are value data.
+The encoded-? query terminator is the explicit query exception. Original-view spans
+are never discarded for containing percent escapes; masks union original and decoded
+spans and map to the smallest whole original escape spans.
 
-New Muse topics/questions are refused with fixed `E_INPUT_INVALID` if any finding
-other than `local_path` appears. The message and next action never echo the value.
-Accepted text is sent byte-for-byte and displayed exactly in its approval preview,
-request and summary. Prose that mentions credential names without assignment syntax,
-closed code references, exempt pagination/vocabulary, `/docs/plan.md` and `/etc/hosts`
-stays benign. By design `Password: required`, `Secret: the meeting moved`,
-`Session: Opening keynote`, `Authorization: Basic or Bearer?`, and other uncertain
-values after sensitive assignment names are refused. Rephrase, for example "the
-password is required". Credentials cannot create a fresh approval preview.
+Only these value exemptions apply, after determining the entire value extent:
+empty values; null, None, nil, true, false; one complete <...>, ${...}, $VAR, %VAR%,
+{{...}}, {}, {name} or %s placeholder; exact [REDACTED]/REDACTED; three or more *, x
+or X; ... or …; the key's own identifier or a dotted attribute whose final segment
+matches ignoring case/underscores; os.environ[...], os.getenv(...), process.env.X;
+closed type names str, string, bytes, int, bool, Any, None, SecretStr, Optional[...]
+and unions with None of those types. Nested ${A:-${B}} uses balanced braces, and
+placeholder prefix/suffix lookalikes are credentials. Numeric signs, decimals and
+percentages are exempt only for session-family counters. Other calls and changeme
+are credentials. Names excluded altogether: pagination *page*token, next*token,
+continuation*token, sync*token, cursor; tokenizer pad/eos/bos/unk/sep/cls/mask_token,
+max_tokens, max_new_tokens, num_tokens and *_token_id, including dotted attributes.
+
+Self-identifying credentials include bare case-insensitive Bearer with token68 of
+at least 16 characters containing a digit or mixed case, or a JWT. Its separators
+include whitespace, NBSP, newline, + and encodings. Bare Bearer runs on original text
+as well as decoded views. Known prefixes cover GitHub, GitLab, Slack (including
+xoxa-2), AWS, Google, Stripe live keys, npm, Hugging Face, OpenAI/Anthropic-style sk
+keys (minimum body 8, no upper bound), and JWTs including empty signature segments.
+PEM labels are case-insensitive; matching/unterminated PEM and PGP private-key blocks
+and PuTTY private-key files are private. "The bearer instrument was signed" is benign.
+
+Canonical percent and JSON-escape views each allow three layers, including JSON
+strings containing JSON. Literal + means space only inside each actual URL query,
+through that URL's end, or a complete whitespace-free form body of name=value pairs
+joined by &. Independent body lines and quoted captured bodies retain their own form
+scope. A question mark earlier in prose never changes a later +. Percent-encoded %2B
+remains a literal plus. Unaffected original characters are preserved.
+
+One redact_text call applies the single pass at most four times: three changing
+applications and one confirming application. For every input without
+`redaction_unstable`, `redact_text(redact_text(x)[0])[0] == redact_text(x)[0]`.
+A fourth changing application adds redaction_unstable and replaces the complete
+output with [REDACTED], so even consumers that discard finding metadata fail closed.
+Packets and bundles refuse that finding with fixed E_INPUT_INVALID "Packet redaction
+did not stabilize" before hashing or any write. Muse topics/questions refuse it;
+nonrefusable logs/details/displays use the whole mask. There is one shared bound,
+not a separate packet backstop. Counts expose only rule class and count.
+
+New Muse topics/questions refuse any finding except local_path with fixed
+E_INPUT_INVALID, never echoing a value, its length or offset. Accepted text is sent
+and previewed byte-for-byte. Prose mentioning names without assignment syntax,
+closed code references, pagination/vocabulary, /docs/plan.md and /etc/hosts are benign.
+By design "Password: required", "Secret: the meeting moved", "Session: Opening keynote"
+and "Authorization: Basic or Bearer?" are refused. Rephrase, e.g. "the password is
+required". Credentials cannot create a new approval preview.
+
+Out of scope: .netrc/.pgpass need separate positional file grammars; token-only URL
+userinfo has no password delimiter (known prefixes still apply); localized names
+such as 密碼 need an explicitly maintained language policy. These omissions do not
+establish that a document is public.
 
 Draft save只保存host提供文字；更新必須expected_revision，不默默覆蓋。預設language=und、emoji=unspecified、plain_text、this_draft；使用者明示才改。沒有作者人設或策略。
 
@@ -418,64 +453,49 @@ B16a submit/prepare order is a read-only exact-payload receipt replay, the crede
 check on new text, then preview/grant checks, persistence and work. Exact replay keeps
 its original result after a rule upgrade. The worker checks session.start topics,
 questions, packet fixpoints and body equality again before any token or gateway.
-Frozen refusals prove `not_submitted`, close sends as `abandoned`, and keep the refusal's
-own next action; a stale packet asks to prepare a new packet. No refused send quarantines
-a discussion as an unknown delivery.
+Frozen refusals prove not_submitted, close sends as abandoned and retain the refusal's
+own next action. No refused send quarantines a discussion as unknown delivery.
 
-Stored discussion titles are not new outbound text and are never re-checked. Previews
-show a display-redacted "Stored discussion title"; it is not in the send body or read
-payload. Reconciliation compares its request topic with the exact stored title only.
-The original reconciliation request, not the display-redacted topic, is used for the
-human approval request file and retry. Approval failures propagate their actual fixed
-code, message and next action rather than replacing them with a permit error.
+Stored discussion titles are never re-checked as new outbound text. Previews show a
+display-redacted "Stored discussion title", outside the send/read body. Reconciliation
+identifies a discussion by discussion_id and project; its request topic must equal
+the stored title or its current display-redacted form. approval.request and saved
+request files carry only that display-redacted title. If the display changed since
+saving, E_REFERENCE_INVALID asks to request reconciliation again. Approval failures
+propagate their real fixed code, message and next action.
 
-Packets reach a fixpoint before hashing, with at most three passes as a bounded
-backstop. Still-changing text is fixed `E_INPUT_INVALID` "Packet redaction did not
-stabilize": invalid share text cannot be hashed or stored. Muse sends exactly stored
-`packet.rendered_text`. Current rules changing an older packet cause `E_REFERENCE_INVALID`,
-"Packet is stale; prepare a new packet", in prepare/preview/submit/wire, with no preview.
-The body contains only the accepted original question, two newlines and that packet.
-Private original exports retain `original_private` and their documented original bytes.
+Muse sends exactly stored packet.rendered_text. Current rules changing an older
+packet cause E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in prepare,
+preview, submit and wire, without a preview or rewriting stored bytes. Send guidance
+is "Prepare a new packet and send request with a new exact share grant". The body is
+the accepted original question, two newlines and that packet. Private original
+exports retain original_private and their documented original bytes.
 
-Redaction uses bounded possessive name grammars, forward scans and precomputed quote,
-container and tag terminators. Every scan advances past consumed values; interval
-streams merge with a fixed fan-in and output uses one join. Sparse, coalesced decoding
-offsets allocate for escapes only. CPU growth is checked at four doubling sizes for
-all review families and new rules. Packet/bundle resolution checks raw canonical sizes,
-then renders/redacts before `BEGIN IMMEDIATE`; the write repeats reference/snapshot
-checks. `_save_send` redacts the full remote detail (capped at 1 MiB) before its write
-batch opens, then cuts to 512 characters. The remaining settlement callback sanitizes
-only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes).
-It rejects oversized legacy text before redaction with fixed `E_LIMIT_REACHED`; it
-cannot turn uncertain delivery into proof. Configured limits may lower these hard caps.
+Redaction uses bounded possessive name grammars, forward scans and precomputed
+quote/container/tag terminators. Scans advance past consumed values; a fixed number
+of ordered interval streams merge and each pass builds output with one join.
+Original-offset maps are sparse/coalesced; changed canonical views additionally use
+one byte of decoding depth per character. The four-application bound is constant.
+CPU growth of the iterated public call is checked at four doubling sizes for all
+review and new-rule families. Raw canonical sizes are checked before rendering;
+packet/bundle rendering and redaction precede BEGIN IMMEDIATE. Writes repeat only
+reference/snapshot checks. _save_send redacts the full remote detail (capped at 1 MiB)
+before its batch, then cuts to 512 characters. The settlement callback sanitizes
+only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes)
+inside the jobs transaction. Oversized legacy text refuses before redaction with
+fixed E_LIMIT_REACHED; this bound is measured and does not prove delivery.
 
-`auth list` returns `partial` for corrupt records: valid metadata in `references`,
-opaque refs and fixed reasons in `unavailable`. Its actions revoke regular records or
-symlinks, or give a fixed manual instruction for FIFOs/directories/unowned entries.
-`auth revoke` unlinks a symlink itself via dir_fd without opening its target; it refuses
-other non-regular entries with that manual instruction. List/revoke read existing
-configuration for config_bound but never initialize/open a workspace or Store.
-Noninteractive auth/permit calls refuse before opening anything; scripted human
-`permit approve --exact-digest` needs no TTY. Auth values and outside paths never appear.
-
-Sensitive YAML keys also cover the complete indented container or block scalar,
-through its dedent. Whitespace around assignment separators includes non-ASCII
-spaces and split lines. A Kubernetes `valueFrom`/`secretKeyRef` object under a
-sensitive key is refused by design; it is outside the closed environment-reference
-exemptions. Quoted JSON-style keys can introduce raw-newline scalar values even in
-an incomplete document.
-
-Flags whose names are `authorization`, `proxy-authorization`, `cookie` or
-`set-cookie` use the complete quoted value, or the complete remaining line when
-unquoted, so schemes and cookie-chain members cannot fall outside the mask.
-
-Plain YAML string values extend through the line (excluding a YAML comment);
-TOML triple-quoted strings extend through their closing triple quote. Annotated
-assignment defaults retain the type annotation and redact the actual value.
-Sensitive XML elements may have quoted attributes; their content is redacted
-whole, while a self-closing element has an empty value. Existing secure-cookie
-and cloud-header name prefixes use the same three-layer decoding in structured
-records as in text.
+Auth list returns partial for corrupt entries: valid metadata in references, opaque
+refs and fixed reasons in unavailable. It suggests working revoke commands for
+regular records/symlinks, and a fixed manual instruction for FIFO/directory/unowned
+entries. When --workspace was given, revoke suggestions retain it, shell quoted.
+Revoke unlinks a symlink via dir_fd without opening its target; other non-regular
+entries require manual cleanup. List/revoke read existing config for config_bound
+without opening or initializing a workspace/Store. Noninteractive auth/permit
+commands refuse before opening anything; scripted human permit approval needs no
+TTY. Auth values and resolved secret-target paths never appear; explicitly supplied
+workspace paths remain in the requested operator command. Revoked bindings ask to
+import and rebind.
 
 ---
 
@@ -878,127 +898,147 @@ reads its immutable text; MCP packet_prepare replay returns the same fixed pre-s
 preview. No schema migration or separate approval store is needed.
 
 B16a privacy guard classifies credentials by name and syntax, never by the value's
-alphabet. The existing name list remains, with normalized suffixes `sess`, `sessid`,
-`session`, `token`, `secret`, `cookie`, `password`, `passwd`, `pwd`, `pass`, and names
+alphabet. Keep the existing name list; normalize case, punctuation and up to three
+percent-encoding layers. Sensitive suffixes include `sess`, `sessid`, `session`,
+`token`, `secret`, `cookie`, `password`, `passwd`, `pwd`, `pass`, `api_key`/`apikey`,
+`secret_key`, `access_key` and `private_key`. Whole names include `sid`, `passphrase`,
 `auth`, `credentials`, `x-api-key`, `cookie_header` and `Proxy-Authorization`.
-Case, hyphens, underscores and up to three percent-encoding layers are normalized.
-Assignments (`=`, `:`, `=>`), JSON/TOML/YAML fields, XML elements and command flags
-(`--name=value`, `--name value`, `-Dname=value`, `curl -u user:value`) identify values.
-Quoted values end at their closing quote; unquoted values end at whitespace or a
-contextual list separator. Sensitive JSON strings, numbers, arrays and objects are
-redacted whole, including embedded, escaped, truncated and multiline documents.
-Structured packet/bundle records apply the same exemptions to every value type.
 
-Authorization and Proxy-Authorization values with a scheme and following material
-are private through end of line (or their enclosing string), regardless of scheme.
-A bare standard scheme such as `Authorization: Bearer` has no credential. Opaque
-Cookie/Set-Cookie values, folded headers, cookie chains joined by `;`, `,` or `&`,
-and Netscape cookie-jar value fields are covered. Unknown assignments outside cookie
-chains remain ordinary data. Userinfo passwords in any URL scheme run from the first
-colon after `//` to the last `@` before the authority ends, including empty users.
-Sensitive query values end at literal/encoded `&` or `#`, or an encoded `?`; a literal
-`?` remains in the value. Encoded spaces and quotes remain part of query values.
+Assignment operators are `=`, `:`, `=>`, `＝` and `：`. Values in JSON/TOML/YAML,
+XML local-name elements (including namespaces and CDATA), quoted subscript keys,
+flags (`--name`, `-name`, `-Dname`), and quoted type annotations with defaults are
+covered. Sensitive structured strings, numbers, arrays and objects are redacted
+whole. YAML indented containers/block scalars and TOML triple-quoted strings retain
+their enclosing extent, including incomplete and escaped documents. HAR name/value
+objects follow the sensitive-name rule, and every HAR cookies-array entry is private.
+SQL IDENTIFIED BY/WITH PASSWORD, sshpass -p, mysql/mariadb/mysqldump attached -p,
+and curl -u identify credential values.
 
-Only these value exemptions apply: empty values; `null`, `None`, `nil`, `true`, `false`;
-`<...>`, `${...}`, `$VAR`, `%VAR%`, `{{...}}`, `{}`, `{name}`, `%s`; exact `[REDACTED]`
-and `REDACTED`; three or more `*`, `x` or `X`; `...` or `…`; the same identifier as
-the key, or a dotted attribute whose final segment matches it ignoring case/underscores;
-`os.environ[...]`, `os.getenv(...)`, `process.env.X`; closed type names `str`, `string`,
-`bytes`, `int`, `bool`, `Any`, `None`, `SecretStr`, their `Optional[...]` forms and
-unions of these with `None`. Numeric signs, decimals and percentages are exempt only
-for session counter names ending in `session`. Other calls and `changeme` are credentials.
-Names excluded altogether are pagination `*page*token`, `next*token`,
-`continuation*token`, `sync*token`, `cursor`, and tokenizer `pad/eos/bos/unk/sep/cls/mask_token`,
-`max_tokens`, `max_new_tokens`, `num_tokens`, `*_token_id` (including dotted attributes).
+Quoted values end at their closing quote. Unquoted values end at whitespace, a
+contextual list separator, or a closing enclosing string. A quote, ] or } that does
+not close an enclosing string/container is value data. List separators are &/; in
+query/form context, commas between call arguments, and ;/, in cookie contexts.
+Ambiguous raw assignments extend conservatively rather than exposing a password
+suffix; code equality comparisons with spaces around the operator are not assignments.
 
-Self-identifying values also count: bare case-insensitive Bearer followed by token68
-of at least 16 characters with a digit or mixed case, or a JWT; separators include
-spaces, tabs, NBSP, newline, `+` and encodings. Vendor prefixes cover GitHub classic
-and fine-grained tokens, GitLab, Slack, AWS, Google, Stripe live keys, npm, Hugging Face,
-OpenAI/Anthropic-style keys and three-segment JWTs. PEM private-key blocks extend
-through their matching END line, or to end of text when unterminated. A bare English
-phrase such as "The bearer instrument was signed" remains unchanged.
+Authorization/Proxy-Authorization with a scheme and following material is private
+through end of line or its enclosing string, for every scheme. A bare standard scheme
+such as Authorization: Bearer has no credential. Any nonempty Cookie/Set-Cookie value
+is private. Outside cookie contexts a chain requires at least two name=value pairs
+joined by semicolons and optional spaces; commas, ampersands and spaces alone do not
+make a chain. Call arguments and signatures are never chains. Generic members are
+private only in chains or Cookie/Set-Cookie, document.cookie, curl -b/--cookie,
+Netscape jars and HAR cookies contexts. Sensitive names remain private independently.
 
-Canonical percent and JSON-escape views use at most three layers each, with literal
-`+` treated as a space in query/form contexts before percent decoding. `%2B` remains
-literal plus. Spans map to their smallest enclosing original spans; unaffected original
-bytes are preserved. `[REDACTED]` is opaque up to the syntax terminator; appended
-material is covered as part of the value. Forward interval closure covers a complete
-value when an intersecting rule masks part of it, so redaction is idempotent.
-Counts expose only rule class and count, never values, lengths, hashes or offsets.
+URL passwords in every scheme extend from the first userinfo colon to the last @ in
+the WHATWG authority. The authority ends at /, ?, #, whitespace, or a backslash for
+special schemes; those raw terminators cannot occur inside a URL password. Sensitive
+query values end at &, #, whitespace, encoded ?, or an enclosing URL quote/bracket;
+a literal ? remains data. A decoded delimiter ends a value only at the operator's
+layer or a shallower layer; deeper percent/JSON/form-plus characters are value data.
+The encoded-? query terminator is the explicit query exception. Original-view spans
+are never discarded for containing percent escapes; masks union original and decoded
+spans and map to the smallest whole original escape spans.
 
-New Muse topics/questions are refused with fixed `E_INPUT_INVALID` if any finding
-other than `local_path` appears. The message and next action never echo the value.
-Accepted text is sent byte-for-byte and displayed exactly in its approval preview,
-request and summary. Prose that mentions credential names without assignment syntax,
-closed code references, exempt pagination/vocabulary, `/docs/plan.md` and `/etc/hosts`
-stays benign. By design `Password: required`, `Secret: the meeting moved`,
-`Session: Opening keynote`, `Authorization: Basic or Bearer?`, and other uncertain
-values after sensitive assignment names are refused. Rephrase, for example "the
-password is required". Credentials cannot create a fresh approval preview.
+Only these value exemptions apply, after determining the entire value extent:
+empty values; null, None, nil, true, false; one complete <...>, ${...}, $VAR, %VAR%,
+{{...}}, {}, {name} or %s placeholder; exact [REDACTED]/REDACTED; three or more *, x
+or X; ... or …; the key's own identifier or a dotted attribute whose final segment
+matches ignoring case/underscores; os.environ[...], os.getenv(...), process.env.X;
+closed type names str, string, bytes, int, bool, Any, None, SecretStr, Optional[...]
+and unions with None of those types. Nested ${A:-${B}} uses balanced braces, and
+placeholder prefix/suffix lookalikes are credentials. Numeric signs, decimals and
+percentages are exempt only for session-family counters. Other calls and changeme
+are credentials. Names excluded altogether: pagination *page*token, next*token,
+continuation*token, sync*token, cursor; tokenizer pad/eos/bos/unk/sep/cls/mask_token,
+max_tokens, max_new_tokens, num_tokens and *_token_id, including dotted attributes.
+
+Self-identifying credentials include bare case-insensitive Bearer with token68 of
+at least 16 characters containing a digit or mixed case, or a JWT. Its separators
+include whitespace, NBSP, newline, + and encodings. Bare Bearer runs on original text
+as well as decoded views. Known prefixes cover GitHub, GitLab, Slack (including
+xoxa-2), AWS, Google, Stripe live keys, npm, Hugging Face, OpenAI/Anthropic-style sk
+keys (minimum body 8, no upper bound), and JWTs including empty signature segments.
+PEM labels are case-insensitive; matching/unterminated PEM and PGP private-key blocks
+and PuTTY private-key files are private. "The bearer instrument was signed" is benign.
+
+Canonical percent and JSON-escape views each allow three layers, including JSON
+strings containing JSON. Literal + means space only inside each actual URL query,
+through that URL's end, or a complete whitespace-free form body of name=value pairs
+joined by &. Independent body lines and quoted captured bodies retain their own form
+scope. A question mark earlier in prose never changes a later +. Percent-encoded %2B
+remains a literal plus. Unaffected original characters are preserved.
+
+One redact_text call applies the single pass at most four times: three changing
+applications and one confirming application. For every input without
+`redaction_unstable`, `redact_text(redact_text(x)[0])[0] == redact_text(x)[0]`.
+A fourth changing application adds redaction_unstable and replaces the complete
+output with [REDACTED], so even consumers that discard finding metadata fail closed.
+Packets and bundles refuse that finding with fixed E_INPUT_INVALID "Packet redaction
+did not stabilize" before hashing or any write. Muse topics/questions refuse it;
+nonrefusable logs/details/displays use the whole mask. There is one shared bound,
+not a separate packet backstop. Counts expose only rule class and count.
+
+New Muse topics/questions refuse any finding except local_path with fixed
+E_INPUT_INVALID, never echoing a value, its length or offset. Accepted text is sent
+and previewed byte-for-byte. Prose mentioning names without assignment syntax,
+closed code references, pagination/vocabulary, /docs/plan.md and /etc/hosts are benign.
+By design "Password: required", "Secret: the meeting moved", "Session: Opening keynote"
+and "Authorization: Basic or Bearer?" are refused. Rephrase, e.g. "the password is
+required". Credentials cannot create a new approval preview.
+
+Out of scope: .netrc/.pgpass need separate positional file grammars; token-only URL
+userinfo has no password delimiter (known prefixes still apply); localized names
+such as 密碼 need an explicitly maintained language policy. These omissions do not
+establish that a document is public.
 
 B16a submit/prepare order is a read-only exact-payload receipt replay, the credential
 check on new text, then preview/grant checks, persistence and work. Exact replay keeps
 its original result after a rule upgrade. The worker checks session.start topics,
 questions, packet fixpoints and body equality again before any token or gateway.
-Frozen refusals prove `not_submitted`, close sends as `abandoned`, and keep the refusal's
-own next action; a stale packet asks to prepare a new packet. No refused send quarantines
-a discussion as an unknown delivery.
+Frozen refusals prove not_submitted, close sends as abandoned and retain the refusal's
+own next action. No refused send quarantines a discussion as unknown delivery.
 
-Stored discussion titles are not new outbound text and are never re-checked. Previews
-show a display-redacted "Stored discussion title"; it is not in the send body or read
-payload. Reconciliation compares its request topic with the exact stored title only.
-The original reconciliation request, not the display-redacted topic, is used for the
-human approval request file and retry. Approval failures propagate their actual fixed
-code, message and next action rather than replacing them with a permit error.
+Stored discussion titles are never re-checked as new outbound text. Previews show a
+display-redacted "Stored discussion title", outside the send/read body. Reconciliation
+identifies a discussion by discussion_id and project; its request topic must equal
+the stored title or its current display-redacted form. approval.request and saved
+request files carry only that display-redacted title. If the display changed since
+saving, E_REFERENCE_INVALID asks to request reconciliation again. Approval failures
+propagate their real fixed code, message and next action.
 
-Packets reach a fixpoint before hashing, with at most three passes as a bounded
-backstop. Still-changing text is fixed `E_INPUT_INVALID` "Packet redaction did not
-stabilize": invalid share text cannot be hashed or stored. Muse sends exactly stored
-`packet.rendered_text`. Current rules changing an older packet cause `E_REFERENCE_INVALID`,
-"Packet is stale; prepare a new packet", in prepare/preview/submit/wire, with no preview.
-The body contains only the accepted original question, two newlines and that packet.
-Private original exports retain `original_private` and their documented original bytes.
+Muse sends exactly stored packet.rendered_text. Current rules changing an older
+packet cause E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in prepare,
+preview, submit and wire, without a preview or rewriting stored bytes. Send guidance
+is "Prepare a new packet and send request with a new exact share grant". The body is
+the accepted original question, two newlines and that packet. Private original
+exports retain original_private and their documented original bytes.
 
-Redaction uses bounded possessive name grammars, forward scans and precomputed quote,
-container and tag terminators. Every scan advances past consumed values; interval
-streams merge with a fixed fan-in and output uses one join. Sparse, coalesced decoding
-offsets allocate for escapes only. CPU growth is checked at four doubling sizes for
-all review families and new rules. Packet/bundle resolution checks raw canonical sizes,
-then renders/redacts before `BEGIN IMMEDIATE`; the write repeats reference/snapshot
-checks. `_save_send` redacts the full remote detail (capped at 1 MiB) before its write
-batch opens, then cuts to 512 characters. The remaining settlement callback sanitizes
-only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes).
-It rejects oversized legacy text before redaction with fixed `E_LIMIT_REACHED`; it
-cannot turn uncertain delivery into proof. Configured limits may lower these hard caps.
+Redaction uses bounded possessive name grammars, forward scans and precomputed
+quote/container/tag terminators. Scans advance past consumed values; a fixed number
+of ordered interval streams merge and each pass builds output with one join.
+Original-offset maps are sparse/coalesced; changed canonical views additionally use
+one byte of decoding depth per character. The four-application bound is constant.
+CPU growth of the iterated public call is checked at four doubling sizes for all
+review and new-rule families. Raw canonical sizes are checked before rendering;
+packet/bundle rendering and redaction precede BEGIN IMMEDIATE. Writes repeat only
+reference/snapshot checks. _save_send redacts the full remote detail (capped at 1 MiB)
+before its batch, then cuts to 512 characters. The settlement callback sanitizes
+only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes)
+inside the jobs transaction. Oversized legacy text refuses before redaction with
+fixed E_LIMIT_REACHED; this bound is measured and does not prove delivery.
 
-`auth list` returns `partial` for corrupt records: valid metadata in `references`,
-opaque refs and fixed reasons in `unavailable`. Its actions revoke regular records or
-symlinks, or give a fixed manual instruction for FIFOs/directories/unowned entries.
-`auth revoke` unlinks a symlink itself via dir_fd without opening its target; it refuses
-other non-regular entries with that manual instruction. List/revoke read existing
-configuration for config_bound but never initialize/open a workspace or Store.
-Noninteractive auth/permit calls refuse before opening anything; scripted human
-`permit approve --exact-digest` needs no TTY. Auth values and outside paths never appear.
-
-Sensitive YAML keys also cover the complete indented container or block scalar,
-through its dedent. Whitespace around assignment separators includes non-ASCII
-spaces and split lines. A Kubernetes `valueFrom`/`secretKeyRef` object under a
-sensitive key is refused by design; it is outside the closed environment-reference
-exemptions. Quoted JSON-style keys can introduce raw-newline scalar values even in
-an incomplete document.
-
-Flags whose names are `authorization`, `proxy-authorization`, `cookie` or
-`set-cookie` use the complete quoted value, or the complete remaining line when
-unquoted, so schemes and cookie-chain members cannot fall outside the mask.
-
-Plain YAML string values extend through the line (excluding a YAML comment);
-TOML triple-quoted strings extend through their closing triple quote. Annotated
-assignment defaults retain the type annotation and redact the actual value.
-Sensitive XML elements may have quoted attributes; their content is redacted
-whole, while a self-closing element has an empty value. Existing secure-cookie
-and cloud-header name prefixes use the same three-layer decoding in structured
-records as in text.
+Auth list returns partial for corrupt entries: valid metadata in references, opaque
+refs and fixed reasons in unavailable. It suggests working revoke commands for
+regular records/symlinks, and a fixed manual instruction for FIFO/directory/unowned
+entries. When --workspace was given, revoke suggestions retain it, shell quoted.
+Revoke unlinks a symlink via dir_fd without opening its target; other non-regular
+entries require manual cleanup. List/revoke read existing config for config_bound
+without opening or initializing a workspace/Store. Noninteractive auth/permit
+commands refuse before opening anything; scripted human permit approval needs no
+TTY. Auth values and resolved secret-target paths never appear; explicitly supplied
+workspace paths remain in the requested operator command. Revoked bindings ask to
+import and rebind.
 
 ---
 
