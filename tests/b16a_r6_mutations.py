@@ -685,6 +685,24 @@ new(
     "fragment_never",
 )
 
+new(
+    "r6_escaped_candidate_blocks_percent_har",
+    within(
+        "_har_candidates", "    elif '\"' in text and", "        return\n    elif '\"' in text and"
+    ),
+    selection="full_sweep_counterexamples",
+)
+new(
+    "r6_encoded_query_whitespace_terminates",
+    within(
+        "_query_spans",
+        "boundary[0].isspace() or syntax.depth(boundary.start()) > operator_depth",
+        "syntax.depth(boundary.start()) > operator_depth",
+    ),
+    "tests/test_b16a_privacy.py",
+    "credential_shapes_and_encoded_spans",
+)
+
 if __name__ == "__main__":
     from b16a_r6_mutation_run import main
 

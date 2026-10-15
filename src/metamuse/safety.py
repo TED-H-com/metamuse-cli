@@ -2088,7 +2088,10 @@ class _Syntax:
         header = re.compile(
             r"\$\{(?:[A-Za-z_][A-Za-z0-9_]*+|[0-9]++|[?#!@$*_-])(?::?[-+?=]|%{1,2}|#{1,2}|}|\[)"
         )
-        return self.complete(start + 1, end) and header.match(text, start, end) is not None
+        return self.complete(start + 1, end) and (
+            (text.startswith("${{", start) and self.complete(start + 2, end - 1))
+            or header.match(text, start, end) is not None
+        )
 
     def quoted_end(self, text, start):
         return self.quote_next.get(start) if text[start : start + 1] in {'"', "'", "`"} else None

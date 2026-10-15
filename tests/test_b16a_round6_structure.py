@@ -353,3 +353,9 @@ def test_r6_encoding_the_whole_url_keeps_literal_question_in_value(layers, prefi
     output, findings = redact_text(prefix + text)
     assert MARKER not in output and findings
     assert redact_text(output)[0] == output
+
+
+@pytest.mark.parametrize("layers", [0, 1, 2])
+def test_r6_complete_template_expression_remains_exempt(layers):
+    text = encoded("password: ${{ secrets.DB_PASSWORD }}", layers)
+    assert redact_text(text) == (text, [])

@@ -532,7 +532,7 @@ an independent candidate instead of causing a repeated suffix walk.
 
 A shell-parameter placeholder must have a complete balanced closing brace and a
 parameter header (identifier/positional/special parameter, optionally followed by
-its parameter operator). Random prose before the brace cannot turn an incomplete
+its parameter operator), or a complete `${{ … }}` template expression. Random prose before the brace cannot turn an incomplete
 credential into a valid placeholder. Fixed lookup and complete double-brace extents
 are indexed once; exemption checks do not copy an enclosing suffix per assignment.
 Exact JSON string boundaries stay mapped through form/percent/JSON decoding;
