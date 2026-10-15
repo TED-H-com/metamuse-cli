@@ -745,7 +745,7 @@ the observation digest and byte accounting; it is not parsed as HTML.
 | `hidden` with a CSS display override | yes, by the cascade |
 | `display:none`, or `hidden` without an override | no |
 | `hidden=until-found` | no |
-| `content-visibility:hidden` descendants | no |
+| `content-visibility:hidden` descendants | no where computed display supports containment; otherwise yes |
 | Closed details content other than its first summary | no |
 | Scripting-on `noscript`, and template content | no |
 | Unslotted light children of a shadow host | no |
@@ -991,6 +991,18 @@ uses that reverse map when Element/Text assignedSlot returns null for a closed
 root. Both consumers use the same captured accessors and the same 65,536-node
 bound. Slotted text and labels therefore retain their shadow ancestors for both
 rendering and click validation.
+
+Content-visibility skipping is decided from Chromium's computed display, proved
+by test_r10_content_visibility_display_oracle against an independent child-span
+checkVisibility() and getClientRects().length oracle, plus direct text. The pinned
+build skips hidden contents for block, inline-block, flow-root, flex, inline-flex,
+grid, inline-grid, list-item and table-cell. It does not skip for inline, contents,
+table, inline-table, row/group/caption table boxes, ruby or ruby-text. Column boxes
+already suppress their children. Unsupported ruby-* declarations compute to block.
+This measured table-cell result differs from a blanket exclusion of internal table
+boxes. Fixture content-visibility is accepted only for independently proved display
+values; unmodelled/unsupported display values refuse with the fixed capture error.
+Auto-skipped content remains eligible.
 
 ---
 
@@ -1898,7 +1910,7 @@ the observation digest and byte accounting; it is not parsed as HTML.
 | `hidden` with a CSS display override | yes, by the cascade |
 | `display:none`, or `hidden` without an override | no |
 | `hidden=until-found` | no |
-| `content-visibility:hidden` descendants | no |
+| `content-visibility:hidden` descendants | no where computed display supports containment; otherwise yes |
 | Closed details content other than its first summary | no |
 | Scripting-on `noscript`, and template content | no |
 | Unslotted light children of a shadow host | no |
@@ -2144,6 +2156,18 @@ uses that reverse map when Element/Text assignedSlot returns null for a closed
 root. Both consumers use the same captured accessors and the same 65,536-node
 bound. Slotted text and labels therefore retain their shadow ancestors for both
 rendering and click validation.
+
+Content-visibility skipping is decided from Chromium's computed display, proved
+by test_r10_content_visibility_display_oracle against an independent child-span
+checkVisibility() and getClientRects().length oracle, plus direct text. The pinned
+build skips hidden contents for block, inline-block, flow-root, flex, inline-flex,
+grid, inline-grid, list-item and table-cell. It does not skip for inline, contents,
+table, inline-table, row/group/caption table boxes, ruby or ruby-text. Column boxes
+already suppress their children. Unsupported ruby-* declarations compute to block.
+This measured table-cell result differs from a blanket exclusion of internal table
+boxes. Fixture content-visibility is accepted only for independently proved display
+values; unmodelled/unsupported display values refuse with the fixed capture error.
+Auto-skipped content remains eligible.
 
 ---
 
