@@ -592,9 +592,8 @@ class BrowserEgressProxy:
         try:
             return self._check_bounded(lambda: self.egress._check_route_destination(url, purpose))
         except ProxyRequestError as exc:
-            self.egress.record_proxy_protocol_refusal(hostname="proxy", reason=exc.reason)
-            assert self.egress.last_proxy_error is not None
-            raise self.egress.last_proxy_error from None
+            error = self.egress.record_proxy_protocol_refusal(hostname="proxy", reason=exc.reason)
+            raise error from None
 
     def _check_target_bounded(self, parsed: ParsedProxyRequest) -> safety.CheckedURL:
         try:

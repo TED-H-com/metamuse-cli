@@ -1493,7 +1493,7 @@ class EgressGuard:
 
     def record_proxy_protocol_refusal(
         self, *, hostname: str, reason: str, url: str | None = None
-    ) -> None:
+    ) -> m.CoreError:
         dns_failure = reason in {
             "resolution_unavailable",
             "resolution_timeout",
@@ -1527,6 +1527,7 @@ class EgressGuard:
                     reason=f"proxy_refused:{reason}",
                 )
             )
+        return exc  # Current-request attribution, distinct from the strongest diagnostic.
 
     def mark_byte_limit_exceeded(self) -> None:
         with self._lock:
