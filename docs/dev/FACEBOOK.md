@@ -335,7 +335,8 @@ retry for green. A 30-second faulthandler dump is diagnostic only. Successful jo
 run every selected node, preserving existing assertions, strict xfails and browser
 skip refusal. No per-test deadline or production limit changes.
 
-The required `check` depends on both the entire matrix and `static-wheel`. It runs
+The required `check` depends on the entire matrix, `static-wheel`, and
+`installed-journeys`. It runs
 even after upstream failure, checks every job result, and verifies five manifests:
 same source SHA, identical sorted full node IDs and SHA-256, nonempty disjoint
 selected sets whose union equals the full collection, and completed runtime nodes
@@ -343,6 +344,46 @@ with pytest exit zero. Collection-only evidence cannot satisfy this gate. Missin
 failed or cancelled jobs cannot make `check` green. Static validation, schema drift,
 corpus validation and the unchanged fresh-wheel CLI/MCP/packaged-Skill smoke run in
 `static-wheel`. The generated fifteen-tool contract remains authoritative.
+
+`installed-journeys` is an additional required 30-minute job on a clean hosted disk.
+It builds a fresh wheel from the checked-out runtime SHA, syncs locked development,
+remote and Facebook dependencies into a separate venv without installing the project,
+then installs only that wheel offline with `--no-deps`. All jobs select uv-managed
+CPython 3.12.13 and assert the actual interpreter version. The installed runner checks
+all package Python/data bytes, notices and packaged Skill against the exact source,
+requires package imports inside the new venv and outside the checkout, and runs from
+an external disk directory. It copies only the four unmodified harness modules
+`test_journey`, `test_muse_research`, `test_muse_lifecycle`, `test_safety_permits` and
+the synthetic `comments_tree.jsonl`, checking their hashes before and after execution.
+No conftest or external pytest plugin participates. The two selected nodes are:
+
+```text
+tests/test_journey.py::test_mcp_only_journey_followup_restart_and_export
+tests/test_muse_research.py::test_one_cli_approval_two_mcp_questions_restart_citations_export
+```
+
+These are the original exact-approval and bounded-research acceptance tests, with
+their existing assertions and deadlines. Both must pass without skips. This adds
+installed-package acceptance alongside their existing cohort coverage; it does not
+alter the five-cohort union or replace the fresh-wheel smoke. There is no retry or
+pass-on-error path. A failed, missing, cancelled or skipped installed job fails `check`
+even if all cohorts pass. Run this job only on the combined final repair candidate;
+do not run the two journeys locally while preparing CI changes.
+
+`scripts/check_installed_journeys.sh` uses unique RUNNER_TEMP/TMPDIR disk scratch,
+rejects tmpfs/ramfs, clears Python import overrides, and cleans its scratch on exit.
+Its provenance records the runtime commit, tree and raw parent IDs (including PR
+merge commits), candidate SHA, interpreter, import origin, exact hashes and pytest
+summary/exit. The orchestrator separately verifies the hosted runtime tree equals
+the intended candidate tree. On failure, bounded synthetic MCP stderr tails and
+owned process/resource/database-file-role metadata aid diagnosis; no database or
+workspace content is uploaded. Cleanup targets only the pytest process group the
+helper created. Diagnostic snapshots cannot recover an earlier missing failure cause.
+An always-upload step retains the installed log, JUnit and provenance for seven days
+under `installed-<runtime SHA>-journeys`, outside the `ci-<SHA>-*` cohort artifact
+pattern. This job adds one runner and another wheel build/dependency installation.
+Hosted exact-source full and installed passes plus independent review remain required;
+local helper probes and collection do not establish acceptance or LIVE.
 
 Manifests contain node IDs and execution metadata, without captured fixture bodies.
 An always-upload step retains manifests and diagnostic logs for seven days under

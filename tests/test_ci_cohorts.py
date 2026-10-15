@@ -171,11 +171,15 @@ def test_workflow_requires_all_cohorts_static_wheel_and_exact_coverage():
             r"^  ([a-z-]+):\n(.*?)(?=^  [a-z-]+:\n|\Z)", workflow.split("jobs:\n")[1], re.M | re.S
         )
     )
-    assert set(jobs) == {"static-wheel", "cohorts", "check"}
+    assert set(jobs) == {"static-wheel", "cohorts", "installed-journeys", "check"}
     for job in jobs.values():
         assert "timeout-minutes: 30\n" in job
         assert "runs-on: ubuntu-24.04\n" in job
-        assert "uv sync --locked --python 3.12 --group dev --extra remote --extra facebook" in job
+        assert (
+            "uv sync --locked --python 3.12.13 --group dev --extra remote --extra facebook" in job
+        )
+        assert 'python-version: "3.12.13"' in job
+        assert "assert sys.version_info[:3] == (3, 12, 13)" in job
     assert 'METAMUSE_REQUIRE_BROWSER_TESTS: "1"' in workflow.split("jobs:\n")[0]
     cohorts = jobs["cohorts"]
     assert "cohort: [core, muse, media, facebook, privacy]" in cohorts
@@ -189,11 +193,12 @@ def test_workflow_requires_all_cohorts_static_wheel_and_exact_coverage():
     assert "if: always()\n        uses: actions/upload-artifact@" in cohorts
     assert "ci-${{ github.sha }}-${{ matrix.cohort }}" in cohorts
     check = jobs["check"]
-    assert "needs: [static-wheel, cohorts]\n    if: always()" in check
+    assert "needs: [static-wheel, cohorts, installed-journeys]\n    if: always()" in check
     assert "pattern: ci-${{ github.sha }}-*" in check
     assert 'verify --manifest-dir ci-evidence --source-sha "$GITHUB_SHA"' in check
     assert 'test "$COHORT_RESULT" = success' in check
     assert 'test "$STATIC_RESULT" = success' in check
+    assert 'test "$INSTALLED_RESULT" = success' in check
     assert "if: always()\n        env:" in check
     assert "continue-on-error" not in workflow
     for action in re.findall(r"uses: (\S+)", workflow):

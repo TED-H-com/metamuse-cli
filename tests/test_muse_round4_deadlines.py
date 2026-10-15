@@ -31,6 +31,6 @@ def test_r4_6_handoff_threads_cannot_pin_process(ctx, monkeypatch, name):
 def test_r4_6_ci_has_finite_check_deadline():
     root = Path(__file__).resolve().parents[1]
     workflow = (root / ".github/workflows/ci.yml").read_text()
-    for job in ("static-wheel", "cohorts", "check"):
+    for job in ("static-wheel", "cohorts", "installed-journeys", "check"):
         assert f"  {job}:\n    timeout-minutes: 30\n" in workflow
-    assert "needs: [static-wheel, cohorts]\n    if: always()" in workflow
+    assert "needs: [static-wheel, cohorts, installed-journeys]\n    if: always()" in workflow
