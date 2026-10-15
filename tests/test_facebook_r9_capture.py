@@ -195,3 +195,40 @@ def test_r9_slot_contents_hidden_composed_ancestor(tmp_path, monkeypatch):
     assert "NEVER_PAINTED" not in stored[0]["text"]
 
 
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        *[
+            f"<{tag}>TEXT</{tag}>"
+            for tag in (
+                "xmp",
+                "iframe",
+                "noembed",
+                "noframes",
+                "plaintext",
+                "textarea",
+                "title",
+                "dialog",
+            )
+        ],
+        "<div popover>TEXT</div>",
+        '<svg><noscript><g data-page-state="login_wall"></g></noscript></svg>',
+        "<svg><template></template></svg>",
+        "<svg><slot></slot></svg>",
+        "<svg><input></input></svg>",
+        '<div style="display:none"><svg><desc></div></desc></svg></div>',
+        "<div><span></div></span>",
+        "<p><div>TEXT</div></p>",
+        "<table><tr><td>TEXT</td></tr></table>",
+        '<template shadowrootmode="open"></template>',
+        '<script>document.body.textContent="changed";</script>',
+        "<style>span{display:none}</style>",
+    ],
+)
+def test_r9_fixture_refuses_unsupported_constructs(markup):
+    with pytest.raises(m.CoreError) as caught:
+        capture.fixture_capture(markup)
+    assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
+    assert caught.value.detail.message == "Facebook structured capture could not be completed"
