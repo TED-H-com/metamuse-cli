@@ -29,7 +29,9 @@ REVIEW = {
 }
 NEW = {
     "adjacent_authorities": "https://example.invalid,https://alice:{v}@example.invalid/a ",
-    "quoted_command_layers": json.dumps({"cmd": 'curl ' + '-u "John Doe:{v}" https://example.invalid'}),
+    "quoted_command_layers": json.dumps(
+        {"cmd": "curl " + '-u "John Doe:{v}" https://example.invalid'}
+    ),
     "har_escaped_quote": json.dumps(
         {"earlier": '5" screen', "headers": [{"value": "{v}", "name": "sid"}]}
     ),

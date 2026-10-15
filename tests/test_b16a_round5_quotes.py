@@ -8,7 +8,7 @@ import pytest
 from metamuse.safety import redact_text
 
 RULES = (
-    'curl ' + '-u "John Doe:{v}" https://example.invalid',
+    "curl " + '-u "John Doe:{v}" https://example.invalid',
     'curl "-u" "alice:{v}" https://example.invalid',
     'curl -b " foo={v} " https://example.invalid',
     'curl "--user" "alice:{v}" https://example.invalid',
