@@ -66,6 +66,23 @@ def encode(nodes: list[dict[str, Any]]) -> str:
     return json.dumps(nodes, ensure_ascii=False, separators=(",", ":"))
 
 
+def controls(nodes: list[dict[str, Any]]):
+    """One identity assignment in composed order, shared by capture and extraction."""
+    pending, seen, result = [0], set(), []
+    while pending:
+        node = nodes[pending.pop()]
+        attrs = node["attrs"]
+        if node["rendered"] and attrs.get("data-expand-kind", "").lower() in {
+            "more_comments",
+            "more_replies",
+        }:
+            identity = attrs.get("data-expand-id") or f"expand_{len(result) + 1}"
+            if identity not in seen:
+                seen.add(identity)
+                result.append((identity, node))
+        pending.extend(reversed(node["composed"]))
+    return result
+
 
 # This code executes only in a CDP isolated world. It neither creates nor clones
 # elements and performs no DOM writes. Closed roots are supplied by CDP handles.

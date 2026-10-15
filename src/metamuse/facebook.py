@@ -54,6 +54,7 @@ from typing import Any, Literal, Protocol
 from urllib.parse import parse_qs, urlsplit, urlunsplit
 
 from metamuse import _facebook_capture as capture
+from metamuse import _facebook_dom as capture_dom
 from metamuse import collect, jobs, safety
 from metamuse import models as m
 from metamuse._browser_egress import (
@@ -2590,8 +2591,8 @@ class _PlaywrightSession:
         nodes, world, gaps = capture.capture(self._network_cdp)
         self._capture_world = world
         self._capture_controls = {
-            node["attrs"].get("data-expand-id"): node["backend"]
-            for node in nodes
+            identity: node["backend"]
+            for identity, node in capture.controls(nodes)
             if "backend" in node
         }
         return capture.encode(nodes), nodes, gaps
@@ -2736,9 +2737,7 @@ class _PlaywrightSession:
                 "Runtime.callFunctionOn",
                 {
                     "objectId": control_object,
-                    "functionDeclaration": (
-                        "function(node){return this===node || this.contains(node)}"
-                    ),
+                    "functionDeclaration": capture_dom.HIT_TEST,
                     "arguments": [{"objectId": hit_object}],
                     "returnByValue": True,
                 },
@@ -3155,6 +3154,21 @@ class _DOMExtractor:
                 self.json_scripts.append(
                     "".join(nodes[i]["text"] for i in node["children"] if nodes[i]["kind"] == 3)
                 )
+        for identity, node in capture.controls(nodes):
+            attrs = node["attrs"]
+            raw_hint = attrs.get("data-remaining-count")
+            hint = _opt_int(raw_hint)
+            if raw_hint is not None and hint is None:
+                self.count_gaps.add("remaining_count_unparsed")
+            self.comments_section_present = True
+            self.expand_controls.append(
+                ExpandControl(
+                    control_id=identity,
+                    kind=attrs["data-expand-kind"].lower(),
+                    parent_comment_id=_native_token(attrs.get("data-parent-comment-id")),
+                    remaining_hint=hint,
+                )
+            )
         useful = [False] * len(nodes)
         # Composed order can differ from DOM order (slots); compute bottom-up
         # with explicit exit events, without Python or JavaScript recursion.
@@ -3306,22 +3320,6 @@ class _DOMExtractor:
             self._in_comment_body += 1
         elif self._in_comment_body > 0:
             self._in_comment_body += 1
-        expand_kind = attr_map.get("data-expand-kind", "").lower()
-        if visibility and expand_kind in ("more_comments", "more_replies"):
-            self.comments_section_present = True
-            control_id = attr_map.get("data-expand-id") or f"expand_{len(self.expand_controls) + 1}"
-            hint_raw = attr_map.get("data-remaining-count")
-            hint = _opt_int(hint_raw)
-            if hint_raw is not None and hint is None:
-                self.count_gaps.add("remaining_count_unparsed")
-            self.expand_controls.append(
-                ExpandControl(
-                    control_id=control_id,
-                    kind="more_replies" if expand_kind == "more_replies" else "more_comments",
-                    parent_comment_id=_native_token(attr_map.get("data-parent-comment-id")),
-                    remaining_hint=hint,
-                )
-            )
 
     def handle_endtag(self, tag: str) -> None:
         visibility = self._visibility_stack.pop() if self._visibility_stack else True

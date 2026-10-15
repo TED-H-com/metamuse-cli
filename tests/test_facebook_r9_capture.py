@@ -232,3 +232,55 @@ def test_r9_fixture_refuses_unsupported_constructs(markup):
         capture.fixture_capture(markup)
     assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
     assert caught.value.detail.message == "Facebook structured capture could not be completed"
+
+
+@pytest.mark.parametrize("kind", ["missing", "duplicate", "own-shadow", "slotted", "overlay"])
+@browser_deadline
+def test_r9_click_identity(tmp_path, monkeypatch, kind, request):
+    markup = _synthetic_post_html(
+        comments=[{"id": "c1", "text": "INITIAL"}], expand_controls=[{"id": "more"}]
+    )
+    script = """<script>
+    const target=document.querySelector('[data-comment-id] [data-fb-role="comment-body"]');
+    const buttons=document.querySelectorAll('[data-expand-kind]');
+    buttons.forEach((btn,i)=>btn.onclick=()=>{target.textContent=i?'WRONG':'EXPANDED';document.querySelector('[data-fb-role=post]').setAttribute('data-comments-exhausted','true');buttons.forEach(b=>b.remove())});
+    </script>"""
+    if kind == "missing":
+        markup = markup.replace('data-expand-id="more"', "")
+    elif kind == "duplicate":
+        markup = markup.replace(
+            "<button ",
+            '<button data-expand-id="more" data-expand-kind="more_comments">First</button><button ',
+            1,
+        )
+    elif kind == "own-shadow":
+        markup = markup.replace(
+            "<button ", '<div id="control" style="display:inline-block;width:150px;height:40px" '
+        ).replace("More</button>", "More</div>")
+        script = (
+            '<script>document.getElementById("control").attachShadow({mode:"open"}).innerHTML=\'<span style="display:block;width:150px;height:40px">Label</span>\';</script>'
+            + script
+        )
+    elif kind == "slotted":
+        markup = markup.replace(
+            '<button data-expand-kind="more_comments" data-expand-id="more">More</button>',
+            '<div id="host"><span style="display:block;width:150px;height:40px">LABEL</span></div>',
+        )
+        script = (
+            '<script>document.getElementById("host").attachShadow({mode:"open"}).innerHTML=\'<div data-expand-kind="more_comments" data-expand-id="more" style="display:inline-block;width:150px;height:40px"><slot></slot></div>\';</script>'
+            + script.replace(
+                "document.querySelectorAll('[data-expand-kind]')",
+                "document.getElementById('host').shadowRoot.querySelectorAll('[data-expand-kind]')",
+            )
+        )
+    else:
+        script += "<div style=\"position:fixed;inset:0;z-index:99999\" onclick=\"document.querySelector('[data-comment-id] [data-fb-role=comment-body]').textContent='WRONG'\"></div>"
+    markup = markup.replace("</body>", script + "</body>")
+    job, stored = run(tmp_path, monkeypatch, markup, "chromium")
+    assert job["error"] is None, job
+    texts = [r["text"] for r in stored if r["kind"] == "comment"]
+    assert texts[-1] == ("INITIAL" if kind == "overlay" else "EXPANDED")
+    assert "WRONG" not in texts
+    assert job["coverage_status"] == ("partial" if kind == "overlay" else "scope_satisfied"), job
+
+
