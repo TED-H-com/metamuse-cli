@@ -1,9 +1,12 @@
 """All authenticated identity aliases agree before any account-side request."""
 
+import json
+
 import pytest
 from test_muse_standard import Connecting, assignment, response
 from test_muse_transport import Credentials, FakeHttp, build, ok_frames
 
+from metamuse._muse_http import HttpResponse
 from metamuse.models import CoreError, ErrorCode
 
 ALIASES = ["vmId", "VM_ID", "vm-id", "VmID"]
@@ -12,7 +15,7 @@ ALIASES = ["vmId", "VM_ID", "vm-id", "VmID"]
 def attempt(store, payload, *, owner="viewer-fixture", label="synthetic"):
     http = FakeHttp(
         {
-            "/api/session": response(payload),
+            "/api/session": HttpResponse(200, json.dumps(payload).encode(), {}, response({}).peer),
             "/api/auth/check": response(
                 {
                     "ok": True,
@@ -37,8 +40,8 @@ def attempt(store, payload, *, owner="viewer-fixture", label="synthetic"):
 @pytest.mark.parametrize("where", ["session", "row"])
 @pytest.mark.parametrize("value", ["vm2", None, 42, "bad/id"])
 def test_r5_1_identity_agreement(ctx, alias, first, where, value):
-    # Leading aliases used to route vm1 while validating vm2's name/address.
-    row = assignment(vm_name="vm2", endpoint_url="wss://vm2.metaaivm.com/")
+    # Keep name/endpoint consistent; preserve raw JSON order so alias agreement alone refuses.
+    row = assignment()
     row = dict([(alias, value), *row.items()] if first else [*row.items(), (alias, value)])
     payload = row if where == "session" else assignment(vms=[row])
     transport, http, connector = attempt(ctx.store, payload)
