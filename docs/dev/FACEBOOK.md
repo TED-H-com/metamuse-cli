@@ -199,7 +199,7 @@ No rendered HTML or record bodies enter checkpoints.
 ## Completeness, parent links and text
 
 After expansion the production driver waits within the read deadline for a new relevant
-comment/reply node or changed content, or a failure response correlated to the trusted expansion click. An already
+comment/reply node or changed content. An already
 loaded document or disappearing button is not progress. Timeout adds
 `expansion_progress_timeout`, partial coverage and `comments_empty=false`.
 
@@ -270,7 +270,24 @@ Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetwo
 Facebook navigation failures use only the main-document request/redirect chain and its uncompleted CONNECT authorities. Refusals of WebSockets, workers, subresources or already-responded document authorities do not choose that error. Resolver capacity/timeouts use E_NETWORK_TIMEOUT with DNS-oriented advice, never a permit/policy denial.
 
 
-Only a fetch/XHR synchronously initiated by the trusted expansion click can classify an expansion response failure. Attribution uses browser-produced CDP main-frame request type, user-gesture and synchronous initiator-stack metadata; async-parent stacks are excluded. No main-world DOM binding, selector, event-target or dataset lookup participates. Background and proxy-aborted responses are ignored. Such a failure imports observed data with expansion_failed and partial coverage; document auth/access/barrier outcomes remain distinct. Asynchronous endpoints without click provenance are treated conservatively as progress uncertainty, not guessed failure attribution.
+Only DOM progress authorizes expansion progress: a new relevant comment/reply
+node or changed identified content within the read deadline. Requests, response
+statuses, counts and disappearing controls are neither progress nor failure evidence.
+The page defines request meaning, and delegated listeners and async scheduling
+cannot establish reliable request ownership; GraphQL errors may also use HTTP 200.
+No owned CDP session enables the Debugger domain or async stack depth; the AST
+source-constant audit test_r10_no_debugger_or_expansion_network_authority enforces
+this across the session and capture modules. Network.enable remains for socket guards.
+
+A click that cannot be performed records expansion_failed: identity revalidation,
+scroll, usable-quad retrieval, hit lookup, node resolution, composed hit check or
+CDP mouseMoved, mousePressed or mouseReleased fails before mouseReleased completes.
+After a completed click, no relevant DOM progress by the read deadline records
+expansion_progress_timeout, partial coverage and comments_empty=false. Both outcomes
+retain observed data; document and guard stops keep their existing precedence.
+Known limitation (async_hidden_500): DOM evidence is page content. A page that
+renders comments and claims exhaustion before its own request fails cannot be
+distinguished from a truthful page. LIVE exhaustion mappings remain unverified.
 
 
 Facebook navigation barriers, page shapes and identity adoption apply only to the main frame. All network subframe document requests are aborted with blocked_subframe without setting navigation_error. A share identity is adopted only from the main frame.

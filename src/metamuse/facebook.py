@@ -2087,9 +2087,6 @@ class _PlaywrightSession:
         self._navigation_responded: set[str] = set()
         self._document_status = 200
         self._status_error: m.CoreError | None = None
-        self._expansion_response_status: int | None = None
-        self._active_control: str | None = None
-        self._expansion_network_requests: set[str] = set()
         self._closing_targets: set[str] = set()
 
         def _on_route(route: Any) -> None:
@@ -2212,18 +2209,6 @@ class _PlaywrightSession:
         page_cdp = context.new_cdp_session(page)
         self._network_cdp = page_cdp
         page_cdp.send("Network.enable")
-        try:
-            self._network_frame_id = page_cdp.send("Page.getFrameTree")["frameTree"]["frame"]["id"]
-            page_cdp.send("Debugger.enable")
-            page_cdp.send("Debugger.setSkipAllPauses", {"skip": True})
-            page_cdp.send("Debugger.setAsyncCallStackDepth", {"maxDepth": 1})
-            page_cdp.on("Network.requestWillBeSent", self._note_expansion_request)
-            page_cdp.on("Network.responseReceived", self._note_expansion_response)
-        except Exception:
-            raise m.CoreError(
-                m.ErrorCode.PROTOCOL_MISMATCH,
-                "Facebook expansion request attribution control is unavailable",
-            ) from None
         page_cdp.send("Network.setBlockedURLs", {"urls": ["ws://*", "wss://*"]})
         rules = [
             {
@@ -2559,46 +2544,6 @@ class _PlaywrightSession:
                 next_action="Increase limits.max_bytes or narrow the requested resources",
             )
 
-    def _note_expansion_request(self, event: dict[str, Any]) -> None:
-        """Browser-owned request IDs and synchronous trusted-click provenance.
-
-        Async ancestry is recorded by the page CDP Debugger, without pausing page
-        execution. A delayed callback is telemetry even when Chromium propagates
-        transient user activation to it. No page-world DOM reads or authored IDs.
-        """
-        try:
-            if (
-                self._active_control is None
-                or event.get("frameId") != self._network_frame_id
-                or event.get("type") not in {"Fetch", "XHR"}
-                or event.get("hasUserGesture") is not True
-            ):
-                return
-            stack = event.get("initiator", {}).get("stack")
-            if not isinstance(stack, dict):
-                self._guard_failed()
-                return
-            if "parent" in stack or "parentId" in stack:
-                return
-            if len(self._expansion_network_requests) >= 256:
-                self._guard_failed()
-                return
-            self._expansion_network_requests.add(event["requestId"])
-        except Exception:
-            self._guard_failed()
-
-    def _note_expansion_response(self, event: dict[str, Any]) -> None:
-        try:
-            if event.get("requestId") not in self._expansion_network_requests:
-                return
-            response = event["response"]
-            if any(k.lower() == "x-metamuse-proxy-aborted" for k in response["headers"]):
-                return
-            if response["status"] >= 400:
-                self._expansion_response_status = response["status"]
-        except Exception:
-            self._guard_failed()
-
     def _capture(self) -> tuple[str, list[dict[str, Any]], tuple[str, ...]]:
         nodes, world, gaps = capture.capture(self._network_cdp)
         self._capture_world = world
@@ -2718,18 +2663,19 @@ class _PlaywrightSession:
     def _expand_next(self, control_id: str) -> PageObservation:
         if not re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", control_id):
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid expand control identifier")
-        self._expansion_response_status = None
-        self._active_control = control_id
-        self._expansion_network_requests.clear()
         backend = self._capture_controls.get(control_id)
         if backend is None:
             raise capture.failure()
         before = self._progress_signature()
         # Scroll and click this exact backend node; duplicate attribute values
-        # cannot redirect the click. CDP Input events remain trusted for XHR provenance.
+        # cannot redirect the click. CDP Input events perform a trusted click.
         cdp = self._network_cdp
 
         def click() -> None:
+            # Only failures before completing mouseReleased mean the click could
+            # not be performed: identity revalidation, scroll, quad, hit lookup,
+            # node resolution, composed hit check, mouseMoved/Pressed/Released.
+            # Later failures remain guard/policy stops or DOM progress uncertainty.
             if self._capture_controls.get(control_id) != backend:
                 raise capture.failure()
             cdp.send("DOM.scrollIntoViewIfNeeded", {"backendNodeId": backend})
@@ -2772,7 +2718,6 @@ class _PlaywrightSession:
         except Exception:
             if self._egress.navigation_error is not None:
                 raise self._egress.navigation_error from None
-            self._active_control = None
             return self._observation(
                 url=self._page.url,
                 status_code=self._document_status,
@@ -2789,19 +2734,15 @@ class _PlaywrightSession:
             if self._peer_error is not None:
                 raise self._peer_error
             self._egress.check_browser_route(self._page.url, is_navigation=True)
-            if self._expansion_response_status is not None:
-                progress = True  # Classified failure response, never an empty-data inference.
-                break
             if self._progress_signature() - before:
                 progress = True
                 break
-        self._active_control = None
         return self._observation(
             url=self._page.url,
             status_code=self._document_status,
             server_addr=None,
             progress_confirmed=progress,
-            expansion_failed=self._expansion_response_status is not None,
+            expansion_failed=False,
         )
 
     def close(self) -> None:

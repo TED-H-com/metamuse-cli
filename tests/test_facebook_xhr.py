@@ -1,4 +1,4 @@
-"""Trusted XMLHttpRequest expansion provenance (M8); synthetic loopback only."""
+"""Native XMLHttpRequest progress uncertainty and retained data; loopback only."""
 
 import pytest
 from browser_deadline import browser_deadline
@@ -11,20 +11,9 @@ from metamuse import facebook
 
 
 def test_r9_synchronous_xhr_cdp_identity():
-    session = object.__new__(facebook._PlaywrightSession)
-    session._active_control = "expand_1"
-    session._network_frame_id = "main"
-    session._expansion_network_requests = set()
-    session._note_expansion_request(
-        {
-            "type": "XHR",
-            "frameId": "main",
-            "requestId": "xhr-1",
-            "hasUserGesture": True,
-            "initiator": {"stack": {"callFrames": []}},
-        }
-    )
-    assert session._expansion_network_requests == {"xhr-1"}
+    """The former provenance seam is removed; native XHR has no outcome authority."""
+    assert not hasattr(facebook._PlaywrightSession, "_note_expansion_request")
+    assert not hasattr(facebook._PlaywrightSession, "_note_expansion_response")
 
 
 @browser_deadline
@@ -41,14 +30,18 @@ def test_r6_xhr_expansion_failure_preserves_observed_data(tmp_path, monkeypatch)
       </script></body>""",
     )
     with browser_fixture(
-        tmp_path, monkeypatch, {POST_PATH: markup, "/api/more": (500, None)}, unsandboxed=False
+        tmp_path,
+        monkeypatch,
+        {POST_PATH: markup, "/api/more": (500, None)},
+        unsandboxed=False,
+        read_timeout=2,
     ) as (ctx, project, permit, _, hits, *_):
         job = finish(ctx, submit(ctx, project, permit))
         assert job["error"] is None
-        assert job["stop_reason"] == "expansion_failed"
+        assert job["stop_reason"] == "expansion_timeout"
         assert job["state"] == "partial"
         assert job["coverage_status"] == "partial"
-        assert "expansion_failed" in job["missing_fields"]
+        assert "expansion_progress_timeout" in job["missing_fields"]
         assert len(rows(ctx)) == 2
         assert any(path == "/api/more" for path, _ in hits)
 
@@ -77,11 +70,15 @@ def test_r9_native_xhr_provenance(tmp_path, monkeypatch, identity, request):
         };</script></body>""",
     )
     with browser_fixture(
-        tmp_path, monkeypatch, {POST_PATH: markup, "/api/more": (500, None)}, unsandboxed=False
+        tmp_path,
+        monkeypatch,
+        {POST_PATH: markup, "/api/more": (500, None)},
+        unsandboxed=False,
+        read_timeout=2,
     ) as (ctx, project, permit, _, hits, *_):
         job = finish(ctx, submit(ctx, project, permit))
         assert job["error"] is None, job
-        assert job["stop_reason"] == "expansion_failed", job
+        assert job["stop_reason"] == "expansion_timeout", job
         assert job["state"] == "partial"
         assert len(rows(ctx)) == 2
         assert any(path == "/api/more" for path, _ in hits)
