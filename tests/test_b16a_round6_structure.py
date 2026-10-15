@@ -263,3 +263,71 @@ def test_r6_har_does_not_resynchronize_within_failed_candidate():
     from metamuse.safety import _har_json_spans
 
     assert list(_har_json_spans(text)) == []
+
+
+def test_r6_quote_opener_preserves_following_public_url():
+    text = 'stray " curl ' + '-u "alice:my pass ' + MARKER + '" https://example.invalid/a'
+    output, findings = redact_text(text)
+    assert MARKER not in output and findings
+    assert "https://example.invalid/a" in output
+
+
+def test_r6_putty_version_three_is_private():
+    text = "Pu" + "TTY-User-Key-File-3: ssh-rsa\nPrivate-Lines: 1\n" + MARKER + "\nPrivate-MAC: 00"
+    assert redact_text(text)[0] == "[REDACTED]"
+
+
+@pytest.mark.parametrize("bad", ["!", "\u00a0"])
+def test_r6_har_lexer_keeps_its_first_error(bad):
+    from metamuse.safety import _har_json_spans
+
+    text = '{"name":"sid",' + bad + '"value":"' + MARKER + '"}'
+    assert list(_har_json_spans(text)) == []
+
+
+@pytest.mark.parametrize("prefix", ["", "存取網址：", "Here's the link: "])
+@pytest.mark.parametrize("terminator", ["&format=json", "#overview", " next"])
+def test_r6_query_terminators_preserve_public_suffix(prefix, terminator):
+    marker = f"{'QUERY'}_PRIVATE_MARKER_725319"
+    text = prefix + "https://example.org/?access_token=" + marker + terminator
+    output, findings = redact_text(text)
+    assert output == prefix + "https://example.org/?access_token=[REDACTED]" + terminator
+    assert findings == [{"kind": "url_token", "count": 1}]
+    assert redact_text(output)[0] == output
+
+
+def test_r6_deeper_quote_never_pairs_shallower_opener():
+    from metamuse.safety import _Syntax
+
+    text = '"outer"'
+    depths = bytearray(len(text))
+    depths[-1] = 1
+    syntax = _Syntax(text, depths)
+    assert syntax.quote_closings.get(len(text) - 1) is None
+
+
+def test_r6_quoted_punctuation_does_not_close_outer_structure():
+    from metamuse.safety import _Syntax
+
+    text = '(")")'
+    syntax = _Syntax(text)
+    assert syntax.closings.get(len(text) - 1) == 0
+    assert syntax.closings.get(2) is None
+
+
+def test_r6_har_recovers_candidate_swallowed_by_invalid_string():
+    from metamuse.safety import _har_json_spans
+
+    marker = f"{'RECOVERY'}_MARKER_PRIVATE_813629"
+    text = '{"broken":"prefix {"name":"sid","value":"' + marker + '"}'
+    spans = list(_har_json_spans(text))
+    assert any(marker in text[start:end] for start, end, *_ in spans)
+
+
+def test_r6_nested_form_prefix_has_its_own_decoding_layer():
+    from metamuse.safety import _layered_form_ranges
+
+    text = "q=token=private"
+    depths = bytearray(len(text))
+    depths[7] = 1
+    assert (2, len(text), 1) in list(_layered_form_ranges(text, depths, [(0, len(text))]))

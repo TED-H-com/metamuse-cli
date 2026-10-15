@@ -544,6 +544,106 @@ new(
     "quoted_arguments",
 )
 
+
+adapt(
+    "drop_environment_exemption",
+    lambda s: within(
+        "_assignment_spans",
+        "if not include_exempt and call and syntax.complete(call.end() - 1, inner_end):",
+        "if False:",
+    )(within("private", "return not self.complete(call.end() - 1, last)", "return True")(s)),
+    STRUCT,
+    "complete_exemption",
+)
+adapt(
+    "r6_value_opener_is_closer",
+    base.MUTANTS["r6_value_opener_is_closer"][1],
+    STRUCT,
+    "opener_preserves",
+)
+adapt(
+    "r6_lookup_suffix_scan_restored",
+    base.MUTANTS["r6_lookup_suffix_scan_restored"][1],
+    CPU,
+    "balanced_lookup",
+)
+adapt(
+    "r5_new_5b_putty_version_narrowed_to_v2",
+    base.MUTANTS["r5_new_5b_putty_version_narrowed_to_v2"][1],
+    STRUCT,
+    "putty_version_three",
+)
+adapt(
+    "r5_new_8a_seeded_subset_drops_form_body_dimension",
+    within(
+        "seeded_subset",
+        "        if rng.randrange(40) == 0:\n            yield row",
+        '        if rng.randrange(40) == 0 and not row.shape.startswith("form_first:"):\n            yield row',
+    ),
+)
+adapt(
+    "har_resynchronizes_after_error",
+    base.MUTANTS["har_resynchronizes_after_error"][1],
+    STRUCT,
+    "lexer_keeps",
+)
+adapt(
+    "har_non_json_whitespace_allowed",
+    base.MUTANTS["har_non_json_whitespace_allowed"][1],
+    STRUCT,
+    "lexer_keeps",
+)
+adapt(
+    "r5_new_3a_har_lexer_resync_on_token_error",
+    base.MUTANTS["r5_new_3a_har_lexer_resync_on_token_error"][1],
+    STRUCT,
+    "lexer_keeps",
+)
+
+adapt(
+    "exempt_value_skip_restored",
+    base.MUTANTS["exempt_value_skip_restored"][1],
+    "tests/test_b16a_round5_exempt.py",
+    "outer_value",
+)
+adapt(
+    "r5_new_6b_exempt_scan_stops_at_other_exempt",
+    base.MUTANTS["r5_new_6b_exempt_scan_stops_at_other_exempt"][1],
+    "tests/test_b16a_round5_exempt.py",
+    "outer_value",
+)
+adapt(
+    "r5_new_6a_exempt_scan_stops_at_dollar_brace",
+    base.MUTANTS["r5_new_6a_exempt_scan_stops_at_dollar_brace"][1],
+    "tests/test_b16a_round5_exempt.py",
+    "outer_value",
+)
+
+adapt(
+    "r5_new_2c_deeper_close_quote_pairs_shallower_open",
+    base.MUTANTS["r5_new_2c_deeper_close_quote_pairs_shallower_open"][1],
+    STRUCT,
+    "deeper_quote_never",
+)
+adapt(
+    "enclosing_quote_context_ignored",
+    base.MUTANTS["enclosing_quote_context_ignored"][1],
+    STRUCT,
+    "punctuation_does_not_close",
+)
+adapt(
+    "r6_har_swallowed_candidate_lost",
+    base.MUTANTS["r6_har_swallowed_candidate_lost"][1],
+    STRUCT,
+    "recovers_candidate_swallowed",
+)
+adapt(
+    "nested_form_scope_removed",
+    base.MUTANTS["nested_form_scope_removed"][1],
+    STRUCT,
+    "nested_form_prefix",
+)
+
 if __name__ == "__main__":
     from b16a_r6_mutation_run import main
 

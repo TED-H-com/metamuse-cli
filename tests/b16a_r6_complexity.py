@@ -5,6 +5,8 @@ from b16a_r5_complexity import build as prior_build
 from b16a_r5_complexity import families as prior_families
 
 NEW = {
+    "balanced_lookup": "token=os.getenv(",
+    "balanced_environ": "token=os.environ[",
     "balanced_mustache": "token={{",
     "unclosed_dollar": "token=${X:-",
     "unclosed_getenv": "token=os.getenv(a ",
@@ -34,6 +36,13 @@ def families():
 def build(family, size):
     if not family.startswith("r6_"):
         return prior_build(family, size)
+    if family in {"r6_balanced_lookup", "r6_balanced_environ"}:
+        unit = NEW[family[3:]]
+        n = size // (len(unit) + 1)
+        return unit * n + '"PUBLIC"' + (")" if family.endswith("lookup") else "]") * n
+    if family in {"r6_unclosed_getenv", "r6_unclosed_environ"}:
+        unit = NEW[family[3:]]
+        return unit * (size // len(unit)) + (")" if family.endswith("getenv") else "]")
     if family == "r6_balanced_mustache":
         n = size // 10
         return "token={{" * n + "PUBLIC" + "}}" * n

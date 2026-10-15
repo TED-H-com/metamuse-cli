@@ -2652,13 +2652,15 @@ def _query_spans(text, syntax, encoded_positions):
                     and boundary.group() in {"&", "#"}
                 )
                 or (
-                    boundary.group() in "\"'[]{}()"
-                    and syntax.closings.get(
-                        boundary.start(),
-                        syntax.quote_closings.get(boundary.start(), boundary.start()),
+                    boundary.group() in "\"'`[]{}()"
+                    and (
+                        syntax.closings.get(
+                            boundary.start(),
+                            syntax.quote_closings.get(boundary.start(), boundary.start()),
+                        )
+                        >= match.start()
+                        or not syntax.boundary(text, boundary.start())
                     )
-                    >= match.start()
-                    or not syntax.boundary(text, boundary.start())
                 )
             ):
                 cursor = boundary.end()
