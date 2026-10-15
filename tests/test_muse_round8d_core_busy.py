@@ -168,7 +168,7 @@ def siblings(ctx, reverse):
     sibling = ctx.store._sibling()
     assert sibling.paths == ctx.store.paths
     assert sibling._connections is not ctx.store._connections
-    assert sibling.schema_version == core.SCHEMA_VERSION == 5
+    assert sibling.schema_version == core.SCHEMA_VERSION
     assert sibling._migrations == core.MIGRATIONS and 5 in sibling._migrations
     return (sibling, ctx.store) if reverse else (ctx.store, sibling)
 
@@ -254,6 +254,7 @@ def file_hashes(directory):
 
 def test_busy_v4_to_canonical_v5_retains_data_and_pre_upgrade_backup(tmp_path, monkeypatch):
     paths = WorkspacePaths.resolve(tmp_path / "upgrade")
+    target_migrations = {v: core.MIGRATIONS[v] for v in range(1, 6)}
     old = core.Store(
         paths, schema_version=4, migrations={v: core.MIGRATIONS[v] for v in range(1, 5)}
     )
@@ -273,7 +274,7 @@ def test_busy_v4_to_canonical_v5_retains_data_and_pre_upgrade_backup(tmp_path, m
     monkeypatch.setattr(core.Store, "_record_upgrade_backup", capture)
     with writer_lock(old), old._busy_timeout(0.25):
         with pytest.raises(core._StorageBusy) as caught:
-            core.Store(paths)
+            core.Store(paths, schema_version=5, migrations=target_migrations)
         assert caught.value.sqlite_errorcode & 0xFF == sqlite3.SQLITE_BUSY
         with old.connection() as conn:
             assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
@@ -286,7 +287,7 @@ def test_busy_v4_to_canonical_v5_retains_data_and_pre_upgrade_backup(tmp_path, m
         assert tuple(conn.iterdump()) == before
         core._verify_schema(conn, 4, core.MIGRATIONS)
     assert old.pre_upgrade_backups()[0]["status"] == "complete"
-    upgraded = core.Store(paths)
+    upgraded = core.Store(paths, schema_version=5, migrations=target_migrations)
     assert upgraded.get(m.Project, project.id) == project
     with upgraded.connection() as conn:
         assert conn.execute("PRAGMA user_version").fetchone()[0] == 5

@@ -256,7 +256,7 @@ def test_forward_005_upgrade_preserves_existing_core_and_all_guards(tmp_path):
             row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='trigger'")
         }
     new = Store(paths)
-    assert new.schema_version == 5
+    assert new.schema_version == core.SCHEMA_VERSION
     with new.connection() as conn:
         now = {
             row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='trigger'")
