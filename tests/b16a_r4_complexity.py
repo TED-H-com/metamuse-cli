@@ -2,11 +2,16 @@
 
 import argparse
 import json
+import math
 import time
 
 from b16a_r3_complexity import UNITS as PRIOR
 from b16a_r3_complexity import build as prior_build
 from b16a_r3_complexity import cpu_samples
+
+from metamuse.safety import redact_text
+
+GROWTH_SIZES = (16384, 32768, 65536, 131072)
 
 REVIEW = {
     "generic_chain_space": ("", "a=x "),
@@ -124,9 +129,26 @@ def settle_samples(text):
     return min(values)
 
 
-def growth(family, sizes=(16384, 32768, 65536, 131072), *, settle=False):
+def complexity_criterion(samples, sizes=GROWTH_SIZES):
+    """Fit the whole sweep; one cache-boundary step must not decide growth."""
+    x = [math.log(size) for size in sizes]
+    y = [math.log(sample) for sample in samples]
+    x_mean, y_mean = sum(x) / len(x), sum(y) / len(y)
+    slope = sum((a - x_mean) * (b - y_mean) for a, b in zip(x, y, strict=True)) / sum(
+        (a - x_mean) ** 2 for a in x
+    )
+    overall = samples[-1] / samples[0]
+    return slope <= 1.25 and overall <= 12, slope, overall
+
+
+def growth(family, sizes=GROWTH_SIZES, *, settle=False, warmup=False):
     measure = settle_samples if settle else cpu_samples
-    samples = [measure(build(family, size)) for size in sizes]
+    samples = []
+    for size in sizes:
+        text = build(family, size)
+        if warmup:
+            redact_text(text)
+        samples.append(measure(text))
     return samples, [b / a for a, b in zip(samples, samples[1:], strict=False)]
 
 
