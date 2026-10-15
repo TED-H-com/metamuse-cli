@@ -766,27 +766,73 @@ def test_finding_13_text_and_hash_preserve_entities_breaks_and_edges(tmp_path, b
         ('<input data-checkpoint="true">', m.ErrorCode.CHECKPOINT_REQUIRED),
     ],
 )
-def test_finding_13_void_tags_preserve_barrier_classification(marker, code):
+@browser_deadline
+def test_finding_13_void_tags_preserve_barrier_classification(
+    tmp_path, monkeypatch, marker, code, request
+):
+    from facebook_parity import capture_session
+
+    markup = _synthetic_post_html().replace("<body>", "<body>" + marker)
     with pytest.raises(m.CoreError) as error:
         facebook.classify_and_parse_observation(
-            observation(marker + _synthetic_post_html()),
+            observation(markup),
             permalink=facebook.parse_post_permalink(URL),
             require_comments_section=True,
         )
     assert error.value.detail.code == code
+    with capture_session(monkeypatch) as session:
+        session._page.set_content(markup, wait_until="load")
+        session._network_cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
+        encoded, nodes, gaps = session._capture()
+        with pytest.raises(m.CoreError) as error:
+            facebook.classify_and_parse_observation(
+                facebook.PageObservation(
+                    url=URL, status_code=200, html=encoded, capture_nodes=nodes, capture_gaps=gaps
+                ),
+                permalink=facebook.parse_post_permalink(URL),
+                require_comments_section=True,
+            )
+        assert error.value.detail.code == code
 
 
 @pytest.mark.parametrize("self_closing", [False, True])
-def test_finding_13_void_spellings_do_not_truncate_source_text(self_closing):
+@browser_deadline
+def test_finding_13_void_spellings_do_not_truncate_source_text(
+    tmp_path, monkeypatch, self_closing, request
+):
+    from facebook_parity import capture_session
+
     suffix = "/" if self_closing else ""
     markup = _synthetic_post_html(post_text="PLACEHOLDER")
     body = f"before<area{suffix}><embed{suffix}><track{suffix}>after"
+    # Embed is outside the strict fixture subset. Preserve its original real
+    # Chromium regression, and compare the admitted void spellings separately.
+    with pytest.raises(m.CoreError) as error:
+        facebook.classify_and_parse_observation(
+            observation(markup.replace("PLACEHOLDER", body)),
+            permalink=facebook.parse_post_permalink(URL),
+            require_comments_section=True,
+        )
+    assert error.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
+    assert error.value.detail.message == "Facebook structured capture could not be completed"
     page = facebook.classify_and_parse_observation(
-        observation(markup.replace("PLACEHOLDER", body)),
+        observation(markup.replace("PLACEHOLDER", body.replace(f"<embed{suffix}>", ""))),
         permalink=facebook.parse_post_permalink(URL),
         require_comments_section=True,
     )
     assert page.text == "beforeafter"
+    with capture_session(monkeypatch) as session:
+        session._page.set_content(markup.replace("PLACEHOLDER", body), wait_until="load")
+        session._network_cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
+        encoded, nodes, gaps = session._capture()
+        page = facebook.classify_and_parse_observation(
+            facebook.PageObservation(
+                url=URL, status_code=200, html=encoded, capture_nodes=nodes, capture_gaps=gaps
+            ),
+            permalink=facebook.parse_post_permalink(URL),
+            require_comments_section=True,
+        )
+        assert page.text == "beforeafter"
 
 
 @pytest.mark.parametrize("suffix", [":NOT_A_PORT", ":70000", ":0", ":81", "/path", "?q=value"])

@@ -200,7 +200,9 @@ def test_r5_n8_resume_without_committed_batch_keeps_weak_records(tmp_path):
     ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
     facebook.set_driver_factory(
         lambda: facebook.FixtureBrowserDriver(
-            facebook.PageObservation(url=URL, status_code=401, html="<html>login</html>")
+            facebook.PageObservation(
+                url=URL, status_code=401, html="<html><body>login</body></html>"
+            )
         )
     )
     job_id = submit(ctx, project, permit)
@@ -584,7 +586,11 @@ def test_r5_n9_off_post_navigation_needs_session_review(tmp_path, monkeypatch, h
 
 
 @pytest.mark.parametrize("real_browser", [False, True], ids=["fixture", "chromium"])
-def test_r5_n10_visible_text_and_emoji_have_driver_parity(tmp_path, monkeypatch, real_browser):
+@pytest.mark.parametrize("executable", [False, True], ids=["inert", "executable"])
+@browser_deadline
+def test_r5_n10_visible_text_and_emoji_have_driver_parity(
+    tmp_path, monkeypatch, real_browser, executable, request
+):
     body = (
         'before <img alt="😀" src="/emoji.png"> after'
         "<script>var injected=1;</script><style>.x{color:red}</style>"
@@ -594,15 +600,27 @@ def test_r5_n10_visible_text_and_emoji_have_driver_parity(tmp_path, monkeypatch,
         '<span style="visibility:hidden">HIDDEN4</span>'
         "<div>visible<br>line</div>tail"
     )
+    if not executable:
+        body = body.replace("<script>", '<script type="text/plain">').replace(
+            "<style>.x{color:red}</style>", "<style></style>"
+        )
     markup = _synthetic_post_html(post_text="BODY").replace(">BODY</div>", ">" + body + "</div>")
     if real_browser:
-        with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}) as env:
+        with browser_fixture(
+            tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False, read_timeout=300
+        ) as env:
             ctx, project, permit, _, _, _, _ = env
             job = finish(ctx, submit(ctx, project, permit))
             result = rows(ctx)
     else:
         ctx, job = fixture_job(tmp_path, markup)
         result = rows(ctx)
+        if executable:
+            assert job["error"]["code"] == "E_SELECTOR_DRIFT"
+            assert job["error"]["message"] == "Facebook structured capture could not be completed"
+            assert job["state"] == "failed"
+            assert result == []
+            return
     assert job["error"] is None
     assert result[0]["text"] == "before 😀 afterPAINTED\nvisible\nline\ntail"
 
@@ -638,19 +656,35 @@ def test_r5_n10_chromium_excludes_computed_hidden_text(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("real_browser", [False, True], ids=["fixture", "chromium"])
-def test_r5_n10_nonjson_marked_script_is_excluded(tmp_path, monkeypatch, real_browser):
+@pytest.mark.parametrize("executable", [False, True], ids=["inert", "executable"])
+@browser_deadline
+def test_r5_n10_nonjson_marked_script_is_excluded(
+    tmp_path, monkeypatch, real_browser, executable, request
+):
     markup = _synthetic_post_html(post_text="BODY").replace(
         ">BODY</div>",
         ">left<script data-fb-post-payload>window.syntheticText=1;</script>right</div>",
     )
+    if not executable:
+        markup = markup.replace(
+            "<script data-fb-post-payload>", '<script type="text/plain" data-fb-post-payload>'
+        )
     if real_browser:
-        with browser_fixture(tmp_path, monkeypatch, {POST_PATH: markup}) as env:
+        with browser_fixture(
+            tmp_path, monkeypatch, {POST_PATH: markup}, unsandboxed=False, read_timeout=300
+        ) as env:
             ctx, project, permit, _, _, _, _ = env
             job = finish(ctx, submit(ctx, project, permit))
             result = rows(ctx)
     else:
         ctx, job = fixture_job(tmp_path, markup)
         result = rows(ctx)
+        if executable:
+            assert job["error"]["code"] == "E_SELECTOR_DRIFT"
+            assert job["error"]["message"] == "Facebook structured capture could not be completed"
+            assert job["state"] == "failed"
+            assert result == []
+            return
     assert job["error"] is None
     assert result[0]["text"] == "leftright"
 
