@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import json
 import re
-from html.parser import HTMLParser
 from collections import Counter
+from html.parser import HTMLParser
 from typing import Any
 
 from metamuse import models as m
@@ -252,7 +252,7 @@ def capture(cdp: Any) -> tuple[list[dict[str, Any]], int, tuple[str, ...]]:
         # Only controls need protocol identities. Main-world CSS selectors are
         # never used to substitute a duplicate node for the observed control.
         for i, node in enumerate(nodes):
-            if node["rendered"] and node["attrs"].get("data-expand-kind") in {
+            if node["rendered"] and node["attrs"].get("data-expand-kind", "").lower() in {
                 "more_comments",
                 "more_replies",
             }:
@@ -297,13 +297,15 @@ class FixtureTree(HTMLParser):
     REFUSED = frozenset(
         "title xmp iframe noembed noframes plaintext textarea dialog select option optgroup frameset frame embed".split()
     )
-    HTML_TAGS = VOID | frozenset((
-        "html head body div span p article section form button a ul ol li table tbody "
-        "thead tfoot tr td th caption colgroup template script style noscript details "
-        "summary b i u strong em s small mark code pre blockquote h1 h2 h3 h4 h5 h6 "
-        "time label header footer main nav aside figure figcaption address fieldset "
-        "legend audio video canvas object meter progress"
-    ).split())
+    HTML_TAGS = VOID | frozenset(
+        (
+            "html head body div span p article section form button a ul ol li table tbody "
+            "thead tfoot tr td th caption colgroup template script style noscript details "
+            "summary b i u strong em s small mark code pre blockquote h1 h2 h3 h4 h5 h6 "
+            "time label header footer main nav aside figure figcaption address fieldset "
+            "legend audio video canvas object meter progress"
+        ).split()
+    )
     FOREIGN = {
         SVG: frozenset(
             "svg g text rect circle line path ellipse polyline polygon tspan defs use symbol".split()
@@ -343,7 +345,12 @@ class FixtureTree(HTMLParser):
             ns = MATH
         pairs = [(k.lower(), v or "") for k, v in attrs]
         attrs = dict(pairs)
-        if len(attrs) != len(pairs) or "popover" in attrs or tag in self.REFUSED or any(name.startswith("on") for name in attrs):
+        if (
+            len(attrs) != len(pairs)
+            or "popover" in attrs
+            or tag in self.REFUSED
+            or any(name.startswith("on") for name in attrs)
+        ):
             raise failure()
         if (
             (tag == "script" and "src" in attrs)
@@ -352,10 +359,18 @@ class FixtureTree(HTMLParser):
             or (tag == "object" and "data" in attrs)
         ):
             raise failure()
-        if ns == HTML and tag not in self.HTML_TAGS and not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)+", tag):
+        if (
+            ns == HTML
+            and tag not in self.HTML_TAGS
+            and not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)+", tag)
+        ):
             raise failure()
         style = attrs.get("style", "")
-        if "\\" in style or "/*" in style or re.search(r"(?:^|;)\s*(?:all|animation[^:]*|transition[^:]*)\s*:", style, re.I):
+        if (
+            "\\" in style
+            or "/*" in style
+            or re.search(r"(?:^|;)\s*(?:all|animation[^:]*|transition[^:]*)\s*:", style, re.I)
+        ):
             raise failure()
         for declaration in style.split(";"):
             if ":" not in declaration:
@@ -365,7 +380,10 @@ class FixtureTree(HTMLParser):
                 value = re.sub(r"!\s*important\s*$", "", value.strip(), flags=re.I).strip()
                 if not re.fullmatch(r"[a-zA-Z-]+", value):
                     raise failure()
-        if tag in {"audio", "video", "canvas", "meter", "progress"} and css(style, "display") != "contents":
+        if (
+            tag in {"audio", "video", "canvas", "meter", "progress"}
+            and css(style, "display") != "contents"
+        ):
             raise failure()
         if ns != HTML and tag not in self.FOREIGN[ns]:
             raise failure()  # No HTML breakout or foreign integration points.

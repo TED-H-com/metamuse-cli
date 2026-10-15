@@ -2022,15 +2022,25 @@ WEBSOCKET_BLOCK_SCRIPT = """(() => {
 def _verify_popup_control(browser: Any, context: Any, page: Any) -> None:
     """Use pristine blank realms, before init scripts and before opening the proxy."""
     try:
-        refused = page.evaluate("""() => {
-          const direct = window.open('');
-          if (direct) direct.close();
-          const frame = document.createElement('iframe'); document.body.append(frame);
-          const fresh = frame.contentWindow.open('');
-          if (fresh) fresh.close();
-          frame.remove();
-          return direct === null && fresh === null;
-        }""")
+        channel = context.new_cdp_session(page)
+        frame_id = channel.send("Page.getFrameTree")["frameTree"]["frame"]["id"]
+        world = channel.send(
+            "Page.createIsolatedWorld",
+            {"frameId": frame_id, "worldName": "metamuse-popup-self-check"},
+        )["executionContextId"]
+        refused = (
+            channel.send(
+                "Runtime.evaluate",
+                {
+                    "expression": f"({capture_dom.POPUP_CHECK})()",
+                    "contextId": world,
+                    "returnByValue": True,
+                },
+            )
+            .get("result", {})
+            .get("value")
+            is True
+        )
         cdp = browser.new_browser_cdp_session()
         targets = cdp.send("Target.getTargets")["targetInfos"]
         pages = [target for target in targets if target["type"] == "page"]
@@ -2079,8 +2089,7 @@ class _PlaywrightSession:
         self._status_error: m.CoreError | None = None
         self._expansion_response_status: int | None = None
         self._active_control: str | None = None
-        self._pending_expansion_urls: list[str] = []
-        self._expansion_requests: set[Any] = set()
+        self._expansion_network_requests: set[str] = set()
         self._closing_targets: set[str] = set()
 
         def _on_route(route: Any) -> None:
@@ -2111,50 +2120,7 @@ class _PlaywrightSession:
 
         self._page.on("request", note_navigation)
 
-        def note_expansion(source: Any, payload: Any) -> None:
-            if (
-                source.get("frame") == self._page.main_frame
-                and isinstance(payload, dict)
-                and self._active_control is not None
-                and payload.get("control") == self._active_control
-                and isinstance(payload.get("url"), str)
-                and len(self._pending_expansion_urls) < 256
-            ):
-                self._pending_expansion_urls.append(payload["url"])
-
-        def request_started(request: Any) -> None:
-            if request.url in self._pending_expansion_urls:
-                self._pending_expansion_urls.remove(request.url)
-                self._expansion_requests.add(request)
-            elif request.redirected_from in self._expansion_requests:
-                self._expansion_requests.add(request)
-
-        self._context.expose_binding("__metamuseExpansionRequest", note_expansion)
         self._context.add_init_script(WEBSOCKET_BLOCK_SCRIPT)
-        self._context.add_init_script("""(() => {
-          const note = url => {
-            const event = window.event;
-            const control = event?.target?.closest?.('[data-expand-id]');
-            if (event?.isTrusted && event.type === 'click' && control) {
-              try { window.__metamuseExpansionRequest({control: control.dataset.expandId,
-                url: new URL(url, document.baseURI).href}); } catch (_) {}
-            }
-          };
-          const originalFetch = window.fetch;
-          window.fetch = function(input, ...args) {
-            note(typeof input === 'string' || input instanceof URL ? input : input.url);
-            return originalFetch.call(this, input, ...args);
-          };
-          const urls = new WeakMap(), open = XMLHttpRequest.prototype.open,
-            send = XMLHttpRequest.prototype.send;
-          XMLHttpRequest.prototype.open = function(method, url, ...args) {
-            urls.set(this, url); return open.call(this, method, url, ...args);
-          };
-          XMLHttpRequest.prototype.send = function(...args) {
-            note(urls.get(this)); return send.apply(this, args);
-          };
-        })()""")
-        self._page.on("request", request_started)
 
         def _on_response(response: Any) -> None:
             req = response.request
@@ -2186,12 +2152,6 @@ class _PlaywrightSession:
                 return
             if main_navigation:
                 self._navigation_responded.add(req.url)
-            if (
-                req in self._expansion_requests
-                and req.resource_type in ("xhr", "fetch")
-                and response.status >= 400
-            ):
-                self._expansion_response_status = response.status
             purpose: safety.URLPurpose = (
                 "request"
                 if main_navigation
@@ -2252,6 +2212,18 @@ class _PlaywrightSession:
         page_cdp = context.new_cdp_session(page)
         self._network_cdp = page_cdp
         page_cdp.send("Network.enable")
+        try:
+            self._network_frame_id = page_cdp.send("Page.getFrameTree")["frameTree"]["frame"]["id"]
+            page_cdp.send("Debugger.enable")
+            page_cdp.send("Debugger.setSkipAllPauses", {"skip": True})
+            page_cdp.send("Debugger.setAsyncCallStackDepth", {"maxDepth": 1})
+            page_cdp.on("Network.requestWillBeSent", self._note_expansion_request)
+            page_cdp.on("Network.responseReceived", self._note_expansion_response)
+        except Exception:
+            raise m.CoreError(
+                m.ErrorCode.PROTOCOL_MISMATCH,
+                "Facebook expansion request attribution control is unavailable",
+            ) from None
         page_cdp.send("Network.setBlockedURLs", {"urls": ["ws://*", "wss://*"]})
         rules = [
             {
@@ -2587,6 +2559,46 @@ class _PlaywrightSession:
                 next_action="Increase limits.max_bytes or narrow the requested resources",
             )
 
+    def _note_expansion_request(self, event: dict[str, Any]) -> None:
+        """Browser-owned request IDs and synchronous trusted-click provenance.
+
+        Async ancestry is recorded by the page CDP Debugger, without pausing page
+        execution. A delayed callback is telemetry even when Chromium propagates
+        transient user activation to it. No page-world DOM reads or authored IDs.
+        """
+        try:
+            if (
+                self._active_control is None
+                or event.get("frameId") != self._network_frame_id
+                or event.get("type") not in {"Fetch", "XHR"}
+                or event.get("hasUserGesture") is not True
+            ):
+                return
+            stack = event.get("initiator", {}).get("stack")
+            if not isinstance(stack, dict):
+                self._guard_failed()
+                return
+            if "parent" in stack or "parentId" in stack:
+                return
+            if len(self._expansion_network_requests) >= 256:
+                self._guard_failed()
+                return
+            self._expansion_network_requests.add(event["requestId"])
+        except Exception:
+            self._guard_failed()
+
+    def _note_expansion_response(self, event: dict[str, Any]) -> None:
+        try:
+            if event.get("requestId") not in self._expansion_network_requests:
+                return
+            response = event["response"]
+            if any(k.lower() == "x-metamuse-proxy-aborted" for k in response["headers"]):
+                return
+            if response["status"] >= 400:
+                self._expansion_response_status = response["status"]
+        except Exception:
+            self._guard_failed()
+
     def _capture(self) -> tuple[str, list[dict[str, Any]], tuple[str, ...]]:
         nodes, world, gaps = capture.capture(self._network_cdp)
         self._capture_world = world
@@ -2708,8 +2720,7 @@ class _PlaywrightSession:
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid expand control identifier")
         self._expansion_response_status = None
         self._active_control = control_id
-        self._pending_expansion_urls.clear()
-        self._expansion_requests.clear()
+        self._expansion_network_requests.clear()
         backend = self._capture_controls.get(control_id)
         if backend is None:
             raise capture.failure()

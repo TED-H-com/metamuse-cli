@@ -27,28 +27,75 @@ def test_r9_fixture_capture_preserves_core_error():
 
 # The table is the single vocabulary for both the corpus and the source rule.
 def test_r9_no_direct_dom_members():
-    import re
+    from facebook_dom_rule import check
 
-    from metamuse import _facebook_capture as cap
     from metamuse import _facebook_dom as dom
 
-    for source in (cap.WALK, dom.HIT_TEST):
-        assert dom.ACCESSOR_TABLE in source
-        source = source.replace(dom.ACCESSOR_TABLE, "")
-        # Lex strings/comments first: dots in text are not JavaScript member reads.
-        tokens = re.sub(
-            r""""(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|//[^\n]*|/\*.*?\*/""",
-            " STRING ",
-            source,
-            flags=re.S,
-        )
-        # n_* are platform handles. r_* / v_* are records and arrays made by
-        # this program, never values obtained by a DOM property lookup.
-        assert not re.search(r"\b(?:n_\w+|document|this)\s*(?:\?\.)?\s*[.\[]", tokens)
-        names = {member for _, member, _ in dom.ACCESSORS.values()} - {"length", "item"}
-        for match in re.finditer(r"\b([\w$]+)\s*\.\s*([\w$]+)", tokens):
-            receiver, member = match.groups()
-            assert member not in names or receiver == "D", match.group()
+    for source in (capture.WALK, dom.HIT_TEST, dom.POPUP_CHECK):
+        check(source, dom.ACCESSOR_TABLE, dom.ACCESSORS)
+
+
+def test_r9_evaluated_function_inventory():
+    """New evaluation sites must join the checked dialect or this inert list."""
+    import ast
+    import inspect
+
+    expected = {
+        "facebook": {
+            "capture_dom.HIT_TEST",
+            "f'({capture_dom.POPUP_CHECK})()'",
+            "'self.close()'",
+        },
+        "_facebook_capture": {
+            "'globalThis.__metamuseClosed=new WeakMap()'",
+            "f'({WALK})()'",
+            "'function(root){globalThis.__metamuseClosed.set(this,root)}'",
+            "f'globalThis.__metamuseNodes[{i}]'",
+        },
+    }
+    for module in (facebook, capture):
+        tree = ast.parse(inspect.getsource(module))
+        actual = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Dict):
+                for key, value in zip(node.keys, node.values, strict=True):
+                    if isinstance(key, ast.Constant) and key.value in {
+                        "expression",
+                        "functionDeclaration",
+                    }:
+                        actual.add(ast.unparse(value))
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                if node.func.attr == "evaluate":
+                    assert ast.literal_eval(node.args[0]) == "0"
+                if node.func.attr == "add_init_script":
+                    assert ast.unparse(node.args[0]) == "WEBSOCKET_BLOCK_SCRIPT"
+        assert actual == expected[module.__name__.split(".")[-1]]
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "n_node.attributes",
+        "n_node['attributes']",
+        "n_node?.attributes",
+        "D.childNodes(n_node).length",
+        "D.content(n_node)['childNodes']",
+        "const v_alias=D.shadowRoot(n_node);v_alias.length",
+        "const v_alias=n_node;v_alias.length",
+        "v_raw[0].length",
+        "v_pending.pop().length",
+        "document.contentType",
+        "this.contains(n_node)",
+        "unknown.nodeType",
+    ],
+)
+def test_r9_accessor_rule_rejects_dom_aliases(expression):
+    from facebook_dom_rule import check
+
+    from metamuse import _facebook_dom as dom
+
+    with pytest.raises(AssertionError):
+        check(dom.ACCESSOR_TABLE + expression, dom.ACCESSOR_TABLE, dom.ACCESSORS)
 
 
 @browser_deadline
@@ -56,7 +103,7 @@ def test_r9_clobbering_accessor_corpus(tmp_path, monkeypatch):
     from metamuse import _facebook_dom as dom
 
     def result(session, markup):
-        session._page.set_content(markup)
+        session._page.set_content(markup, wait_until="domcontentloaded")
         session._network_cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
         _, nodes, gaps = session._capture()
         e = facebook._DOMExtractor()
@@ -85,7 +132,9 @@ def test_r9_clobbering_accessor_corpus(tmp_path, monkeypatch):
                 baseline = result(
                     session, _synthetic_post_html().replace("</body>", marker + "</body>")
                 )
-                for name in sorted({v[1] for v in dom.ACCESSORS.values()}):
+                for name in sorted(
+                    {v[1] for v in dom.ACCESSORS.values()} | set(dom.GLOBAL_METHODS.values())
+                ):
                     plants = [
                         f'<form><input name="{name}">{marker}</form>',
                         *[
@@ -195,45 +244,6 @@ def test_r9_slot_contents_hidden_composed_ancestor(tmp_path, monkeypatch):
     assert "NEVER_PAINTED" not in stored[0]["text"]
 
 
-
-
-@pytest.mark.parametrize(
-    "markup",
-    [
-        *[
-            f"<{tag}>TEXT</{tag}>"
-            for tag in (
-                "xmp",
-                "iframe",
-                "noembed",
-                "noframes",
-                "plaintext",
-                "textarea",
-                "title",
-                "dialog",
-            )
-        ],
-        "<div popover>TEXT</div>",
-        '<svg><noscript><g data-page-state="login_wall"></g></noscript></svg>',
-        "<svg><template></template></svg>",
-        "<svg><slot></slot></svg>",
-        "<svg><input></input></svg>",
-        '<div style="display:none"><svg><desc></div></desc></svg></div>',
-        "<div><span></div></span>",
-        "<p><div>TEXT</div></p>",
-        "<table><tr><td>TEXT</td></tr></table>",
-        '<template shadowrootmode="open"></template>',
-        '<script>document.body.textContent="changed";</script>',
-        "<style>span{display:none}</style>",
-    ],
-)
-def test_r9_fixture_refuses_unsupported_constructs(markup):
-    with pytest.raises(m.CoreError) as caught:
-        capture.fixture_capture(markup)
-    assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
-    assert caught.value.detail.message == "Facebook structured capture could not be completed"
-
-
 @pytest.mark.parametrize("kind", ["missing", "duplicate", "own-shadow", "slotted", "overlay"])
 @browser_deadline
 def test_r9_click_identity(tmp_path, monkeypatch, kind, request):
@@ -284,3 +294,38 @@ def test_r9_click_identity(tmp_path, monkeypatch, kind, request):
     assert job["coverage_status"] == ("partial" if kind == "overlay" else "scope_satisfied"), job
 
 
+@pytest.mark.parametrize(
+    "markup",
+    [
+        *[
+            f"<{tag}>TEXT</{tag}>"
+            for tag in (
+                "xmp",
+                "iframe",
+                "noembed",
+                "noframes",
+                "plaintext",
+                "textarea",
+                "title",
+                "dialog",
+            )
+        ],
+        "<div popover>TEXT</div>",
+        '<svg><noscript><g data-page-state="login_wall"></g></noscript></svg>',
+        "<svg><template></template></svg>",
+        "<svg><slot></slot></svg>",
+        "<svg><input></input></svg>",
+        '<div style="display:none"><svg><desc></div></desc></svg></div>',
+        "<div><span></div></span>",
+        "<p><div>TEXT</div></p>",
+        "<table><tr><td>TEXT</td></tr></table>",
+        '<template shadowrootmode="open"></template>',
+        '<script>document.body.textContent="changed";</script>',
+        "<style>span{display:none}</style>",
+    ],
+)
+def test_r9_fixture_refuses_unsupported_constructs(markup):
+    with pytest.raises(m.CoreError) as caught:
+        capture.fixture_capture(markup)
+    assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
+    assert caught.value.detail.message == "Facebook structured capture could not be completed"
