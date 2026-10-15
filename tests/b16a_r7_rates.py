@@ -19,7 +19,13 @@ def outcome(text, value):
         cases=1,
         no_finding=int(not any(f["kind"] != "local_path" for f in found)),
         verbatim=int(value in out),
-        visible_piece=int(any(value[i : i + 6] in out for i in range(len(value) - 5))),
+        raw_visible_piece=int(any(value[i : i + 6] in out for i in range(len(value) - 5))),
+        visible_piece=int(
+            any(
+                value[i : i + 6] in out and value[i : i + 6] not in text.replace(value, "")
+                for i in range(len(value) - 5)
+            )
+        ),
         nonfixpoint=int(redact_text(out)[0] != out),
     )
 
