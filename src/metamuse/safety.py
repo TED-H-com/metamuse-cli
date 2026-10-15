@@ -2486,13 +2486,15 @@ class _Syntax:
                 and text.find(">", start + 1, finish - 1) < 0
             ):
                 return min(finish, limit)
-            return min(limit, self.line_end(text, start, level))
+            end = min(limit, self.line_end(text, start, level))
+            return self.trim(text, start, end) if trim else end
         call = re.compile(r"os\.(?:getenv\(|environ\[)|Optional\[").match(text, start)
         opening = call.end() - 1 if call else start + int(text.startswith("${", start))
         if call or text.startswith(("${", "{{"), start):
             finish = self.ends.get(opening)
             if finish is None or not self.complete(opening, finish):
-                return min(limit, self.line_end(text, start, level))
+                end = min(limit, self.line_end(text, start, level))
+                return self.trim(text, start, end) if trim else end
         if text[start : start + 1] in "[{" and not text.startswith("{{", start):
             finish = self.ends.get(opening)
             if finish is None or not self.complete(opening, finish):
@@ -2537,6 +2539,7 @@ class _Syntax:
                 return self.trim(text, start, pos) if trim else pos
             end = found.end()
         return self.trim(text, start, limit) if trim else limit
+
 
 
 
