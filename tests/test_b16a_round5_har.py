@@ -84,3 +84,14 @@ def test_r43_non_json_whitespace_stops_lexer(prefix):
     marker = f"{'HAR'}_MARKER_AFTER_INVALID_WHITESPACE"
     text = prefix + json.dumps({"cookies": [{"name": "theme", "value": marker}]})
     assert redact_text(text) == (text, [])
+
+
+@pytest.mark.parametrize("earlier", ["https://example.invalid/?q=%22x", '5" screen'])
+@pytest.mark.parametrize("layers", [0, 1, 2, 3])
+def test_r43_json_values_before_cookie_array_are_data(earlier, layers):
+    marker = f"{'HAR'}_MARKER_ONLY_COOKIE_ARRAY"
+    text = json.dumps({"earlier": earlier, "cookies": [{"name": "theme", "value": marker}]})
+    for _ in range(layers):
+        text = json.dumps({"capture": text})
+    output, findings = redact_text(text)
+    assert marker not in output and findings, (text, output, findings)

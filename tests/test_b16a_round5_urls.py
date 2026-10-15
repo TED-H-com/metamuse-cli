@@ -62,3 +62,15 @@ def test_r41_compact_json_and_userinfo_punctuation():
         text = f"https://alice:{marker}@example.invalid/a"
         result, findings = redact_text(text)
         assert marker not in result and findings
+
+
+@pytest.mark.parametrize("layers", [1, 2, 3])
+def test_r41_mixed_layer_next_scheme_is_authority_boundary(layers):
+    marker = f"{'URL'}_MARKER_MIXED_AUTHORITY"
+    second = f"https://alice:{marker}@example.invalid/a"
+    for _ in range(layers):
+        second = quote(second, safe="")
+    text = "https://example.invalid|" + second
+    output, findings = redact_text(text)
+    expected = "https://example.invalid|" + second.replace(marker, "[REDACTED]")
+    assert output == expected, (output, expected, findings)

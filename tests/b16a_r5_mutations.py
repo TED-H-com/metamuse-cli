@@ -276,6 +276,28 @@ add(
     "class_matrix",
 )
 
+old = base.MUTANTS["next_scheme_not_authority_boundary"]
+add("next_scheme_not_authority_boundary", SAFE, old[1], URL, "mixed_layer")
+add(
+    "spans_python_tuple_list",
+    SAFE,
+    lambda text: text.replace("spans = _SpanIndex(", "spans = list("),
+    MEMORY,
+    "path_unclosed_alt_quotes",
+)
+
+add(
+    "har_percent_layer_consumes_form_budget",
+    SAFE,
+    within(
+        "_har_spans",
+        "spans = list(_har_spans(view, _depth=_depth, _form_depth=_form_depth))",
+        "spans = list(_har_spans(view, _depth=_depth, _form_depth=_form_depth + 1))",
+    ),
+    R5,
+    "class_matrix",
+)
+
 
 if __name__ == "__main__":
     base.main()

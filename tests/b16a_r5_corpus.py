@@ -200,6 +200,17 @@ def neighbours():
                             encode(json.dumps([first, join, mirror]), layer),
                             benign=True,
                         )
+    for layer in (1, 2, 3):
+        second = f"https://alice:{marker}@example.invalid/a"
+        for _ in range(layer):
+            second = quote(second, safe="")
+        yield Row("mixed_layer_authority", "https://example.invalid|" + second, (marker,))
+        # A real enclosing JSON boundary distinguishes an email from userinfo.
+        yield Row(
+            "mixed_layer_authority_mirror",
+            json.dumps(["https://example.invalid", quote("alice@example.invalid", safe="")]),
+            benign=True,
+        )
     for rule in RULES:
         for layer in ("0", "1", "2", "3", "shell", "percent1", "percent2", "percent3"):
             yield Row("quoted_argument", context(rule.format(v=marker), layer), (marker,))
@@ -229,6 +240,11 @@ def neighbours():
                 )
             ):
                 yield Row("har_mirror", text, benign=True)
+    for earlier in ('5" screen', "https://example.invalid/?q=%22x"):
+        for _, text in class_encodings(
+            json.dumps({"earlier": earlier, "cookies": [{"name": "theme", "value": marker}]})
+        ):
+            yield Row("har_without_sensitive_container", text, (marker,))
     number = f"{98765432}{10123456}"
     for reverse in (False, True):
         entry = (

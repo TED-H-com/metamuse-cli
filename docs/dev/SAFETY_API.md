@@ -440,7 +440,7 @@ parsing when defaults nest.
 Redaction memory budget: a fresh subprocess making one public redact_text call
 on 20 MiB of raw text must peak at no more than 1 GiB RSS. Syntax positions share
 one lazy signed numeric index; quote intervals, newline offsets, edit coordinates
-and JSON lexer nesting use compact numeric arrays, and decode depths use bytes.
+JSON lexer nesting, and retained mask spans use compact numeric arrays; decode depths use bytes.
 Decoded syntax is released before the original-view syntax is constructed. Each
 measurement uses a fresh parent and child; RUSAGE_CHILDREN reports that child only.
 

@@ -12,6 +12,7 @@ from b16a_r5_memory import measure
         "json_escaped_doc",
         "review_nested_json_prose",
         "r5_invalid_utf8_percent",
+        "path_unclosed_alt_quotes",
     ],
 )
 def test_r47_fresh_process_memory_budget(family):

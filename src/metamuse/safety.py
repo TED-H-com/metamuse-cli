@@ -1980,6 +1980,36 @@ class _Syntax:
         return end
 
 
+class _SpanIndex:
+    """Compact spans; retain no Python tuple/int object per input match."""
+
+    def __init__(self, spans):
+        self.data = array("I")
+        self.kinds = []
+        self.replacements = []
+        kinds, replacements = {}, {}
+        for start, end, kind, replacement in spans:
+            if kind not in kinds:
+                kinds[kind] = len(self.kinds)
+                self.kinds.append(kind)
+            if replacement not in replacements:
+                replacements[replacement] = len(self.replacements)
+                self.replacements.append(replacement)
+            self.data.extend((start, end, kinds[kind], replacements[replacement]))
+
+    def __len__(self):
+        return len(self.data) // 4
+
+    def __iter__(self):
+        for offset in range(0, len(self.data), 4):
+            yield (
+                self.data[offset],
+                self.data[offset + 1],
+                self.kinds[self.data[offset + 2]],
+                self.replacements[self.data[offset + 3]],
+            )
+
+
 def _merge_spans(streams):
     """Fixed number of ordered rule streams: O(n), including overlapping rules."""
     from heapq import merge
@@ -2759,7 +2789,7 @@ def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0):
             if view.lstrip().startswith(("{", "[", '"')) or (
                 _form_depth < 3 and form.match(view) and not re.search(r"\s", view)
             ):
-                spans = list(_har_spans(view, _depth=_depth, _form_depth=_form_depth + 1))
+                spans = list(_har_spans(view, _depth=_depth, _form_depth=_form_depth))
                 for edits in reversed(layers):
                     spans = list(_original_spans(spans, edits))
                 yield from spans
@@ -3160,7 +3190,7 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
             depths = _decoding_depths(len(text), layers)
     encoded = _EncodedPositions(text, layers, form=form)
     syntax = _Syntax(view, depths)
-    spans = list(
+    spans = _SpanIndex(
         _merge_spans(
             [
                 _close_bearer_spans(
@@ -3170,14 +3200,14 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
         )
     )
     for edits in reversed(layers):
-        spans = list(_original_spans(spans, edits))
+        spans = _SpanIndex(_original_spans(spans, edits))
     # Original quoted/structured values have their original quote terminators,
     # even when JSON unescaping reveals quotes inside the credential itself.
     del syntax, depths
     original_syntax = _Syntax(text) if layers else None
     original_fields = _assignment_spans(text, original_syntax) if layers else ()
     original_headers = _header_spans(text, original_syntax) if layers else ()
-    spans = list(
+    spans = _SpanIndex(
         _merge_spans(
             [spans, original_fields, original_headers, _bearer_spans(text), _har_spans(text)]
         )
