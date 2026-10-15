@@ -278,7 +278,7 @@ def _synthetic_post_html(
 ) -> str:
     esc_post = html_lib.escape(post_text)
     parts = [
-        "<!DOCTYPE html><html><body>",
+        "<!DOCTYPE html><html><head></head><body>",
         f'<article role="article" data-fb-role="post" data-post-id="{post_id}" '
         f'data-actor="{actor}" data-author="{author}" data-created-at="{created_at}" '
         f'data-permalink="https://www.facebook.com/{actor}/posts/{post_id}" '
@@ -1125,7 +1125,7 @@ def test_expansion_budget_and_unexpanded_gaps_produce_partial(tmp_path: Path):
         (
             "login_wall",
             200,
-            '<html><body><form id="login_form"></form></body></html>',
+            '<html><head></head><body><form id="login_form"></form></body></html>',
             m.ErrorCode.AUTH_REQUIRED,
             "awaiting_user",
         ),
@@ -1139,21 +1139,21 @@ def test_expansion_budget_and_unexpanded_gaps_produce_partial(tmp_path: Path):
         (
             "http_403",
             403,
-            "<html><body>Access denied</body></html>",
+            "<html><head></head><body>Access denied</body></html>",
             m.ErrorCode.ACCESS_DENIED,
             "awaiting_user",
         ),
         (
             "http_429",
             429,
-            "<html><body>Rate limit exceeded</body></html>",
+            "<html><head></head><body>Rate limit exceeded</body></html>",
             m.ErrorCode.RATE_LIMITED,
             "failed",
         ),
         (
             "selector_drift",
             200,
-            "<html><body><div>Unrecognized markup without post article</div></body></html>",
+            "<html><head></head><body><div>Unrecognized markup without post article</div></body></html>",
             m.ErrorCode.SELECTOR_DRIFT,
             "failed",
         ),
@@ -1291,7 +1291,7 @@ def test_embedded_json_payload_and_secret_redaction_on_error(tmp_path: Path):
     }
     json_payload["post"]["comment_count"] = len(json_payload["comments"])
     html = (
-        "<!DOCTYPE html><html><body>"
+        "<!DOCTYPE html><html><head></head><body>"
         '<script type="application/json" data-fb-post-payload="1">'
         f"{json.dumps(json_payload)}</script>"
         "</body></html>"
@@ -2279,7 +2279,7 @@ def test_playwright_egress_proxy_byte_budget_stops_oversized_response(
     _allow_loopback_sockets(monkeypatch)
 
     oversized_html = (
-        "<!DOCTYPE html><html><body>"
+        "<!DOCTYPE html><html><head></head><body>"
         '<article role="article" data-fb-role="post" data-post-id="pfbid_big_1" '
         'data-actor="synth.big" data-author="Big Author" '
         'data-created-at="2026-10-13T17:00:00Z">'

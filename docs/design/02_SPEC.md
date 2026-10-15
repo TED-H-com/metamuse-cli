@@ -692,8 +692,8 @@ measured in AT-039, not excluded by assumption. JSON text keeps its existing rul
 `FixtureTree` is a static test double accepting a balanced subset, not a general
 HTML5 parser. Its HTML tag vocabulary is explicit (`HTML_TAGS`); foreign SVG and
 MathML vocabularies exclude HTML breakout and integration-point rules. Fragments
-use a body-fragment context. Explicit head/body wrappers require the document
-root or its html element; a template fragment cannot admit them. Documents retain explicit html/head/body context.
+use a body-fragment context. Explicit documents require all three html/head/body wrappers in order; a template
+fragment cannot admit them.
 It models scripting-on HTML `noscript`, the serializer's exact 18 HTML-only void
 tags, inline declaration order and `!important`, hidden/display overrides, content
 visibility, details and inherited visibility. Unsupported parser modes, unbalanced
@@ -868,3 +868,16 @@ Stop evidence is monotonic: both state attributes are examined independently,
 and a later benign state cannot erase a barrier or form marker. When multiple
 recognized stop states coexist, the parser uses the existing classification
 order: rate limit, checkpoint/challenge, login wall, then access denial.
+
+
+Round 10 fixture insertion-mode contract: fixtures are either body-context fragments
+with no html/head/body tags, or explicit html/head/body documents in that order.
+Nothing but whitespace may follow head before body, or follow body/html; unsupported
+structural repairs refuse. Script content containing <!-- refuses, including inert
+JSON scripts, because HTML5 script-data escape states differ from rawtext. Style
+is rawtext and has no script escape states (non-empty stylesheets still refuse).
+The seeded parity corpus covers every insertion boundary and implied-end-tag or
+parser-inserted-element class. The comparator retains head/body/none container
+identity and has negative tests for tag, namespace, attributes, text, rendering,
+order and container. Fixture-only raw UTF-8 prechecks remain 8 MiB; all parity
+inputs are below that bound.
