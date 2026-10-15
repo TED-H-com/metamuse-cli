@@ -24,8 +24,6 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from PIL import Image, ImageChops, ImageGrab
-
 if str(Path(__file__).resolve().parent) not in sys.path:
     sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -50,6 +48,16 @@ class Scene:
     lines: int = 42
     font_size: float = 13.0
     max_content_rows: int = 40
+    expected_partial_commands: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if len(set(self.expected_partial_commands)) != len(self.expected_partial_commands):
+            raise ValueError(f"{self.stem}: duplicate expected partial declaration")
+        for command in self.expected_partial_commands:
+            if self.commands.count(command) != 1:
+                raise ValueError(f"{self.stem}: expected partial must name exactly one command")
+        if self.expected_partial_commands and not re.search(r"\bpartial\b", self.summary, re.I):
+            raise ValueError(f"{self.stem}: summary must explicitly mention a partial result")
 
 
 # Add future approved scenes here. No application shortcuts or fabricated output:
@@ -472,7 +480,10 @@ def _visual_lines(text: str, columns: int) -> int:
 
 
 def _scene_script(scene: Scene, transcript: Path, done: Path) -> str:
-    commands = "\n".join(f"run {shlex.quote(cmd)}" for cmd in scene.commands)
+    commands = "\n".join(
+        f"run {position} {5 if cmd in scene.expected_partial_commands else 0} {shlex.quote(cmd)}"
+        for position, cmd in enumerate(scene.commands, start=1)
+    )
     return f"""#!/bin/bash
 set -u
 set -o pipefail
@@ -481,12 +492,15 @@ if [ -f out/state.sh ]; then source out/state.sh; fi
 exec > >(tee {shlex.quote(str(transcript))}) 2>&1
 printf '\\033[?25l'
 run() {{
-  printf '\\033[32m$\\033[0m %s\\n' "$1"
-  eval "$1"
+  local position="$1" expected="$2" command="$3" code partial=no
+  if [ "$expected" -eq 5 ]; then partial=yes; fi
+  printf '\\033[32m$\\033[0m %s\\n' "$command"
+  eval "$command"
   code=$?
-  if [ "$code" -ne 0 ] && [ "$code" -ne 5 ]; then
-    printf 'command exited %s\\n' "$code"
-    exit "$code"
+  if [ "$code" -ne "$expected" ]; then
+    printf '%s: command %s/%s exited %s (expected 5: %s)\\n' \\
+      {shlex.quote(scene.stem)} "$position" {len(scene.commands)} "$code" "$partial"
+    exit 1
   fi
 }}
 {commands}
@@ -622,6 +636,8 @@ def _window_box(title: str, env: dict) -> dict[str, int]:
 
 
 def _capture_scene(scene: Scene, display: str) -> dict:
+    from PIL import Image, ImageChops, ImageGrab
+
     for command in scene.commands:
         if _visual_lines("$ " + command, scene.columns) > 2:
             raise SystemExit(f"{scene.stem}: command exceeds two rows: {command}")
@@ -722,6 +738,8 @@ def _capture_scene(scene: Scene, display: str) -> dict:
 
 
 def _versions() -> dict[str, str]:
+    from PIL import Image
+
     return {
         "python": _run(
             [str(DEMO / "bin/python3"), "-c", "import sys; print(sys.version.split()[0])"]

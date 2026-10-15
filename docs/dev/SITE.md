@@ -37,6 +37,26 @@ uv run --script scripts/capture_site.py
 
 `capture_site.py` pins Pillow in its PEP 723 header. It refuses any transcript that contains `$USER`, the machine hostname, a home-directory path, or a line from `$SITE_PRIVATE_DENYLIST`. It records both `window_rect` and `crop_rect` per image in `site/images/manifest.json` and verifies that lossless PNG compression preserves exact decoded pixels.
 
+Every scene command must exit 0 by default. Any unexpected exit, including 5
+(partial result or wait timeout), stops the scene before its completion marker,
+image or published transcript is written; the capture run fails without writing
+a new manifest. The demo transcript names the scene, command position, actual
+exit code and whether exit 5 was expected, without expanding command variables.
+
+A scene can set `expected_partial_commands=("exact command from commands",)`.
+Each entry must match exactly one command in that scene; duplicate declarations
+and ambiguous repeated commands are rejected. The summary must explicitly include
+the word `partial`, and the transcript must show that partial result. Validation
+runs when the `Scene` is constructed, including at module load. A declared command
+must exit exactly 5: exit 0 also fails because it contradicts the declared result.
+Use exact strings so inserting or reordering commands cannot move the exception.
+
+The current `02-queue` transcript shows a partial **stored job** (7 committed,
+7 rejected). Its `worker run --once` and `jobs get` commands both exit 0 in the
+current CLI, so it has no expected-partial exit declaration. The other current
+scenes likewise declare none. A stored partial state alone does not establish
+that the command exits 5.
+
 Showcase frames use 98 columns and at most 40 content rows. The dedicated hero
 uses 60 columns and an 18-row packet preview. Commands retain shell variables
 set visibly in earlier frames and take no more than two terminal rows. The
