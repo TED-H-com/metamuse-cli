@@ -64,6 +64,7 @@ def test_r34a_whatwg_authority_boundary(delimiter):
     assert redact_text(text) == (text, [])
 
 
-def test_r34a_userinfo_uses_last_at():
+@pytest.mark.parametrize("template", ["{v}@also-password", "before-at@{v}"])
+def test_r34a_userinfo_uses_last_at(template):
     value = marker()
-    assert_private(f"postgres://user:{value}@also-password@example.invalid/a", value)
+    assert_private("postgres://user:" + template.format(v=value) + "@example.invalid/a", value)

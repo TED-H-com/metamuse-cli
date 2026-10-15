@@ -196,7 +196,7 @@ def assert_absent(markers, value):
     assert all(marker not in raw for marker in markers)
 
 
-def test_packet_bundle_fixture_outbound_jobs_and_mcp(fixture_ctx, project, monkeypatch, caplog):
+def test_packet_bundle_fixture_outbound_jobs_and_mcp(fixture_ctx, project, monkeypatch, caplog, *, exact_count=True):
     ctx = fixture_ctx
     cases = [credential_shape(shape) for shape in SHAPES]
     original = "\n".join(case[0] for case in cases)
@@ -211,7 +211,9 @@ def test_packet_bundle_fixture_outbound_jobs_and_mcp(fixture_ctx, project, monke
     packet = ctx.store.get(m.Packet, packet_result["data"]["id"])
     assert_absent(markers, packet_result)
     assert packet.digest == hashlib.sha256(packet.rendered_text.encode()).hexdigest()
-    assert sum(record["count"] for record in packet.redactions) == len(cases)
+    assert all(isinstance(record["count"], int) and record["count"] > 0 for record in packet.redactions)
+    if exact_count:
+        assert sum(record["count"] for record in packet.redactions) == len(cases)
 
     for format_name in ("bundle", "jsonl", "markdown", "text", "csv"):
         exported = app.export_objects(

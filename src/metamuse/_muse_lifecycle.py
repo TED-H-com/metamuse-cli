@@ -267,7 +267,9 @@ def _check_reconciliation_topic(discussion, request):
         raise m.CoreError(
             m.ErrorCode.REFERENCE_INVALID,
             "Reconciliation must name the original discussion",
-            next_action="Request reconciliation again using the discussion ID and current display title",
+            next_action=(
+                "Request reconciliation again using the discussion ID and current display title"
+            ),
         )
 
 

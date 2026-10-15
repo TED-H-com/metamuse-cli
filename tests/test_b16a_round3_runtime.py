@@ -180,7 +180,7 @@ def test_r2_2_remote_detail_redacted_before_write_and_before_cut(
                 depth -= 1
 
     monkeypatch.setattr(ctx.store, "transaction", tracked)
-    real = lifecycle.redact_text
+    real = lifecycle.redact_display
     calls = []
 
     def check(text):
@@ -190,13 +190,13 @@ def test_r2_2_remote_detail_redacted_before_write_and_before_cut(
             assert depth == 0, "Remote-controlled detail redaction held a write lock"
         return real(text)
 
-    monkeypatch.setattr(lifecycle, "redact_text", check)
+    monkeypatch.setattr(lifecycle, "redact_display", check)
     accepted = invoke(ctx, "send", request)
     assert accepted.status == "accepted"
     run(ctx)
     exchange = ctx.store.get(m.Exchange, accepted.data["exchange_id"])
     assert calls == [detail]
-    assert exchange.attempt_detail == real(detail)[0][:512]
+    assert exchange.attempt_detail == real(detail)[:512]
     assert marker not in exchange.attempt_detail
     if unit in {"credential_512", "prefix_512"}:
         assert "[REDACTED]" in exchange.attempt_detail

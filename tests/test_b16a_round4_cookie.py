@@ -9,7 +9,6 @@ from test_b16a_round4 import assert_private, marker
 from metamuse._muse_lifecycle import _check_question
 from metamuse.safety import redact_text
 
-
 BENIGN = (
     "def __init__(self, name, kind, *, code=None, globals=None):",
     "parser.add_argument('-j', '--workers', default=1, type=int)",
@@ -48,6 +47,11 @@ def test_r36_generic_pairs_outside_context_are_data(joiner):
     text = "mode=fast" + joiner + "level=high"
     assert redact_text(text) == (text, [])
     _check_question(text)
+
+
+def test_r36_numeric_generic_cookie_chain_is_private():
+    value = f"{12345}{67890}"
+    assert_private("theme=" + value + "; visits=" + value[::-1], value)
 
 
 def stdlib_lines():

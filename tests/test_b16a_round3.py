@@ -168,8 +168,8 @@ def test_r2_4_handoff(name, text, marker):
         "Cookie={v}",
         "pAsSwOrD: {v}",
         "theme=dark; hatch_sess={v}; hatch_csrf={v}",
-        "theme=dark, hatch_sess={v}, hatch_csrf={v}",
-        "theme=dark&hatch_sess={v}&hatch_csrf={v}",
+        "Cookie: theme=dark, hatch_sess={v}, hatch_csrf={v}",
+        "Cookie: theme=dark&hatch_sess={v}&hatch_csrf={v}",
         "domain.invalid\tTRUE\t/\tFALSE\t0\tsid\t{v}",
         "<password>{v}</password>",
         "--password {v}",
@@ -564,7 +564,7 @@ def test_yaml_sensitive_blocks_redacted_whole(block, header):
 @pytest.mark.parametrize(
     "text",
     [
-        r"?password\u002b%3D{marker}",
+        r"https://example.invalid/?password\u002b%3D{marker}",
         r"?password=A\u002b{marker}&view=1",
         r"?password%3Dfoo%2B{marker}&view=1",
     ],

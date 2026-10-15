@@ -9,7 +9,6 @@ import json
 import os
 import subprocess
 import sys
-
 from pathlib import Path
 
 import pytest
@@ -17,9 +16,9 @@ from test_b16a_round3_runtime import legacy_open
 from test_muse_lifecycle import fixture_ctx as fixture_ctx  # noqa: F401
 from test_muse_lifecycle import grant, invoke, run
 
-from metamuse import safety
-from metamuse import models as m
 from metamuse import _muse_lifecycle as lifecycle
+from metamuse import models as m
+from metamuse import safety
 
 
 def human_env(tmp_path):

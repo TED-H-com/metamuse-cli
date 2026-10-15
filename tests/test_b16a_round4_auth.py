@@ -23,9 +23,8 @@ def test_r310_auth_revoke_suggestion_preserves_workspace(tmp_path):
     workspace = tmp_path / "workspace with spaces"
     workspace.mkdir()
     (workspace / "metamuse.toml").write_text(
-        '[muse]\nenabled = true\nbackend = "fixture"\n[muse.binding]\nprovider = "fixture-provider"\naccount = "acct"\nauth_ref = "'
-        + ref
-        + '"\n'
+        '[muse]\nenabled = true\nbackend = "fixture"\n[muse.binding]\n'
+        'provider = "fixture-provider"\naccount = "acct"\nauth_ref = "' + ref + '"\n'
     )
     executable = str(Path(sys.executable).with_name("metamuse"))
     listing = subprocess.run(

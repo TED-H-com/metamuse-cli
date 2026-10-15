@@ -25,3 +25,23 @@ def test_r32_bearer_question_mark_seeded_rates(length):
 def test_r32_whole_text_form_decoding(body):
     value = marker()
     assert_private(body.format(v=value), value)
+
+
+def test_r32_question_mark_does_not_enable_form_syntax_in_prose():
+    from metamuse.safety import redact_text
+
+    text = "Why? discuss+--password+required"
+    assert redact_text(text) == (text, [])
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "https://example.invalid/#?discuss+--password+required",
+        "https://example.invalid/?q=hello#discuss+--password+required",
+    ],
+)
+def test_r32_url_fragment_never_enables_form_decoding(text):
+    from metamuse.safety import redact_text
+
+    assert redact_text(text) == (text, [])

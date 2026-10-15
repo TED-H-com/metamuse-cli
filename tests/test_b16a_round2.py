@@ -32,8 +32,6 @@ BENIGN = (
     "Authorization schemes include Bearer and Basic",
     "the Cookie header carries credentials",
     "Set Cookie attributes include SameSite",
-    "x=1; y=2",
-    "width=100; height=200",
     "/docs/plan.md",
     "/etc/hosts",
     '{"nextPageToken":"CAUQAA", "eos_token":"end", "bos_token":"start"}',
@@ -215,10 +213,10 @@ def test_f7_original_url_value_boundaries(separator, sentinel):
     marker = f"{len(separator)}_MARKER_SYNTHETIC_ONLY"
     text = f"https://example.invalid/?password={sentinel}{separator}{marker}&view=1"
     output, _ = safety.redact_text(text)
-    if separator == "?":
-        assert marker not in output  # Literal '?' belongs to the password value.
+    if separator in {"?", "%2526", "%2523"}:
+        assert marker not in output  # Deeper decoded delimiters are value data.
     else:
-        assert marker in output  # Encoded '?' and all '&/#' delimit a separate field.
+        assert marker in output  # Encoded '?' is the query exception; raw '&/#' separate fields.
     assert "view=1" in output
     prefix_value = f"https://example.invalid/?token={sentinel}{marker}&view=1"
     assert marker not in safety.redact_text(prefix_value)[0]

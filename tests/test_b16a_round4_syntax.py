@@ -7,6 +7,12 @@ import pytest
 from test_b16a_round4 import assert_private, marker
 
 
+@pytest.mark.parametrize("name", ["Cookie", "Set-Cookie", "Authorization"])
+def test_r34b_header_value_can_start_with_equal(name):
+    value = marker()
+    assert_private(name + "==" + value, value)
+
+
 @pytest.mark.parametrize(
     "key",
     [
@@ -36,6 +42,17 @@ def test_r34b_har_records(name, container):
     assert_private(text, value)
 
 
+@pytest.mark.parametrize("reverse", [False, True])
+def test_r34b_nested_har_record_order(reverse):
+    value = marker()
+    entries = [
+        ("other", {"value": value, "name": "password"}),
+        ("cookies", [{"name": "theme", "value": value}]),
+    ]
+    text = json.dumps(dict(reversed(entries) if reverse else entries))
+    assert_private(text, value)
+
+
 @pytest.mark.parametrize(
     "template",
     [
@@ -48,6 +65,24 @@ def test_r34b_har_records(name, container):
     ],
 )
 def test_r34b_command_credentials(template):
+    value = marker()
+    assert_private(template.format(v=value), value)
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "echo mysql; sshpass -p {v} ssh example.invalid",
+        "mysql -pfirst db && mysqldump -p{v} db",
+        "mysql -pfirst -p{v} db",
+        "curl " + "-uuser:{v} https://example.invalid/a",
+        "curl " + "--user=user:{v} https://example.invalid/a",
+        "curl -btheme={v} https://example.invalid/a",
+        "curl --cookie=theme={v} https://example.invalid/a",
+        "curl '-u' 'user:{v}' https://example.invalid/a",
+    ],
+)
+def test_r34b_command_stream_and_attached_curl_options(template):
     value = marker()
     assert_private(template.format(v=value), value)
 
