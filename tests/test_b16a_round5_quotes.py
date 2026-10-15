@@ -44,6 +44,8 @@ def test_r42_quoted_arguments_at_every_layer(rule, layer):
     result, findings = redact_text(text)
     assert marker not in result, (text, result, findings)
     assert findings
+    if rule.startswith(("curl -u", 'curl "-u"')) or "--user" in rule:
+        assert "example.invalid" in result, (text, result)
     assert redact_text(result)[0] == result
 
 

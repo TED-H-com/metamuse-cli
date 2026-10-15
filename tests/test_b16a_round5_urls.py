@@ -35,6 +35,13 @@ def test_r41_each_url_owns_its_authority(first, join, layer):
     result, findings = redact_text(text)
     assert marker not in result, (text, result, findings)
     assert findings
+    expected = encode(
+        first.replace(":other@", ":[REDACTED]@")
+        + join
+        + "https://alice:[REDACTED]@example.invalid/path",
+        layer,
+    ).replace("%5BREDACTED%5D", "[REDACTED]")
+    assert result == expected, (text, result, expected)
     assert redact_text(result)[0] == result
 
 

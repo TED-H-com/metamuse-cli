@@ -191,7 +191,12 @@ def exempt_skip(text):
         "))\n        if include_exempt or redaction_sensitive_val"
         "ue(key, value):",
     )(text)
-    return text
+    return within(
+        "_assignment_spans",
+        "        ):\n            continue\n        nested = (",
+        "        ):\n            position = max(position, end)\n"
+        "            continue\n        nested = (",
+    )(text)
 
 
 add("exempt_value_skip_restored", SAFE, exempt_skip, EXEMPT, "outer_value")
