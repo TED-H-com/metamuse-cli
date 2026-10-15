@@ -366,6 +366,11 @@ def create_permit(ctx: AppContext, request: m.PermitCreateRequest) -> m.Envelope
     if request.max_uses > PERMIT_MAX_USES:
         _scope_error("Permit use limit is too large")
     expires = _timestamp(request.expires_at)
+    research_preflight = None
+    if scope.research is not None:
+        from metamuse._muse_research import prepare_creation
+
+        research_preflight = prepare_creation(ctx, scope.research, request)
     with ctx.store.transaction() as conn:
         replayed = (
             conn.execute(
@@ -383,7 +388,7 @@ def create_permit(ctx: AppContext, request: m.PermitCreateRequest) -> m.Envelope
             if scope.research is not None:
                 from metamuse._muse_research import validate_creation
 
-                validate_creation(ctx, conn, scope.research, request)
+                validate_creation(ctx, conn, scope.research, request, preflight=research_preflight)
             if isinstance(scope, ShareScope) and scope.snapshot is not None:
                 ctx.store.validate_evidence(
                     request.project_id, scope.snapshot.selection, conn=conn, source_only=True

@@ -270,6 +270,11 @@ prepare_open identity. Review binds current configured provider/account/backend,
 project, topic/open key, actual prepared open payload/digest, one packet ID/digest and
 exact evidence selection, absolute expiry and both budgets. Creation rechecks those
 bindings after confirmation; a changed review cannot mint a different pair.
+Topic and packet privacy checks run before write ownership. Pair issuance and manual
+research Permit creation then compare the exact validated inputs, current configuration,
+packet bytes/digest/selection and latest revisions inside the transaction. Any intervening
+change refuses without a Permit, event or receipt; caller-supplied prechecked flags grant
+no authority. No redaction or sanitization runs while the writer is held.
 
 One access grant covers that one open and at most N remote history/reconciliation reads
 of its discussion (including future exchanges and the remote mapping learned later).

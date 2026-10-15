@@ -361,6 +361,11 @@ prepare_open identity. Review binds current configured provider/account/backend,
 project, topic/open key, actual prepared open payload/digest, one packet ID/digest and
 exact evidence selection, absolute expiry and both budgets. Creation rechecks those
 bindings after confirmation; a changed review cannot mint a different pair.
+Topic and packet privacy checks run before write ownership. Pair issuance and manual
+research Permit creation then compare the exact validated inputs, current configuration,
+packet bytes/digest/selection and latest revisions inside the transaction. Any intervening
+change refuses without a Permit, event or receipt; caller-supplied prechecked flags grant
+no authority. No redaction or sanitization runs while the writer is held.
 
 One access grant covers that one open and at most N remote history/reconciliation reads
 of its discussion (including future exchanges and the remote mapping learned later).
@@ -1992,16 +1997,25 @@ ID, topic, original open request key/digest, backend, packet ID/digest/selection
 rounds and read ceiling. Project/provider/account remain the existing Permit columns.
 No core models, SQL schema or migration changes are needed.
 
-`_muse_research` recomputes a human review and its canonical approval digest, then
-recomputes it inside one Store.transaction before issuing the pair with Store.insert,
-events and mutate_once. It never nests create_permit transactions. The receipt operation
+`_muse_research` recomputes a human review and its canonical approval digest before
+write ownership. A private, process-owned immutable preflight binds exact validated
+review/configuration/packet bytes and open-request state. Inside one Store.transaction,
+creation rechecks raw inputs, current configuration, packet/hash/selection and source
+revisions without redaction, sanitization or privacy preparation, then issues the pair
+with Store.insert, events and mutate_once. A changed input refuses atomically; serialized
+review data or a caller prechecked flag cannot substitute for this internal handoff.
+It never nests create_permit transactions. The receipt operation
 is permit.research; it identifies both existing Permit IDs, not a second grant store.
 The review includes absolute expiry, one open plus the finite read ceiling, question
 ceiling and explicit consent to host-authored question variation. CLI uses the existing
 quoted/escaped terminal review and terminal yes or matching digest. MCP creates no grants.
 Manual human permit create validates this scope against current bindings and limits too.
 Preparation delegates topic checking to prepare_open and checks the fixed packet against
-the current preview redaction fixed point before review and again at pair creation.
+the current preview redaction fixed point before review and in the issuance preflight.
+Manual create_permit uses prepare_creation before its writer and validate_creation with
+that process-owned snapshot inside it. Existing manual receipts replay current Permit
+state without new privacy work or renewal; a replay that becomes new creation fails
+closed without a snapshot. Research verifier wire reconstruction uses only pure builders.
 Question checking remains in the shared lifecycle submit/pre-send boundaries.
 
 Research queue checks run against persisted discussion/exchange after insertion in the

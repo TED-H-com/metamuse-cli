@@ -932,6 +932,11 @@ or core mutation API is added. At reservation the existing safety verifier reche
 actual persisted state on the supplied connection. Legacy PermitUse reservation fingerprints
 retain their previous shape; research additionally binds trusted discussion context.
 Exact-mode question equality remains required. Candidate evidence is synthetic only.
+Research pair/manual creation performs privacy preflight before writer ownership and
+passes only a process-owned immutable snapshot to its atomic raw-state recheck. The
+manual safety seam is prepare_creation outside the writer, then validate_creation with
+that internal handoff inside it. No serialized prechecked approval or redactor callback
+is accepted by the transaction; no public model or Store API changes are introduced.
 
 ## B09 standard transport trust (schema 5)
 

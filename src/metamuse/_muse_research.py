@@ -4,11 +4,25 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
+from dataclasses import dataclass, replace
 from datetime import timedelta
 
 from metamuse import models as m
 from metamuse import safety
 from metamuse.config import load_config
+
+
+@dataclass(frozen=True)
+class _Preflight:
+    """Process-owned validated inputs, never a serialized grant or caller flag."""
+
+    store: object
+    review: bytes
+    policy: bytes
+    packet: bytes
+    open_jobs: bytes
+    creation_request: bytes | None = None
 
 
 def _current(ctx):
@@ -37,10 +51,24 @@ def _packet(store, conn, packet_id, project):
     return packet
 
 
-def prepare_research(ctx, request, *, packet_id, rounds, max_reads, expires_at, request_key, conn):
+def _open_jobs(conn, request_key):
+    return m.canonical_json(
+        [
+            dict(row)
+            for row in conn.execute(
+                "SELECT id,payload FROM jobs WHERE operation='muse.open' AND request_key=?",
+                (request_key,),
+            )
+        ]
+    )
+
+
+def _preflight(ctx, request, *, packet_id, rounds, max_reads, expires_at, request_key, conn):
     from metamuse._muse_lifecycle import prepare_open
 
     ctx.require_interactive()
+    if conn.in_transaction:
+        safety._grant_error("Prepare research privacy checks before opening a write transaction")
     ctx = _current(ctx)
     if not ctx.policy.muse.enabled:
         safety._grant_error("Enable Muse before approving research")
@@ -50,6 +78,7 @@ def prepare_research(ctx, request, *, packet_id, rounds, max_reads, expires_at, 
     # Reuse the existing key constraints for the human approval receipt too.
     m.ProjectCreateRequest(name="research", request_key=request_key)
     ctx.store.get(m.Project, request.project_id, conn=conn)
+    open_jobs = _open_jobs(conn, request.request_key)
     prepared = prepare_open(ctx, request)
     safety._label(prepared.target["provider"])
     safety._label(prepared.target["account"])
@@ -92,6 +121,47 @@ def prepare_research(ctx, request, *, packet_id, rounds, max_reads, expires_at, 
         "access_max_uses": max_reads + 1,
         "share_max_uses": rounds,
     }
+    if _open_jobs(conn, request.request_key) != open_jobs:
+        safety._grant_error("Research open request changed during preparation; review again")
+    return _Preflight(
+        store=ctx.store,
+        review=m.canonical_json(review),
+        policy=m.canonical_json(ctx.policy),
+        packet=m.canonical_json(packet),
+        open_jobs=open_jobs,
+    )
+
+
+def prepare_research(ctx, request, *, packet_id, rounds, max_reads, expires_at, request_key, conn):
+    preflight = _preflight(
+        ctx,
+        request,
+        packet_id=packet_id,
+        rounds=rounds,
+        max_reads=max_reads,
+        expires_at=expires_at,
+        request_key=request_key,
+        conn=conn,
+    )
+    return json.loads(preflight.review)
+
+
+def _recheck(ctx, conn, preflight):
+    """Compare current raw state with validated bytes; no privacy/wire preparation."""
+    ctx.require_interactive()
+    if type(preflight) is not _Preflight or preflight.store is not ctx.store:
+        safety._grant_error("Research creation requires process-owned privacy preparation")
+    ctx = _current(ctx)
+    if m.canonical_json(ctx.policy) != preflight.policy:
+        safety._grant_error("Research configuration changed during preparation; review again")
+    review = json.loads(preflight.review)
+    ctx.store.get(m.Project, review["project_id"], conn=conn)
+    packet = _packet(ctx.store, conn, review["scope"]["packet_id"], review["project_id"])
+    if (
+        m.canonical_json(packet) != preflight.packet
+        or _open_jobs(conn, review["scope"]["open_request_key"]) != preflight.open_jobs
+    ):
+        safety._grant_error("Research inputs changed during preparation; review again")
     return review
 
 
@@ -143,19 +213,25 @@ def preview(ctx, review):
 
 def issue_research(ctx, reviewed):
     ctx.require_interactive()
-    with ctx.store.transaction() as conn:
-        fresh = prepare_research(
+    inputs = copy.deepcopy(reviewed)
+    with ctx.store.connection() as conn:
+        preflight = _preflight(
             ctx,
-            reviewed["open_request"],
-            packet_id=reviewed["scope"]["packet_id"],
-            rounds=reviewed["scope"]["rounds"],
-            max_reads=reviewed["scope"]["max_reads"],
-            expires_at=reviewed["expires_at"],
-            request_key=reviewed["request_key"],
+            inputs["open_request"],
+            packet_id=inputs["scope"]["packet_id"],
+            rounds=inputs["scope"]["rounds"],
+            max_reads=inputs["scope"]["max_reads"],
+            expires_at=inputs["expires_at"],
+            request_key=inputs["request_key"],
             conn=conn,
         )
-        if fresh != reviewed:
+    if preflight.review != m.canonical_json(reviewed):
+        safety._grant_error("Research approval changed during review; review again")
+    with ctx.store.transaction() as conn:
+        fresh = _recheck(ctx, conn, preflight)
+        if preflight.review != m.canonical_json(reviewed):
             safety._grant_error("Research approval changed during review; review again")
+        reviewed = fresh
         replayed = (
             conn.execute(
                 "SELECT 1 FROM request_receipts "
@@ -229,24 +305,38 @@ def issue_research(ctx, reviewed):
     return m.Envelope(status="ok", data=data)
 
 
-def validate_creation(ctx, conn, scope, request):
-    """Manual human permit create may use this mode, with the same binding/budget limits."""
-    review = prepare_research(
-        ctx,
-        {
-            "project_id": request.project_id,
-            "topic": scope.topic,
-            "request_key": scope.open_request_key,
-        },
-        packet_id=scope.packet_id,
-        rounds=scope.rounds,
-        max_reads=scope.max_reads,
-        expires_at=request.expires_at,
-        request_key=request.request_key,
-        conn=conn,
-    )
+def prepare_creation(ctx, scope, request):
+    """Manual creation preflights only new receipts, before owning the writer."""
+    creation_request = m.canonical_json(request)
+    with ctx.store.connection() as conn:
+        if conn.execute(
+            "SELECT 1 FROM request_receipts WHERE operation='permit.create' AND request_key=?",
+            (request.request_key,),
+        ).fetchone():
+            return None  # Existing receipt replay never creates or renews authority.
+        preflight = _preflight(
+            ctx,
+            {
+                "project_id": request.project_id,
+                "topic": scope.topic,
+                "request_key": scope.open_request_key,
+            },
+            packet_id=scope.packet_id,
+            rounds=scope.rounds,
+            max_reads=scope.max_reads,
+            expires_at=request.expires_at,
+            request_key=request.request_key,
+            conn=conn,
+        )
+    return replace(preflight, creation_request=creation_request)
+
+
+def validate_creation(ctx, conn, scope, request, *, preflight):
+    """Atomically recheck manual creation against its process-owned preflight."""
+    review = _recheck(ctx, conn, preflight)
     if (
-        review["scope"] != scope.model_dump(mode="json")
+        preflight.creation_request != m.canonical_json(request)
+        or review["scope"] != scope.model_dump(mode="json")
         or request.provider != review["provider"]
         or request.account != review["account"]
         or request.max_uses > (scope.rounds if request.kind == "share" else scope.max_reads + 1)

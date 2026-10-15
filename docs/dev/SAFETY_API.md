@@ -307,8 +307,16 @@ key. A fresh comparison inside Store.transaction prevents review/creation substi
 Two existing Permit inserts, permit.created events and one permit.research mutate_once
 receipt commit together; failure rolls back the entire pair. Replay returns current rows
 without restoring counters or revocation. No permission system or migration is added.
-The current topic credential check and packet preview redaction fixed-point check also
-apply before research review/pair creation; questions retain lifecycle privacy checks.
+The current topic credential check and packet preview redaction fixed-point check run
+before review and in issuance preflight, outside write ownership. An immutable private
+process-owned snapshot binds the exact validated inputs. Pair issuance and manual
+create_permit recheck current configuration, raw inputs, open-request state, exact packet
+bytes/digest/selection and source revisions under the writer, without redaction or
+sanitize_document. Changed state refuses with no Permit/event/receipt. Manual creation
+passes prepare_creation's internal snapshot to validate_creation; serialized model/source
+content or a claimed prechecked flag cannot authorize it. Existing manual receipt replay
+retains current counters/revocation/expiry and performs no new privacy work. Questions
+retain the lifecycle submit/pre-send privacy checks; pure verifier builders do not scan.
 
 The optional strict `research` binding in AccessScope/ShareScope contains discussion_id,
 topic, open_request_key/open_digest, backend, packet_id/packet_digest/selection_digest,
