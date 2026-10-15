@@ -1642,8 +1642,9 @@ class MuseTransport:
     def _invalidate_trust(self) -> None:
         self._trust_invalidated = True
         self._connection_secrets = ()
-        if self._loop is not None:
-            self._loop.link.close()
+        loop = self._loop
+        if loop is not None:
+            loop.link.close()
 
     def _connect(self) -> None:
         if self._loop is not None:

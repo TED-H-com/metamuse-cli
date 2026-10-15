@@ -907,8 +907,10 @@ msg3. Trust-domain and per-account locks span handoff; maintenance.lock and the 
 transaction are released before network I/O. Every call rechecks durable state, including
 cross-process writers. After commit, a new confidential account/VM/observation row or
 any 0→1 flag transition (including inherited edges and trigger propagation) notifies
-all live workspace listeners and immediately closes their sockets. A non-direct freeze
-counts actual confidential SQL writes, including trigger writes, independently of its
+all live workspace listeners and immediately closes their sockets. A failing listener
+does not stop the others; after all callbacks run, the writer reports
+`Muse security state internal failure` chained from the first exception, with the
+write already committed. A non-direct freeze counts actual confidential SQL writes, including trigger writes, independently of its
 label's binding changes. A no-op freeze does not broadcast; selection-only changes
 notify their own label. On its next call an unaffected, invalidated transport first
 passes the durable recheck, then reconnects through the full bootstrap and handshake

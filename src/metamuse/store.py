@@ -105,6 +105,14 @@ _MUSE_STORAGE_ACTIONS = {
 }
 
 
+class _MuseNotificationFailure(m.CoreError):
+    """The write committed, but at least one socket invalidator failed."""
+
+    def __init__(self):
+        message = "Muse security state internal failure"
+        super().__init__(m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message])
+
+
 def _muse_storage_error(*, stale=False) -> m.CoreError:
     message = (
         "Muse connection context changed"
@@ -195,6 +203,9 @@ _MUSE_ENVIRONMENT[sqlite3.SQLITE_NOLFS] = _MUSE_ENVIRONMENT[sqlite3.SQLITE_IOERR
 
 
 def _muse_fixed_storage(exc):
+    if isinstance(exc, _MuseNotificationFailure):
+        # Preserve the post-commit classification and the first listener's cause.
+        return exc
     # Inspect error codes only: SQLite text can contain private SQL or filenames.
     cause = exc
     environment = None
@@ -691,10 +702,18 @@ class Store:
                     alive = [ref for ref in refs if ref() is not None]
                     _MUSE_LISTENERS[key] = alive
                     listeners.extend(alive)
+        failure = None
         for ref in listeners:
             callback = ref()
             if callback is not None:
-                callback()
+                try:
+                    callback()
+                except BaseException as exc:
+                    # Finish invalidating every socket, then report the first failure.
+                    if failure is None:
+                        failure = exc
+        if failure is not None:
+            raise _MuseNotificationFailure() from failure
 
     def muse_watch(self, snapshot: MuseTrustSnapshot, callback: Callable[[], None]) -> None:
         """Weak socket invalidator; recheck currentness after registration."""
@@ -1172,13 +1191,16 @@ class Store:
                     self._muse_close_bind(conn, viewer_hash)
                 self._muse_notify(provider, account, confidential=True)
         except m.CoreError as exc:
-            fixed = _muse_fixed_storage(exc)
-            failure = m.CoreError(
-                m.ErrorCode.STORAGE,
-                "Muse confidentiality could not be recorded",
-                next_action=fixed.detail.next_action,
-            )
-            failure.detail.retry_class = fixed.detail.retry_class
+            if isinstance(exc, _MuseNotificationFailure):
+                failure = exc
+            else:
+                fixed = _muse_fixed_storage(exc)
+                failure = m.CoreError(
+                    m.ErrorCode.STORAGE,
+                    "Muse confidentiality could not be recorded",
+                    next_action=fixed.detail.next_action,
+                )
+                failure.detail.retry_class = fixed.detail.retry_class
         if failure is not None:
             raise failure
 

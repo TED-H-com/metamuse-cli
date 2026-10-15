@@ -164,8 +164,11 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    mature library. After commit, every confidential write notifies all live workspace
    listeners and immediately closes their sockets, including unrelated labels. This covers
    new confidential account, VM or observation rows and every 0→1 flag transition,
-   including inherited edges and SQL propagation. A non-direct freeze with no confidential
-   write does not broadcast; a binding/generation change still notifies its own label.
+   including inherited edges and SQL propagation. A failing listener does not stop the
+   remaining listeners; after all run, the writer reports
+   `Muse security state internal failure` chained from the first exception, while the write
+   remains committed. A non-direct freeze with no confidential write does not broadcast;
+   a binding/generation change still notifies its own label.
    Each call first rechecks durable currentness. A refused context closes and stops before
    any HTTPS request or WSS dial. An unaffected context whose socket was closed by a
    broadcast closes its old receive loop and reconnects through auth, session, freeze,
