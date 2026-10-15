@@ -187,7 +187,7 @@ no JSON body. Read/mint success still requires bounded valid JSON and its own fi
 | Other unexpected 2xx/4xx or unsupported response shape | `E_PROTOCOL_MISMATCH` | `never` |
 | 200 explicit `ok: false` on auth | `E_AUTH_REQUIRED` | `user_action` |
 | Twice-stale notary after one remint (MUSE_SPIKE §9.1 one-remint stop; unavailable/retry-later is an inference) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
-| 200 session status `unavailable`, or missing `vm_id`, without confidential hints | `E_RESOURCE_UNAVAILABLE` | `user_action` |
+| 200 session status `unavailable`, or no identity key, without confidential hints | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | CVM/RV/delegation/endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
 
 Upgrade 401/403 is `E_AUTH_REQUIRED`, 429 is `E_RATE_LIMITED`; DNS/connect/TLS failure
@@ -195,7 +195,7 @@ is `E_NETWORK_TIMEOUT`, with `E_SCOPE_REQUIRED` when the guard refuses. Trust co
 Changed context, integrity and committed-barrier failures remain `never`, with fixed guidance
 for reconnecting, verified restore or safe repair respectively. Effective confidentiality stops first. The upgrade URL, query, response body and raw
 curl exception are never copied into any exception, envelope or log. Redaction covers
-the tested compact nonce/token/proof/secret/notary/noise-key/attempt-id/request-id/recovery
+the tested Unicode component nonce/token/proof/secret/notary/noise-key/attempt-id/request-id/recovery
 families and existing RV/endorsement/wake aliases, including prefixes/suffixes, snake/camel/hyphen/dotted
 keys in query, header, repr, JSON, arrow and XML forms. Ordinary vm_id/discussion_id/job_id remain visible.
 Known values are decoded through two percent-encoding levels (including quote_plus and lowercase escapes),
@@ -460,7 +460,7 @@ Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and 
 
 HTTP 200 with missing, malformed or drifted credential/context fields is interface drift: E_PROTOCOL_MISMATCH / never. Explicit `ok: false` and HTTP 401/403 remain E_AUTH_REQUIRED. A twice-stale notary after one remint is E_RESOURCE_UNAVAILABLE with a retry-later action (MUSE_SPIKE §9.1 supports one remint then stop; unavailable/retry-later is an inference, with no evidence that session refresh repairs it).
 
-Authenticated CVM hints commit label-independent owner/VM observations before binding, generation, status, uniqueness or selection refusals. Every usable VM id in the response is recorded, including non-selected rows. Owner mismatch never drops that observation; the existing local binding is still refused.
+Authenticated CVM hints commit label-independent owner/VM observations before binding, generation, status, uniqueness or selection refusals. Session-level evidence records every usable VM id, including non-selected rows; nested evidence records the union of its enclosing identity scopes, as specified below. Owner mismatch never drops that observation; the existing local binding is still refused.
 
 Round 3 amends unreleased migration 005 in place (no 006). Label-independent authenticated observations and label-bound selection history form an owner↔VM graph. The recursive `muse_trust_confidential` view computes its transitive closure, with owner-only evidence as an isolated seed. Each propagation trigger updates matching account, VM and observation rows set-wise. A transaction-local `muse_trust_propagating` barrier suppresses nested propagation; a committed barrier row is integrity failure and blocks connects. Component size does not grow trigger depth; there is no identity cap on recording confidentiality. The flag never clears, and a newly observed edge inherits both ends' effective expectation.
 
@@ -468,7 +468,7 @@ Msg2 is decrypted up to the Noise message maximum of 65535 bytes. RV discriminat
 
 Per-connection scrubbing includes uppercase/lowercase nonce hex, padded/unpadded standard and URL-safe base64, and uppercase/unhyphenated WSS request and wake attempt UUIDs. Alias values are scrubbed in JSON, Python reprs, headers, colon lines and spaced assignments. Known values are replaced longest first, including their percent-encoded variants.
 
-CVM hint values compare after `strip().casefold()`; marker names compact to lowercase alphanumerics. Thus snake, camel, hyphen and case variants of vm_type/vm_state/cvm_required/cvmReplacementEnabled all record the same permanent remote expectation. This is conservative refusal evidence, never permission to connect to CVM.
+CVM hint keys and values use the shared Unicode component normalization described below. A component starting with cvm or containing confidential records permanent remote expectations, subject to the marker-key falsy rule and opaque-credential skip. Snake, camel, hyphen, compatibility and ignorable variants follow that component rule; joined cross-word spellings do not. This is refusal evidence, never permission to connect to CVM.
 
 Trust is monotonic in place. Restoring an older backup, or rolling back to the documented verified v4 backup in a fresh workspace, discards confidential expectations recorded after that backup. A stale generation or changed connection binding returns E_STORAGE / never with a fresh-connection retry action; it does not advise restore. Integrity/schema failures advise repair and only a verified restore, with this loss warning. There is no in-place reset tool.
 
@@ -479,7 +479,7 @@ Round 4 storage mapping: SQLITE_BUSY/LOCKED past busy_timeout returns E_STORAGE 
 
 A committed muse_trust_propagating marker is always invalid and has a specific E_STORAGE message. Safe human repair, after stopping Muse connections: acquire exclusive maintenance.lock, BEGIN IMMEDIATE, retain the barrier, rerun the recursive owner/VM closure and the three set-wise flag updates across the whole workspace, DELETE the marker, then COMMIT. This retains every observation and expectation; no restore is needed. There is no automatic repair/reset command.
 
-HTTP 200 session status must be exactly `assigned` or documented `unavailable`. A missing, renamed, upper-case, non-string or other status with a VM id is interface drift: protocol_stop(), E_PROTOCOL_MISMATCH / never. A missing VM id remains E_RESOURCE_UNAVAILABLE. Non-object responses name session, hatch or auth in their stop action.
+HTTP 200 session status must be exactly `assigned` or documented `unavailable`. A missing, renamed, upper-case, non-string or other status with a VM id is interface drift: protocol_stop(), E_PROTOCOL_MISMATCH / never. No identity key remains E_RESOURCE_UNAVAILABLE; a compact-vmid alias without exact vm_id is protocol drift before the unavailable check. Non-object responses name session, hatch or auth in their stop action.
 
 
 Round 4 amends unreleased migration 005 again, with no 006: muse_trust_accounts now checks lower-case hexadecimal viewer/session hashes and normalized nonempty active VM ids, or NULL only with confidentiality set. The same constraints are verified on fresh v5, v4→v5 and confidential backup→restore. Noncanonical development v5 databases still fail schema verification.
@@ -500,26 +500,35 @@ as one value. Known secrets are matched in both raw text and up to two decoded
 percent-encoding layers; their coordinate-mapped span union is merged before
 one output join. A literal percent next to a hex nonce or UUID cannot hide it.
 
-Muse secret aliases are matched by separator and camelCase components: an
-exact extra key, or a final component/pair from the secret family. Prefixed and
-versioned aliases remain covered. Ordinary words (awake, proofread, tokenizer,
-secretary), token counts, handshake_ms and wake_time remain visible. Exact
-session_id and the three association marker keys are exempt from key-family
-redaction, while known values are still scrubbed. The shared core continues to
-classify policy as sensitive.
+Muse credential keys and confidential markers share one Unicode component helper:
+remove Cf and Default_Ignorable_Code_Point, apply NFKC, split non-alphanumerics,
+letter/digit, lower/upper and acronym boundaries, then casefold. Credential keys
+match any nonce/token/proof/secret/notary/recovery/psk/passwd component (also plural),
+ordered noise…key, attempt…id, request…id, rv…key, wake…body or access…key pairs
+(second component may be plural), exact extra keys, or the shared core classifier.
+Pairs need not be adjacent. Association keys session_id/request_marker/x-request-id/
+client_request_id, vm_id/discussion_id/job_id and documented usage token counts
+(including the usage prefix, such as usage.prompt_tokens) are exempt by compact spelling.
+Arbitrary credential prefixes such as secret.prompt_tokens are still sensitive. Known secret values
+remain scrubbed under every key. Tokenizer, secretary, proofread, awake, handshake_ms
+and wake_time contain no family component and remain visible; core policy stays sensitive.
 
 Effective Muse trust and SQL inherit guards seed a recursive component at the
 requested owner and VM. Every traversal uses indexed owner/VM edges, including
 active selections, historical label VMs and label-independent observations.
-Unrelated confidential components are not enumerated. Confidential bulk bind
-and human barrier repair retain the whole-workspace set-wise closure and raw-SQL
-propagation guards. Unreleased migration 005 is amended in place; no 006.
+All six AFTER propagation triggers and the bulk bind seed the same indexed
+component recursion from the new remote owner/VM. Bulk bind materializes that
+component once after inserting all observations, under the transaction barrier.
+Small confidential writes and unrelated standard handoffs do not enumerate other
+components. Only explicit human barrier repair computes the whole-workspace closure.
+Raw-SQL inherit/retention/monotonic guards remain. Unreleased migration 005 is
+amended in place again; no 006. Fresh v5, v4→v5 and backup/restore use this schema.
 
 Round 5 storage classification (all paths fail closed before msg3):
 
 | Primary SQLite class / cause | Fixed guidance | Retry class |
 |---|---|---|
-| IOERR family, CANTOPEN, PERM, NOLFS | Check workspace availability and permissions | user_action |
+| IOERR family, CANTOPEN, PERM, NOLFS; lock EACCES/EPERM/EIO/ENOENT | Check workspace availability and permissions | user_action |
 | READONLY family / lock EROFS | Make the workspace writable | user_action |
 | FULL / lock ENOSPC | Free disk space | user_action |
 | BUSY/LOCKED family including BUSY_SNAPSHOT | Muse security state is busy; retry after writer finishes | safe_read |
@@ -534,28 +543,54 @@ Migration 005 checks stored integer generation/version/flags, text ids/hashes an
 nonempty text timestamps. SQLite affinity precedes CHECK, so integer-coercible
 inputs are accepted only as stored integers. Invalid stored row types are damage.
 
-Hint matching walks all object/list values to the parser's depth bound, using
-NFKC casefolding and compaction. Any string containing cvm or confidential is
-evidence; a key containing either is evidence when truthy, except false, 0, null,
-empty values or compact false/no/0/none. Each marker records every usable identity
-of its innermost identity-bearing object; child rows own their evidence. A vms
-container starts a row scope. Without an identity scope, persist owner evidence
-and every usable id. Direct session-level hints cover every usable id. Every
-observation commits before refusal, including contradictory aliases and owner
-mismatch. False positives permanently refuse the connected standard tier; this
-intentionally errs toward confidentiality and there is no reset tool.
+Hint matching walks every object/list to depth 32. A normalized component that
+starts with cvm or contains confidential is a marker. Marker keys count only
+with truthy values (excluding false/0/null/empty values and compact false/no/0/none).
+String marker values count regardless of key, except opaque credential strings
+and strings in lists directly under sensitive keys. Objects under sensitive keys
+are still walked, including their keys and values under non-sensitive keys.
+This retains hatch_cvm, hatchCvm, CVM_RUNNING, cvm1, confidential, negated
+non-confidential/nonconfidential/not cvm/no-cvm, full-width, compatibility and
+ignorable-separated forms. C V M, c_v_m, c-vm and hatchcvm/HATCHCVM no longer match.
+It avoids cross-word Public VM/basic vm and opaque xQ7cVm2R false positives.
+Evidence records the union of every enclosing identity-bearing object's usable
+VM ids, including the session and selected row. If the innermost scope is the
+session or no scope exists, persist owner evidence and all usable body ids.
+Duplicate JSON pairs are retained for this scan, including every identity value;
+record evidence first, then refuse any duplicate key at any depth. All Muse HTTPS
+JSON bodies require strict UTF-8, reject leading U+FEFF, and pass the depth check
+before parsing; UTF-16/32 and malformed UTF-8 record nothing. Alias-only vmid in
+the session or selected row is protocol drift, before unavailable checks. Only
+no identity key at all, or status=unavailable, remains resource unavailable.
+Every observation commits before refusal even on owner mismatch or invalid selection.
+False positives permanently refuse the connected standard tier, with no reset tool;
+this intentionally errs toward confidentiality.
 
-Owned Muse redaction collects sorted, merged credential spans and renders the
-output with one join, without slicing the whole body per span or truncating
-before sanitization. Sensitive text assignments are removed as a unit, avoiding
-re-entry into the core's ordinary-pair pattern with a large assignment stream.
-The strict CPU doubling regression covers 128 KiB–1 MiB for text and body. The
-ordinary-pair core path remains a strict xfail until the shared safety owner
-makes it linear; no safety.py change is included here.
+Owned Muse redaction scans key+separator occurrences once, inspecting a value
+only for sensitive keys and resuming after it. Unquoted values stop at quotes;
+JSON-text pairs embedded in plain text, including Unicode-escaped keys, are covered.
+Quoted keys scan plain runs between escapes. Classification caches retain only keys
+of at most 256 characters, so large authenticated keys cannot accumulate across connections. Authorization consumes a whole
+run on failure and redacts scheme-less and scheme-plus-credential values. Every
+codec-hidden value must also be hidden by text/body sanitization (seeded 5,000-case
+compositions). Known raw and twice-decoded percent-coordinate spans are unioned,
+merged, and rendered with one join; bodies are never truncated before redaction.
+CPU doubling tests cover k:, k=>, a=1;, k:v|, ;p=1 and authorization:, raw and in
+JSON string wrappers, 128 KiB–1 MiB, for owned scanning and public text/body paths.
+Owned scanning passes. On this main, core safety.redact_text is still quadratic
+for k=> and ordinary ampersand pairs. Strict xfails name B16a and fail on XPASS;
+no safety.py change is included. The 1 MiB CPU ceiling is 12 s, allowing ample
+margin above the passing sub-second measurements, while rejecting minute-long work.
 
 MEASURE (2026-10-14, shared host, warmed schema): an exactly 1 MiB authenticated
-session containing 52,420 ids bound in 0.625 s CPU / 0.640 s elapsed; bulk trust
-domain lock held 0.499 s, post-commit check 0.005 s. Host load near this run was
-5.39/4.26/7.30 (1/5/15 minutes). This is one offline fixture measurement, not a
-wall-time guarantee. The component-cost regression separately measures unrelated
-freeze cycles after one, two and four maximum binds.
+session containing 52,420 ids bound in 0.741 s CPU / 0.762 s elapsed; bulk trust
+domain lock held 0.479 s, post-commit check 0.007 s. Host load near this run was
+2.50/1.90/2.85 (1/5/15 minutes). This fixture measurement is not a wall-time
+promise. After one/two/four unrelated maximum binds, hint/RV/inherited freeze/
+standard cycle CPU ratios were 0.99–1.05 of empty baseline. A new label for an
+owner's own 52,420-VM component cost 0.846 s CPU; that operation pays its component.
+
+MEASURE: shipped marker predicate, seeded random base64url, 4,000 trials per length:
+32 chars 3/4000 (0.075%); 256 4/4000 (0.100%); 1024 24/4000 (0.600%);
+4096 102/4000 (2.550%). These synthetic rates are not predictions for real session
+fields. Credential values are opaque to marker matching.
