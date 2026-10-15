@@ -417,5 +417,9 @@ Shell reference defaults remain exempt; literal defaults are credentials.
 Markup comments and attributes are bounded contexts. Private blocks retain their
 final MAC/hash/END line, YAML indicators accept indentation digits and comments,
 and embedded forms continue through quotes and angle brackets. Short curl flags
-and SQL clauses retain their command/statement anchors. Per-scanner indexes keep
-terminator and exemption work linear; the public fixpoint call retains its bound.
+use conservative lexical scope within a simple-command segment, including pasted
+prose; additional benign refusals are intentional. This does not parse shell
+command-word position. SQL clauses retain their statement anchors. See D10 in
+[SAFETY_API.md](SAFETY_API.md) for known escape/SQL implementation discrepancies.
+Per-scanner indexes keep terminator and exemption work linear; the public fixpoint
+call retains its bound.

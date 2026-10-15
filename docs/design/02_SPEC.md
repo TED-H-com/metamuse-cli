@@ -547,20 +547,29 @@ line breaks and owned D1/D2 closers bound them. Percent escapes and plus-space
 conversion retain their form layer. Every scanner, including markup, inspects
 the decoded body; unrelated prose after a question mark never gains form scope.
 
-D10. Short -u/-b flags require curl (optionally with a path) as the command word
-in the same simple command. Assignments and sudo/env/time/command/exec/nohup may
-precede it. Pipes, semicolons, &&, || and unescaped line ends reset that scope.
+D10. Short -u/-b flags use a conservative lexical anchor: a curl token
+(optionally with a path) in the same simple-command segment establishes scope,
+including pasted prose. Assignments and sudo/env/time/command/exec/nohup may
+precede it. A curl token can also be an argument to another command: for example,
+echo curl -b public is intentionally redacted and refused. This is an explicit
+narrowing of the benign-acceptance promise, not a shell command-word parser.
+Pipes, semicolons, &&, || and unescaped line ends reset the scope.
 Long --user/--cookie retain their independent rule. SQL IDENTIFIED BY and WITH
 PASSWORD require a CREATE/ALTER/GRANT/SET statement naming USER/ROLE/LOGIN before
-the clause; the next semicolon bounds the statement. Ordinary git/python flags
-and prose mentioning identification do not become credentials.
+the clause; the next semicolon bounds the statement. The six prescribed benign
+examples remain unchanged: git checkout -b and python -b questions, the UUID and
+filesets identification sentences, mktime()-based conversion and the len array
+phrase. This does not promise acceptance of every benign shell-like phrase.
+Mandatory natural prose contexts, every privacy rule and the established 0.40%
+CPython refusal budget remain binding. This policy adjustment is not merge
+acceptance.
 
-Implementation gap: the current curl anchor recognizes a curl token within a
-simple-command segment; it does not prove shell command-word position. This
-conservatively refuses some arguments to other commands. Strict command-word
-position conflicts with the mandatory natural prose context containing
-`rock 'n' roll` before curl. Resolving that policy remains required for full D10
-conformance; this limitation adds no exemption or accepted leak category.
+Known implementation discrepancies, not contract exceptions: a literal
+backslash-newline or an escaped semicolon currently resets short-option scope,
+so a following credential can survive. SQL principal selection also considers
+USER/ROLE/LOGIN tokens after the clause. These remain defects for independent
+review; this policy adjustment does not approve or fix them.
+
 
 D11. Every scanner performs constant amortized work per character. Terminator,
 fold, quote, block and exemption extents are indexed once or memoized. Exempt
