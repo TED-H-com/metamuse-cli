@@ -35,6 +35,22 @@ def css(style: str, name: str) -> str | None:
     declarations = re.findall(
         r"(?:^|;)\s*" + name + r"\s*:\s*([a-z-]+)\s*(!\s*important)?\s*(?=;|$)", style.lower()
     )
+    globals_ = {"inherit", "initial", "unset", "revert", "revert-layer"}
+    allowed = {
+        "visibility": {"visible", "hidden", "collapse"} | globals_,
+        "content-visibility": {"visible", "hidden", "auto"} | globals_,
+        "display": set(
+            (
+                "none block inline inline-block flex inline-flex grid inline-grid "
+                "contents flow-root list-item table inline-table table-row-group "
+                "table-header-group table-footer-group table-row table-column-group "
+                "table-column table-cell table-caption ruby ruby-base ruby-text "
+                "ruby-base-container ruby-text-container"
+            ).split()
+        )
+        | globals_,
+    }[name]
+    declarations = [entry for entry in declarations if entry[0] in allowed]
     important = [entry for entry in declarations if entry[1]]
     return (important or declarations)[-1][0] if declarations else None
 
@@ -129,14 +145,9 @@ WALK = r"""() => {
 def capture(cdp: Any) -> tuple[list[dict[str, Any]], int, tuple[str, ...]]:
     """One isolated world for the current main-frame document; no iframe evidence."""
     changed = []
-    events = (
-        "DOM.childNodeInserted",
-        "DOM.childNodeRemoved",
-        "DOM.shadowRootPushed",
-        "DOM.shadowRootPopped",
-        "DOM.attributeModified",
-        "DOM.characterDataModified",
-    )
+    # Text/attribute edits cannot introduce an undiscovered closed root. An
+    # inserted subtree or new shadow root can, so preserve that coverage gap.
+    events = ("DOM.childNodeInserted", "DOM.shadowRootPushed")
 
     def mutation(_event):
         if not changed:
@@ -314,14 +325,14 @@ class FixtureTree(HTMLParser):
             style = attrs.get("style", "")
             display = css(style, "display")
             vis = css(style, "visibility")
-            if vis not in (None, "inherit", "unset"):
+            if vis not in (None, "inherit", "unset", "revert", "revert-layer"):
                 visibility = vis in {"visible", "initial"}
             hidden = attrs.get("hidden", "").lower()
             blocked = (
                 blocked
                 or tag in {"head", "meta", "title", "script", "style", "noscript", "template"}
                 or display == "none"
-                or ("hidden" in attrs and display in (None, "none", "initial", "unset"))
+                or ("hidden" in attrs and display in (None, "none", "revert-layer"))
                 or hidden == "until-found"
                 or (tag == "input" and attrs.get("type", "").lower() == "hidden")
             )
