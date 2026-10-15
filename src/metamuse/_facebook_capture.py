@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import re
 from html.parser import HTMLParser
+from collections import Counter
 from typing import Any
 
 from metamuse import models as m
@@ -18,6 +19,9 @@ MAX_TEXT_BYTES = 8 * 1024 * 1024
 HTML = "http://www.w3.org/1999/xhtml"
 SVG = "http://www.w3.org/2000/svg"
 MATH = "http://www.w3.org/1998/Math/MathML"
+CONTENTS_NONE = frozenset(
+    "img input textarea select video audio canvas iframe embed object br wbr meter progress frame frameset".split()
+)
 VOID = frozenset(
     (
         "area base basefont bgsound br col embed frame hr img input keygen "
@@ -60,6 +64,7 @@ def css(style: str, name: str) -> str | None:
 
 def encode(nodes: list[dict[str, Any]]) -> str:
     return json.dumps(nodes, ensure_ascii=False, separators=(",", ":"))
+
 
 
 # This code executes only in a CDP isolated world. It neither creates nor clones
@@ -269,8 +274,38 @@ def validate(nodes: list[dict[str, Any]]) -> None:
 
 
 class FixtureTree(HTMLParser):
-    # Scripting-on noscript is raw text, just like Chromium's HTML tokenizer.
+    """Balanced, inline-CSS-only test subset; unsupported tree construction refuses."""
+
     CDATA_CONTENT_ELEMENTS = ("script", "style", "noscript")
+    REFUSED = frozenset(
+        "title xmp iframe noembed noframes plaintext textarea dialog select option optgroup frameset frame embed".split()
+    )
+    HTML_TAGS = VOID | frozenset((
+        "html head body div span p article section form button a ul ol li table tbody "
+        "thead tfoot tr td th caption colgroup template script style noscript details "
+        "summary b i u strong em s small mark code pre blockquote h1 h2 h3 h4 h5 h6 "
+        "time label header footer main nav aside figure figcaption address fieldset "
+        "legend audio video canvas object meter progress"
+    ).split())
+    FOREIGN = {
+        SVG: frozenset(
+            "svg g text rect circle line path ellipse polyline polygon tspan defs use symbol".split()
+        ),
+        MATH: frozenset(
+            "math mrow mi mn mo mtext ms mfrac msqrt msup msub mover munder mtable mtr mtd".split()
+        ),
+    }
+    BLOCK = frozenset(
+        "address article aside blockquote div dl fieldset footer form h1 h2 h3 h4 h5 h6 header hgroup hr main menu nav ol p pre section table ul".split()
+    )
+    TABLE = {
+        "table": {"caption", "colgroup", "thead", "tbody", "tfoot"},
+        "colgroup": {"col"},
+        "thead": {"tr"},
+        "tbody": {"tr"},
+        "tfoot": {"tr"},
+        "tr": {"td", "th"},
+    }
 
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -278,65 +313,203 @@ class FixtureTree(HTMLParser):
             dict(kind=9, tag="", ns="", attrs={}, text="", rendered=False, children=[], composed=[])
         ]
         self.stack = [0]
+        self.open_tags: Counter[str] = Counter()
+        self.wrappers: set[str] = set()
 
     def handle_starttag(self, tag, attrs):
         parent = self.nodes[self.stack[-1]]
+        tags = self.open_tags
         ns = parent["ns"] or HTML
-        if parent["tag"] in {"foreignobject", "annotation-xml"}:
-            ns = HTML
-        if tag == "svg":
+        if tag == "svg" and ns == HTML:
             ns = SVG
-        elif tag == "math":
+        elif tag == "math" and ns == HTML:
             ns = MATH
-        attrs = {k.lower(): v or "" for k, v in attrs}
-        if tag == "template" and "shadowrootmode" in attrs:
-            raise failure()  # Static fixtures deliberately refuse declarative roots.
+        pairs = [(k.lower(), v or "") for k, v in attrs]
+        attrs = dict(pairs)
+        if len(attrs) != len(pairs) or "popover" in attrs or tag in self.REFUSED or any(name.startswith("on") for name in attrs):
+            raise failure()
+        if (
+            (tag == "script" and "src" in attrs)
+            or (tag == "link" and "href" in attrs)
+            or (tag == "meta" and attrs.get("http-equiv", "").lower() == "refresh")
+            or (tag == "object" and "data" in attrs)
+        ):
+            raise failure()
+        if ns == HTML and tag not in self.HTML_TAGS and not re.fullmatch(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)+", tag):
+            raise failure()
+        style = attrs.get("style", "")
+        if "\\" in style or "/*" in style or re.search(r"(?:^|;)\s*(?:all|animation[^:]*|transition[^:]*)\s*:", style, re.I):
+            raise failure()
+        for declaration in style.split(";"):
+            if ":" not in declaration:
+                continue
+            name, value = declaration.split(":", 1)
+            if name.strip().lower() in {"display", "visibility", "content-visibility"}:
+                value = re.sub(r"!\s*important\s*$", "", value.strip(), flags=re.I).strip()
+                if not re.fullmatch(r"[a-zA-Z-]+", value):
+                    raise failure()
+        if tag in {"audio", "video", "canvas", "meter", "progress"} and css(style, "display") != "contents":
+            raise failure()
+        if ns != HTML and tag not in self.FOREIGN[ns]:
+            raise failure()  # No HTML breakout or foreign integration points.
+        if tag == "template" and ({"shadowrootmode", "shadowroot"} & attrs.keys()):
+            raise failure()
+        if ns == HTML:
+            if tag in {"html", "head", "body"}:
+                if tag in self.wrappers or (tag == "head" and "body" in self.wrappers):
+                    raise failure()
+                self.wrappers.add(tag)
+            if (
+                (tag in self.BLOCK and "p" in tags)
+                or (tag in {"form", "a", "button"} and tag in tags)
+                or (
+                    tag in {"h1", "h2", "h3", "h4", "h5", "h6"}
+                    and any(t in tags for t in {"h1", "h2", "h3", "h4", "h5", "h6"})
+                )
+            ):
+                raise failure()
+            if tag == "li" and parent["tag"] not in {"ul", "ol"}:
+                raise failure()
+            if parent["tag"] in self.TABLE and tag not in self.TABLE[parent["tag"]]:
+                raise failure()
+            table_parts = {t for values in self.TABLE.values() for t in values}
+            if tag in table_parts and tag not in self.TABLE.get(parent["tag"], set()):
+                raise failure()
+            if parent["tag"] == "head" and tag not in {
+                "meta",
+                "link",
+                "base",
+                "script",
+                "style",
+                "noscript",
+            }:
+                raise failure()
+            if tag == "html" and self.stack != [0]:
+                raise failure()
+            if tag in {"head", "body"} and (parent["tag"] not in {"", "html"} or tag in tags):
+                raise failure()
         node = dict(
-            kind=1,
-            tag=tag.lower(),
-            ns=ns,
-            attrs=attrs,
-            text="",
-            rendered=False,
-            children=[],
-            composed=[],
+            kind=1, tag=tag, ns=ns, attrs=attrs, text="", rendered=False, children=[], composed=[]
         )
         index = len(self.nodes)
         self.nodes.append(node)
         parent["children"].append(index)
         if ns != HTML or tag not in VOID:
+            self.open_tags[tag] += 1
+        if ns == HTML and tag == "template":
+            # Template children live in a DocumentFragment, not on the element.
+            self.stack.append(index)
+            fragment = len(self.nodes)
+            self.nodes.append(
+                dict(
+                    kind=11,
+                    tag="",
+                    ns="",
+                    attrs={},
+                    text="",
+                    rendered=False,
+                    children=[],
+                    composed=[],
+                )
+            )
+            node["children"].append(fragment)
+            self.stack.append(fragment)
+        elif ns != HTML or tag not in VOID:
             self.stack.append(index)
         if len(self.nodes) > MAX_NODES:
             raise failure()
 
     def handle_endtag(self, tag):
-        for index in range(len(self.stack) - 1, 0, -1):
-            if self.nodes[self.stack[index]]["tag"] == tag.lower():
-                del self.stack[index:]
-                return
+        if self.nodes[self.stack[-1]]["kind"] == 11:
+            if tag != "template":
+                raise failure()
+            self.stack.pop()
+        current = self.nodes[self.stack[-1]]
+        if current["ns"] == HTML and tag in VOID:
+            return
+        if len(self.stack) == 1 or current["tag"] != tag:
+            raise failure()
+        self.stack.pop()
+        self.open_tags[tag] -= 1
+        if not self.open_tags[tag]:
+            del self.open_tags[tag]
 
     def handle_startendtag(self, tag, attrs):
+        index = len(self.nodes)
         self.handle_starttag(tag, attrs)
-        if self.nodes[self.stack[-1]]["ns"] != HTML:
+        current = self.nodes[index]
+        if current["ns"] != HTML:
             self.handle_endtag(tag)
+        elif tag not in VOID:
+            raise failure()
 
     def handle_data(self, data):
-        node = dict(
-            kind=3, tag="", ns="", attrs={}, text=data, rendered=False, children=[], composed=[]
-        )
-        self.nodes[self.stack[-1]]["children"].append(len(self.nodes))
-        self.nodes.append(node)
+        parent = self.nodes[self.stack[-1]]
+        if (
+            parent["ns"] not in {"", HTML}
+            and data.strip()
+            and parent["tag"] not in {"text", "tspan", "mi", "mn", "mo", "mtext", "ms"}
+        ):
+            raise failure()
+        if parent["tag"] == "pre" and not parent["children"] and data.startswith("\n"):
+            data = data[1:]
+        if parent["tag"] == "head" and data.strip():
+            raise failure()
+        if parent["tag"] in self.TABLE and data.strip():
+            raise failure()  # HTML5 foster parenting is outside the subset.
+        if parent["tag"] == "style" and data.strip():
+            raise failure()  # Stylesheets require Chromium's CSS cascade.
+        if (
+            parent["tag"] == "script"
+            and parent["attrs"].get("type", "").lower()
+            not in {"application/json", "application/ld+json"}
+            and data.strip()
+        ):
+            raise failure()  # Static fixtures never simulate executable scripts.
+        if parent["children"] and self.nodes[parent["children"][-1]]["kind"] == 3:
+            self.nodes[parent["children"][-1]]["text"] += data
+        else:
+            parent["children"].append(len(self.nodes))
+            self.nodes.append(
+                dict(
+                    kind=3,
+                    tag="",
+                    ns="",
+                    attrs={},
+                    text=data,
+                    rendered=False,
+                    children=[],
+                    composed=[],
+                )
+            )
         if len(self.nodes) > MAX_NODES:
             raise failure()
 
+    def handle_comment(self, data):
+        self.nodes[self.stack[-1]]["children"].append(len(self.nodes))
+        self.nodes.append(
+            dict(kind=8, tag="", ns="", attrs={}, text="", rendered=False, children=[], composed=[])
+        )
+
+    def handle_decl(self, decl):
+        if decl.lower() != "doctype html" or self.stack != [0]:
+            raise failure()
+        self.nodes[0]["children"].append(len(self.nodes))
+        self.nodes.append(
+            dict(
+                kind=10, tag="", ns="", attrs={}, text="", rendered=False, children=[], composed=[]
+            )
+        )
+
     def finish(self):
+        if self.stack != [0]:
+            raise failure()
         validate(self.nodes)
         pending = [(0, False, True)]
         while pending:
             i, blocked, visibility = pending.pop()
             node = self.nodes[i]
-            attrs = node["attrs"]
-            tag = node["tag"]
+            attrs, tag = node["attrs"], node["tag"]
             style = attrs.get("style", "")
             display = css(style, "display")
             vis = css(style, "visibility")
@@ -345,22 +518,58 @@ class FixtureTree(HTMLParser):
             hidden = attrs.get("hidden", "").lower()
             blocked = (
                 blocked
-                or tag in {"head", "meta", "title", "script", "style", "noscript", "template"}
+                or (
+                    node["ns"] == HTML
+                    and tag
+                    in {
+                        "head",
+                        "meta",
+                        "title",
+                        "script",
+                        "style",
+                        "noscript",
+                        "template",
+                        "base",
+                        "link",
+                        "param",
+                        "source",
+                        "track",
+                    }
+                )
                 or display == "none"
-                or ("hidden" in attrs and display in (None, "none", "revert-layer"))
+                or (display == "contents" and tag in CONTENTS_NONE)
+                or (
+                    node["ns"] == HTML
+                    and "hidden" in attrs
+                    and display in (None, "none", "revert-layer")
+                )
                 or hidden == "until-found"
                 or (tag == "input" and attrs.get("type", "").lower() == "hidden")
             )
-            node["rendered"] = not blocked and visibility
-            node["composed"] = list(node["children"])
-            summary = next((j for j in node["children"] if self.nodes[j]["tag"] == "summary"), None)
+            node["rendered"] = node["kind"] in {1, 3} and not blocked and visibility
+            node["composed"] = (
+                []
+                if node["ns"] == HTML and tag in {"template", "noscript"}
+                else list(node["children"])
+            )
+            summary = next(
+                (
+                    j
+                    for j in node["children"]
+                    if self.nodes[j]["ns"] == HTML and self.nodes[j]["tag"] == "summary"
+                ),
+                None,
+            )
             for child in reversed(node["children"]):
-                child_blocked = (
-                    blocked
-                    or css(style, "content-visibility") == "hidden"
-                    or (tag == "details" and "open" not in attrs and child != summary)
+                pending.append(
+                    (
+                        child,
+                        blocked
+                        or css(style, "content-visibility") == "hidden"
+                        or (tag == "details" and "open" not in attrs and child != summary),
+                        visibility,
+                    )
                 )
-                pending.append((child, child_blocked, visibility))
         return self.nodes
 
 
@@ -369,7 +578,9 @@ def fixture_capture(markup: str) -> list[dict[str, Any]]:
         if len(markup.encode()) > MAX_TEXT_BYTES:
             raise failure()
         parser = FixtureTree()
-        parser.feed(markup)
+        parser.feed(markup.replace("\r\n", "\n").replace("\r", "\n"))
+        if parser.rawdata:
+            raise failure()  # Incomplete tags/comments/rawtext are outside the subset.
         parser.close()
         return parser.finish()
     except m.CoreError:

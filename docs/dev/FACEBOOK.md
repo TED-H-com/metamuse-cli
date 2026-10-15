@@ -352,13 +352,31 @@ preserves text whose immediate parent has no box. Opacity, clipping, size and vi
 position do not filter evidence. Possible painted `aria-hidden` duplicates must be
 measured in AT-039, not excluded by assumption. JSON text keeps its existing rules.
 
-Fixtures build the same structured form from static HTML. They use scripting-on
-noscript tokenization, the HTML serializer's exact 18 void tags (only in the HTML
-namespace), foreign SVG/MathML end tags, inline declaration order and `!important`,
-hidden/display overrides, content visibility, details and inherited visibility.
-They do not execute scripts or external CSS. Declarative shadow-root fixtures are
-refused with fixed `E_SELECTOR_DRIFT`; real Chromium composes them. Static rendering
-parity cases compare state, records and coverage in both drivers.
+`FixtureTree` is a static test double accepting a balanced subset, not a general
+HTML5 parser. Its HTML tag vocabulary is explicit (`HTML_TAGS`); foreign SVG and
+MathML vocabularies exclude HTML breakout and integration-point rules. Fragments
+use a body-fragment context. Documents retain explicit html/head/body context.
+It models scripting-on HTML `noscript`, the serializer's exact 18 HTML-only void
+tags, inline declaration order and `!important`, hidden/display overrides, content
+visibility, details and inherited visibility. Unsupported parser modes, unbalanced
+or implied end tags, nested form/a/button corrections, foster parenting and
+implicit table sections refuse with the fixed capture failure. Rawtext/RCDATA/
+script-data/PLAINTEXT elements other than inert script/style and HTML noscript are
+refused: xmp, iframe, noembed, noframes, plaintext, textarea and title. Foreign HTML
+names (including noscript/template/slot), dialog, popover and declarative shadow DOM
+are refused. Executable scripts, event handlers, stylesheets, external stylesheet
+links, refresh metadata and unsupported inline rendering declarations also refuse;
+fixtures do not simulate execution, resources or the external CSS cascade.
+
+The differential corpus includes committed HTML literals/files, runtime fixture
+inputs recorded by the suite, reviewer-provided markup and a seeded depth-five
+generator. Accepted inputs must agree with sandboxed Chromium on node kind, tag,
+namespace, attributes, text, rendered flag, light-parent relation and composed
+order. Normalisation removes document/fragment/doctype/comment records and empty
+html/head/body scaffolding; it preserves evidence nodes and their parent/order.
+Unsupported inputs are counted as refusals. The default Chromium audit has an
+independent 90-second deadline; the job/browser budgets remain 300 seconds.
+The fixture-only raw UTF-8 markup precheck is 8 MiB; every parity input is below it.
 
 Capture permits at most 65,536 nodes and 8 MiB of UTF-8 text plus attribute names and
 values, independently of the operator-selected `limits.max_bytes`. The existing
