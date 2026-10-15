@@ -133,7 +133,10 @@ class Entrypoints:
             args[args.index("--exact-digest") + 1] = digest
         envelope = self.cli(*args, *extra, operator=operator, code=code)
         if operator and code == 0:
-            assert preview["summary"] in self.diagnostics[-1]
+            review = self.diagnostics[-1]
+            assert all("  | " + line in review for line in preview["summary"].split("\n"))
+            assert "\nApproval binding:\n" in review
+            assert "\nAction digest: " + preview["action_digest"] + "\n" in review
             for value in (preview["destination"], preview["action_digest"]):
                 assert value in preview["summary"]
             if preview["question"] is not None:
