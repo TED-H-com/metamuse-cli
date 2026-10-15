@@ -380,7 +380,9 @@ class Store:
                         raise
                     finally:
                         conn.execute("PRAGMA foreign_keys=ON")
-            except (sqlite3.Error, ValueError):
+            except sqlite3.Error as exc:
+                raise _storage_error(exc, "Migration failed; original data retained") from None
+            except ValueError:
                 raise m.CoreError(
                     m.ErrorCode.STORAGE, "Migration failed; original data retained"
                 ) from None

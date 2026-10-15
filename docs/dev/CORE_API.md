@@ -334,7 +334,8 @@ the write lock, although one Store instance still serializes its short connectio
 lifetimes with its process-local RLock.
 
 Store classifies SQLITE_BUSY and SQLITE_LOCKED by `sqlite_errorcode`'s primary byte,
-retaining the full extended code on internal `_StorageBusy(CoreError)`. Both it and
+retaining the full extended code on internal `_StorageBusy(CoreError)`. The same
+classification applies to schema verification and migration BEGIN/commit failures. Both it and
 other SQLite errors expose only E_STORAGE/never publicly; corruption, I/O errors,
 and missing codes do not qualify for busy retry. No SQL, paths or values enter error
 messages. Existing transaction constraint errors retain E_REFERENCE_INVALID.
