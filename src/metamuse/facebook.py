@@ -3149,7 +3149,7 @@ class _DOMExtractor:
                 continue
             element = node["kind"] == 1
             if exiting:
-                if element and not (capture.html_tag(node) in self._VOID_TAGS):
+                if element and capture.html_tag(node) not in self._VOID_TAGS:
                     self.handle_endtag(capture.html_tag(node))
                 continue
             if element:

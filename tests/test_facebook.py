@@ -1132,7 +1132,8 @@ def test_expansion_budget_and_unexpanded_gaps_produce_partial(tmp_path: Path):
         (
             "checkpoint",
             200,
-            '<html><head></head><body data-fb-state="checkpoint"><div>Security check</div></body></html>',
+            '<html><head></head><body data-fb-state="checkpoint">'
+            "<div>Security check</div></body></html>",
             m.ErrorCode.CHECKPOINT_REQUIRED,
             "awaiting_user",
         ),
@@ -1153,7 +1154,8 @@ def test_expansion_budget_and_unexpanded_gaps_produce_partial(tmp_path: Path):
         (
             "selector_drift",
             200,
-            "<html><head></head><body><div>Unrecognized markup without post article</div></body></html>",
+            "<html><head></head><body>"
+            "<div>Unrecognized markup without post article</div></body></html>",
             m.ErrorCode.SELECTOR_DRIFT,
             "failed",
         ),

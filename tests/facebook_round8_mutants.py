@@ -212,11 +212,14 @@ def apply(monkeypatch, name):
         )
     elif name == "R8_NOSCRIPT":
         monkeypatch.setattr(capture.FixtureTree, "CDATA_CONTENT_ELEMENTS", ("script", "style"))
+        monkeypatch.setattr(
+            capture, "FIXTURE_HIDDEN_HTML", capture.FIXTURE_HIDDEN_HTML - {"noscript"}
+        )
         rewrite(
             monkeypatch,
             capture.FixtureTree,
             "finish",
-            [('"noscript",', ""), ('{"template", "noscript"}', '{"template"}')],
+            [('{"template", "noscript"}', '{"template"}')],
             module=capture,
         )
     elif name == "R8_VOID":
