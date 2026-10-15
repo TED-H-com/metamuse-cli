@@ -1525,26 +1525,55 @@ def _complete_lookup(value):
     return False
 
 
-def _credential_value_exempt(key: str, value: Any) -> bool:
+def _shell_reference(value):
+    """One forward walk over reference-only parameter operands, at any depth."""
+    start, end = 0, len(value)
+    name = re.compile(r"[A-Za-z_][A-Za-z0-9_]*+|[0-9]++|[?#!@$*_-]")
+    operator = re.compile(r":?[-+?=]|#{1,2}|%{1,2}|/{1,2}|\^{1,2}|,{1,2}|:[0-9]++")
+    while value.startswith("${", start) and end > start + 2 and value[end - 1] == "}":
+        if value.startswith("${{", start) and value[end - 2 : end] == "}}":
+            return True
+        end -= 1
+        param = name.match(value, start + 2, end)
+        if param is None:
+            return False
+        if param.end() == end:
+            return True
+        op = operator.match(value, param.end(), end)
+        if op is None:
+            return False
+        start = op.end()
+        if op[0] in {"?", ":?"} or start == end:
+            return True
+        if value.startswith("${", start):
+            continue
+        return re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*+").fullmatch(value, start, end) is not None
+    return False
+
+
+
+def _credential_value_exempt(key: str, value: Any, *, depths=None) -> bool:
     if value is None or isinstance(value, bool):
         return True
     leaf = _credential_name(key).rsplit(".", 1)[-1]
     if not isinstance(value, str):
         return isinstance(value, (int, float)) and leaf.endswith("session")
-    for _ in range(3):
-        value = unquote(value)
+    if depths is not None and value:
+        first = len(value) - len(value.lstrip())
+        last = len(value.rstrip()) - 1
+        if (
+            first <= last
+            and value.startswith(
+                ("<", "{", "${", "%", "os.getenv(", "os.environ[", "Optional["), first
+            )
+            and depths[first] != depths[last]
+        ):
+            return False
     value = value.strip()
-    if re.match(r'\\{1,8}"', value):
-        for _ in range(3):
-            value, edits = _decode_view(value, json_escapes=True)
-            if not edits:
-                break
-    if value.startswith(('"""', "'''")) and value.endswith(value[:3]) and len(value) >= 6:
-        value = value[3:-3].strip()
-    elif len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
-        value = value[1:-1].strip()
     if not value or value.lower() in {"null", "none", "nil", "true", "false"}:
         return True
+    if value.startswith("${"):
+        return _shell_reference(value)
     if value in {_REDACTED, "REDACTED", "...", "…", "%s", "{}"}:
         return True
     if re.fullmatch(
@@ -1552,16 +1581,6 @@ def _credential_value_exempt(key: str, value: Any) -> bool:
         value,
     ):
         return True
-    if value.startswith("${") and value.endswith("}"):
-        balance = 0
-        for index, char in enumerate(value[1:], 1):
-            if char == "{":
-                balance += 1
-            elif char == "}":
-                balance -= 1
-                if balance == 0:
-                    return index == len(value) - 1
-        return False
     reference = value.removesuffix(";")
     if _type_reference(reference):
         return True
@@ -1577,6 +1596,7 @@ def _credential_value_exempt(key: str, value: Any) -> bool:
     ):
         return True
     return False
+
 
 
 @dataclass(frozen=True, slots=True)
@@ -1966,12 +1986,15 @@ class _Syntax:
         protected_close = next(protected, None)
         placeholders = []
         cursor = 0
-        placeholder_tokens = re.compile(r"\$\{|\{\{|[{}\"'`]")
+        placeholder_tokens = re.compile(r"(?<!\\)\\++[\"']|\$\{|\{\{|[{}\"'`]")
         while token := placeholder_tokens.search(text, cursor):
             char, pos = token[0], token.start()
             cursor = token.end()
             while protected_close is not None and protected_close[0] < pos:
                 protected_close = next(protected, None)
+            if char.startswith("\\") and placeholders:
+                cursor = self.escaped_ends.get(pos, cursor)
+                continue
             if char in {"${", "{{"}:
                 if char == "{{":
                     placeholders.append(pos)
@@ -2000,7 +2023,7 @@ class _Syntax:
                     self.closings[pos] = opening
         # Lookup calls have local quoted arguments. Unrelated prose quotes
         # cannot close their parentheses, and punctuation in arguments is data.
-        call_tokens = re.compile(r"os\.(?:getenv\(|environ\[)|[()\[\]{}\"'\r\n]")
+        call_tokens = re.compile(r"os\.(?:getenv\(|environ\[)|(?<!\\)\\++[\"']|[()\[\]{}\"'\r\n]")
         calls = []
         protected = protected_quotes()
         protected_close = next(protected, None)
@@ -2013,6 +2036,9 @@ class _Syntax:
             if char.startswith("os."):
                 calls.append((token.end() - 1, char[-1], True))
             elif calls:
+                if char.startswith("\\"):
+                    cursor = self.escaped_ends.get(pos, cursor)
+                    continue
                 if char in "\"'":
                     closing = self.quote_next.get(pos)
                     if (
@@ -2035,13 +2061,28 @@ class _Syntax:
                     if lookup:
                         self.ends[opening] = token.end()
                         self.closings[pos] = opening
+        self._owned_quotes(text)
+        # The temporary proof-close index is no longer needed after local call
+        # indexing. Reuse its allocation for constant-time containing bounds.
+        self.proven_bounds = self.proven_closings
+        if proven:
+            self.proven_bounds.data = array("i", [0]) * len(text)
+            for begin, finish in proven:
+                if (
+                    finish > begin + 2
+                    and text[begin] == '"'
+                    and text[finish - 1] == '"'
+                    and self.depth(begin) == self.depth(finish - 1)
+                ):
+                    self.proven_bounds.data[begin + 1 : finish] = array("i", [finish - 1]) * (
+                        finish - begin - 1
+                    )
         # Indented YAML containers/scalars end at the next dedent. Close every
         # pending block once, using the previous content end computed once/line.
         self.yaml_ends = _PositionIndex(text)
         self.yaml_scalars = _PositionIndex(text)
         blocks = []
         content_end = 0
-        header = re.compile(r"(?:[\"']?" + _NAME + r"[\"']?)\s*+:[^\S\r\n]*+(?:[|>][-+]?)?")
         for line in re.finditer(r"[^\r\n]++|[\r\n]", text):
             body = line[0]
             stripped = body.lstrip()
@@ -2058,12 +2099,19 @@ class _Syntax:
                 comment = re.search(r"\s#", stripped[scalar.end() :])
                 finish = scalar.end() + comment.start() if comment else len(stripped.rstrip())
                 self.yaml_scalars[colon] = line.start() + indent + finish
-            block_header = re.search(
-                _NAME + r"\s*+:[^\S\r\n]*+[|>][-+]?[^\S\r\n]*+$", stripped
-            ) or header.fullmatch(stripped)
-            if block_header and block_header.end() == len(stripped):
-                colon = line.start() + indent + stripped.rfind(":", block_header.start())
-                blocks.append((indent, colon))
+            # Each key remains eligible inside an earlier header's comment.
+            # Do not scan the comment suffix once per key: '#' qualifies in O(1).
+            for block_key in re.finditer(
+                r"[\"']?" + _NAME + r"[\"']?[^\S\r\n]*+(?P<colon>:)[^\S\r\n]*+", stripped
+            ):
+                tail = block_key.end()
+                indicator = re.compile(r"[|>](?:[1-9]?[-+]?|[-+]?[1-9]?)[^\S\r\n]*+(?=#|$)").match(
+                    stripped, tail
+                )
+                if tail == len(stripped) or stripped[tail : tail + 1] == "#" or indicator:
+                    # A pasted block can have malformed indentation. Ambiguity
+                    # retains the following indented run rather than exposing it.
+                    blocks.append((0, line.start() + indent + block_key.start("colon")))
             content_end = line.start() + len(body.rstrip())
         for _, colon in blocks:
             self.yaml_ends[colon] = content_end
@@ -2093,25 +2141,254 @@ class _Syntax:
             or header.match(text, start, end) is not None
         )
 
-    def quoted_end(self, text, start):
-        return self.quote_next.get(start) if text[start : start + 1] in {'"', "'", "`"} else None
+    def shell_operator(self, text, position):
+        # A key immediately after '${' is the parameter name, not an assignment.
+        return text[max(0, position - 2) : position] == "${"
 
-    def attribute_end(self, text, start):
-        """A grammar-proven XML/HTML attribute may contain raw line breaks."""
-        if self.attribute_quotes is None:
-            self.attribute_quotes = _PositionIndex(text)
-            prior = {}
-            for quote in re.finditer(r"[\"'`]", text):
-                channel = quote[0], self.depth(quote.start())
-                if channel in prior:
-                    self.attribute_quotes[prior[channel]] = quote.end()
-                prior[channel] = quote.start()
-        return self.attribute_quotes.get(start)
+    def _owned_quotes(self, text):
+        """Successors, never line-wide polarity, prove a value's own closer.
+
+        Each quote and closer run is visited once. Escaped, doubled and shell
+        concatenation quotes are data. A value-start empty pair is handled by
+        quoted_end rather than treating an internal doubled pair as a close.
+        """
+        self.owned_quote_ends = self.quote_next
+        self.owned_quote_ends.data = array("i")
+        self.owned_brackets = self.escaped_closings
+        self.owned_brackets.data = array("i")
+        valid = bytearray()
+        for run in re.finditer(r"(?:\\{0,8}[\"'`”’)\]}>])++", text):
+            if self._follower(text, run.end()):
+                if not valid:
+                    valid = bytearray(len(text))
+                if self.depths is None or run.end() == len(text):
+                    valid[run.start() : run.end()] = b"\1" * (run.end() - run.start())
+                else:
+                    follower_depth = self.depth(run.end())
+                    for position in range(run.start(), run.end()):
+                        valid[position] = follower_depth <= self.depth(position)
+        self.valid_closers = valid
+        tokens = array("I")
+        for token in re.finditer(
+            r"'\"'\"'|'\\''|\\[\s\S]|`[\"']|\"{3}|'{3}|[\"'`“”‘’＂＇()\[\]{}<>\r\n]", text
+        ):
+            if (
+                len(token[0]) == 3
+                and token[0] in {'"' * 3, "'" * 3}
+                and any(
+                    self.depth(i) != self.depth(token.start())
+                    for i in range(token.start() + 1, token.end())
+                )
+            ):
+                for i in range(token.start(), token.end()):
+                    tokens.extend((i, i + 1))
+            else:
+                tokens.extend((token.start(), token.end()))
+        next_close = {}
+        for index in range(len(tokens) - 2, -1, -2):
+            pos, token_end = tokens[index], tokens[index + 1]
+            char = text[pos:token_end]
+            level = self.depth(pos)
+            if char in {"\r", "\n"}:
+                for channel in list(next_close):
+                    if len(channel[0]) == 1 and channel[1] >= level:
+                        del next_close[channel]
+                continue
+            if char.startswith("\\") or char in {"'\"'\"'", "'\\''", '`"', "`'"}:
+                continue
+            if char in "([{<":
+                closer = {"(": ")", "[": "]", "{": "}", "<": ">"}[char]
+                endpoint = next_close.get((closer, level))
+                if endpoint is not None:
+                    self.owned_brackets[pos] = endpoint
+                continue
+            if char in ")]}>" and valid and valid[pos]:
+                next_close[(char, level)] = token_end
+                continue
+            close = {"“": "”", "‘": "’"}.get(char, char)
+            if (
+                char == "’"
+                and pos
+                and pos + 1 < len(text)
+                and text[pos - 1].isalnum()
+                and text[pos + 1].isalnum()
+            ):
+                continue
+            endpoint = next_close.get((close, level))
+            if endpoint is not None:
+                self.owned_quote_ends[pos] = endpoint
+            doubled = (
+                len(char) == 1
+                and char in "\"'"
+                and (
+                    (text[pos - 1 : pos] == char and self.depth(pos - 1) == level)
+                    or (text[pos + 1 : pos + 2] == char and self.depth(pos + 1) == level)
+                )
+            )
+            if valid and valid[pos] and not doubled:
+                next_close[(char, level)] = token_end
+        del tokens
+
+    def _follower(self, text, after):
+        if after >= len(text) or text[after].isspace() or text[after] in ",;&":
+            return True
+        if (
+            self.json_content is not None
+            and self.json_content[after]
+            and re.compile(r"\\++(?:[nrt]|u00(?:09|0[aAdD]|20))").match(text, after)
+        ):
+            return True
+        if text.startswith("/>", after):
+            return True
+        if text[after] in ".!?:" and (after + 1 == len(text) or text[after + 1].isspace()):
+            return True
+        return (
+            text[after : after + 1] == "."
+            and re.compile(r"\.[A-Za-z_][A-Za-z0-9_]*+\(").match(text, after) is not None
+        )
 
     def boundary(self, text, position):
-        """A delimiter followed by identifier data is ambiguous, never shorter."""
-        after = position + (3 if text.startswith(('"""', "'''", "```"), position) else 1)
-        return after >= len(text) or not (text[after].isalnum() or text[after] in "_@")
+        return position < len(self.valid_closers) and bool(self.valid_closers[position])
+
+    @staticmethod
+    def quote_token(text, start):
+        for token in ('"""', "'''", "$'", '"', "'", "`", "“", "‘", "＂", "＇"):
+            if text.startswith(token, start):
+                return token
+        return None
+
+    def line_end(self, text, start, level):
+        if not hasattr(self, "line_stops"):
+            self.line_stops = {}
+        stops = self.line_stops.get(level)
+        if stops is None:
+            stops = self.line_stops[level] = array("I", [len(text)]) * (len(text) // 64 + 2)
+            following = len(text)
+            cursor = len(self.line_ends) - 1
+            for block in range(len(stops) - 1, -1, -1):
+                edge = block * 64
+                while cursor >= 0 and self.line_ends[cursor] >= edge:
+                    position = self.line_ends[cursor]
+                    if self.depth(position) <= level:
+                        following = position
+                    cursor -= 1
+                stops[block] = following
+        edge = min(len(text), (start // 64 + 1) * 64)
+        for position in range(start, edge):
+            if text[position] in "\r\n" and self.depth(position) <= level:
+                return position
+        return stops[start // 64 + 1]
+
+    def proven_end(self, start):
+        return self.proven_bounds.get(start)
+
+    def quoted_end(self, text, start):
+        token = self.quote_token(text, start)
+        if token is None:
+            return None
+        width = len(token)
+        quote = "'" if token == "$'" else token
+        first = start + int(token == "$'")
+        if text.startswith(quote, start + width) and self.boundary(text, start + width):
+            return start + width + len(quote)
+        return self.owned_quote_ends.get(first)
+
+    def attribute_end(self, text, start):
+        if self.attribute_quotes is None:
+            self.attribute_quotes = self.owned_brackets
+            tokens = array("I")
+            for token in re.finditer(r"\\[\s\S]|[\"'`]", text):
+                if token[0].startswith("\\"):
+                    continue
+                tokens.append(token.start())
+            following = {}
+            for position in reversed(tokens):
+                char = text[position]
+                channel = char, self.depth(position)
+                if channel in following:
+                    self.attribute_quotes[position] = following[channel]
+                doubled = char in "\"'" and (
+                    (
+                        text[position - 1 : position] == char
+                        and self.depth(position - 1) == channel[1]
+                    )
+                    or (
+                        text[position + 1 : position + 2] == char
+                        and self.depth(position + 1) == channel[1]
+                    )
+                )
+                if (
+                    self._follower(text, position + 1)
+                    or (
+                        text[position + 1 : position + 2] == ">"
+                        or text.startswith("/>", position + 1)
+                    )
+                ) and not doubled:
+                    following[channel] = position + 1
+        if text[start : start + 1] == text[start + 1 : start + 2] and (
+            self._follower(text, start + 2)
+            or (text[start + 2 : start + 3] == ">" or text.startswith("/>", start + 2))
+        ):
+            return start + 2
+        return self.attribute_quotes.get(start)
+
+    def owned_end(self, text, construct, start):
+        """Only adjacent openers and proven JSON strings belong to this construct."""
+        limit = self.proven_end(start)
+        cursor = construct - 1
+        pairs = {"(": ")", "[": "]", "{": "}", "<": ">"}
+        while cursor >= 0:
+            char = text[cursor]
+            if self.depth(cursor) != self.depth(construct):
+                break
+            if char in "\"'`“‘":
+                escaped = cursor
+                while escaped and text[escaped - 1] == "\\":
+                    escaped -= 1
+                if escaped < cursor:
+                    finish = self.escaped_ends.get(escaped)
+                    if finish is not None:
+                        closing = finish - (cursor - escaped) - 1
+                        if closing >= start and self.boundary(text, closing):
+                            limit = min(limit, closing) if limit is not None else closing
+                    cursor = escaped - 1
+                    continue
+                finish = self.quoted_end(text, cursor)
+                if finish is not None and finish - 1 >= start:
+                    limit = min(limit, finish - 1) if limit is not None else finish - 1
+            elif char in pairs:
+                finish = self.owned_brackets.get(cursor)
+                if finish is not None and finish - 1 >= start:
+                    limit = min(limit, finish - 1) if limit is not None else finish - 1
+            else:
+                break
+            cursor -= 1
+        return limit
+
+    def trim(self, text, start, end):
+        if self.quote_token(text, start) is None:
+            call = re.compile(r"os\.(?:getenv\(|environ\[)|Optional\[").match(text, start, end)
+            while end > start and text[end - 1] in "\"'`”’)]}>.,!?:;":
+                # A complete placeholder, fixed call or sentinel owns its closer.
+                if call and self.complete(call.end() - 1, end):
+                    break
+                if (
+                    (
+                        end - start >= len(_REDACTED)
+                        and text.startswith(_REDACTED, end - len(_REDACTED))
+                    )
+                    or text[end - 1] in "}>"
+                    and self.complete(start + int(text.startswith("${", start)), end)
+                ):
+                    break
+                if (
+                    text.startswith("<", start)
+                    and text[end - 1] == ">"
+                    and self.depth(start) == self.depth(end - 1)
+                ):
+                    break
+                end -= 1
+        return end
 
     def private(self, text, key, start, end):
         if not redaction_sensitive_key(key):
@@ -2121,111 +2398,146 @@ class _Syntax:
             first += 1
         while last > first and text[last - 1].isspace():
             last -= 1
-        if self.quoted_end(text, first) == last:
-            first += 1
-            last -= 1
-        if text.startswith("${", first):
-            return not self.placeholder_complete(text, first, last)
-        if text.startswith("{{", first):
-            return not (self.complete(first, last) and self.complete(first + 1, last - 1))
-        call = re.compile(r"os\.(?:getenv\(|environ\[)").match(text, first)
+        escaped_end = self.escaped_ends.get(first)
+        if escaped_end == last:
+            value = text[first:last]
+            for _ in range(3):
+                value, edits = _decode_view(value, json_escapes=True)
+                if not edits:
+                    break
+            try:
+                value = json.loads(value)
+            except (ValueError, RecursionError):
+                return True
+            return not _credential_value_exempt(key, value)
+        token = self.quote_token(text, first)
+        if token and self.quoted_end(text, first) == last:
+            first += len(token)
+            last -= 1 if token == "$'" else len(token)
+        call = re.compile(r"os\.(?:getenv\(|environ\[)|Optional\[").match(text, first, last)
         if call:
             return not self.complete(call.end() - 1, last)
-        return redaction_sensitive_value(key, text[start:end])
+        if text.startswith("${", first) and not self.placeholder_complete(text, first, last):
+            return True
+        if text.startswith("{{", first) and not (
+            self.complete(first, last) and self.complete(first + 1, last - 1)
+        ):
+            return True
+        value = text[first:last]
+        if value.startswith(("${", "{{", "os.getenv(", "os.environ[", "Optional[", "<", "{", "%")):
+            # Delimiters have one provenance. Decoding is a caller's view, never
+            # an exemption's attempt to complete a mixed-layer raw slice.
+            if first < last and self.depth(first) != self.depth(last - 1):
+                return True
+            if value.startswith("${"):
+                return not (
+                    self.placeholder_complete(text, first, last) and _shell_reference(value)
+                )
+            if value.startswith("{{"):
+                return not (self.complete(first, last) and self.complete(first + 1, last - 1))
+            call = re.compile(r"os\.(?:getenv\(|environ\[)|Optional\[").match(text, first)
+            if call:
+                return not self.complete(call.end() - 1, last)
+            if value.startswith("<"):
+                return not (value.endswith(">") and "<" not in value[1:] and ">" not in value[:-1])
+            if value.startswith("{"):
+                return not (
+                    self.complete(first, last)
+                    and re.fullmatch(r"\{[A-Za-z_][A-Za-z0-9_]*+\}|\{\}", value)
+                )
+        return not _credential_value_exempt(key, value)
 
-    def value(self, text, start, *, list_separators=False, operator_depth=None):
+    def value(
+        self, text, start, *, list_separators=False, operator_depth=None, construct=None, trim=True
+    ):
         if start >= len(text):
             return start
         level = self.depth(start) if operator_depth is None else operator_depth
+        construct = start if construct is None else construct
+        limit = self.owned_end(text, construct, start)
+        limit = len(text) if limit is None else limit
         escaped_end = self.escaped_ends.get(start)
-        if escaped_end is not None:
+        if escaped_end is not None and (escaped_end <= limit or limit <= start):
             return escaped_end
-        call = re.compile(r"os\.(?:getenv\(|environ\[)").match(text, start)
-        if call:
-            finish = self.ends.get(call.end() - 1, len(text))
+        token = self.quote_token(text, start)
+        if token and limit == start:
+            if self.quoted_end(text, start) is None:
+                return start
+            limit = len(text)
+        prefix = re.compile(r"(?i)(?:br|rb|fr|rf|[brf])(?=[\"'])").match(text, start)
+        if prefix:
+            start = prefix.end()
+            token = self.quote_token(text, start)
+        if token:
+            # A value's own quote is innermost. Adjacent outer brackets cannot
+            # close it; only a proven containing JSON string can bound it.
+            enclosing = self.proven_end(start)
+            if enclosing is not None and enclosing <= start:
+                enclosing = None
+            end = self.quoted_end(text, start)
+            if end is not None and (enclosing is None or end <= enclosing + 1):
+                return end
+            return min(enclosing or len(text), self.line_end(text, start, level))
+        if text.startswith("<", start):
+            finish = self.owned_brackets.get(start)
             if (
-                finish == len(text)
-                or text[finish].isspace()
-                or text[finish] in "\"',;}])"
-                or re.compile(r"\\+[nr\"']").match(text, finish)
+                finish is not None
+                and text.find("<", start + 1, finish - 1) < 0
+                and text.find(">", start + 1, finish - 1) < 0
+            ):
+                return min(finish, limit)
+            return min(limit, self.line_end(text, start, level))
+        call = re.compile(r"os\.(?:getenv\(|environ\[)|Optional\[").match(text, start)
+        opening = call.end() - 1 if call else start + int(text.startswith("${", start))
+        if call or text.startswith(("${", "{{"), start):
+            finish = self.ends.get(opening)
+            if finish is None or not self.complete(opening, finish):
+                return min(limit, self.line_end(text, start, level))
+        if text[start : start + 1] in "[{" and not text.startswith("{{", start):
+            finish = self.ends.get(opening)
+            if finish is None or not self.complete(opening, finish):
+                return limit
+        if call or text[start : start + 1] in "[{" or text.startswith("${", start):
+            finish = self.ends.get(opening)
+            if (
+                finish is not None
+                and self.complete(opening, finish)
+                and finish <= limit
+                and (
+                    self._follower(text, finish)
+                    or self.boundary(text, finish)
+                    or (
+                        self.proven_end(start) is not None
+                        and re.compile(r"\\++[nr]").match(text, finish)
+                    )
+                )
             ):
                 return finish
-        quoted_end = self.quoted_end(text, start) or (len(text) if text[start] in "\"'`" else start)
-        if self.quoted_end(text, start) is not None:
-            return quoted_end
-        if quoted_end > start and (
-            quoted_end == len(text) or text[quoted_end].isspace() or text[quoted_end] in ",;&)]}"
-        ):
-            return quoted_end
-        end = (
-            start + len(_REDACTED)
-            if text.startswith(_REDACTED, start)
-            else self.ends.get(start, len(text))
-            if text[start] in "[{"
-            else quoted_end
-        )
-        chunk = re.compile(r"[^\s,;&\\\"'`{}\[\]()]++")
-        separator = re.compile(r"[^\S\r\n]*+" + _NAME + r"[^\S\r\n]*+=")
-        while end < len(text):
-            found = chunk.match(text, end)
-            if found:
+        end = start
+        ambiguous = False
+        pattern = re.compile(r"[\s,;&\"'`\[\]{}()]")
+        while found := pattern.search(text, end, limit):
+            pos = found.start()
+            if self.depth(pos) > level:
                 end = found.end()
+                continue
+            char = found[0]
+            if char in "\"'`[]{}()":
+                ambiguous |= char in "\"'`"
+                end = found.end()
+                continue
             if (
-                end < len(text)
-                and text[end] in "\"'`"
-                and self.quote_closings.get(end, end) < start
-                and self.boundary(text, end)
+                char in "\r\n"
+                or (char.isspace() and not ambiguous)
+                or (
+                    char in ",;&"
+                    and (list_separators or (char in ";&" and self.form and level > 0))
+                )
             ):
-                break  # An enclosing string closes even when its quote is decoded deeper.
-            if end < len(text) and self.depth(end) > level:
-                if (
-                    text[end] in "\r\n"
-                    and self.json_lines is not None
-                    and self.json_lines[end]
-                    and self.json_content is not None
-                    and self.depth(end) <= self.json_content[start]
-                ):
-                    break
-                end += 1
-                continue  # A deeper decoded delimiter is value data.
-            if end >= len(text) or text[end].isspace():
-                break
-            if text[end] == "\\" and (
-                self.escaped_closings.get(end, end + 1) <= start
-                or re.compile(r"\\+[nr]").match(text, end)
-            ):
-                break
-            if (
-                text[end] in "\"'`"
-                and self.quote_closings.get(end, end) < start
-                and self.boundary(text, end)
-            ):
-                break
-            if text[end] in ",;&":
-                context = self.separator_context.get(end)
-                if (
-                    list_separators
-                    or (
-                        text[end] == ","
-                        and context
-                        and context[0] == "("
-                        and context[1] < start
-                        and context[1] > 0
-                        and text[context[1] - 1].isalnum()
-                        and separator.match(text, end + 1)
-                        and self.complete(context[1], self.ends.get(context[1], 0))
-                    )
-                    or (text[end] in ";&" and self.form and level > 0)
-                ):
-                    break
-                end += 1
-            elif text[end] in "([{":
-                end = self.ends.get(end, len(text))
-            elif self.closings.get(end, end) < start and self.boundary(text, end):
-                break
-            else:
-                end += 1
-        return end
+                return self.trim(text, start, pos) if trim else pos
+            end = found.end()
+        return self.trim(text, start, limit) if trim else limit
+
 
 
 class _SpanIndex:
@@ -2283,8 +2595,8 @@ def _merge_spans(streams):
 def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
     pattern = re.compile(
         r"(?:(?P<q>[\"'])(?P<quotedkey>" + _NAME + r")(?P=q)(?:\])?|"
-        r"(?<![A-Za-z0-9_.-])(?P<flag>--|-D|-)?(?P<key>" + _NAME + r"))"
-        r"(?:\s*+(?P<sep>=>|=|:(?!=)|[：＝])\s*+|(?P<flagspace>\s++))",
+        r"(?<![A-Za-z0-9_.])(?P<flag>--|-D|-)?(?P<key>" + _NAME + r"))"
+        r"(?:[\s\u200b]*+(?P<sep>=>|=|:(?!=)|[：＝])\s*+|(?P<flagspace>\s++))",
     )
     trailing_assignment = re.compile(
         r"(?<![A-Za-z0-9_.-])(?P<flag>--|-D|-)?(?P<name>" + _NAME + r")(?P<op>=>|[=:：＝])?$"
@@ -2292,6 +2604,8 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
     position = line_index = 0
     while match := pattern.search(text, position):
         position = match.end()
+        if not match["q"] and syntax.shell_operator(text, match.start()):
+            continue
         key = match["key"] or match["quotedkey"]
         if (
             not match["q"]
@@ -2383,53 +2697,29 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             if yaml_end is not None
             else max(start, scalar_end)
             if scalar_end is not None
-            else syntax.value(text, start, operator_depth=operator_depth)
+            else syntax.value(text, start, operator_depth=operator_depth, construct=match.start())
         )
         if (
-            not match["q"]
-            and text[match.start() - 1 : match.start()] in {'"', "'", "`"}
-            and text[start : start + 1] == text[match.start() - 1 : match.start()]
-            and syntax.quote_closings.get(start) == match.start() - 1
+            match["q"]
+            and syntax.quote_token(text, start)
             and syntax.quoted_end(text, start) is None
         ):
-            end = start  # Empty value in a string such as prompt='Password: '.
-        quoted = (
-            yaml_end is None and text[start : start + 1] in {'"', "'", "`"} and start in syntax.ends
-        )
+            end = len(text)
+        quoted = yaml_end is None and syntax.quote_token(text, start) is not None
         if yaml_end is not None and text[start : start + 1] in {"|", ">"} and end <= start + 2:
             end = len(text)  # A malformed block cannot expose its following body.
-        # Balanced shell placeholders have a precomputed whole-value extent.
-        # Do not copy/reparse every enclosing suffix in deeply nested defaults.
-        inner_start = start + int(quoted)
-        inner_end = end - int(quoted and text[end - 1 : end] == text[start])
-        if (
-            not include_exempt
-            and text.startswith("${", inner_start)
-            and syntax.placeholder_complete(text, inner_start, inner_end)
-        ):
-            continue
-        if (
-            not include_exempt
-            and text.startswith("{{", inner_start)
-            and syntax.complete(inner_start, inner_end)
-            and syntax.complete(inner_start + 1, inner_end - 1)
-        ):
-            continue
-        # Complete fixed lookups are indexed once, not copied and reparsed
-        # for every nested assignment in an O(N)-sized suffix.
-        call = re.compile(r"os\.(?:getenv\(|environ\[)").match(text, inner_start)
-        if not include_exempt and call and syntax.complete(call.end() - 1, inner_end):
-            continue
         nested = (
             trailing_assignment.search(text, max(start, end - 134), end) if not quoted else None
         )
         continuation = re.compile(r"\s*+(?:=>|[=:：＝])").match(text, end)
+        if not quoted and end < len(text) and text[end : end + 1] == ":":
+            continuation = re.compile(r"[=:：＝]\s*+").match(text, end)
         if (
             nested
             and (nested["flag"] or nested["op"] or continuation)
             and redaction_sensitive_key(nested["name"])
             and end < len(text)
-            and text[end].isspace()
+            and (text[end].isspace() or continuation is not None)
         ):
             if continuation:
                 end = continuation.end()
@@ -2438,18 +2728,6 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             while line_index < len(syntax.line_ends) and syntax.line_ends[line_index] < end:
                 line_index += 1
             end = syntax.line_ends[line_index] if line_index < len(syntax.line_ends) else len(text)
-        if (
-            not quoted
-            and syntax.escaped_ends.get(start) != end
-            and (text.find('"', start, end) >= 0 or text.find("'", start, end) >= 0)
-            and not _credential_value_exempt(key, text[start:end])
-        ):
-            while line_index < len(syntax.line_ends) and syntax.line_ends[line_index] < start:
-                line_index += 1
-            end = max(
-                end,
-                syntax.line_ends[line_index] if line_index < len(syntax.line_ends) else len(text),
-            )
         if (
             match["flag"]
             and not quoted
@@ -2464,6 +2742,11 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             while line_index < len(syntax.line_ends) and syntax.line_ends[line_index] < start:
                 line_index += 1
             end = syntax.line_ends[line_index] if line_index < len(syntax.line_ends) else len(text)
+        if quoted and end > start + 1 and text[end - 1 : end] == text[start : start + 1]:
+            tail = trailing_assignment.search(text, max(start + 1, end - 135), end - 1)
+            following = re.compile(r"\s*+(?:=>|[=:：＝])\s*+").match(text, end)
+            if tail and following and redaction_sensitive_key(tail["name"]):
+                end = syntax.line_end(text, following.end(), operator_depth)
         closed_quote = quoted and end - start > 1 and text[end - 1] == text[start]
         if include_exempt or syntax.private(text, key, start, end):
             position = max(position, end - int(closed_quote))
@@ -2501,13 +2784,35 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
                     yield offset + inner_start, offset + inner_end, inner_kind, inner_replacement
 
 
+
 def _header_spans(text, syntax):
-    pattern = re.compile(r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*(?P<sep>=|[:：＝])\s*+")
-    line_end = re.compile(r"[\r\n]")
-    fold = re.compile(r"\r?\n\s+")
-    position = quote_index = 0
+    pattern = re.compile(
+        r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*(?P<sep>=|[:：＝])[^\S\r\n]*+"
+    )
+    # New headers begin new groups. Compute a continuation group's end once,
+    # then reuse it even when an exempt header re-enters the group's contents.
+    lines = array("I", [0])
+    lines.extend(line.end() for line in re.finditer(r"\r\n|\r|\n", text))
+    folded = array("I", [0]) * len(lines)
+    following = finish = len(text)
+    for index in range(len(lines) - 1, -1, -1):
+        start = lines[index]
+        end = finish
+        while end > start and text[end - 1] in "\r\n":
+            end -= 1
+        indent = re.compile(r"[^\S\r\n]*+").match(text, start, end).end()
+        folded[index] = (
+            following
+            if text[start : start + 1].isspace() and not pattern.match(text, indent, end)
+            else end
+        )
+        following, finish = folded[index], start
+    fold_indices = {}
+    position = 0
     while match := pattern.search(text, position):
         position = match.end()
+        if syntax.shell_operator(text, match.start()):
+            continue
         name = _credential_name(match["key"])
         if name not in {
             "authorization",
@@ -2517,35 +2822,32 @@ def _header_spans(text, syntax):
         } and not name.endswith("cookie"):
             continue
         start = match.end()
-        if (
-            match["sep"] == "="
-            and text[start : start + 1] == "="
-            and text[match.start("sep") - 1 : match.start("sep")].isspace()
-        ):
+        if match["sep"] == "=" and text[start : start + 1] == "=":
             continue
-        operator_depth = syntax.depth(match.start("sep"))
-        while quote_index < len(syntax.quotes) and syntax.quotes[quote_index][1] < match.start():
-            quote_index += 1
-        limit = len(text)
-        if quote_index < len(syntax.quotes):
-            begin, finish = syntax.quotes[quote_index]
-            if begin < match.start() < finish and syntax.boundary(text, finish):
-                limit = finish
-
-        def boundary_after(start, limit=limit, operator_depth=operator_depth):
-            boundary = line_end.search(text, start, limit)
-            while boundary and syntax.depth(boundary.start()) > operator_depth:
-                boundary = line_end.search(text, boundary.end(), limit)
-            return boundary
-
-        boundary = boundary_after(start)
-        end = boundary.start() if boundary else limit
-        while folded := fold.match(text, end, limit):
-            boundary = boundary_after(folded.end())
-            end = boundary.start() if boundary else limit
-        opening_end = syntax.quoted_end(text, start)
-        if opening_end is not None:
-            end = opening_end
+        level = syntax.depth(match.start("sep"))
+        end = syntax.line_end(text, start, level)
+        # Fold only actual continuation lines, never a new named header.
+        cursor = end
+        while cursor < len(text) and text[cursor] in "\r\n":
+            after = cursor + 1 + int(text[cursor : cursor + 2] == "\r\n")
+            if after >= len(text) or text[after : after + 1] not in " \t":
+                break
+            tail = re.compile(r"[ \t]*+").match(text, after).end()
+            if pattern.match(text, tail):
+                break
+            index = fold_indices.get(level, 0)
+            while index < len(lines) and lines[index] < after:
+                index += 1
+            fold_indices[level] = index
+            end = folded[index] if index < len(lines) else len(text)
+            break
+        if syntax.quote_token(text, start):
+            end = syntax.value(text, start, operator_depth=level, construct=match.start())
+        else:
+            limit = syntax.owned_end(text, match.start(), start)
+            if limit is not None:
+                end = min(end, limit)
+            end = syntax.trim(text, start, end)
         cookie = name not in {"authorization", "proxyauthorization"}
         value = text[start:end].strip().lower() if not cookie and end - start <= 128 else None
         authorized = cookie or value not in {
@@ -2558,8 +2860,9 @@ def _header_spans(text, syntax):
             "aws4-hmac-sha256",
         }
         if authorized and syntax.private(text, match["key"], start, end):
-            position = max(end, match.end())
+            position = max(position, end)
             yield start, end, "cookie" if cookie else "authorization", _REDACTED
+
 
 
 class _EncodedPositions:
@@ -2623,6 +2926,13 @@ def _query_spans(text, syntax, encoded_positions):
         "sks",
         "skv",
     }
+    urls = list(
+        re.finditer(r"(?i)(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://|(?<![:/])//", text)
+    )
+    url_index = -1
+    spaces = iter(re.finditer(r"\s", text))
+    space = next(spaces, None)
+    last_space = -1
     position = 0
     while match := pattern.search(text, position):
         position = match.end()
@@ -2631,56 +2941,54 @@ def _query_spans(text, syntax, encoded_positions):
             continue
         start = match.end()
         operator_depth = syntax.depth(match.start("key") + len(key))
+        owner = match.start()
+        # URL candidates preceding a query are indexed once for this scanner.
+        while url_index + 1 < len(urls) and urls[url_index + 1].start() <= match.start():
+            url_index += 1
+        while space is not None and space.start() < match.start():
+            last_space = space.start()
+            space = next(spaces, None)
+        if url_index >= 0 and last_space < urls[url_index].end():
+            owner = urls[url_index].start()
+        limit = syntax.owned_end(text, owner, start)
+        limit = len(text) if limit is None else limit
+        if text[owner - 1 : owner] == "<":
+            autolink = text.find(">", start, limit)
+            if autolink >= 0 and syntax.boundary(text, autolink):
+                limit = autolink
+        if syntax.proven_end(start) == start:
+            continue  # The proven URL string closes before this empty value.
+        if syntax.quote_token(text, start):
+            end = syntax.value(text, start, operator_depth=operator_depth, construct=owner)
+            if syntax.private(text, "token" if key.lower() in signed else key, start, end):
+                position = max(position, end)
+                yield start, end, "url_token", _REDACTED
+            continue
         cursor = start + len(_REDACTED) if text.startswith(_REDACTED, start) else start
-        end = len(text)
-        while boundary := ending.search(text, cursor):
+        end = limit
+        while boundary := ending.search(text, cursor, limit):
             encoded = encoded_positions.contains(boundary.start())
+            char = boundary[0]
+            if char in "& #".replace(" ", "") and syntax.depth(boundary.start()) <= operator_depth:
+                end = boundary.start()
+                break
+            if char.isspace() and not encoded and syntax.depth(boundary.start()) <= operator_depth:
+                end = boundary.start()
+                break
             if (
-                boundary[0] == ">"
-                and re.search(
-                    r"<[A-Za-z][A-Za-z0-9+.-]*+://[^<>\s]*+$",
-                    text[max(0, match.start() - 8192) : match.start()],
-                )
-                is None
-            ):
-                cursor = boundary.end()
-                continue
-            if (
-                (
-                    boundary.group() == "?"
-                    and (not encoded or syntax.depth(boundary.start()) <= operator_depth)
-                )
-                or (boundary.group() == "?" and encoded_positions.form)
-                or (
-                    boundary.group() not in {"?", "&", "#"}
-                    and encoded
-                    and (boundary[0].isspace() or syntax.depth(boundary.start()) > operator_depth)
-                    and syntax.quote_closings.get(boundary.start(), boundary.start())
-                    >= match.start()
-                )
-                or (
-                    syntax.depth(boundary.start()) > operator_depth
-                    and boundary.group() in {"&", "#"}
-                )
-                or (
-                    boundary.group() in "\"'`[]{}()"
-                    and (
-                        syntax.closings.get(
-                            boundary.start(),
-                            syntax.quote_closings.get(boundary.start(), boundary.start()),
-                        )
-                        >= match.start()
-                        or not syntax.boundary(text, boundary.start())
-                    )
-                )
-            ):
-                cursor = boundary.end()
-                continue
-            end = boundary.start()
-            break
+                char == "?"
+                and encoded
+                and syntax.depth(boundary.start()) > operator_depth
+                and not encoded_positions.form
+            ) or char.startswith("%"):
+                end = boundary.start()
+                break
+            cursor = boundary.end()
+        end = syntax.trim(text, start, end)
         if syntax.private(text, "token" if key.lower() in signed else key, start, end):
             position = max(position, end)
             yield start, end, "url_token", _REDACTED
+
 
 
 def _userinfo_spans(text, syntax):
@@ -2697,19 +3005,9 @@ def _userinfo_spans(text, syntax):
             return self.current
 
     def boundaries(level, special):
-        for boundary in re.finditer(r"[/\?#\\\s\"'`()\[\]{}>]", text):
+        for boundary in re.finditer(r"[/\?#\\\s]", text):
             pos = boundary.start()
-            enclosing = min(syntax.closings.get(pos, pos), syntax.quote_closings.get(pos, pos))
-            if (
-                syntax.depth(pos) <= level
-                or (syntax.proven_closings.get(pos) is not None and enclosing < pos)
-            ) and (
-                boundary[0] in "/?#"
-                or boundary[0].isspace()
-                or (boundary[0] == "\\" and special)
-                or (enclosing < pos and syntax.boundary(text, pos))
-                or boundary[0] == ">"
-            ):
+            if syntax.depth(pos) <= level and (boundary[0] != "\\" or special):
                 yield pos
 
     def candidate_boundaries(level):
@@ -2751,27 +3049,36 @@ def _userinfo_spans(text, syntax):
         end = ends[key].first(position)
         if special:
             end = min(end, raw_ends.first(position))
-        while (
-            end < len(text)
-            and text[end] in "\"'()[]{}"
-            and min(syntax.closings.get(end, end), syntax.quote_closings.get(end, end))
-            >= match.start()
-        ):
-            end = ends[key].first(end + 1)
         end = min(end, next_boundary)
-        # Only a '<' immediately introducing the URL proves an autolink.
-        if text[match.start() - 1 : match.start()] != "<":
-            while end < len(text) and text[end] == ">":
-                end = min(ends[key].first(end + 1), next_boundary)
+        first_at = ats.first(position)
+        colon = text.find(":", position, min(first_at, end))
+        if colon >= 0 and syntax.quote_token(text, colon + 1):
+            # The password's quote is innermost; an adjacent URL bracket cannot
+            # close it. Natural authority terminators still bound the URL.
+            owned = syntax.proven_end(colon + 1)
+            own_close = syntax.quoted_end(text, colon + 1)
+            if own_close is not None:
+                owned = min(owned, own_close - 1) if owned is not None else own_close - 1
+        else:
+            owned = syntax.owned_end(text, match.start(), position)
+        if owned is not None:
+            end = min(end, owned)
+        if text[match.start() - 1 : match.start()] == "<" and not (
+            colon >= 0 and syntax.quote_token(text, colon + 1)
+        ):
+            autolink = text.find(">", position, end)
+            if autolink >= 0 and syntax.boundary(text, autolink):
+                end = autolink
         first_at = ats.first(position)
         if first_at < end:
             colon = text.find(":", position, first_at)
             at = first_at
             while ats.first(at + 1) < end:
                 at = ats.current
-            if colon >= 0 and redaction_sensitive_value("password", text[colon + 1 : at]):
+            if colon >= 0 and syntax.private(text, "password", colon + 1, at):
                 yield colon + 1, at, "url_token", _REDACTED
         match = following
+
 
 
 def _cookie_spans(text, syntax):
@@ -2787,9 +3094,6 @@ def _cookie_spans(text, syntax):
         members = 1
         position = max(end, match.end())
         while separator := re.compile(r";[^\S\r\n]*+(?=" + _NAME + r"=)").match(text, position):
-            context = syntax.separator_context.get(position)
-            if context and context[0] == "(" and context[1] < begin:
-                break  # Call arguments and signatures never form cookie chains.
             next_pair = re.compile(r"(?P<key>" + _NAME + r")=[^\S\r\n]*+").match(
                 text, separator.end()
             )
@@ -2811,13 +3115,15 @@ def _cookie_spans(text, syntax):
             position = match.end()
 
 
-def _jar_spans(text):
+
+def _jar_spans(text, syntax):
     pattern = re.compile(
         r"(?m)(?<!\S)(?:#HttpOnly_)?[^\s]++\t(?:TRUE|FALSE)\t[^\t\r\n]*+\t(?:TRUE|FALSE)\t[0-9]++\t[^\t\r\n]++\t(?P<value>[^\r\n]*+)"
     )
     for match in pattern.finditer(text):
-        if redaction_sensitive_value("cookie", match["value"]):
+        if syntax.private(text, "cookie", *match.span("value")):
             yield *match.span("value"), "cookie", _REDACTED
+
 
 
 def _bearer_spans(text):
@@ -2982,45 +3288,57 @@ def _html_spans(text, syntax):
 
 
 def _curl_spans(text, syntax):
-    position = 0
     pattern = re.compile(
-        r"(?<![A-Za-z0-9_-])(?:(?P<long>--user|--cookie)(?:=|[^\S\r\n]++|(?=[\"']))|"
-        r"(?P<short>-[ub])[^\S\r\n]*+)"
+        r"(?P<curl>(?<![A-Za-z0-9_])curl\b)|"
+        r"(?P<boundary>[;|&\r\n])|"
+        r"(?<![A-Za-z0-9_])(?:(?P<long>--user|--cookie)(?:=|[^\S\r\n]++|(?=[\"']))|(?P<short>-[ub])[^\S\r\n]*+)"
     )
+    position = 0
+    curl = False
     while match := pattern.search(text, position):
+        position = match.end()
+        if match["curl"]:
+            curl = True
+            continue
+        if match["boundary"]:
+            curl = False
+            continue
+        if match["short"] and not curl:
+            continue
         start = match.end()
         if (
             text[start : start + 1] in {'"', "'", "`"}
             and text[match.start() - 1 : match.start()] == text[start : start + 1]
+            and text[start + 1 : start + 2].isspace()
         ):
-            if not text[start + 1 : start + 2].isspace():
-                position = start + 1
-                continue
-            start += 1  # A quoted flag ends before its separate argument.
-            if start >= len(text) or not text[start].isspace():
-                position = start
-                continue
+            start += 1
             while start < len(text) and text[start].isspace():
                 start += 1
-        end = syntax.value(text, start, operator_depth=syntax.depth(match.start()))
-        position = match.end()
-        if (match["long"] or match["short"]) in {"-b", "--cookie"}:
-            if syntax.private(text, "cookie", start, end):
-                position = max(end, match.end())
-                quoted = text[start : start + 1] in {'"', "'", "`"}
-                yield (
-                    start + int(quoted),
-                    end - int(quoted and text[end - 1 : end] == text[start]),
-                    "cookie",
-                    _REDACTED,
-                )
-            continue
-        colon = text.find(":", start, end)
-        if colon >= 0 and redaction_sensitive_value("password", text[colon + 1 : end]):
-            position = max(end, match.end())
-            if text[start : start + 1] in "\"'`" and text[end - 1 : end] == text[start]:
-                end -= 1
-            yield colon + 1, end, "sensitive_field", _REDACTED
+        end = syntax.value(
+            text,
+            start,
+            operator_depth=syntax.depth(match.start()),
+            construct=match.start(),
+            trim=False,
+        )
+        token = syntax.quote_token(text, start)
+        closed = token and syntax.quoted_end(text, start) == end
+        begin = start + (len(token) if token else 0)
+        finish = end - ((1 if token == "$'" else len(token)) if closed else 0)
+        key = "cookie" if (match["long"] or match["short"]) in {"-b", "--cookie"} else "password"
+        if key == "password":
+            colon = text.find(":", begin, finish)
+            if colon < 0:
+                continue
+            begin = colon + 1
+        if not token:
+            finish = syntax.trim(text, begin, finish)
+        if syntax.private(text, key, begin, finish):
+            position = max(position, end)
+            if not token and re.search(r"[;|&\r\n]", text[match.end() : end]):
+                curl = False
+            yield begin, finish, "cookie" if key == "cookie" else "sensitive_field", _REDACTED
+
 
 
 def _path_spans(text):
@@ -3190,6 +3508,11 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
         quoted = kind == '"'
         first, stop = start + int(quoted), end - int(quoted and text[end - 1 : end] == '"')
         opaque = stop - first <= len(_REDACTED) and text[first:stop] in {_REDACTED, "REDACTED", ""}
+        if quoted:
+            raw = text[first:stop]
+            value, edits = _decode_view(raw, json_escapes=True)
+            depths = _decoding_depths(len(raw), [edits]) if edits else None
+            opaque = _credential_value_exempt("password", value, depths=depths)
         slot = len(slots)
         previous = frame.get("value") if key == "value" and not opaque else None
         slots.append(
@@ -3364,6 +3687,7 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
     )
 
 
+
 def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False, _percent_depth=0):
     # Recovery and wrapper views may overlap. Order spans with a linear numeric
     # index rather than sorting or assuming recovery visits them in source order.
@@ -3532,7 +3856,7 @@ def _view_spans(text, encoded_positions, syntax):
             _query_spans(text, syntax, encoded_positions),
             _userinfo_spans(text, syntax),
             _cookie_spans(text, syntax),
-            _jar_spans(text),
+            _jar_spans(text, syntax),
             _bearer_spans(text),
             _prefix_spans(text),
             _jwt_spans(text),
@@ -3545,6 +3869,7 @@ def _view_spans(text, encoded_positions, syntax):
             _path_spans(text),
         ]
     )
+
 
 
 def _close_assignment_spans(text, spans, syntax):
@@ -3820,9 +4145,17 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     original_syntax = _Syntax(text, proven=original_proofs) if layers else None
     original_fields = _assignment_spans(text, original_syntax) if layers else ()
     original_headers = _header_spans(text, original_syntax) if layers else ()
+    original_markup = _xml_spans(text, original_syntax) if layers else ()
     spans = _SpanIndex(
         _merge_spans(
-            [spans, original_fields, original_headers, _bearer_spans(text), _har_spans(text)]
+            [
+                spans,
+                original_fields,
+                original_headers,
+                original_markup,
+                _bearer_spans(text),
+                _har_spans(text),
+            ]
         )
     )
     if not spans:
@@ -3840,6 +4173,7 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     return "".join(parts), [
         {"kind": kind, "count": count} for kind, count in sorted(counts.items())
     ]
+
 
 
 def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
