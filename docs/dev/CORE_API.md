@@ -37,6 +37,15 @@ is not a MetaMuse workspace). Tests must use the `pytest-disktmp` wrapper's `tmp
 `runtime/maintenance.lock` added. Created directories are 0700 and files 0600 on POSIX.
 No Windows executor support is claimed: this build uses `fcntl` on Linux/WSL2.
 
+Before opening SQLite, Store refuses linked or nonregular database/sidecar files.
+SQLite's last connection may unlink a WAL/SHM sidecar during `lstat`, which can
+return a regular inode with zero links instead of raising `FileNotFoundError`.
+Only for those live sidecars, Store rechecks the current pathname once with the
+strict file checks: absence is allowed, while a symlink, hardlink or nonregular
+replacement is refused. The database and archive checks remain strict; a second
+race during revalidation can still refuse the open. This is a file check, with
+no transaction, job or external-action replay.
+
 `ctx.store` is the only database owner. `ctx.clock` and `ctx.store.clock` are callables
 returning UTC ISO timestamps; `AppContext.open(clock=...)` sets both. `ctx.logger` is
 a Python logger. `ctx.limits` is `models.Limits`; `ctx.policy` is the complete typed

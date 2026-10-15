@@ -521,7 +521,7 @@ class Store:
         ):
             try:
                 if path.is_symlink() or path.exists():
-                    _regular_file(path)
+                    _regular_file(path, _recheck_unlinked=path != self.paths.database)
             except FileNotFoundError:
                 # SQLite removes -wal/-shm when another connection closes. A file that
                 # vanished after the existence check is absent, as if never seen.
@@ -2145,10 +2145,16 @@ def _write_restore_marker(paths: WorkspacePaths) -> None:
     _fsync_dir(paths.runtime)
 
 
-def _regular_file(path: Path) -> None:
+def _regular_file(path: Path, *, _recheck_unlinked: bool = False) -> None:
     if path.is_symlink() or path.resolve() != path:
         raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Linked archive file is unavailable")
     info = path.lstat()
+    if _recheck_unlinked and stat.S_ISREG(info.st_mode) and info.st_nlink == 0:
+        # A racing lstat can observe SQLite's now-unlinked sidecar inode. Check
+        # the current pathname once: absence is handled by _open_database, and
+        # a replacement must still pass every normal link/type check.
+        _regular_file(path)
+        return
     if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
         raise m.CoreError(
             m.ErrorCode.RESOURCE_UNAVAILABLE, "Archive file is not a private regular file"
