@@ -503,6 +503,11 @@ TTY. Auth values and resolved secret-target paths never appear; explicitly suppl
 workspace paths remain in the requested operator command. Revoked bindings ask to
 import and rebind.
 
+Quote and bracket pairs are tracked at every decoding layer, including inside an
+outer string. Quoted command arguments may open at their operator layer or deeper,
+and end at the matching quote at that layer. Spaces inside remain value data.
+Exempt environment lookups end at their own closing bracket or parenthesis.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -1051,6 +1056,11 @@ commands refuse before opening anything; scripted human permit approval needs no
 TTY. Auth values and resolved secret-target paths never appear; explicitly supplied
 workspace paths remain in the requested operator command. Revoked bindings ask to
 import and rebind.
+
+Quote and bracket pairs are tracked at every decoding layer, including inside an
+outer string. Quoted command arguments may open at their operator layer or deeper,
+and end at the matching quote at that layer. Spaces inside remain value data.
+Exempt environment lookups end at their own closing bracket or parenthesis.
 
 ---
 

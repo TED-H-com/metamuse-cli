@@ -407,3 +407,8 @@ callers that discard findings. Packets/bundles additionally refuse the finding.
 URL authority candidates end at their enclosing quote/bracket at the same or a shallower
 decoding layer, or the next scheme://. Each scheme is scanned independently; a root
 URL never consumes a later URL. Unenclosed punctuation remains userinfo data.
+
+Quote and bracket pairs are tracked at every decoding layer, including inside an
+outer string. Quoted command arguments may open at their operator layer or deeper,
+and end at the matching quote at that layer. Spaces inside remain value data.
+Exempt environment lookups end at their own closing bracket or parenthesis.

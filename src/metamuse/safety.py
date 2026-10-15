@@ -1703,32 +1703,32 @@ class _Syntax:
         self.separator_context = {}
         self.quotes = []
         self.line_ends = [m.start() for m in re.finditer(r"[\r\n]", text)]
-        quote_ends = {}
-        previous_quotes = {}
+        pending = {}
         stack = []
-        quote = None
-        opening = None
         for match in re.finditer(r"\\[\s\S]|[\"'()\[\]{},;]", text):
-            char = match.group()
-            pos = match.start()
+            char, pos = match[0], match.start()
             if char.startswith("\\"):
                 continue
+            level = self.depth(pos)
             if char in "\"'":
-                level = self.depth(pos)
-                for pending in range(level, self.max_depth + 1):
-                    previous = previous_quotes.pop((char, pending), None)
-                    if previous is not None:
-                        quote_ends[previous] = pos + 1
-                previous_quotes[char, level] = pos
-            if quote:
-                if char == quote and self.depth(pos) <= self.depth(opening):
+                previous = pending.pop((char, level), None)
+                if previous is None:
+                    pending[char, level] = (pos, len(self.quotes))
+                    self.quotes.append((pos, len(text)))
+                else:
+                    opening, index = previous
                     self.ends[opening] = pos + 1
-                    self.quotes.append((opening, pos))
+                    self.quotes[index] = (opening, pos)
                     self.quote_closings[pos] = opening
-                    quote = opening = None
-                continue
-            if char in "\"'":
-                quote, opening = char, pos
+                    # A delimiter cannot cross an enclosing string's closing quote.
+                    for channel, (inner, inner_index) in list(pending.items()):
+                        if inner > opening and channel[1] >= level:
+                            self.ends[inner] = pos
+                            self.quotes[inner_index] = (inner, pos)
+                            del pending[channel]
+                    while stack and stack[-1][1] > opening:
+                        _, begin = stack.pop()
+                        self.ends[begin] = pos
             elif char in ",;":
                 if stack:
                     self.separator_context[pos] = stack[-1]
@@ -1742,14 +1742,10 @@ class _Syntax:
                 _, begin = stack.pop()
                 self.ends[begin] = pos + 1
                 self.closings[pos] = begin
-        if opening is not None:
+        for opening, _ in pending.values():
             self.ends[opening] = len(text)
-            self.quotes.append((opening, len(text)))
         for _, begin in stack:
             self.ends[begin] = len(text)
-        for previous in previous_quotes.values():
-            quote_ends[previous] = len(text)
-        self.ends.update(quote_ends)
         triple = None
         for match in re.finditer(r"\\[\s\S]|" + '"' * 3 + "|" + "'" * 3, text):
             delimiter = match[0]
@@ -1807,11 +1803,17 @@ class _Syntax:
         if start >= len(text):
             return start
         level = self.depth(start) if operator_depth is None else operator_depth
-        quoted_end = (
-            self.ends.get(start, len(text))
-            if text[start] in "\"'" and self.depth(start) <= level
-            else start
-        )
+        call = re.compile(r"os\.(?:getenv\(|environ\[)").match(text, start)
+        if call:
+            finish = self.ends.get(call.end() - 1, len(text))
+            if (
+                finish == len(text)
+                or text[finish].isspace()
+                or text[finish] in "\"',;}])"
+                or re.compile(r"\\+[nr]").match(text, finish)
+            ):
+                return finish
+        quoted_end = self.ends.get(start, len(text)) if text[start] in "\"'" else start
         if quoted_end > start and (
             quoted_end == len(text) or text[quoted_end].isspace() or text[quoted_end] in ",;&)]}"
         ):
@@ -1988,11 +1990,7 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             and text[start : start + 1] == text[match.start() - 1 : match.start()]
         ):
             end = start  # Empty value in a string such as prompt='Password: '.
-        quoted = (
-            yaml_end is None
-            and text[start : start + 1] in {'"', "'"}
-            and syntax.depth(start) <= operator_depth
-        )
+        quoted = yaml_end is None and text[start : start + 1] in {'"', "'"} and start in syntax.ends
         nested = (
             trailing_assignment.search(text, max(start, end - 134), end) if not quoted else None
         )
@@ -2011,7 +2009,11 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             while line_index < len(syntax.line_ends) and syntax.line_ends[line_index] < end:
                 line_index += 1
             end = syntax.line_ends[line_index] if line_index < len(syntax.line_ends) else len(text)
-        if not quoted and any(c in text[start:end] for c in "\"'"):
+        if (
+            not quoted
+            and any(c in text[start:end] for c in "\"'")
+            and not _credential_value_exempt(key, text[start:end])
+        ):
             while line_index < len(syntax.line_ends) and syntax.line_ends[line_index] < start:
                 line_index += 1
             end = max(
