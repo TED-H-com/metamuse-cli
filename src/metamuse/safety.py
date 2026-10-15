@@ -3855,9 +3855,28 @@ def _command_spans(text, syntax):
     pattern = re.compile(
         r"(?i)(?P<mysql>\b(?:mysql|mariadb|mysqldump)\b)|"
         r"(?P<attached>\s[\"']?-p(?=\S))|(?P<boundary>[\r\n;&|])|"
-        r"\b(?:IDENTIFIED\s++BY|WITH\s++PASSWORD)\s++|"
+        r"(?P<sql>\b(?:IDENTIFIED\s++BY|WITH\s++PASSWORD)\s++)|"
         r"(?P<sshpass>\bsshpass\s++[\"']?-p)[^\S\r\n]*+"
     )
+    # Statement tokens are consumed once, even when many CREATE words have
+    # no principal. A lazy wildcard restarted at each CREATE is quadratic.
+    sql_ranges = []
+    begin = None
+    principal = False
+    for word in re.finditer(r"(?i)\b(?:CREATE|ALTER|GRANT|SET|USER|ROLE|LOGIN)\b|;", text):
+        token = word[0].upper()
+        if token == ";":
+            if begin is not None and principal:
+                sql_ranges.append((begin, word.start()))
+            begin, principal = None, False
+        elif begin is None and token in {"CREATE", "ALTER", "GRANT", "SET"}:
+            begin = word.start()
+        elif begin is not None and token in {"USER", "ROLE", "LOGIN"}:
+            principal = True
+    if begin is not None and principal:
+        sql_ranges.append((begin, len(text)))
+    sql_ranges = iter(sql_ranges)
+    sql_range = next(sql_ranges, None)
     position = 0
     mysql = False
     mysql_depth = 0
@@ -3873,6 +3892,11 @@ def _command_spans(text, syntax):
             continue
         if match["attached"] and not mysql:
             continue
+        if match["sql"]:
+            while sql_range is not None and sql_range[1] <= match.start():
+                sql_range = next(sql_ranges, None)
+            if sql_range is None or not sql_range[0] <= match.start() < sql_range[1]:
+                continue
         start = match.end()
         if (
             text[start : start + 1] in {'"', "'", "`"}
@@ -3882,7 +3906,9 @@ def _command_spans(text, syntax):
             start += 1
             while start < len(text) and text[start].isspace():
                 start += 1
-        end = syntax.value(text, start, operator_depth=syntax.depth(match.start()))
+        end = syntax.value(
+            text, start, operator_depth=syntax.depth(match.start()), construct=match.start()
+        )
         if syntax.private(text, "password", start, end):
             position = max(match.end(), end)
             quoted = text[start : start + 1] in {'"', "'", "`"}
@@ -3892,6 +3918,7 @@ def _command_spans(text, syntax):
                 "sensitive_field",
                 _REDACTED,
             )
+
 
 
 def _view_spans(text, encoded_positions, syntax):
