@@ -132,7 +132,7 @@ Structured packet/bundle records apply the same exemptions to every value type.
 Authorization and Proxy-Authorization values with a scheme and following material
 are private through end of line (or their enclosing string), regardless of scheme.
 A bare standard scheme such as `Authorization: Bearer` has no credential. Opaque
-Cookie/Set-Cookie values, folded headers, cookie chains joined by `;`, `,` or `&`,
+Cookie/Set-Cookie values, folded headers, cookie chains joined by `;` outside a cookie context,
 and Netscape cookie-jar value fields are covered. Unknown assignments outside cookie
 chains remain ordinary data. Userinfo passwords in any URL scheme run from the first
 colon after `//` to the last `@` before the authority ends, including empty users.
@@ -431,3 +431,11 @@ stored topic or exactly its current display-redacted form. The saved approval
 request never carries the raw topic. A stale saved display is E_REFERENCE_INVALID
 and asks to request reconciliation again. Stored topics are never re-checked as
 new outbound text.
+
+Outside a cookie context a chain is at least two name=value pairs joined only
+by semicolons and optional spaces. Commas, ampersands and spaces alone do not
+make chains; call arguments and signatures never do. Generic member names are
+private only in a chain or cookie context: Cookie/Set-Cookie, document.cookie,
+curl -b/--cookie, Netscape jars and HAR cookies arrays. Sensitive names such as
+sid remain private in ordinary comma-separated assignments. Equality comparisons
+are not assignment operators.

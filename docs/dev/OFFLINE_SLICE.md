@@ -180,3 +180,11 @@ Out of scope: .netrc and .pgpass lines need separate positional file grammars;
 token-only URL userinfo has no password delimiter (known token prefixes still
 apply); localized names such as 密碼 require an explicitly maintained language
 policy. These omissions are not evidence that a document is public.
+
+Outside a cookie context a chain is at least two name=value pairs joined only
+by semicolons and optional spaces. Commas, ampersands and spaces alone do not
+make chains; call arguments and signatures never do. Generic member names are
+private only in a chain or cookie context: Cookie/Set-Cookie, document.cookie,
+curl -b/--cookie, Netscape jars and HAR cookies arrays. Sensitive names such as
+sid remain private in ordinary comma-separated assignments. Equality comparisons
+are not assignment operators.

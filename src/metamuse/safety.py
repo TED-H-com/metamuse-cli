@@ -1844,7 +1844,7 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
     pattern = re.compile(
         r"(?:(?P<q>[\"'])(?P<quotedkey>" + _NAME + r")(?P=q)(?:\])?|"
         r"(?<![A-Za-z0-9_.%?&#-])(?P<flag>--|-D|-)?(?P<key>" + _NAME + r"))"
-        r"(?:\s*+(?P<sep>=>|[=:：＝])\s*+|(?P<flagspace>\s++))",
+        r"(?:\s*+(?P<sep>=>|=(?!=)|:(?!=)|[：＝])\s*+|(?P<flagspace>\s++))",
     )
     position = line_index = 0
     while match := pattern.search(text, position):
@@ -1966,7 +1966,7 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
 
 
 def _header_spans(text, syntax):
-    pattern = re.compile(r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*[:=：＝]\s*+")
+    pattern = re.compile(r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*(?:=(?!=)|[:：＝])\s*+")
     line_end = re.compile(r"[\r\n]")
     fold = re.compile(r"\r?\n\s+")
     position = quote_index = 0
@@ -2161,7 +2161,9 @@ def _cookie_spans(text, syntax):
     position = 0
     while match := pair.search(text, position):
         begin = match.start()
-        end = syntax.value(text, match.end(), list_separators=True)
+        end = syntax.value(
+            text, match.end(), list_separators=True, operator_depth=syntax.depth(match.end() - 1)
+        )
         sensitive = redaction_sensitive_value(match["key"], text[match.end() : end])
         generic = (
             not _credential_value_exempt(match["key"], text[match.end() : end])
@@ -2170,15 +2172,21 @@ def _cookie_spans(text, syntax):
         )
         members = 1
         position = max(end, match.end())
-        while separator := re.compile(r"[;, &][^\S\r\n]*+(?=" + _NAME + r"=)").match(
-            text, position
-        ):
+        while separator := re.compile(r";[^\S\r\n]*+(?=" + _NAME + r"=)").match(text, position):
+            context = syntax.separator_context.get(position)
+            if context and context[0] == "(" and context[1] < begin:
+                break  # Call arguments and signatures never form cookie chains.
             next_pair = re.compile(r"(?P<key>" + _NAME + r")=[^\S\r\n]*+").match(
                 text, separator.end()
             )
             if not next_pair:
                 break
-            finish = syntax.value(text, next_pair.end(), list_separators=True)
+            finish = syntax.value(
+                text,
+                next_pair.end(),
+                list_separators=True,
+                operator_depth=syntax.depth(next_pair.end() - 1),
+            )
             sensitive |= redaction_sensitive_value(next_pair["key"], text[next_pair.end() : finish])
             generic |= (
                 not _credential_value_exempt(next_pair["key"], text[next_pair.end() : finish])
@@ -2308,11 +2316,21 @@ def _xml_spans(text, syntax):
 
 def _curl_spans(text, syntax):
     position = 0
-    pattern = re.compile(r"(?<![A-Za-z0-9_])(?:-u|--user)[^\S\r\n]++")
+    pattern = re.compile(r"(?<![A-Za-z0-9_])(?P<flag>-u|--user|-b|--cookie)[^\S\r\n]++")
     while match := pattern.search(text, position):
         start = match.end()
         end = syntax.value(text, start)
         position = max(end, match.end())
+        if match["flag"] in {"-b", "--cookie"}:
+            if redaction_sensitive_value("cookie", text[start:end]):
+                quoted = text[start : start + 1] in {'"', "'"}
+                yield (
+                    start + int(quoted),
+                    end - int(quoted and text[end - 1 : end] == text[start]),
+                    "cookie",
+                    _REDACTED,
+                )
+            continue
         colon = text.find(":", start, end)
         if colon >= 0 and redaction_sensitive_value("password", text[colon + 1 : end]):
             if text[start : start + 1] in "\"'" and text[end - 1 : end] == text[start]:
