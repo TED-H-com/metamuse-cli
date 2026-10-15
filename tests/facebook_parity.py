@@ -83,6 +83,15 @@ def normalise(nodes):
     for i in kept:
         node = nodes[i]
         parent = parents.get(i)
+        container = None
+        ancestor = parent
+        while ancestor is not None:
+            if nodes[ancestor]["ns"] == "http://www.w3.org/1999/xhtml" and nodes[ancestor][
+                "tag"
+            ] in {"head", "body"}:
+                container = nodes[ancestor]["tag"]
+                break
+            ancestor = parents.get(ancestor)
         while parent is not None and parent not in kept:
             parent = parents.get(parent)
         records.append(
@@ -94,6 +103,7 @@ def normalise(nodes):
                 node["text"],
                 node["rendered"],
                 kept.get(parent),
+                container,
             )
         )
     pending, composed = [0], []

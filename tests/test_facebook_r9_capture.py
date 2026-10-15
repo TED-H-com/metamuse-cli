@@ -35,7 +35,7 @@ def test_r9_fixture_refuses_metadata_display_override():
 
 
 def test_r9_fixture_counts_implicit_document_nodes():
-    nodes = capture.fixture_capture("<!doctype html><html><body><span>TEXT</span></body></html>")
+    nodes = capture.fixture_capture("<!doctype html><html><head></head><body><span>TEXT</span></body></html>")
     assert len(nodes) == 7  # document, doctype, html, head, body, span, text
     assert [n["tag"] for n in nodes if n["kind"] == 1] == ["html", "head", "body", "span"]
 

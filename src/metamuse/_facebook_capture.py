@@ -350,6 +350,7 @@ class FixtureTree(HTMLParser):
         self.stack = [0]
         self.open_tags: Counter[str] = Counter()
         self.wrappers: set[str] = set()
+        self.document_stage = "before"
 
     def feed(self, data):
         if "\0" in data:
@@ -360,6 +361,17 @@ class FixtureTree(HTMLParser):
         if not fixture_attributes_safe(self.get_starttag_text()):
             raise failure()
         parent = self.nodes[self.stack[-1]]
+        # Refuse insertion-mode repair instead of approximating HTML5. A
+        # fragment has no wrappers; an explicit document supplies all three.
+        if tag in {"html", "head", "body"}:
+            expected = {"before": "html", "html": "head", "after-head": "body"}
+            if tag != expected.get(self.document_stage):
+                raise failure()
+            self.document_stage = tag
+        elif self.document_stage in {"html", "after-head", "after-body", "after-html"}:
+            raise failure()
+        elif self.document_stage == "before":
+            self.document_stage = "fragment"
         tags = self.open_tags
         ns = parent["ns"] or HTML
         if ns == MATH and parent["tag"] in {"mi", "mo", "mn", "ms", "mtext"}:
@@ -517,6 +529,14 @@ class FixtureTree(HTMLParser):
         if len(self.stack) == 1 or current["tag"] != tag:
             raise failure()
         self.stack.pop()
+        if current["ns"] == HTML and tag in {"html", "head", "body"}:
+            if tag == "html" and self.document_stage != "after-body":
+                raise failure()
+            self.document_stage = {
+                "head": "after-head",
+                "body": "after-body",
+                "html": "after-html",
+            }[tag]
         self.open_tags[tag] -= 1
         if not self.open_tags[tag]:
             del self.open_tags[tag]
@@ -531,6 +551,11 @@ class FixtureTree(HTMLParser):
             raise failure()
 
     def handle_data(self, data):
+        if (
+            self.document_stage in {"html", "after-head", "after-body", "after-html"}
+            and data.strip()
+        ):
+            raise failure()
         parent = self.nodes[self.stack[-1]]
         if (
             parent["ns"] not in {"", HTML}
@@ -538,6 +563,8 @@ class FixtureTree(HTMLParser):
             and parent["tag"] not in {"text", "tspan", "mi", "mn", "mo", "mtext", "ms"}
         ):
             raise failure()
+        if parent["tag"] == "script" and "<!--" in data.lower():
+            raise failure()  # Script data escape states are not rawtext.
         if parent["tag"] == "pre" and not parent["children"] and data.startswith("\n"):
             data = data[1:]
         if not data:
@@ -575,6 +602,8 @@ class FixtureTree(HTMLParser):
             raise failure()
 
     def handle_comment(self, data):
+        if self.document_stage in {"html", "after-head", "after-body", "after-html"}:
+            raise failure()
         self.nodes[self.stack[-1]]["children"].append(len(self.nodes))
         self.nodes.append(
             dict(kind=8, tag="", ns="", attrs={}, text="", rendered=False, children=[], composed=[])
@@ -598,6 +627,10 @@ class FixtureTree(HTMLParser):
 
     def finish(self):
         if self.stack != [0]:
+            raise failure()
+        if self.wrappers and (
+            self.wrappers != {"html", "head", "body"} or self.document_stage != "after-html"
+        ):
             raise failure()
         self.complete_document()
         validate(self.nodes)
@@ -681,11 +714,22 @@ class FixtureTree(HTMLParser):
         htmls = [i for i in root if nodes[i]["tag"] == "html"]
         if htmls:
             html = htmls[0]
-            if any(i != html and nodes[i]["kind"] not in {8, 10} for i in root):
+            if any(i != html and nodes[i]["kind"] not in {3, 8, 10} for i in root):
                 raise failure()
             children = nodes[html]["children"]
+            body = next(i for i in children if nodes[i]["tag"] == "body")
+            after_body = children[children.index(body) + 1 :]
+            after_html = root[root.index(html) + 1 :]
             if any(
-                nodes[i]["tag"] not in {"head", "body"} and nodes[i]["kind"] != 8 for i in children
+                nodes[i]["kind"] != 3 or nodes[i]["text"].strip() for i in after_body + after_html
+            ):
+                raise failure()
+            nodes[body]["children"].extend(after_body + after_html)
+            children[:] = children[: children.index(body) + 1]
+            nodes[0]["children"] = root[: root.index(html) + 1]
+            if any(
+                nodes[i]["tag"] not in {"head", "body"} and nodes[i]["kind"] not in {3, 8}
+                for i in children
             ):
                 raise failure()
         else:

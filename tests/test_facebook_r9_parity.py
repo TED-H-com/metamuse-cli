@@ -47,8 +47,14 @@ def test_r9_fixture_differential_corpus(tmp_path, monkeypatch):
         .splitlines()
     }
     seed_size = int(os.environ.get("METAMUSE_FACEBOOK_PARITY_SIZE", "160"))
+    from test_facebook_r10_fixture import insertion_mode_corpus
+
     inputs = sorted(
-        literal_corpus() | set(seeded_corpus(seed_size)) | set(class_corpus()) | recorded
+        literal_corpus()
+        | set(seeded_corpus(seed_size))
+        | set(class_corpus())
+        | recorded
+        | set(insertion_mode_corpus())
     )
     raw_overbound = sum(len(markup.encode()) > capture.MAX_TEXT_BYTES for markup in inputs)
     inputs = [markup for markup in inputs if len(markup.encode()) <= capture.MAX_TEXT_BYTES]
