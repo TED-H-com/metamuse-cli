@@ -121,6 +121,13 @@ open在提交與boundary兩次檢查同project/account的未解create；已queue
 B09安全狀態：authenticated CVM hint bind以單一bulk transaction保存全部usable identities，
 closure只計算一次；confidential evidence先獨立commit，才檢查local label。無recording cap。
 
+Notary freshness is only a cache hint, not local signature/expiry verification.
+Missing or undecodable third-segment JSON, a non-object document or non-list restrictions
+means no hint. Skip non-strings, non-timeout prefixes and entries whose stripped timeout:
+remainder fails Python float(), is non-finite or is <= 0. The first positive finite
+value decides stale iff expiry <= now + 60 seconds; ignore later entries. None usable
+means not stale. Mint at most twice; a twice-stale remint stops before wake or dial.
+
 ## 7. 分享與草稿
 
 Packet固定版本；修正建立新packet。批准可以涵蓋已展示的project snapshot，允許host在其中自行選資料和有限追問；新增來源或帳號需新範圍。不需要每個讀取都打斷使用者，但每次實際外送內容要可回查。

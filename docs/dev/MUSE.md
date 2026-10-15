@@ -126,8 +126,16 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    is validated. Case-insensitive delegation./endorsement. prefixes and malformed/oversized
    s0 envelopes stop with `E_PROTOCOL_MISMATCH` (`never`); aliases are never silently dropped.
    Conflicting nonempty notary aliases also stop.
-   No local signature/expiry verification is claimed. A first parseable positive finite
-   `timeout:` restriction is only a cache hint: mint at most twice if within 60 seconds.
+   No local signature/expiry verification is claimed. This is only a cache hint:
+   decode the third notary segment as before; missing/undecodable/non-object JSON or
+   non-list `restrictions` means no hint. Scan restrictions in order, skipping
+   non-strings, strings without the exact `timeout:` prefix, and unusable timeouts.
+   Parseable means Python `float()` of the stripped remainder (including its accepted
+   sign, exponent, underscore and Unicode decimal-digit forms). Parse failures,
+   non-finite values and values <= 0 are unusable and skipped. The first positive
+   finite value decides: stale iff expiry <= wall-clock now + 60 seconds; later
+   entries are ignored. No usable entry means no hint, so not stale. Mint at most
+   twice, then stop if the remint is still stale.
    Credentials are minted anew per connection, held only in memory for connection-lifetime redaction and never cached durably.
 5. POST `/api/hatch/vm/wake` `{vm_id, retry_count: 0}`, then guarded WSS dial with exactly
    `vm_id`, `auth_token`, optional `notary_token`, `app_id=hatch-web`, `request_id=<fresh UUID4>`.
@@ -180,7 +188,7 @@ no JSON body. Read/mint success still requires bounded valid JSON and its own fi
 | Status | Code | retry_class |
 |---|---|---|
 | 401, 403 | `E_AUTH_REQUIRED` | `user_action` |
-| 429, integer `Retry-After` of 1 to 6 digits only | `E_RATE_LIMITED` | `safe_read` |
+| 429, integer `Retry-After` of 1 to 6 ASCII digits only | `E_RATE_LIMITED` | `safe_read` |
 | 3xx | `E_SCOPE_REQUIRED` | `user_action` |
 | HTTPS 5xx; WSS 5xx after its bounded redial (only 502/503/504 redial) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | 404, 409, 410 on session or wake | `E_RESOURCE_UNAVAILABLE` | `user_action` |

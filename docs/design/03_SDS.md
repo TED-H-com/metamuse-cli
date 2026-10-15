@@ -254,6 +254,13 @@ msg2 decrypt上限65535、先full RV discriminator再standard 8192 cap；session
 HTTP 200 missing/malformed fields是protocol/never；explicit ok:false或401/403才auth；twice-stale
 notary依公開MUSE_SPIKE §9.1 one-remint後stop；resource/retry-later是inference，無session refresh修復證據。
 
+Notary freshness is only a cache hint, not local signature/expiry verification.
+Missing or undecodable third-segment JSON, a non-object document or non-list restrictions
+means no hint. Skip non-strings, non-timeout prefixes and entries whose stripped timeout:
+remainder fails Python float(), is non-finite or is <= 0. The first positive finite
+value decides stale iff expiry <= now + 60 seconds; ignore later entries. None usable
+means not stale. Mint at most twice; a twice-stale remint stops before wake or dial.
+
 ### Session建立
 
 先建本地discussion＋open intent，再遠端create；回remote id才完成mapping。timeout時列open_uncertain。list對帳必須可靠識別，同標題不夠；找不到也不證明沒建。需要人選擇已有session時只顯示核准範圍，不掃其他私人對話猜。
