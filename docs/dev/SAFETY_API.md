@@ -542,6 +542,13 @@ PASSWORD require a CREATE/ALTER/GRANT/SET statement naming USER/ROLE/LOGIN befor
 the clause; the next semicolon bounds the statement. Ordinary git/python flags
 and prose mentioning identification do not become credentials.
 
+Implementation gap: the current curl anchor recognizes a curl token within a
+simple-command segment; it does not prove shell command-word position. This
+conservatively refuses some arguments to other commands. Strict command-word
+position conflicts with the mandatory natural prose context containing
+`rock 'n' roll` before curl. Resolving that policy remains required for full D10
+conformance; this limitation adds no exemption or accepted leak category.
+
 D11. Every scanner performs constant amortized work per character. Terminator,
 fold, quote, block and exemption extents are indexed once or memoized. Exempt
 values are entered once as bounded sub-contexts. A scanner never restarts an
