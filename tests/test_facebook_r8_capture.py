@@ -100,6 +100,11 @@ def test_r8_rendering_table_parity(tmp_path, monkeypatch, case, request):
     outcomes = []
     for driver in ["fixture", "chromium"]:
         job, stored = run(tmp_path / driver, monkeypatch, markup, driver)
+        if driver == "fixture" and case == "foreign-input":
+            assert (job.get("error") or {}).get("code") == "E_SELECTOR_DRIFT", job
+            assert job["error"]["message"] == "Facebook structured capture could not be completed"
+            assert stored == []
+            continue
         assert job["error"] is None, job
         text = stored[0]["text"]
         assert ("VISIBLE" in text) == visible, (driver, case, text)
@@ -112,7 +117,8 @@ def test_r8_rendering_table_parity(tmp_path, monkeypatch, case, request):
                 [(r["native_id"], r["text"]) for r in stored],
             )
         )
-    assert outcomes[0] == outcomes[1]
+    if case != "foreign-input":
+        assert outcomes[0] == outcomes[1]
 
 
 TAMPERS = {
@@ -227,10 +233,16 @@ def test_r8_barriers_in_every_tree(tmp_path, monkeypatch, location, request):
             + json.dumps(content)
             + "</script></body>",
         )
-    job, stored = run(tmp_path, monkeypatch, markup, "chromium")
-    assert (job.get("error") or {}).get("code") == "E_AUTH_REQUIRED", job
-    assert job["state"] == "awaiting_user"
-    assert stored == []
+    drivers = (
+        ["fixture", "chromium"]
+        if location in {"head", "meta", "hidden", "template"}
+        else ["chromium"]
+    )
+    for driver in drivers:
+        job, stored = run(tmp_path / driver, monkeypatch, markup, driver)
+        assert (job.get("error") or {}).get("code") == "E_AUTH_REQUIRED", job
+        assert job["state"] == "awaiting_user"
+        assert stored == []
 
 
 @pytest.mark.parametrize("kind", ["application/xhtml+xml", "application/xml", "image/svg+xml"])

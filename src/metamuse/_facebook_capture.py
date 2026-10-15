@@ -315,7 +315,7 @@ class FixtureTree(HTMLParser):
         ),
     }
     BLOCK = frozenset(
-        "address article aside blockquote div dl fieldset footer form h1 h2 h3 h4 h5 h6 header hgroup hr main menu nav ol p pre section table ul".split()
+        "address article aside blockquote details div dl fieldset figcaption figure footer form h1 h2 h3 h4 h5 h6 header hgroup hr main menu nav ol p pre section summary table ul".split()
     )
     TABLE = {
         "table": {"caption", "colgroup", "thead", "tbody", "tfoot"},
@@ -339,6 +339,8 @@ class FixtureTree(HTMLParser):
         parent = self.nodes[self.stack[-1]]
         tags = self.open_tags
         ns = parent["ns"] or HTML
+        if ns == MATH and parent["tag"] in {"mi", "mo", "mn", "ms", "mtext"}:
+            raise failure()  # MathML text integration points can switch to HTML.
         if tag == "svg" and ns == HTML:
             ns = SVG
         elif tag == "math" and ns == HTML:
@@ -367,6 +369,12 @@ class FixtureTree(HTMLParser):
             raise failure()
         style = attrs.get("style", "")
         if (
+            ns == HTML
+            and tag in {"meta", "base", "link", "param", "source", "track"}
+            and css(style, "display") is not None
+        ):
+            raise failure()  # Metadata display overrides are outside the static subset.
+        if (
             "\\" in style
             or "/*" in style
             or re.search(r"(?:^|;)\s*(?:all|animation[^:]*|transition[^:]*)\s*:", style, re.I)
@@ -389,6 +397,12 @@ class FixtureTree(HTMLParser):
             raise failure()  # No HTML breakout or foreign integration points.
         if tag == "template" and ({"shadowrootmode", "shadowroot"} & attrs.keys()):
             raise failure()
+        if (
+            parent["ns"] == HTML
+            and parent["tag"] in self.TABLE
+            and (ns != HTML or tag not in self.TABLE[parent["tag"]])
+        ):
+            raise failure()  # Includes foreign-content foster parenting.
         if ns == HTML:
             if tag in {"html", "head", "body"}:
                 if tag in self.wrappers or (tag == "head" and "body" in self.wrappers):
@@ -460,7 +474,9 @@ class FixtureTree(HTMLParser):
                 raise failure()
             self.stack.pop()
         current = self.nodes[self.stack[-1]]
-        if current["ns"] == HTML and tag in VOID:
+        if current["ns"] in {"", HTML} and tag in VOID:
+            if tag == "br":
+                self.handle_starttag("br", [])  # HTML5 treats </br> as <br>.
             return
         if len(self.stack) == 1 or current["tag"] != tag:
             raise failure()
@@ -488,6 +504,8 @@ class FixtureTree(HTMLParser):
             raise failure()
         if parent["tag"] == "pre" and not parent["children"] and data.startswith("\n"):
             data = data[1:]
+        if not data:
+            return
         if parent["tag"] == "head" and data.strip():
             raise failure()
         if parent["tag"] in self.TABLE and data.strip():
@@ -539,6 +557,7 @@ class FixtureTree(HTMLParser):
     def finish(self):
         if self.stack != [0]:
             raise failure()
+        self.complete_document()
         validate(self.nodes)
         pending = [(0, False, True)]
         while pending:
@@ -582,6 +601,8 @@ class FixtureTree(HTMLParser):
                 or (tag == "input" and attrs.get("type", "").lower() == "hidden")
             )
             node["rendered"] = node["kind"] in {1, 3} and not blocked and visibility
+            if node["rendered"] and node["kind"] == 3 and node["text"] and not node["text"].strip():
+                raise failure()  # A layout engine is required for whitespace-only boxes.
             node["composed"] = (
                 []
                 if node["ns"] == HTML and tag in {"template", "noscript"}
@@ -606,6 +627,71 @@ class FixtureTree(HTMLParser):
                     )
                 )
         return self.nodes
+
+    def complete_document(self):
+        """Insert the HTML5 document scaffold, including its bounded node cost.
+
+        The subset refuses misplaced explicit wrappers instead of modelling the
+        HTML5 insertion-mode repair machinery. Ordinary fragments use body context.
+        """
+        nodes = self.nodes
+
+        def shell(tag):
+            index = len(nodes)
+            nodes.append(
+                dict(
+                    kind=1,
+                    tag=tag,
+                    ns=HTML,
+                    attrs={},
+                    text="",
+                    rendered=False,
+                    children=[],
+                    composed=[],
+                )
+            )
+            return index
+
+        root = nodes[0]["children"]
+        htmls = [i for i in root if nodes[i]["tag"] == "html"]
+        if htmls:
+            html = htmls[0]
+            if any(i != html and nodes[i]["kind"] not in {8, 10} for i in root):
+                raise failure()
+            children = nodes[html]["children"]
+            if any(
+                nodes[i]["tag"] not in {"head", "body"} and nodes[i]["kind"] != 8 for i in children
+            ):
+                raise failure()
+        else:
+            html = shell("html")
+            children = [i for i in root if nodes[i]["kind"] != 10]
+            nodes[0]["children"] = [i for i in root if nodes[i]["kind"] == 10] + [html]
+        heads = [i for i in children if nodes[i]["tag"] == "head"]
+        bodies = [i for i in children if nodes[i]["tag"] == "body"]
+        head = heads[0] if heads else shell("head")
+        body = bodies[0] if bodies else shell("body")
+        others = [i for i in children if i not in {head, body}]
+        if bodies and any(nodes[i]["kind"] != 8 for i in others):
+            raise failure()
+        if heads and any(nodes[i]["kind"] not in {8, 10} for i in children[: children.index(head)]):
+            raise failure()
+        if not bodies:
+            nodes[body]["children"] = others
+        nodes[html]["children"] = (
+            (children if heads else [head] + children) if bodies else [head, body]
+        )
+        # Structural pre-order is also the flat capture order. This is linear,
+        # iterative, and does not discard any evidence or evade the node bound.
+        order, pending = [], [0]
+        while pending:
+            i = pending.pop()
+            order.append(i)
+            pending.extend(reversed(nodes[i]["children"]))
+        ids = {i: j for j, i in enumerate(order)}
+        self.nodes = [
+            dict(nodes[i], children=[ids[j] for j in nodes[i]["children"]]) for i in order
+        ]
 
 
 def fixture_capture(markup: str) -> list[dict[str, Any]]:

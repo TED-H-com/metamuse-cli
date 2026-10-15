@@ -25,6 +25,31 @@ def test_r9_fixture_capture_preserves_core_error():
     assert caught.value.detail.message == "Facebook structured capture could not be completed"
 
 
+def test_r9_fixture_refuses_metadata_display_override():
+    # Found by the full depth-five generator: Chromium permits a metadata box
+    # override that the fixture's fixed metadata defaults do not model.
+    with pytest.raises(m.CoreError) as caught:
+        capture.fixture_capture('<meta style="display:contents">')
+    assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
+    assert caught.value.detail.message == "Facebook structured capture could not be completed"
+
+
+def test_r9_fixture_counts_implicit_document_nodes():
+    nodes = capture.fixture_capture("<!doctype html><html><body><span>TEXT</span></body></html>")
+    assert len(nodes) == 7  # document, doctype, html, head, body, span, text
+    assert [n["tag"] for n in nodes if n["kind"] == 1] == ["html", "head", "body", "span"]
+
+
+@pytest.mark.parametrize(
+    "markup", ["<a>\n</a>", "<div> </div>", "<math><mtext><mi>TEXT</mi></mtext></math>"]
+)
+def test_r9_fixture_refuses_unmodelled_layout_and_integration(markup):
+    with pytest.raises(m.CoreError) as caught:
+        capture.fixture_capture(markup)
+    assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
+    assert caught.value.detail.message == "Facebook structured capture could not be completed"
+
+
 # The table is the single vocabulary for both the corpus and the source rule.
 def test_r9_no_direct_dom_members():
     from facebook_dom_rule import check
@@ -327,12 +352,22 @@ def test_r9_click_identity(tmp_path, monkeypatch, kind, request):
                 "textarea",
                 "title",
                 "dialog",
+                "select",
+                "option",
+                "optgroup",
+                "frameset",
+                "frame",
+                "embed",
             )
         ],
         "<div popover>TEXT</div>",
         '<svg><noscript><g data-page-state="login_wall"></g></noscript></svg>',
         "<svg><template></template></svg>",
         "<svg><slot></slot></svg>",
+        "<math><mtext><mi>TEXT</mi></mtext></math>",
+        "<p><summary></summary></p>",
+        "<table><math></math></table>",
+        "<p><details></details></p>",
         "<svg><input></input></svg>",
         '<div style="display:none"><svg><desc></div></desc></svg></div>',
         "<div><span></div></span>",
