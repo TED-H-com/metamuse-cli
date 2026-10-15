@@ -2243,7 +2243,7 @@ _PREFIXES = re.compile(
     r"(?<![A-Za-z0-9_-])(?:gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}|"
     r"glpat-[A-Za-z0-9_-]{20}|xox[bpa]-(?:[0-9]{10,13}-){1,3}[A-Za-z0-9]{24,64}|xoxa-2-(?:[0-9]{10,13}-){1,3}[A-Za-z0-9]{24,64}|(?:AKIA|ASIA)[A-Z0-9]{16}|"
     r"AIza[A-Za-z0-9_-]{35}|(?:sk|rk)_live_[A-Za-z0-9]{24,200}+|npm_[A-Za-z0-9]{36}|"
-    r"hf_[A-Za-z0-9]{34}|sk-(?:ant-)?[A-Za-z0-9_-]{8,200}+)(?![A-Za-z0-9_-])",
+    r"hf_[A-Za-z0-9]{34}|sk-(?:ant-)?[A-Za-z0-9_-]{8,}+)(?![A-Za-z0-9_-])",
     re.ASCII,
 )
 
