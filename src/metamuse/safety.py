@@ -3188,10 +3188,15 @@ def _pem_spans(text, syntax):
             or syntax.layer(ends[index].start(), ends[index].end()) > level
         ):
             index += 1
-        end = ends[index].end() if index < len(ends) else len(text)
+        end = (
+            ends[index].end()
+            if index < len(ends)
+            else syntax.proven_end(match.start()) or len(text)
+        )
         cursors[label] = index + 1
         yield match.start(), end, "private_key", _REDACTED
         position = end
+
 
 
 def _markup_spans(text, syntax):
@@ -3833,27 +3838,17 @@ def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False
 
 def _putty_spans(text, syntax):
     headers = re.compile(r"(?i)(?<![A-Za-z0-9_])PuTTY-User-Key-File-[0-9]++:")
-    mac = re.compile(r"(?im)(?<![A-Za-z0-9_])Private-MAC:[^\r\n]*+")
-    closings = iter(re.finditer(r"[\"'\]})]", text))
-    closing = next(closings, None)
+    mac = re.compile(r"(?im)(?<![A-Za-z0-9_])Private-(?:MAC|Hash):[^\r\n]*+")
     position = 0
     while match := headers.search(text, position):
-        level = syntax.layer(match.start(), match.end())
-        while closing and (
-            closing.start() < match.end()
-            or syntax.depth(closing.start()) > level
-            or min(
-                syntax.quote_closings.get(closing.start(), closing.start()),
-                syntax.closings.get(closing.start(), closing.start()),
-            )
-            >= match.start()
-        ):
-            closing = next(closings, None)
-        limit = closing.start() if closing else len(text)
+        limit = syntax.proven_end(match.start()) or len(text)
+        if limit < match.end():
+            limit = len(text)
         end_match = mac.search(text, match.end(), limit)
-        end = min(end_match.end(), limit) if end_match else limit
+        end = end_match.end() if end_match else limit
         yield match.start(), end, "private_key", _REDACTED
-        position = end
+        position = max(end, match.end())
+
 
 
 def _command_spans(text, syntax):

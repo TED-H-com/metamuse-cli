@@ -136,6 +136,14 @@ def test_r7_innermost_value_quote_owns_extent(prefix, shape):
 
 
 
+@pytest.mark.parametrize("header", ["|2-", "|-2", ">2", "| # note", "# note"])
+def test_r7_yaml_header_owns_deeper_body(header):
+    text = "password: " + header + "\n  " + V + "\nother: public"
+    out, found = redact_text(text)
+    assert V not in out and found, (text, out, found)
+
+
+
 @pytest.mark.parametrize(
     "op",
     [":-", ":=", ":+", "-", "=", "+", "#", "##", "%", "%%", "/", "//", "^", "^^", ",", ",,", ":2"],
@@ -254,6 +262,12 @@ def test_r7_comment_context_never_consumes_following_public_text():
 
 
 
+def test_r7_yaml_header_inside_earlier_comment_still_owns_body():
+    text = "prefix:# note api_key: |\n  " + V + "\nnext: public"
+    assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
 @pytest.mark.parametrize("prefix", ["(", "the users' (", "func(", "r'\\' ("])
 def test_r7_unowned_call_pairing_never_hides_cookie_chain(prefix):
     text = prefix + "theme=dark; foo=" + V + ")"
@@ -286,6 +300,20 @@ def test_r7_unclosed_value_quote_is_not_empty(template):
 )
 def test_r7_markup_per_tag_contract(shape):
     assert V not in redact_text(shape.format(v=V))[0]
+
+
+
+@pytest.mark.parametrize("final", ["Private-MAC:", "Private-Hash:"])
+def test_r7_private_block_owns_its_final_line(final):
+    text = (
+        "Pu"
+        + "TTY-User-Key-File-3: ssh-rsa\nComment: ] ' prod\nPrivate-Lines: 1\n"
+        + V
+        + "\n"
+        + final
+        + " public"
+    )
+    assert V not in redact_text(text)[0]
 
 
 
