@@ -383,6 +383,7 @@ class FixtureTree(HTMLParser):
         self.open_tags: Counter[str] = Counter()
         self.wrappers: set[str] = set()
         self.document_stage = "before"
+        self.saw_doctype = False
 
     def feed(self, data):
         if "\0" in data:
@@ -589,6 +590,8 @@ class FixtureTree(HTMLParser):
             raise failure()
 
     def handle_data(self, data):
+        if self.document_stage == "before" and data.strip():
+            self.document_stage = "fragment"
         if (
             self.document_stage in {"html", "after-head", "after-body", "after-html"}
             and data.strip()
@@ -648,8 +651,14 @@ class FixtureTree(HTMLParser):
         )
 
     def handle_decl(self, decl):
-        if decl.lower() != "doctype html" or self.stack != [0]:
+        if (
+            decl.lower() != "doctype html"
+            or self.stack != [0]
+            or self.saw_doctype
+            or self.document_stage != "before"
+        ):
             raise failure()
+        self.saw_doctype = True
         self.nodes[0]["children"].append(len(self.nodes))
         self.nodes.append(
             dict(
@@ -670,6 +679,8 @@ class FixtureTree(HTMLParser):
             self.wrappers != {"html", "head", "body"} or self.document_stage != "after-html"
         ):
             raise failure()
+        if self.saw_doctype and not self.wrappers:
+            raise failure()  # A doctype fragment implies unmodelled document insertion.
         self.complete_document()
         validate(self.nodes)
         pending = [(0, False, True)]

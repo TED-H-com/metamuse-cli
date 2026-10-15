@@ -201,7 +201,7 @@ def test_r5_n8_resume_without_committed_batch_keeps_weak_records(tmp_path):
     facebook.set_driver_factory(
         lambda: facebook.FixtureBrowserDriver(
             facebook.PageObservation(
-                url=URL, status_code=401, html="<html><body>login</body></html>"
+                url=URL, status_code=401, html="<html><head></head><body>login</body></html>"
             )
         )
     )
