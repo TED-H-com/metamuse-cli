@@ -2083,7 +2083,7 @@ def _raw_time(value: Any) -> str | None:
             return None
         return format(value, ".15g")
     if isinstance(value, str) and value:
-        return value
+        return value if re.fullmatch(r"-?[0-9]{1,16}(?:\.[0-9]{1,9})?", value) else None
     return None
 
 
@@ -2129,6 +2129,7 @@ def _tracks(info: dict[str, Any], cap: int) -> tuple[list[dict[str, str | None]]
                 return chosen, True
             if not isinstance(language, str) or not isinstance(items, list):
                 continue
+            _track_identity(language, method)
             pick: dict[str, Any] | None = None
             unsupported = False
             for item in items:
@@ -2156,7 +2157,45 @@ def _tracks(info: dict[str, Any], cap: int) -> tuple[list[dict[str, str | None]]
     return chosen, False
 
 
-def _normalize(info: dict[str, Any], url: str, extractor: str, cap: int) -> dict[str, Any] | None:
+def _stored_url(candidate: Any, hosts: Iterable[str]) -> str | None:
+    """Only a reviewable, bound-host display URL may enter durable provenance."""
+    if not isinstance(candidate, str):
+        return None
+    try:
+        if len(candidate.encode("utf-8")) > safety.URL_MAX_BYTES:
+            return None
+        _host_of(candidate)  # Cheap syntax checks before display/redaction.
+        display = _require_reviewable_url(candidate)
+        return display if _host_of(display) in _hosts(hosts) else None
+    except (m.CoreError, ValueError, UnicodeError):
+        return None
+
+
+def _upstream_id(value: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_@.:-]{1,256}", value) or safety.redact_text(value)[0] != value:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Upstream identity is invalid")
+    return value
+
+
+def _track_identity(language: str, method: str) -> None:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,34}", language) or method not in (
+        "provided",
+        "auto",
+        "asr",
+        "manual",
+    ):
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Upstream subtitle identity is invalid")
+
+
+def _normalize(
+    info: dict[str, Any],
+    url: str,
+    extractor: str,
+    cap: int,
+    *,
+    approved_hosts: Iterable[str] | None = None,
+    reviewed_url: str | None = None,
+) -> dict[str, Any] | None:
     if info.get("_type") in ("playlist", "multi_video"):
         entries = [item for item in (info.get("entries") or []) if isinstance(item, dict)]
         declared = info.get("playlist_count")
@@ -2170,6 +2209,7 @@ def _normalize(info: dict[str, Any], url: str, extractor: str, cap: int) -> dict
     native = info.get("id")
     if not isinstance(native, str) or not native:
         raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Upstream response could not be parsed")
+    native = _upstream_id(native)
     title = info.get("title") if isinstance(info.get("title"), str) else None
     # yt-dlp stores a missing title as fulltitle None and then invents "<extractor> video #<id>".
     if "fulltitle" in info and not info.get("fulltitle"):
@@ -2181,18 +2221,31 @@ def _normalize(info: dict[str, Any], url: str, extractor: str, cap: int) -> dict
     scope = info.get("channel_id") if isinstance(info.get("channel_id"), str) else ""
     if not scope and isinstance(info.get("uploader_id"), str):
         scope = info["uploader_id"]
-    canonical = info.get("webpage_url") if isinstance(info.get("webpage_url"), str) else url
-    if not canonical.startswith(("http://", "https://")):
-        canonical = url
+    if scope:
+        scope = _upstream_id(scope)
+    hosts = tuple(approved_hosts) if approved_hosts is not None else (_host_of(url),)
+    canonical = None
+    canonical_basis = "reviewed"
+    for basis, candidate in (("webpage_url", info.get("webpage_url")), ("extract_url", url)):
+        canonical = _stored_url(candidate, hosts)
+        if canonical is not None:
+            canonical_basis = basis
+            break
+    if canonical is None:
+        canonical = _stored_url(reviewed_url or url, hosts)
+    if canonical is None:
+        raise _unreviewable_url()
     key = info.get("extractor_key") if isinstance(info.get("extractor_key"), str) else extractor
+    key = _upstream_id(key)
     media = _single_format(info)
     tracks, truncated = _tracks(info, cap)
     return {
         "native_id": native,
-        "title": title,
+        "title": safety.redact_text(title)[0] if title is not None else None,
         "raw_time": _raw_time(info.get("timestamp")),
         "scope": scope or "",
         "canonical_url": canonical,
+        "canonical_basis": canonical_basis,
         "extractor": key,
         "platform": key.lower(),
         "subtitles": tracks,
@@ -2273,7 +2326,11 @@ def _durable_current(current: dict[str, Any] | None) -> dict[str, Any] | None:
         "subtitle_count": len(tracks),
     }
     resolved = current.get("resolved_url")
-    if isinstance(resolved, str) and _canonical_media(resolved) == resolved:
+    if (
+        isinstance(resolved, str)
+        and _stored_url(resolved, (_host_of(resolved),)) == resolved
+        and _canonical_media(resolved) == resolved
+    ):
         durable["resolved_url"] = resolved
     return {key: value for key, value in durable.items() if value is not None}
 
@@ -2425,6 +2482,7 @@ def _store_metadata(
         "extractor": record["extractor"],
         "original_url": url,
         "canonical_url": record["canonical_url"],
+        "canonical_basis": record["canonical_basis"],
         "native_id": native,
         "fetched_at": now,
         "upstream_timestamp": record["raw_time"],
@@ -2433,6 +2491,7 @@ def _store_metadata(
         "extractor": record["extractor"],
         "original_url": url,
         "canonical_url": record["canonical_url"],
+        "canonical_basis": record["canonical_basis"],
         "native_id": native,
         "fetched_at": now,
         "upstream_timestamp": record["raw_time"],
@@ -2572,13 +2631,26 @@ def _store_metadata(
         if not source_new:
             # B05 keeps one item revision when the title hash is unchanged.
             # A new upstream timestamp is an observation on the mutable source.
-            _observe_timestamp(writer, source_id, record["raw_time"], now)
+            _observe_timestamp(
+                writer,
+                source_id,
+                record["raw_time"],
+                now,
+                canonical_url=record["canonical_url"],
+                canonical_basis=record["canonical_basis"],
+            )
 
     _commit(step, state, write)
 
 
 def _observe_timestamp(
-    writer: TransactionWriter, source_id: str, raw_time: str | None, now: str
+    writer: TransactionWriter,
+    source_id: str,
+    raw_time: str | None,
+    now: str,
+    *,
+    canonical_url: str,
+    canonical_basis: str,
 ) -> None:
     """Record a timestamp change without appending an item revision."""
 
@@ -2586,14 +2658,17 @@ def _observe_timestamp(
     if held is None or not held["use_basis"]:
         return
     previous = json.loads(held["use_basis"])
-    if not isinstance(previous, dict) or previous.get("upstream_timestamp") == raw_time:
+    if not isinstance(previous, dict):
         return
     observed = dict(previous)
-    observed["upstream_timestamp"] = raw_time
-    observed["fetched_at"] = now
+    if previous.get("upstream_timestamp") != raw_time:
+        observed["upstream_timestamp"] = raw_time
+        observed["fetched_at"] = now
+    observed["canonical_url"] = canonical_url
+    observed["canonical_basis"] = canonical_basis
     writer.execute(
-        "UPDATE sources SET use_basis=? WHERE id=?",
-        (m.canonical_json(observed).decode(), source_id),
+        "UPDATE sources SET canonical_url=?,use_basis=? WHERE id=?",
+        (canonical_url, m.canonical_json(observed).decode(), source_id),
     )
 
 
@@ -2801,7 +2876,7 @@ def _write_subtitle_track(
                 cue_index=cue.cue_index,
                 start_ms=cue.start_ms,
                 end_ms=cue.end_ms,
-                text=cue.text,
+                text=safety.redact_text(cue.text)[0],
                 language=language,
                 method=method,  # type: ignore[arg-type]
                 review="unreviewed",
@@ -3592,16 +3667,19 @@ def _read_info(
     if found is None:
         return None
     info, chain = found
-    record = _normalize(info, extract_url, chain[-1], max_items)
+    hosts = tuple(host for approval in approvals for host in approval.hosts)
+    record = _normalize(
+        info, extract_url, chain[-1], max_items, approved_hosts=hosts, reviewed_url=url
+    )
     if record is None:
         state.halt = "empty"
         return None
     if str(record["extractor"]).lower() == "manual":
         raise m.CoreError(m.ErrorCode.UNSUPPORTED, "Extractor failed")
     record["extractor_chain"] = chain
-    if resolved is not None:
+    if resolved is not None and _stored_url(resolved, hosts) is not None:
         record["requested_url"] = url
-        record["resolved_url"] = resolved
+        record["resolved_url"] = _stored_url(resolved, hosts)
     state.bytes_used = net.budget.used
     return record
 
