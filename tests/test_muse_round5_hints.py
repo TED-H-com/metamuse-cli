@@ -1,4 +1,4 @@
-"""Every residual marker persists at its innermost authenticated identity scope."""
+"""Every residual marker persists at its union of enclosing authenticated identity scopes."""
 
 import pytest
 from test_muse_round5_identity import attempt
@@ -59,14 +59,23 @@ def test_r5_8_false_marker_keys_are_not_evidence(ctx, key, value):
 @pytest.mark.parametrize(
     "rows,expected",
     [
-        ({"vm_id": "decoy", "rows": [{"vm_id": "vm9", "vm_type": "hatch_cvm"}]}, {"vm9"}),
-        ([{"vm_id": "host", "children": [{"vm_id": "vm9", "vm_type": "hatch_cvm"}]}], {"vm9"}),
+        (
+            {"vm_id": "decoy", "rows": [{"vm_id": "vm9", "vm_type": "hatch_cvm"}]},
+            {"vm1", "vm9", "decoy"},
+        ),
+        (
+            [{"vm_id": "host", "children": [{"vm_id": "vm9", "vm_type": "hatch_cvm"}]}],
+            {"vm1", "host", "vm9"},
+        ),
         ([{"vm_type": "hatch_cvm", "replaces": {"vm_id": "vm9"}}], {"vm1", "vm9"}),
-        ([{"vmId": "decoy", "vm_id": "vm9", "vm_type": "hatch_cvm"}], {"decoy", "vm9"}),
-        ([{"vm_id": "host", "meta": {"vm_id": "vm9", "kind": "hatch_cvm"}}], {"vm9"}),
+        ([{"vmId": "decoy", "vm_id": "vm9", "vm_type": "hatch_cvm"}], {"vm1", "decoy", "vm9"}),
+        (
+            [{"vm_id": "host", "meta": {"vm_id": "vm9", "kind": "hatch_cvm"}}],
+            {"vm1", "host", "vm9"},
+        ),
     ],
 )
-def test_r5_8_innermost_row_attribution(ctx, rows, expected):
+def test_r5_8_union_row_attribution(ctx, rows, expected):
     transport, _, connector = attempt(ctx.store, assignment(vms=rows))
     with pytest.raises(CoreError):
         transport.sessions_list()

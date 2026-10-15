@@ -180,6 +180,19 @@ def test_r6_7_only_strict_utf8(ctx, encoding, deep):
 def test_r6_7_invalid_utf8(ctx):
     refuse(ctx, {}, raw=b'{"note":"\xff","vm_type":"hatch_cvm"}', ids=set())
 
+@pytest.mark.parametrize("shape", range(4))
+def test_r6_8_union_of_enclosing_identity_scopes(ctx, shape):
+    meta = {"vm_id": "vm2", "kind": "HATCH-CVM"}
+    if shape == 0:
+        payload = assignment(vms=[{**assignment(), "meta": meta}])
+    elif shape == 1:
+        payload = assignment(meta=meta)
+    elif shape == 2:
+        payload = assignment(vms=[assignment(), {"vm_id": "vm7"}], pending={"vm_type": "hatch_cvm"})
+    else:
+        payload = assignment(vms=[assignment(), {"vm_id": "vm7"}], vm_type="hatch_cvm")
+    refuse(ctx, payload, ids={"vm1", "vm2"} if shape < 2 else {"vm1", "vm7"})
+
 @pytest.mark.parametrize("path", ["auth", "hatch"])
 def test_r6_6_other_https_duplicate_keys(ctx, path):
     transport, http, connector = attempt(ctx.store, assignment())
@@ -190,6 +203,21 @@ def test_r6_6_other_https_duplicate_keys(ctx, path):
         transport.sessions_list()
     assert error.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
     assert not connector.urls
+
+def test_r6_8_outermost_scope_cannot_claim_unmarked_decoy(ctx):
+    payload = assignment(
+        vms=[{**assignment(), "meta": {"vm_id": "vm2", "kind": "hatch_cvm"}}, {"vm_id": "vm7"}]
+    )
+    refuse(ctx, payload, ids={"vm1", "vm2"})
+    later, _, dial = attempt(
+        ctx.store,
+        assignment(vm_id="vm7", vm_name="vm7", endpoint_url="wss://vm7.metaaivm.com/"),
+        owner="unmarked-owner",
+        label="unmarked",
+    )
+    with later:
+        later.sessions_list()
+    assert dial.urls
 
 @pytest.mark.parametrize("encoding", ["utf-8", "utf-16-le", "utf-32-le"])
 @pytest.mark.parametrize("depth", [0, 1, 30, 31, 32, 33, 40])

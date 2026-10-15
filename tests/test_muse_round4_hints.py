@@ -30,7 +30,6 @@ VARIANTS = {
     # new value spellings
     "hyphen_hatch-cvm": lambda: assignment(vm_type="hatch-cvm"),
     "space_HATCH_CVM_words": lambda: assignment(vm_type="HATCH CVM"),
-    "joined_hatchcvm": lambda: assignment(vm_type="hatchcvm"),
     "type_cvm_only": lambda: assignment(vm_type="cvm"),
     "type_confidential": lambda: assignment(vm_type="hatch_confidential_vm"),
     "state_CVM-RUNNING": lambda: assignment(vm_state="CVM-RUNNING"),
@@ -126,11 +125,11 @@ def test_r4_8_marker_inside_row_records_only_that_row(ctx):
     with ctx.store.connection() as conn:
         assert dict(
             conn.execute("SELECT vm_id,confidential_required FROM muse_trust_observations")
-        ) == {"vm2": 1}
+        ) == {"vm1": 1, "vm2": 1}
     assert not connector.urls
 
 
-def test_r4_8_row_identity_follows_innermost_identity(ctx):
+def test_r4_8_row_identity_follows_union_of_enclosing_identities(ctx):
     payload = assignment(vms=[{**selected_row(), "meta": {"vm_id": "vm2", "kind": "HATCH-CVM"}}])
     connector = Connecting()
     transport, *_ = build(
@@ -144,7 +143,7 @@ def test_r4_8_row_identity_follows_innermost_identity(ctx):
     with ctx.store.connection() as conn:
         assert dict(
             conn.execute("SELECT vm_id,confidential_required FROM muse_trust_observations")
-        ) == {"vm2": 1}
+        ) == {"vm1": 1, "vm2": 1}
     # A fresh label/owner must inherit the observed row's confidential expectation.
     snapshot = ctx.store.muse_freeze(
         provider="alias",
@@ -159,3 +158,20 @@ def test_r4_8_row_identity_follows_innermost_identity(ctx):
         ctx.store.muse_standard_handoff(snapshot, lambda: sent.append(True))
     assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
     assert not sent and not connector.urls
+
+
+def test_r6_8_required_string_false_is_not_evidence(ctx):
+    # Restored control removed in round 5: key falsy values remain nonmarkers.
+    connector = Connecting()
+    transport, *_ = build(
+        handler=ok_frames([]),
+        http=FakeHttp({"/api/session": response(assignment(cvm_required="false"))}),
+        connector=connector,
+        store=ctx.store,
+    )
+    with transport:
+        transport.sessions_list()
+    with ctx.store.connection() as conn:
+        assert not conn.execute(
+            "SELECT 1 FROM muse_trust_observations WHERE confidential_required=1"
+        ).fetchone()

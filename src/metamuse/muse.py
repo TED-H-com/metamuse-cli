@@ -1477,7 +1477,7 @@ class MuseTransport:
                         if not scopes or scopes[-1][0]:
                             outside_marker = True
                         else:
-                            marked.update(scopes[-1][1])
+                            marked.update(identity for _, ids in scopes for identity in ids)
                     if isinstance(value, (dict, list)):
                         stack.append((value, depth + 1, scopes, sensitive))
             elif isinstance(node, list):
@@ -1487,7 +1487,7 @@ class MuseTransport:
                 if not scopes or scopes[-1][0]:
                     outside_marker = True
                 else:
-                    marked.update(scopes[-1][1])
+                    marked.update(identity for _, ids in scopes for identity in ids)
         if confidential:
             ids = tuple(sorted(usable if outside_marker else marked))
             self._trust.store.muse_freeze(
