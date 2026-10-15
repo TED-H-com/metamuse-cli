@@ -1543,6 +1543,7 @@ def _associate(step, discussion, exchange):
                 or proof.outbound_digest != current.outbound_digest
                 or current.outbound_payload is None
                 or current.outbound_payload.target != target
+                or current.outbound_payload.body != exchange.outbound_payload.body
             ):
                 _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Original delivery proof changed")
             if proof.kind == "ack":
@@ -1552,10 +1553,7 @@ def _associate(step, discussion, exchange):
                 observed = step.store.get(m.MuseObservation, proof.observation_id, conn=conn)
                 if (
                     observed.discussion_id != discussion.id
-                    or user_echo(
-                        _exchange_view(step.store, discussion, current, conn), [observed.raw_event]
-                    )
-                    is None
+                    or user_echo(view, [observed.raw_event]) is None
                 ):
                     _error(
                         m.ErrorCode.EXTERNAL_STATE_UNKNOWN,

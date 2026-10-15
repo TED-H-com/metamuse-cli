@@ -321,10 +321,11 @@ CPU growth of the iterated public call is checked at four doubling sizes for all
 review and new-rule families. Raw canonical sizes are checked before rendering;
 packet/bundle rendering and redaction precede BEGIN IMMEDIATE. Writes repeat only
 reference/snapshot checks. _save_send redacts the full remote detail (capped at 1 MiB)
-before its batch, then cuts to 512 characters. The settlement callback sanitizes
-only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes)
-inside the jobs transaction. Oversized legacy text refuses before redaction with
-fixed E_LIMIT_REACHED; this bound is measured and does not prove delivery.
+before its batch, then cuts to 512 characters. Association computes its sanitized outbound view before opening the write
+transaction. Settlement verifies the complete stored outbound body is unchanged,
+then reuses that view for echo comparison. Neither redact_text nor sanitize_document
+runs under the write lock. Oversized legacy text refuses before redaction with
+fixed E_LIMIT_REACHED; this bound does not prove delivery.
 
 Auth list returns partial for corrupt entries: valid metadata in references, opaque
 refs and fixed reasons in unavailable. It suggests working revoke commands for

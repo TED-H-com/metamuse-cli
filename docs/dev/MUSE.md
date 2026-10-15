@@ -209,6 +209,9 @@ it returns stored data and an accepted `refresh_job_id`, `state`, `worker_availa
 The approval envelope previews the exact read scope. A refresh
 fetches one bounded history page from the original session; absence is not proof of
 non-delivery or full history coverage. Raw observations are retained before association.
+Association computes the sanitized outbound view before the write transaction.
+Settlement verifies the stored outbound body is unchanged and reuses that view;
+no redaction runs while the write lock is held.
 Echo comparison applies the same deterministic `sanitize_document` redaction to the
 prepared outbound text and stored observations. The wire still carries the exact host
 question and packet; redaction collisions remain subject to the ambiguity rule.
