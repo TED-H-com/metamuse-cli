@@ -444,3 +444,8 @@ Placeholder exemptions apply only after the entire value extent is known.
 A value must be exactly one placeholder; prefix/suffix lookalikes are credentials.
 Nested shell expansions such as ${A:-${B}} use a brace-balance counter whose outer
 closing brace must be the final character.
+
+When auth list is given --workspace, every removable-entry revoke suggestion
+retains that workspace (shell quoted). Running it verbatim reports any remaining
+config binding and asks to import credentials and rebind. List and revoke still
+read config only and never open or initialize a workspace database.
