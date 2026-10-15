@@ -8,7 +8,7 @@ from urllib.parse import quote_plus
 
 SEC = "SYNTH" + "r6" + "HUNT2" + "8888"
 SEC2 = "SYNTH" + "r6" + "PART2" + "8888"
-CURL_U = 'cu' + 'rl ' + "-u"
+CURL_U = "cu" + "rl " + "-u"
 PUTTY2 = "Pu" + "TTY-User-Key-File-2: ssh-rsa"
 OPENSSH_B = "-----BE" + "GIN OPENSSH PRIVATE KEY-----"
 OPENSSH_E = "-----E" + "ND OPENSSH PRIVATE KEY-----"
@@ -93,8 +93,8 @@ check(
 
 check(
     "form_quote_curl",
-    'Log: cmd=cu' + "rl+-H+'X:1'+--user+alice:SEC",
-    f'Log: cmd=cu' + f"rl+-H+'X:1'+--user+alice:{SEC}+https://example.invalid",
+    "Log: cmd=cu" + "rl+-H+'X:1'+--user+alice:SEC",
+    f"Log: cmd=cu" + f"rl+-H+'X:1'+--user+alice:{SEC}+https://example.invalid",
 )
 check(
     "form_quote_sshpass",
@@ -108,18 +108,18 @@ check(
 )
 check(
     "form_angle_curl",
-    'Log: cmd=cu' + 'rl+-H+<X>+--user+alice:SEC',
-    f'Log: cmd=cu' + f'rl+-H+<X>+--user+alice:{SEC}+https://example.invalid',
+    "Log: cmd=cu" + "rl+-H+<X>+--user+alice:SEC",
+    f"Log: cmd=cu" + f"rl+-H+<X>+--user+alice:{SEC}+https://example.invalid",
 )
 check(
     "form_json2_angle_curl",
-    'JSON2 body: cmd=cu' + 'rl+-H+<X>+--user+alice:SEC',
-    json.dumps({"outer": json.dumps({"body": f'cmd=cu' + f'rl+-H+<X>+--user+alice:{SEC}'})}),
+    "JSON2 body: cmd=cu" + "rl+-H+<X>+--user+alice:SEC",
+    json.dumps({"outer": json.dumps({"body": f"cmd=cu" + f"rl+-H+<X>+--user+alice:{SEC}"})}),
 )
 check(
     "form_bare_curl_long",
-    'Bare quote_plus(cu' + 'rl --user alice:SEC)',
-    quote_plus(f'cu' + f'rl --user alice:{SEC} https://example.invalid'),
+    "Bare quote_plus(cu" + "rl --user alice:SEC)",
+    quote_plus(f"cu" + f"rl --user alice:{SEC} https://example.invalid"),
 )
 check(
     "form_bare_sshpass",
@@ -140,7 +140,7 @@ check(
 )
 check(
     "unicode_curly_quotes_curl",
-    'cu' + 'rl ' + '-u “alice:SEC”',
+    "cu" + "rl " + "-u “alice:SEC”",
     f"{CURL_U} “alice:{SEC}” https://example.invalid",
 )
 check(
@@ -191,7 +191,7 @@ check(
 )
 check(
     "lang_shell_locale_dq",
-    'Shell $"..." before cu' + 'rl ' + '-u',
+    'Shell $"..." before cu' + "rl " + "-u",
     f"msg=$\"users'\"; {CURL_U} 'alice:pa]-{SEC}' https://example.invalid",
 )
 check(

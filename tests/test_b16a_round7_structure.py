@@ -24,7 +24,7 @@ def test_r7_review_probes(name, text, markers):
         "'https://alice:pa]-{v}@example.invalid/p'",
         '"https://alice:pa\'-{v}@example.invalid/p"',
         "'https://example.invalid/p?token=pa]-{v}'",
-        'cu' + 'rl ' + "-u alice:pa'-{v} https://example.invalid",
+        "cu" + "rl " + "-u alice:pa'-{v} https://example.invalid",
         "sshpass -p pa'-{v} ssh host",
     ],
 )
@@ -61,7 +61,7 @@ def test_r7_mixed_layer_exemptions_private(shape):
         'export API_KEY="${API_KEY:-${FALLBACK_KEY}}"',
         "password=${PASSWORD:-$FALLBACK}",
         "token=${TOKEN:-}",
-        'cu' + 'rl ' + '-u "alice:${PASS}" https://example.invalid',
+        "cu" + "rl " + '-u "alice:${PASS}" https://example.invalid',
         "Set password=${PW}.",
         "Use `password=${PW}`.",
         "Why did git checkout -b main fail?",
@@ -79,16 +79,16 @@ def test_r7_benign_anchors_and_defaults(text):
 @pytest.mark.parametrize(
     "shape",
     [
-        'cu' + 'rl -b "${{C:--u alice:{v}}}"',
-        'cu' + 'rl -b "${{C:---user alice:{v}}}"',
+        "cu" + 'rl -b "${{C:--u alice:{v}}}"',
+        "cu" + 'rl -b "${{C:---user alice:{v}}}"',
         'cmd="${{CMD:---password={v}}}"',
         "password=${{PASSWORD:-{v}}}",
         "password='pa'\"'\"'{v}'",
-        'cu' + 'rl ' + "-u 'alice:pa'\\''{v}' https://example.invalid",
+        "cu" + "rl " + "-u 'alice:pa'\\''{v}' https://example.invalid",
         '"password=pa"" {v}"',
         "password = “{v} {v}”",
         "https://example.invalid/p?sp=${{SP:-?skoid={v}}}",
-        'cu' + 'rl -b "${{C:- -u alice:{v}}}"',
+        "cu" + 'rl -b "${{C:- -u alice:{v}}}"',
         'sshpass -p "${{P:-sshpass -p {v}}}"',
     ],
 )
@@ -149,7 +149,7 @@ def test_r7_d4_quote_forms_never_expose_tail(shape):
     "shape",
     [
         'password="pa) {v}"',
-        'cu' + 'rl ' + "-u 'alice:pa] {v}' https://example.invalid",
+        "cu" + "rl " + "-u 'alice:pa] {v}' https://example.invalid",
         "sshpass -p 'pa}} {v}' ssh host",
     ],
 )
@@ -197,7 +197,12 @@ def test_r7_autolink_invalid_follower_is_data(shape):
 
 
 @pytest.mark.parametrize(
-    "text", ['cu' + 'rl ' + '-u alice:${PASS}', 'cu' + 'rl ' + '-u alice:[REDACTED]', 'cu' + 'rl ' + '-u "alice:${PASS}"']
+    "text",
+    [
+        "cu" + "rl " + "-u alice:${PASS}",
+        "cu" + "rl " + "-u alice:[REDACTED]",
+        "cu" + "rl " + '-u "alice:${PASS}"',
+    ],
 )
 def test_r7_curl_exemption_decides_password_without_username(text):
     assert redact_text(text) == (text, [])
@@ -235,7 +240,7 @@ def test_r7_every_scanner_shares_closed_exemptions(value):
         "<password>{v}</password>",
         "https://alice:{v}@example.invalid/p",
         "https://example.invalid/p?token={v}",
-        'cu' + 'rl ' + '-u alice:{v}',
+        "cu" + "rl " + "-u alice:{v}",
         "sshpass -p {v}",
     ]
     texts = [t.format(v=value) for t in templates]
@@ -255,7 +260,12 @@ def test_r7_har_exemption_is_layer_true(value):
 
 
 @pytest.mark.parametrize(
-    "text", ["Use `token=<your token>`.", "password=<your token>", 'cu' + 'rl ' + '-u "alice:<your token>"']
+    "text",
+    [
+        "Use `token=<your token>`.",
+        "password=<your token>",
+        "cu" + "rl " + '-u "alice:<your token>"',
+    ],
 )
 def test_r7_complete_placeholder_with_spaces(text):
     assert redact_text(text) == (text, []), (text, redact_text(text))
@@ -292,8 +302,8 @@ def test_r7_unowned_call_pairing_never_hides_cookie_chain(prefix):
 
 
 def test_r7_curl_argument_cannot_hide_simple_command_separator():
-    text = 'cu' + 'rl -b private; git -b public'
-    assert redact_text(text)[0] == 'cu' + 'rl -b [REDACTED]; git -b public'
+    text = "cu" + "rl -b private; git -b public"
+    assert redact_text(text)[0] == "cu" + "rl -b [REDACTED]; git -b public"
 
 
 @pytest.mark.parametrize("tail", ["a", "1", "-"])
@@ -301,7 +311,9 @@ def test_r7_sentinel_prefix_with_short_tail_is_not_exempt(tail):
     assert redact_text("Bearer [REDACTED]" + tail)[0] == "Bearer [REDACTED]"
 
 
-@pytest.mark.parametrize("template", ["Cookie: '{v}", 'cu' + 'rl ' + "-u 'alice:{v}", "--password '{v}"])
+@pytest.mark.parametrize(
+    "template", ["Cookie: '{v}", "cu" + "rl " + "-u 'alice:{v}", "--password '{v}"]
+)
 def test_r7_unclosed_value_quote_is_not_empty(template):
     assert V not in redact_text(template.format(v=V))[0]
 
@@ -413,7 +425,7 @@ def test_r7_triple_quote_keeps_complete_placeholder(quote):
 @pytest.mark.parametrize(
     "shape",
     [
-        'cu' + 'rl -b "${{C:? -u alice:{v}}}"',
+        "cu" + 'rl -b "${{C:? -u alice:{v}}}"',
         'sshpass -p "${{P:?sshpass -p {v}}}"',
     ],
 )
