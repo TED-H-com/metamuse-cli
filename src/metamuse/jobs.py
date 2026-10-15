@@ -761,14 +761,17 @@ class Executor:
             )
 
     def unavailable_operations(self) -> bool:
-        with self.store.connection() as conn:
-            return any(
-                row[0] not in self.registry
-                for row in conn.execute(
-                    "SELECT operation FROM jobs WHERE state IN ('queued','running') "
-                    "AND cancel_requested=0"
+        def query() -> bool:
+            with self.store.connection() as conn:
+                return any(
+                    row[0] not in self.registry
+                    for row in conn.execute(
+                        "SELECT operation FROM jobs WHERE state IN ('queued','running') "
+                        "AND cancel_requested=0"
+                    )
                 )
-            )
+
+        return bool(self._retry_unclaimed(query))
 
     def _retry_wait(self, job_id: str, seconds: float) -> None:
         def maintain() -> bool:
@@ -1010,7 +1013,7 @@ class Executor:
             if once:
                 break
             if not did_work:
-                if self._retry_unclaimed(self.unavailable_operations):
+                if self.unavailable_operations():
                     import logging
 
                     logging.getLogger("metamuse").warning(

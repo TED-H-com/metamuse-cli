@@ -277,7 +277,8 @@ retry path as `run()`. Only internal `_StorageBusy` errors qualify. Each failed
 transaction rolls back before a jittered exponential wait (initial range 25–50 ms,
 doubling to a 1–2 second range). Each backoff wait is at most 2 seconds and wakes on
 `request_stop()`; no further attempt begins after stop. Every unclaimed action uses a scoped thread-local 1-second connection/busy timeout,
-including the read-only version probe. The default remains 30 seconds elsewhere.
+including the read-only version probe. `unavailable_operations()` owns this retry
+path even when called after `run()`; after stop it returns `False` without a query. The default remains 30 seconds elsewhere.
 The loaded 548-transaction sample put 531 (96.9%) within one second; the 12.16 ms
 median fits easily, while tail stalls are retried instead of lengthening each attempt.
 Exit metadata cleanup also uses one second, skips only busy errors, and releases the
