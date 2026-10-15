@@ -116,8 +116,8 @@ def _muse_storage_error(*, stale=False) -> m.CoreError:
 
 _MUSE_COMPONENT_CTE = """
 WITH RECURSIVE component(kind,identity) AS (
- SELECT 'owner', ?1
- UNION SELECT 'vm', ?2 WHERE ?2 IS NOT NULL AND ?2!=''
+ SELECT 'owner', ?
+ UNION SELECT 'vm', ? WHERE ? IS NOT NULL AND ?!=''
  UNION SELECT 'vm',a.active_vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner'
     AND a.viewer_hash=r.identity WHERE a.active_vm_id IS NOT NULL
  UNION SELECT 'vm',v.vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND
@@ -804,7 +804,7 @@ class Store:
             ):
                 raise _muse_storage_error()
         return (
-            conn.execute(_MUSE_COMPONENT_SQL, (viewer_hash, vm_id)).fetchone()
+            conn.execute(_MUSE_COMPONENT_SQL, (viewer_hash, vm_id, vm_id, vm_id)).fetchone()
             is not None
         )
 
@@ -1034,7 +1034,7 @@ class Store:
                 "INSERT INTO muse_bind_required "
                 + _MUSE_COMPONENT_CTE
                 + " SELECT kind,identity FROM component",
-                (viewer_hash, None),
+                (viewer_hash, None, None, None),
             )
         conn.execute(
             "UPDATE muse_trust_accounts SET confidential_required=1, "

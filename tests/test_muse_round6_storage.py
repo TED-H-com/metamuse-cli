@@ -1,28 +1,44 @@
 """SQL boundaries: every component edge, inherit guards, types and lock errnos."""
 
 import ast
-
 import re
-
 from pathlib import Path
 
 import pytest
-
 from test_muse_round5_storage import test_r5_7_fixed_storage_classes as storage_case
-
 from test_muse_trust import freeze
 
 from metamuse.models import CoreError, ErrorCode
+
 
 @pytest.mark.parametrize("name", ["EACCES", "EPERM", "EIO", "ENOENT"])
 @pytest.mark.parametrize("path", ["freeze", "transport", "hint", "rv", "label_busy"])
 def test_r6_10_lock_file_access_errno(ctx, monkeypatch, name, path):
     storage_case(ctx, monkeypatch, name, path)
 
+
+def test_r6_12_no_sequence_bound_numbered_sql():
+    from metamuse import store
+
+    root = Path(store.__file__).resolve().parent
+    bad = []
+    for path in root.rglob("*.py"):
+        tree = ast.parse(path.read_text())
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and re.search(r"\?[0-9]+", node.value)
+            ):
+                bad.append((path.name, node.lineno))
+    assert not bad, bad
+
+
 def h(value):
     import hashlib
 
     return hashlib.sha256(value.encode()).hexdigest()
+
 
 def owner_of(conn, account):
     return tuple(
@@ -31,6 +47,8 @@ def owner_of(conn, account):
         ).fetchone()
     )
 
+
+# One raw, lagging edge; the recursive guard must see it before any app write.
 def owner_to_active_vm(conn):
     wh, sh = owner_of(conn, "C")
     conn.execute(
@@ -41,6 +59,7 @@ def owner_to_active_vm(conn):
         "INSERT INTO muse_trust_vms VALUES ('synthetic','E','z',1,1,'authenticated_assignment','t')"
     )
     conn.execute("DELETE FROM muse_trust_propagating")
+
 
 def owner_to_label_vm(conn):
     wh, sh = owner_of(conn, "C")
@@ -60,6 +79,7 @@ def owner_to_label_vm(conn):
     )
     conn.execute("DELETE FROM muse_trust_propagating")
 
+
 def owner_to_observed_vm(conn):
     wh, _ = owner_of(conn, "C")
     conn.execute(
@@ -72,6 +92,7 @@ def owner_to_observed_vm(conn):
     )
     conn.execute("DELETE FROM muse_trust_propagating")
 
+
 def vm_to_active_owner(conn):
     conn.execute("INSERT INTO muse_trust_propagating VALUES (1)")
     conn.execute(
@@ -79,6 +100,7 @@ def vm_to_active_owner(conn):
         (h("U2"), h("s2")),
     )
     conn.execute("DELETE FROM muse_trust_propagating")
+
 
 def vm_to_label_owner(conn):  # the existing vm_join variant
     conn.execute(
@@ -91,6 +113,7 @@ def vm_to_label_owner(conn):  # the existing vm_join variant
     )
     conn.execute("DELETE FROM muse_trust_propagating")
 
+
 def vm_to_observing_owner(conn):  # the existing observation variant
     conn.execute(
         "INSERT INTO muse_trust_observations VALUES (?,'y',1,0,'authenticated_assignment','t')",
@@ -102,6 +125,7 @@ def vm_to_observing_owner(conn):  # the existing observation variant
     )
     conn.execute("DELETE FROM muse_trust_propagating")
 
+
 def control_unrelated(conn):
     conn.execute("INSERT INTO muse_trust_propagating VALUES (1)")
     conn.execute(
@@ -109,6 +133,7 @@ def control_unrelated(conn):
         "WHERE account='E'"
     )
     conn.execute("DELETE FROM muse_trust_propagating")
+
 
 EDGES = [
     owner_to_active_vm,
@@ -118,6 +143,7 @@ EDGES = [
     vm_to_label_owner,
     vm_to_observing_owner,
 ]
+
 
 @pytest.mark.parametrize("edge", EDGES)
 def test_r6_11_each_seed_edge_is_effective(ctx, edge):
@@ -131,6 +157,7 @@ def test_r6_11_each_seed_edge_is_effective(ctx, edge):
     with pytest.raises(CoreError) as caught:
         ctx.store.muse_standard_handoff(target, lambda: calls.append(1))
     assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH and not calls
+
 
 @pytest.mark.parametrize("edge", EDGES)
 @pytest.mark.parametrize("table", ["accounts", "vms", "observations"])
@@ -163,6 +190,7 @@ def test_r6_11_raw_inherit_edges(ctx, edge, table):
                     "(?,'y',1,0,'authenticated_assignment','t')",
                     (h("W"),),
                 )
+
 
 @pytest.mark.parametrize(
     "table,field,value",
