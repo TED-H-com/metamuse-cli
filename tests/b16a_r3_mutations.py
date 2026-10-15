@@ -695,6 +695,7 @@ def main():
     parser.add_argument("names", nargs="*")
     parser.add_argument("--root", type=Path, default=Path("/tmp/b16a-r3-mutants"))
     parser.add_argument("--prepare-only", action="store_true")
+    parser.add_argument("--hash-equivalence", action="store_true")
     args = parser.parse_args()
     args.root.mkdir(parents=True, exist_ok=True)
     plugin = args.root / "plugin"
@@ -716,6 +717,20 @@ for name,text in enumerate(differential_corpus()):
     out, findings = redact_text(text)
     print(json.dumps([name,out,findings,redact_text(out)], ensure_ascii=True))
 """)
+    if args.hash_equivalence:
+        script = plugin / "equivalence.py"
+        code = script.read_text()
+        code = code.replace("import json\n", "import hashlib, json\n")
+        code = code.replace("for name,text", "digest = hashlib.sha256()\ncount = 0\nfor name,text")
+        code = code.replace(
+            "    print(json.dumps([name,out,findings,redact_text(out)], ensure_ascii=True))",
+            "    digest.update(json.dumps([name,out,findings,redact_text(out)], "
+            "ensure_ascii=True).encode())\n"
+            "    count += 1",
+        )
+        script.write_text(
+            code + "print(json.dumps({'inputs':count,'sha256':digest.hexdigest()}))\n"
+        )
     snapshot = args.root / "head-src"
     if snapshot.exists():
         shutil.rmtree(snapshot)
@@ -803,6 +818,11 @@ for name,text in enumerate(differential_corpus()):
                 if (base / "head.jsonl").read_bytes() == (base / "mutant.jsonl").read_bytes()
                 else 0
             )
+            if args.hash_equivalence:
+                proof = json.loads((base / "head.jsonl").read_text())
+                assert proof["inputs"] == 100372
+                row["equivalence_sha256"] = proof["sha256"]
+
         with (args.root / "results.jsonl").open("a") as stream:
             stream.write(json.dumps(row) + "\n")
         print(json.dumps(row), flush=True)
