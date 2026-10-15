@@ -57,6 +57,24 @@ def test_r7_d3_exemption_uses_trimmed_whole_value(text):
 
 
 
+@pytest.mark.parametrize(
+    "shape",
+    [
+        "password='pa'' {v}'",
+        'password="pa\\" {v}"',
+        'password="pa`" {v}"',
+        "password='pa'\"'\"'{v}'",
+        "password='pa'\\''{v}'",
+        "password=“pa”~{v}”",
+        "password=‘pa’~{v}’",
+    ],
+)
+def test_r7_d4_quote_forms_never_expose_tail(shape):
+    text = shape.format(v=V)
+    assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
 @pytest.mark.parametrize("prefix", ["(", "[", "{", "<"])
 @pytest.mark.parametrize(
     "shape",
@@ -104,6 +122,12 @@ def test_r7_complete_placeholder_with_spaces(text):
 def test_r7_whitespace_breaks_opener_ownership(shape):
     text = shape.format(v=V)
     assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
+def test_r7_typographic_quote_ends_complete_placeholder():
+    text = "password=“${PW}” next=public"
+    assert redact_text(text) == (text, [])
 
 
 
