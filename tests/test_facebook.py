@@ -1764,6 +1764,24 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
 
     class _FakeCDP:
         def send(self, method: str, params: Any = None) -> Any:
+            if method == "Page.getFrameTree":
+                return {"frameTree": {"frame": {"id": "synthetic-frame"}}}
+            if method == "Page.createIsolatedWorld":
+                assert params == {
+                    "frameId": "synthetic-frame",
+                    "worldName": "metamuse-popup-self-check",
+                }
+                return {"executionContextId": 314}
+            if method == "Runtime.evaluate":
+                from metamuse import _facebook_dom as dom
+
+                assert params == {
+                    "expression": f"({dom.POPUP_CHECK})()",
+                    "contextId": 314,
+                    "returnByValue": True,
+                }
+                launched["isolated_popup_check"] = True
+                return {"result": {"value": True}}
             return {
                 "targetInfo": {"targetId": "synthetic-page"},
                 "targetInfos": [{"targetId": "synthetic-page", "type": "page"}],
@@ -1805,6 +1823,7 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
         assert kw["args"] == _browser_egress.build_chromium_launch_args(guard.proxy_port)
         assert launched["context_kwargs"]["service_workers"] == "block"
         assert launched["context_kwargs"]["accept_downloads"] is False
+        assert launched["isolated_popup_check"] is True
     finally:
         session.close()
 
