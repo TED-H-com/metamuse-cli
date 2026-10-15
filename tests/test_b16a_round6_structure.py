@@ -238,7 +238,7 @@ def test_r6_html_character_references_name_the_private_field(attribute):
 def test_r6_decoded_quote_cannot_shorten_shallower_value():
     from metamuse.safety import _decode_view, _decoding_depths, _Syntax
 
-    text = "password=prefix%22inner%22" + MARKER
+    text = "password=prefix" + MARKER + "%22inner%22&x=public"
     view, edits = _decode_view(text)
     syntax = _Syntax(view, _decoding_depths(len(text), [edits]))
     assert syntax.value(view, len("password="), operator_depth=0) == len(view)
@@ -331,3 +331,25 @@ def test_r6_nested_form_prefix_has_its_own_decoding_layer():
     depths = bytearray(len(text))
     depths[7] = 1
     assert (2, len(text), 1) in list(_layered_form_ranges(text, depths, [(0, len(text))]))
+
+
+@pytest.mark.parametrize("layers", [0, 1, 2])
+@pytest.mark.parametrize("key", ["password", "token", "cookie", "authorization"])
+def test_r6_quoted_argument_can_overlap_a_private_assignment(key, layers):
+    text = '--password "' + key + '": ' + MARKER
+    output, findings = redact_text(encoded(text, layers))
+    assert MARKER not in output and findings
+    assert redact_text(output)[0] == output
+
+
+@pytest.mark.parametrize("layers", [1, 2, 3])
+@pytest.mark.parametrize("prefix", ["", "Here's the URL: ", "note `\n"])
+def test_r6_encoding_the_whole_url_keeps_literal_question_in_value(layers, prefix):
+    from urllib.parse import quote
+
+    text = "https://example.invalid/?token=" + MARKER + "?" + MARKER + "&view=1"
+    for _ in range(layers):
+        text = quote(text, safe="")
+    output, findings = redact_text(prefix + text)
+    assert MARKER not in output and findings
+    assert redact_text(output)[0] == output

@@ -2464,6 +2464,15 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
         closed_quote = quoted and end - start > 1 and text[end - 1] == text[start]
         if include_exempt or syntax.private(text, key, start, end):
             position = max(position, end - int(closed_quote))
+            if (
+                closed_quote
+                and continuation
+                and end - start <= 130
+                and redaction_sensitive_key(text[start + 1 : end - 1])
+            ):
+                # A quoted argument can also be the key of an overlapping
+                # assignment. Its value starts beyond this argument's end.
+                position = match.end()
             kind = (
                 "local_path"
                 if _credential_name(key) == "localpath"
@@ -2638,7 +2647,10 @@ def _query_spans(text, syntax, encoded_positions):
                 cursor = boundary.end()
                 continue
             if (
-                (boundary.group() == "?" and not encoded)
+                (
+                    boundary.group() == "?"
+                    and (not encoded or syntax.depth(boundary.start()) <= operator_depth)
+                )
                 or (boundary.group() == "?" and encoded_positions.form)
                 or (
                     boundary.group() not in {"?", "&", "#"}
@@ -3552,10 +3564,18 @@ def _form_ranges(text, depths=None):
             if form.fullmatch(line[0][begin:]) or encoded_form.fullmatch(line[0][begin:]):
                 yield line.start() + begin, line.end(), "form", ""
 
+    url_pattern = re.compile(r"(?i)(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://[^\s\"'<>]++")
+
     def embedded_bodies():
-        # A whitespace-delimited captured form remains its own body when prose
-        # surrounds it; surrounding '?' never widens this scope.
+        # A captured form is independent of surrounding prose. A field inside
+        # an actual URL belongs only to its bounded query, never its fragment.
+        urls = iter(url_pattern.finditer(text))
+        url = next(urls, None)
         for form_field in re.finditer(r"(?<![A-Za-z0-9_%])" + _NAME + r"=[^\s\"'`<>]++", text):
+            while url is not None and url.end() <= form_field.start():
+                url = next(urls, None)
+            if url is not None and url.start() <= form_field.start() < url.end():
+                continue
             yield form_field.start(), form_field.end(), "form", ""
 
     def quoted_bodies():
@@ -3582,9 +3602,7 @@ def _form_ranges(text, depths=None):
                         yield start, match.start(), "form", ""
 
     def queries():
-        for match in re.finditer(
-            r"(?i)(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://[^\s\"'<>]++", text
-        ):
+        for match in url_pattern.finditer(text):
             question = text.find("?", match.start(), match.end())
             fragment = text.find("#", match.start(), match.end())
             if question >= 0 and (fragment < 0 or question < fragment):
