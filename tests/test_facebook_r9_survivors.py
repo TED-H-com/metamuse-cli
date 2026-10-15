@@ -6,11 +6,10 @@ from types import SimpleNamespace
 
 import pytest
 from browser_deadline import browser_deadline
+from facebook_parity import capture_session
 from test_facebook import _synthetic_post_html
 from test_facebook_r8_capture import run
 from test_facebook_r8_cutoff import session_for
-from test_facebook_review import URL, browser_fixture
-from test_facebook_round5 import POST_PATH
 from test_facebook_round6 import reset_seams  # noqa: F401
 
 from metamuse import _facebook_capture as capture
@@ -42,29 +41,15 @@ def test_r9_exact_node_bounds(tmp_path, monkeypatch, driver, request):
             capture.fixture_capture(exact.replace("</body>", "<br></body>"))
         assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
         return
-    with browser_fixture(
-        tmp_path, monkeypatch, {POST_PATH: base}, unsandboxed=False, read_timeout=300
-    ) as (_, _, _, _, _, guard, driver):
-        session = driver.open_session(
-            facebook.SanitizedStorageState(
-                cookies=[], origins=[], secret_tokens=(), cookie_hosts=(), dropped_cookie_domains=()
-            ),
-            guard,
-            timeout_ms=300000,
-            max_bytes=100000000,
-        )
-        try:
-            session.goto_post(URL)
-            size = len(session._capture()[1])
-            exact = base.replace("</body>", "<br>" * (65536 - size) + "</body>")
-            session._page.set_content(exact)
-            assert len(session._capture()[1]) == 65536
-            session._page.set_content(exact.replace("</body>", "<br></body>"))
-            with pytest.raises(m.CoreError) as caught:
-                session._capture()
-            assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
-        finally:
-            session.close()
+    with capture_session(monkeypatch) as session:
+        size = len(session._capture()[1])
+        exact = base.replace("</body>", "<br>" * (65536 - size) + "</body>")
+        session._page.set_content(exact)
+        assert len(session._capture()[1]) == 65536
+        session._page.set_content(exact.replace("</body>", "<br></body>"))
+        with pytest.raises(m.CoreError) as caught:
+            session._capture()
+        assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
 
 
 def test_r9_verifier_single_deadline(monkeypatch):
