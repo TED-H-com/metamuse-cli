@@ -170,3 +170,9 @@ def test_r6_pairing_is_local_and_contraction_aware():
     syntax = _Syntax(text)
     assert syntax.ends.get(0) == len(text)
     assert syntax.quote_closings.get(text.index('"', 5)) == 4
+
+
+@pytest.mark.parametrize('wrapper', ['"""{x}"""', "'''{x}'''", '`{x}`'])
+def test_r6_multiline_tokens_preserve_benign_content(wrapper):
+    text = wrapper.replace('{x}', 'token = os.getenv("TOKEN")\nx = 1')
+    assert redact_text(text) == (text, [])

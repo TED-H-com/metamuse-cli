@@ -317,3 +317,6 @@ its plus signs decode only at that layer or shallower. The scan never grants for
 semantics to unrelated prose after a question mark. Whole escaped quoted placeholders
 are canonicalized before applying the same closed exemption list; their nested
 assignments remain independently inspected. Public-key block mirrors stay public.
+
+Triple-quoted strings, heredoc/YAML multiline bodies and backticks are ordinary
+credential-bearing contexts. Their benign content remains byte-for-byte intact.
