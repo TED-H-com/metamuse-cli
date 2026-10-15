@@ -249,8 +249,9 @@ and `muse.send` use `external_submit`; `muse.read` and `collect.remote` use `saf
 B10 integration: the external verifier returns the recomputed action digest after its
 checks/reservation. Core mints a one-use token after commit. Live Muse credentials use
 an immutable provider/account/auth_ref snapshot and the explicit cookie-header JSON
-format documented in [MUSE.md](MUSE.md). A Muse share also requires exact_digest for
+format documented in [MUSE.md](MUSE.md). An exact-mode Muse share also requires exact_digest for
 the prepared question/packet/target action, in addition to its snapshot/packet scope.
+Only the validated human research mode below permits question variation.
 
 ## Human approval without Python internals
 
@@ -274,3 +275,37 @@ and machine-readable JSON data retain their original values. This display bounda
 does not grant authority or change the exact-action confirmation requirement.
 Changed request text or packet fails digest equality; preview data cannot mint permissions.
 The fixed registration seam and B12/B13 adoption obligations are in [CORE_API.md](CORE_API.md).
+
+## Bounded research approval (candidate)
+
+`metamuse permit research` is human-only, absent from MCP, and uses the same terminal
+quoting/escaping as exact approval. See SPEC §7 and [MUSE.md](MUSE.md) for the workflow.
+Its confirmation digest covers the current configured account/provider/backend, project,
+existing deterministic discussion/open request identity, actual open wire payload/digest,
+exact packet ID/digest/selection, absolute expiry, rounds, remote-read ceiling and receipt
+key. A fresh comparison inside Store.transaction prevents review/creation substitution.
+Two existing Permit inserts, permit.created events and one permit.research mutate_once
+receipt commit together; failure rolls back the entire pair. Replay returns current rows
+without restoring counters or revocation. No permission system or migration is added.
+
+The optional strict `research` binding in AccessScope/ShareScope contains discussion_id,
+topic, open_request_key/open_digest, backend, packet_id/packet_digest/selection_digest,
+rounds (1–20, also workspace max_exchanges) and max_reads (1–200). Access operations must
+be exactly muse.open + muse.read, target_digests exactly the open digest. Share has exactly
+the fixed packet digest and no snapshot. Human manual create validates current bindings,
+<=24h expiry and corresponding max_uses caps. Unsupported operations/mixes fail closed.
+
+The existing verifier reloads actual durable discussion/exchange/packet/prepared payload
+and source revisions at queue and reservation, plus current configuration. Share max_uses
+is rounds; access max_uses is max_reads + one open. Durable read reservations also enforce
+the read ceiling separately. Reserved safe-read retries keep their use while rechecking
+current validity; uncertain submissions require original-intent reconciliation, never
+another send/refund. New optional PermitUse.discussion_id is included only for research
+fingerprints: legacy fingerprints keep their exact prior shape including packet_id:null.
+
+This is explicit consent to varied host-authored questions on the displayed topic with
+one fixed packet. Identities and bounds are enforced; arbitrary question semantics and
+absence of other data are host instructions, not a machine proof. New data/revision,
+packet, account/backend, project/discussion/topic/open key needs a new scope. Nothing
+here grants collection, social actions or publishing. Candidate checks are synthetic;
+independent full CI, bot/parent acceptance and authorized LIVE remain outstanding.

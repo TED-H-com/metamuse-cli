@@ -9,9 +9,9 @@
 ## 1. Skill 不可為事項（What the Skill Cannot Do）
 
 1. **不可授予權限或偽造批准**：
-   - Skill、MCP 工具標註（tool annotations）與模型輸出絕無權限授予任何系統或外部權限，亦不可自行產出 `approved: true`。所有存取權限必須由人類操作者在 CLI 透過 `metamuse permit approve` 或 `metamuse permit create` 顯式建立。
+   - Skill、MCP 工具標註（tool annotations）與模型輸出絕無權限授予任何系統或外部權限，亦不可自行產出 `approved: true`。所有存取權限必須由人類操作者在 CLI 透過 `metamuse permit approve`、`metamuse permit research` 或 `metamuse permit create` 顯式建立。
 2. **不可執行人類專屬管理命令**：
-   - 憑證匯入與許可核發（`metamuse auth import`、`metamuse permit create`、`metamuse permit approve`）屬於僅限人類操作的 CLI 命令，Skill 與 MCP 接口不具備調用路徑。
+   - 憑證匯入與許可核發（`metamuse auth import`、`metamuse permit create`、`metamuse permit approve`、`metamuse permit research`）屬於僅限人類操作的 CLI 命令，Skill 與 MCP 接口不具備調用路徑。
 3. **不可執行外部發布**：
    - P0 規格中不提供任何發布工具（無任何發布或社群上傳端點）。`metamuse_draft_save` 與 `metamuse_export` 僅為本地儲存與檔案製品產出，絕非向外發布。
 4. **不可加入行銷策略與作者人設**：

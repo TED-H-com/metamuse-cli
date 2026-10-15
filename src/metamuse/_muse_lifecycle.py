@@ -437,10 +437,14 @@ def _use(discussion, operation, digest, packet=None):
         operation=operation,
         digest=digest,
         packet_id=packet,
+        discussion_id=discussion.id,
     )
 
 
 def _share_target(permit, digest):
+    if permit.scope.get("research") is not None:
+        # verify_permit validates this mode against persisted discussion/packet/wire.
+        return
     if permit.exact_digest != digest:
         _error(
             m.ErrorCode.SCOPE_DENIED,
@@ -562,12 +566,18 @@ def open_muse_discussion(ctx, request):
     )
     with ctx.store.connection() as conn:
         ctx.store.get(m.Project, request.project_id, conn=conn)
-        verify_permit(
-            ctx.store,
-            request.access_grant_id,
-            _use(discussion, "muse.open", action_digest(prepared.target, prepared.payload)),
-            conn=conn,
-        )
+        # Research open verification needs the actual persisted discussion below.
+        row = conn.execute(
+            "SELECT * FROM permits WHERE id=?", (request.access_grant_id,)
+        ).fetchone()
+        permit = ctx.store.decode(m.Permit, row) if row else None
+        if permit is None or permit.scope.get("research") is None:
+            verify_permit(
+                ctx.store,
+                request.access_grant_id,
+                _use(discussion, "muse.open", action_digest(prepared.target, prepared.payload)),
+                conn=conn,
+            )
 
     with ctx.store.connection() as conn:
         _assert_open_available(conn, discussion)
@@ -575,6 +585,13 @@ def open_muse_discussion(ctx, request):
     def domain(writer, job, steps):
         _assert_open_available(writer, discussion)
         writer.insert(discussion)
+        if permit is not None and permit.scope.get("research") is not None:
+            verify_permit(
+                ctx.store,
+                request.access_grant_id,
+                _use(discussion, "muse.open", action_digest(prepared.target, prepared.payload)),
+                conn=writer,
+            )
         writer.execute(
             "UPDATE discussions SET open_step_id=? WHERE id=?", (steps[0].id, discussion.id)
         )
@@ -603,14 +620,20 @@ def submit_muse_exchange(ctx, request):
     packet = ctx.store.get(m.Packet, request.packet_id)
     with ctx.store.connection() as conn:
         _assert_available(conn, discussion.id)
-        permit = verify_permit(
-            ctx.store,
-            request.share_grant_id,
-            _use(
-                discussion, "muse.send", action_digest(prepared.target, prepared.payload), packet.id
-            ),
-            conn=conn,
-        )
+        row = conn.execute("SELECT * FROM permits WHERE id=?", (request.share_grant_id,)).fetchone()
+        permit = ctx.store.decode(m.Permit, row) if row else None
+        if permit is None or permit.scope.get("research") is None:
+            permit = verify_permit(
+                ctx.store,
+                request.share_grant_id,
+                _use(
+                    discussion,
+                    "muse.send",
+                    action_digest(prepared.target, prepared.payload),
+                    packet.id,
+                ),
+                conn=conn,
+            )
         _share_target(permit, action_digest(prepared.target, prepared.payload))
         count = conn.execute(
             "SELECT count(*) FROM exchanges WHERE discussion_id=?", (discussion.id,)
@@ -638,6 +661,18 @@ def submit_muse_exchange(ctx, request):
         writer.insert(
             exchange.model_copy(update={"job_id": job.id, "submission_step_id": steps[0].id})
         )
+        if permit.scope.get("research") is not None:
+            verify_permit(
+                ctx.store,
+                request.share_grant_id,
+                _use(
+                    discussion,
+                    "muse.send",
+                    action_digest(prepared.target, prepared.payload),
+                    packet.id,
+                ),
+                conn=writer,
+            )
 
     result = submit_job(
         ctx.store,

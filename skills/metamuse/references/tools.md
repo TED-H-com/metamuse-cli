@@ -106,6 +106,7 @@
 - `metamuse auth import`：匯入外部帳號驗證資訊或憑證檔案。
 - `metamuse permit create`：建立限定範圍、到期日與使用次數之操作許可。
 - `metamuse permit approve`：人類重算並確認approval.request；Agent只顯示next_action命令，絕不可執行或自批。預設24h到期，改request不能沿用digest。
+- `metamuse permit research`：人類一次批准固定discussion/topic/open key、packet與account/provider/backend，回傳access/share IDs；現有open/send/read工具重用，不新增MCP。問題可變但不能夾帶其他資料；remote read/輪次/expiry不重置。open JSON使用project_id/topic/request_key；CLI另需--packet、--rounds、--max-reads、--expires-at、--request-key。之後使用上述open/send/read/close，再以原始來源和兩輪observation evidence_ref呼叫draft_save、draft_preview、export（draft_revision ref）。
 - `metamuse permit revoke`：撤銷特定操作許可。
 - `metamuse permit list`：檢視專案內現有許可清單。
 

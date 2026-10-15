@@ -485,6 +485,45 @@ and triggering envelopes. No global Python warning filter is changed. Archives f
 manifest and directories. Restore blocker checks/unlink are inside the maintenance lock.
 Raw leaf symlinks are refused before resolution; symlinked parents remain supported.
 
+## Bounded research on existing Permits (B08/B09/B10)
+
+`safety.AccessScope` / `ShareScope` accept an optional strict `research` JSON binding;
+legacy exact scopes retain their validation. Access research permits only muse.open
+and muse.read with the one exact open action digest; share research requires exactly
+one packet digest and rejects snapshots. The binding stores deterministic discussion
+ID, topic, original open request key/digest, backend, packet ID/digest/selection digest,
+rounds and read ceiling. Project/provider/account remain the existing Permit columns.
+No core models, SQL schema or migration changes are needed.
+
+`_muse_research` recomputes a human review and its canonical approval digest, then
+recomputes it inside one Store.transaction before issuing the pair with Store.insert,
+events and mutate_once. It never nests create_permit transactions. The receipt operation
+is permit.research; it identifies both existing Permit IDs, not a second grant store.
+The review includes absolute expiry, one open plus the finite read ceiling, question
+ceiling and explicit consent to host-authored question variation. CLI uses the existing
+quoted/escaped terminal review and terminal yes or matching digest. MCP creates no grants.
+Manual human permit create validates this scope against current bindings and limits too.
+
+Research queue checks run against persisted discussion/exchange after insertion in the
+same queue transaction, with rollback on denial. Read queue and all reservation checks
+revalidate stored packet bytes/hash, exact selection/current revisions, discussion/open
+identity and prepared wire reconstructed from durable fields. Configuration is reloaded
+at verification. The existing conditional max_uses update and use_reserved events enforce
+concurrent round/read consumption. Access max_uses is reads + one open; existing reservation
+events additionally enforce the separate remote-read ceiling even if an old exact grant
+paid for the open. Unknown-open sessions.list is only the existing original-marker
+reconciliation route, never a fresh create. Packet changes also invalidate remote reads;
+local stored reads remain available for review/reconciliation planning.
+
+Only validated research shares bypass _share_target's extra verbatim-question equality;
+old exact mode retains it. PermitUse carries trusted discussion context; legacy reservation
+fingerprints exclude the newly optional discussion_id but retain the old packet_id:null
+field. Research fingerprints additionally bind discussion_id. No counter reset, reservation
+refund, external-submit retry or automatic expiry extension is introduced. Topic meaning
+and exclusion of other data from arbitrary free text remain host instructions, explicitly
+separate from enforced identity/budget checks. Candidate evidence is OFFLINE/FIXTURE;
+exact-SHA hosted full CI, independent review, bot and parent acceptance remain pending.
+
 ## Operator approval preview seam (B08/B10/B14)
 
 Fixed feature registration uses `safety.register_approval_preview(operation, fn,

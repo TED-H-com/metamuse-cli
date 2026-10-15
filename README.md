@@ -48,6 +48,27 @@ Runtime workspaces belong outside the checkout. Operation registration, handler
 boundaries and database APIs are documented in [CORE_API.md](docs/dev/CORE_API.md).
 Dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
+## Bounded Muse research (candidate)
+
+This candidate adds human-only `permit research` alongside the existing exact-action
+approval. It has synthetic OFFLINE/FIXTURE/INTEGRATION coverage; it has not been accepted
+on main or verified LIVE. Follow the [bounded workflow](docs/dev/MUSE.md#bounded-research-workflow-candidate-synthetic-evidence)
+for sourced packet → one human approval → two varied Muse questions → restart/read →
+host draft with source/observation citations → preview/export.
+
+The human reviews `permit research --open-request-file open.json --packet PACKET
+--rounds 2 --max-reads 4 --expires-at EXPIRY_WITH_TIMEZONE --request-key research-approval`.
+The open file contains project/topic/open request_key, with no grants or reconciliation
+ID. Confirmation returns one access and one share Permit ID, used by the existing
+CLI/MCP commands. It binds current account/provider/backend, project, one deterministic
+discussion/topic/open key and one immutable packet digest/selection. Expiry is at most
+24h, rounds at most 20 and the workspace exchange cap, remote reads at most 200 plus
+one open. Existing usage, expiry/revocation and uncertain-delivery reconciliation apply.
+The terminal review explicitly permits host-authored question variation on that topic;
+free-text topic meaning and absence of other data remain host instructions. Changed
+packet/data revision/account/project/discussion needs new consent. It grants no collection,
+social action or publishing permission. The exact-action walkthrough below still works.
+
 ## Local offline walkthrough
 
 Run from the repository root after `uv sync --python 3.12`. This synthetic walkthrough collects data, previews a packet, opens a fixture Muse discussion, asks a question and a follow-up in the same discussion, saves host-written text and exports five formats. The host shows the human each `E_SCOPE_REQUIRED` approval preview. Only the human runs `operator permit approve`, reviews its stderr (including expiry and uses), and repeats the unchanged call with the returned grant. The agent never approves. Evidence is OFFLINE/FIXTURE, with no network or accounts.

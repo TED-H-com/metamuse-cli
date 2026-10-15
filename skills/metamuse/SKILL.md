@@ -38,10 +38,14 @@ metadata:
 
 ## 5. 權限與安全邊界
 
-- `metamuse auth import` 與 `metamuse permit create`、`metamuse permit approve` 為僅限人類操作的 CLI 命令。Skill、工具標註（tool annotations）與模型輸出絕不能授予權限或簽發 `approved: true`。
+- `metamuse auth import` 與 `metamuse permit create`、`metamuse permit approve`、`metamuse permit research` 為僅限人類操作的 CLI 命令。Skill、工具標註（tool annotations）與模型輸出絕不能授予權限或簽發 `approved: true`。
 - 保存與匯出僅為本機儲存，不等於發布；P0 不提供任何發布工具。發布須經已驗收的後端、精確 payload 與目標批准；結果不明先對帳。
 
-- 缺grant時顯示envelope.approval的destination、topic/question、packet digest/bytes及packet_preview_command。把request JSON與next_action交給人類；Agent只顯示命令，絕不可自行執行permit approve或帶--exact-digest自批。人類回傳permit ID後重試同一request；改問題或packet需要新批准。approval不建立job／grant。
+- 缺grant時顯示envelope.approval的destination、topic/question、packet digest/bytes及packet_preview_command。把request JSON與next_action交給人類；Agent只顯示命令，絕不可自行執行permit approve或帶--exact-digest自批。人類回傳permit ID後重試同一request；精確模式改問題或packet需要新批准。approval不建立job／grant。
+- 人類可選 `permit research --open-request-file PATH --packet ID --rounds N --max-reads N --expires-at TIMESTAMP --request-key KEY`：open JSON只含原project/topic/request_key，不含grant或discussion_id。Agent只提出範圍與命令，不能執行、自批或傳--exact-digest；等人類回傳access/share兩個Permit IDs與discussion ID後，沿用現有open/send/read工具。
+- 研究模式明示允許host在同topic自行變換問題，但只附同一固定packet。工具強制帳號/provider/backend、project、discussion/topic/open key、packet digest/來源revision、到期與次數；任意問題語義及「不夾帶其他資料」是host必須遵守的指示，不是機器證明。新增資料/revision、packet、帳號或用途需新範圍；不授予collect/post/reply或發布。
+- 研究上限為1–20輪且不超workspace max_exchanges、1–200遠端read及<=24h；一個access Permit預留一次open加read預算，一個share Permit共用所有輪次。換問題不重置次數；expiry/revoke/用盡要停。重啟保留原IDs；unknown先對帳，不重送、不退次數。本地read不花遠端預算。
+- 兩輪後由host寫稿，facts_refs保留原始來源與每輪實際read得到的observation evidence_ref；draft_save→draft_preview→export（draft_revision ref）只產本機製品，不發布。詳細命令與exact/bounded差異見`references/tools.md`。此candidate僅離線/fixture，未宣稱main/LIVE驗收。
 - MCP預設附同Executor worker；--no-worker或鎖被別process持有時worker_available=false。本server不重試搶鎖，提示人類在原owner退出後重啟MCP。server退出後附帶worker不會繼續；accepted只表示保存。
 
 ## 6. 中性創作與生命週期

@@ -911,6 +911,19 @@ Store and mutable fixture state; its database access is read-only. Credentials u
 the secret store, and the resolver does DNS; neither uses the workspace database.
 Network waits never hold a connection lock or transaction.
 
+### Human bounded research on the existing safety seam
+
+`permit research` is a human-only alternative to exact `permit approve`, described in
+[SAFETY_API.md](SAFETY_API.md) and [MUSE.md](MUSE.md). It issues existing access/share
+Permits atomically via one Store.transaction/mutate_once; MCP tools and core schemas
+are unchanged. Optional strict scope JSON carries discussion/open identity, fixed packet,
+budgets and current binding. Queue-domain checks read the newly inserted discussion or
+exchange through TransactionWriter.execute in the same transaction; no nested transaction
+or core mutation API is added. At reservation the existing safety verifier rechecks the
+actual persisted state on the supplied connection. Legacy PermitUse reservation fingerprints
+retain their previous shape; research additionally binds trusted discussion context.
+Exact-mode question equality remains required. Candidate evidence is synthetic only.
+
 ## B09 standard transport trust (schema 5)
 
 Unreleased migration `005_muse_trust.sql` is amended in place again for round 3;

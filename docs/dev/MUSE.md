@@ -418,6 +418,80 @@ reservation or requeue. Quarantine clears only after settlement. Late observatio
 remain visible and are labeled `late`; `closed` never reopens. Uncalibrated statuses,
 including `completed`, remain progress; an answer never asserts research completion.
 
+## Bounded research workflow (candidate, synthetic evidence)
+
+Use exact `permit approve` for a verbatim action. For a few host-authored questions
+with one fixed packet, the human may instead approve one bounded research scope.
+This candidate is not a main/LIVE acceptance claim. The existing CLI/MCP requests,
+worker and durable discussion/exchange/results remain the same.
+
+1. Import permitted sources (`add --file PATH --kind text --project PROJECT
+   --request-key import --run`, or the existing MCP collect). Search, select exact
+   source evidence refs, then `packet prepare --project PROJECT --selection-file
+   selection.json --request-key packet`; inspect `packet preview PACKET`. Source
+   methods, revisions and missing facts stay visible; Muse answers are not sources
+   for a new packet.
+2. Save an existing new-open request in `open.json`:
+
+   ```json
+   {"project_id":"PROJECT","topic":"Synthetic activity review","request_key":"research-open"}
+   ```
+
+   No grant or reconciliation discussion_id belongs in this file. The human runs:
+
+   ```sh
+   metamuse --workspace /path/to/workspace --json permit research \
+     --open-request-file open.json --packet PACKET --rounds 2 --max-reads 4 \
+     --expires-at EXPIRY_WITH_TIMEZONE --request-key research-approval
+   ```
+
+   Choose an absolute expiry in the next 24h. Review the quoted topic/open key,
+   configured account/provider/backend, project/discussion, packet and selection
+   hashes, one open plus read ceiling, question ceiling and expiry. Terminal `yes`
+   confirms, or a matching `--exact-digest` confirms the whole displayed research
+   scope in a human non-TTY CLI. The digest includes all bounds and the actual open
+   payload; it is not the old open action digest. A missing confirmation creates
+   nothing and returns the review digest for inspection. Agent/MCP never self-approve.
+3. Keep the returned `access_grant_id`, `share_grant_id` and `discussion_id`. Call
+   `muse open --project PROJECT --topic "Synthetic activity review" --request-key
+   research-open --access-grant ACCESS`. The key and topic must match open.json.
+   Accepted means queued; run the existing worker or use MCP's attached worker and
+   inspect job completion before sending.
+4. Call `muse send --discussion DISCUSSION --packet PACKET --question-file first.txt
+   --share-grant SHARE --request-key question-1`, then `muse read --exchange EXCHANGE1
+   --refresh --access-grant ACCESS`. Wait for the returned job, and read locally to
+   obtain the stored reply/evidence refs. Close the host outcome with
+   `muse close-exchange EXCHANGE1 --outcome needs_more_data --request-key close-1`.
+   Repeat with a different question file/key and the same packet and grant IDs.
+   A live baseline history read uses the same ACCESS via the mapped discussion's
+   existing `muse open --discussion DISCUSSION ... --request-key baseline` route.
+5. After restart, read the original exchange IDs locally; refresh uses the same
+   ACCESS while it has reads/time remaining. Unknown open/send means reconcile the
+   original intent using these read routes, never send again or reset counters.
+6. The host writes the draft, citing original packet source refs plus each relevant
+   read observation's exact `evidence_ref` (`muse_observation`, revision 1). Use
+   `draft save --project PROJECT --platform generic --text-file draft.txt
+   --facts-file facts.json --request-key draft`, then `draft preview DRAFT --revision 1`.
+   Put the returned draft ref (`draft_revision`, ID, revision) in export-refs.json;
+   `export --project PROJECT --refs-file export-refs.json --format bundle
+   --request-key export` creates local files/manifest. Check citations and factual
+   support; an existing reference alone does not establish support. Export does not
+   publish. Fixture-derived drafts/exports retain mock/backend/research_complete tags.
+
+Research means explicit consent to varied host-authored questions on the displayed
+topic with one immutable packet. The tool enforces identities, packet/revisions and
+budgets, but cannot prove arbitrary question meaning or that free text contains no
+other data. The host must stay on topic and add no other data. New packet/data revision,
+project, discussion/topic/open key, provider/account/backend needs new human scope.
+No collect/post/reply/social/external-publishing permission is granted. Maxima are
+1–20 rounds (also workspace max_exchanges), 1–200 remote reads and 24h. The access row's
+max_uses is reads + one open; the share row's max_uses is rounds. Local reads are free;
+reserved safe-read retries recheck current validity without another use. The pair's
+receipt replays the original IDs/current counters, with no refill or renewal. Either
+row can be revoked with existing `permit revoke`; inspect both with `permit list`.
+Changed/expired/revoked/exhausted grants refuse queue and send/read boundaries. New
+questions never reset usage, and unknown delivery never refunds or authorizes replay.
+
 ## Token and zero-handoff settlement
 
 `ExternalActionToken` cannot be directly constructed, copied or serialized. Its private

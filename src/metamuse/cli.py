@@ -190,6 +190,14 @@ def parser() -> Parser:
             approve.add_argument("--expires-at")
             approve.add_argument("--max-uses", type=int, default=1)
             _request_key(approve)
+            research = sub.add_parser("research")
+            research.add_argument("--open-request-file", required=True)
+            research.add_argument("--packet", required=True)
+            research.add_argument("--rounds", required=True, type=int)
+            research.add_argument("--max-reads", required=True, type=int)
+            research.add_argument("--expires-at", required=True)
+            research.add_argument("--exact-digest")
+            _request_key(research)
             revoke = sub.add_parser("revoke")
             revoke.add_argument("id")
             _request_key(revoke)
@@ -516,6 +524,57 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
             from metamuse import safety
 
             ctx.require_interactive()
+            if args.action == "research":
+                from metamuse import _muse_research as research
+
+                def prepare():
+                    with ctx.store.connection() as conn:
+                        return research.prepare_research(
+                            ctx,
+                            _read_json(args.open_request_file, ctx.limits.text_max_bytes),
+                            packet_id=args.packet,
+                            rounds=args.rounds,
+                            max_reads=args.max_reads,
+                            expires_at=args.expires_at,
+                            request_key=args.request_key,
+                            conn=conn,
+                        )
+
+                reviewed = prepare()
+                preview = research.preview(ctx, reviewed)
+                remaining = datetime.fromisoformat(reviewed["expires_at"]) - datetime.fromisoformat(
+                    ctx.clock()
+                )
+                sys.stderr.write(
+                    _approval_review(preview)
+                    + f"Expires at (UTC): {reviewed['expires_at']} (remaining: {remaining})\n"
+                    + f"Access max uses: {reviewed['access_max_uses']}\n"
+                    + f"Share max uses: {reviewed['share_max_uses']}\n"
+                )
+                if args.exact_digest is not None:
+                    if args.exact_digest != preview.action_digest:
+                        raise m.CoreError(
+                            m.ErrorCode.SCOPE_DENIED,
+                            "Approval digest differs from this research scope",
+                        )
+                else:
+                    if not sys.stdin.isatty():
+                        raise m.CoreError(
+                            m.ErrorCode.SCOPE_REQUIRED,
+                            "Research approval needs a terminal confirmation or --exact-digest",
+                            next_action="Review the displayed research scope; confirmation digest: "
+                            + preview.action_digest,
+                        )
+                    sys.stderr.write("Approve this bounded research scope? Type yes: ")
+                    sys.stderr.flush()
+                    if sys.stdin.readline().strip().lower() != "yes":
+                        raise m.CoreError(m.ErrorCode.SCOPE_DENIED, "Approval was declined")
+                if prepare() != reviewed:
+                    raise m.CoreError(
+                        m.ErrorCode.SCOPE_DENIED,
+                        "Research request changed during review; review again",
+                    )
+                return research.issue_research(ctx, reviewed)
             if args.action == "approve":
                 app.register_builtin_operations()
                 preview = safety.approval_preview(

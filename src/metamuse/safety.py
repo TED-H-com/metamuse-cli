@@ -374,6 +374,10 @@ def create_permit(ctx: AppContext, request: m.PermitCreateRequest) -> m.Envelope
             if not now < expires <= now + PERMIT_MAX_LIFETIME:
                 _scope_error("Permit expiry must be in the next 30 days")
             ctx.store.get(m.Project, request.project_id, conn=conn)
+            if scope.research is not None:
+                from metamuse._muse_research import validate_creation
+
+                validate_creation(ctx, conn, scope.research, request)
             if isinstance(scope, ShareScope) and scope.snapshot is not None:
                 ctx.store.validate_evidence(
                     request.project_id, scope.snapshot.selection, conn=conn, source_only=True
@@ -890,11 +894,36 @@ def _timestamp(value: str | None) -> datetime:
         _scope_error("A timezone-aware timestamp is required")
 
 
+class ResearchScope(m.Model):
+    """Human consent for question variation; identities and budgets are enforceable."""
+
+    discussion_id: m.ID
+    topic: str = Field(min_length=1, max_length=8192)
+    open_request_key: m.RequestKey
+    open_digest: m.Digest
+    backend: Literal["fixture", "live"]
+    packet_id: m.ID
+    packet_digest: m.Digest
+    selection_digest: m.Digest
+    rounds: int = Field(ge=1, le=20, strict=True)
+    max_reads: int = Field(ge=1, le=200, strict=True)
+
+
 class AccessScope(m.Model):
     operations: list[Literal["muse.open", "muse.read", "collect.remote"]] = Field(
         min_length=1, max_length=3
     )
     target_digests: list[m.Digest] = Field(min_length=1, max_length=200)
+    research: ResearchScope | None = None
+
+    @model_validator(mode="after")
+    def research_bounds(self) -> AccessScope:
+        if self.research is not None and (
+            self.operations != ["muse.open", "muse.read"]
+            or self.target_digests != [self.research.open_digest]
+        ):
+            raise ValueError("Research access permits only the bound open and discussion reads")
+        return self
 
 
 class SnapshotScope(m.Model):
@@ -913,11 +942,16 @@ class SnapshotScope(m.Model):
 class ShareScope(m.Model):
     packet_digests: list[m.Digest] = Field(default_factory=list, max_length=200)
     snapshot: SnapshotScope | None = None
+    research: ResearchScope | None = None
 
     @model_validator(mode="after")
     def require_selection(self) -> ShareScope:
         if bool(self.packet_digests) == (self.snapshot is not None):
             raise ValueError("Select exact packets or one immutable snapshot")
+        if self.research is not None and (
+            self.snapshot is not None or self.packet_digests != [self.research.packet_digest]
+        ):
+            raise ValueError("Research share requires exactly the fixed packet")
         return self
 
 
@@ -929,6 +963,7 @@ class PermitUse(m.Model):
     operation: OperationName
     digest: m.Digest
     packet_id: m.ID | None = None
+    discussion_id: m.ID | None = None
 
 
 def snapshot_digest(selection: list[m.EvidenceRef]) -> str:
@@ -974,8 +1009,14 @@ def _verify_permit(
     ):
         _grant_error()
     scope = _parse_scope(permit.kind, permit.scope)
+    if scope.research is not None:
+        from metamuse._muse_research import verify_research_use
+
+        verify_research_use(store, conn, permit, scope.research, use, check_remaining)
     if isinstance(scope, AccessScope):
-        if use.operation not in scope.operations or use.digest not in scope.target_digests:
+        if use.operation not in scope.operations or (
+            scope.research is None and use.digest not in scope.target_digests
+        ):
             _grant_error()
     else:
         if use.operation != "muse.send" or use.packet_id is None:
@@ -1107,7 +1148,9 @@ def external_action_verifier(
     Send exactly that verified payload/target. No external I/O inside this callback.
     """
     use = PermitUse.model_validate(use.model_dump(mode="json"))
-    fingerprint = m.payload_digest({"permit_id": permit_id, "use": use.model_dump(mode="json")})
+    # Keep the legacy shape, INCLUDING packet_id=None, for old durable reservations.
+    # Discussion context is persisted for research; exact grants retain their old fingerprint.
+    fingerprint_use = use.model_dump(mode="json", exclude={"discussion_id"})
 
     def verify(conn: sqlite3.Connection, target: dict[str, Any]) -> str:
         if not conn.in_transaction:
@@ -1169,6 +1212,14 @@ def external_action_verifier(
                     "Submission requires reconciliation",
                     next_action="Reconcile the original submission before submitting again",
                 )
+        permit_row = conn.execute("SELECT * FROM permits WHERE id=?", (permit_id,)).fetchone()
+        if permit_row is None:
+            _grant_error("Permit does not exist", missing=True)
+        permit = step.store.decode(m.Permit, permit_row)
+        current_fingerprint_use = dict(fingerprint_use)
+        if permit.scope.get("research") is not None:
+            current_fingerprint_use["discussion_id"] = use.discussion_id
+        fingerprint = m.payload_digest({"permit_id": permit_id, "use": current_fingerprint_use})
         reservation = conn.execute(
             "SELECT detail FROM events WHERE kind='permit.use_reserved' AND object_id=?",
             (row.id,),

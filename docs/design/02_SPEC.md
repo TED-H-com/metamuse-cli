@@ -112,7 +112,7 @@ echo關聯以同一deterministic redaction比較outbound與observation；wire保
 abandoned時若外部提交仍不明，discussion應quarantined，不能立即派下一題繞過未解提交。close_exchange不是遠端cancel。side chat不是跨客戶保密隔離；本地path不是Muse可讀資源。分析prompt不是停用Muse既有寫入工具的權限鎖。
 
 B10實作補充：零bytes證據只接受同process內transport記帳；持久化結果前crash仍unknown。已證明零handoff的記帳先於cancel保存，原step為local failed/remote not_submitted；同時host close不重開exchange，settlement後才解除原step隔離。記帳或settlement寫入失敗時持久化失敗事件、保留uncertain並繼續queue。
-`not_submitted`不退grant、不requeue；新提交要新key與grant。binding只含provider/account/auth_ref，
+`not_submitted`不退grant、不requeue；精確模式新提交要新key與grant；有界研究可使用原grant剩餘額度但不能重送unknown。binding只含provider/account/auth_ref，
 discussion固定snapshot。fixture backend須明示選擇，discussion/message/observation及content envelope標mock，
 inspect只fixture_passed。read預設local；refresh排safe_read job＋current access grant。open對帳可明示原discussion_id，
 unknown只排list job，不再create；已mapped discussion則排history baseline read。cursor由workspace key簽名，綁discussion/exchange與observation高水位。
@@ -151,6 +151,44 @@ backend/mock/research_complete；即使重算hash一致，缺少或偽造標記�
 
 Preview檢查客觀格式、素材可用、引用存在、日期/數字衝突候選。引用存在不代表語義被支持。Export生成本地文件與manifest，不發布或上傳。
 
+### Bounded Muse research (B08/B09/B10; candidate, OFFLINE/FIXTURE)
+
+Exact-action `permit approve` remains available and binds each verbatim question/wire
+payload. Human-only `permit research --open-request-file PATH --packet ID --rounds N
+--max-reads N --expires-at TIMESTAMP --request-key KEY [--exact-digest SHA256]` instead
+creates one existing access Permit and one existing share Permit atomically. No MCP
+grant tool, new Permit kind, permission table, worker or orchestrator is added.
+The open file is an existing MuseOpenRequest with project/topic/request_key and no
+grant or reconciliation discussion_id. The discussion ID is the existing deterministic
+prepare_open identity. Review binds current configured provider/account/backend,
+project, topic/open key, actual prepared open payload/digest, one packet ID/digest and
+exact evidence selection, absolute expiry and both budgets. Creation rechecks those
+bindings after confirmation; a changed review cannot mint a different pair.
+
+One access grant covers that one open and at most N remote history/reconciliation reads
+of its discussion (including future exchanges and the remote mapping learned later).
+The share grant covers at most N host-authored questions with exactly that packet;
+question variation is explicit human consent. Bounds: 1–20 rounds, 1–200 remote reads,
+timezone-aware expiry within 24h, and current workspace exchange/text caps. Defaults
+are not silently enlarged. Local stored reads spend no remote-read uses. Every new
+question shares the original round counter; concurrent reservations cannot exceed it.
+A retry of a reserved safe read rechecks scope/expiry/revocation without another use.
+The pair is issued in one transaction with one durable request receipt: replay returns
+the same IDs/current counters and never renews, refills or unrevokes them; changed
+payload at the same key conflicts and a failed second insert leaves neither grant.
+
+Queue and reservation checks load actual persisted discussion, prepared exchange/wire,
+packet selection/revisions and current configuration. Changed packet/data revision,
+account/backend, project, discussion, topic or open key needs a new human scope.
+No collect/post/reply/social/external-publishing permission follows. Actual questions,
+targets, packet versions/digests and results remain in the existing durable audit.
+Topic labels cannot prove arbitrary question semantics: the UI distinguishes enforced
+identities/bounds from the host instruction to stay on topic and include no other data.
+It does not claim free text is derived only from the packet. Unknown delivery still
+requires reconciliation of the original intent, with no resend or refunded use.
+This candidate has synthetic evidence only; main acceptance, hosted full CI and LIVE
+remain separate gates.
+
 ## 8. CLI
 
 所有命令是開發目標。全域 --workspace、--json、--non-interactive 放子命令前。
@@ -179,6 +217,7 @@ metamuse export --project ID --refs-file PATH --format FORMAT --request-key KEY
 metamuse skill export --dest DIR [--force]
 metamuse mcp [--no-worker]
 metamuse permit approve --operation OP --request-file PATH --request-key KEY [--exact-digest SHA256] [--expires-at TIMESTAMP] [--max-uses N]
+metamuse permit research --open-request-file PATH --packet ID --rounds N --max-reads N --expires-at TIMESTAMP --request-key KEY [--exact-digest SHA256]
 ```
 
 更新草稿加 --draft ID --expected-revision N。明示引用／附件／變體／偏好可用 --facts-file、--assets-file、--variant-file、--preferences-file（JSON）。人類本地auth import／permit create另提供；不是能讓MCP自己approved:true的工具。憑證匯入需操作者指定檔案，不讀任意主瀏覽器profile。
@@ -207,7 +246,7 @@ and for shares packet ID/digest/UTF-8 bytes plus the exact `packet preview` comm
 CLI command. Each text field is redacted separately before JSON encoding, using the same
 strings in the summary and request. The digest still binds original bytes, so a redacted
 or otherwise changed request cannot reuse that digest. Expired, revoked, exhausted,
-mismatched or non-exact share grants retain E_SCOPE_DENIED and their actual message,
+mismatched grants (and non-exact shares in exact-action mode) retain E_SCOPE_DENIED and their actual message,
 without a preview; repeat the call without a grant for a fresh review. Stale packets
 return E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in submit and preview.
 Policy and authentication failures retain their actual errors without a preview.
