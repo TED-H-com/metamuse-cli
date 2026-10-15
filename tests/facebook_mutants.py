@@ -6,7 +6,6 @@ current APIs. R6 mutations remove one required control each. Not loaded normally
 
 import asyncio
 import os
-import re
 from dataclasses import replace
 
 import pytest
@@ -15,7 +14,15 @@ from metamuse import _browser_egress, facebook
 
 
 def apply_mutant(monkeypatch, mutant):
-    if mutant in {"M1", "M2", "M6", "M7", "M8"}:
+    if mutant == "M8":
+        original = facebook._PlaywrightSession._note_expansion_request
+
+        def ignore_xhr(self, event):
+            if event.get("type") != "XHR":
+                return original(self, event)
+
+        monkeypatch.setattr(facebook._PlaywrightSession, "_note_expansion_request", ignore_xhr)
+    elif mutant in {"M1", "M2", "M6", "M7"}:
         original = facebook._PlaywrightSession.__init__
 
         def initialize(self, pw, browser, context, page, *args, **kwargs):
@@ -42,21 +49,6 @@ def apply_mutant(monkeypatch, mutant):
                 monkeypatch.setattr(
                     page, "on", lambda event, cb: None if event == "popup" else page_on(event, cb)
                 )
-            if mutant == "M8":
-                add_script = context.add_init_script
-
-                def script(value):
-                    return add_script(
-                        re.sub(
-                            r"const urls = new WeakMap\(\).*?"
-                            r"XMLHttpRequest\.prototype\.send = function.*?};",
-                            "",
-                            value,
-                            flags=re.DOTALL,
-                        )
-                    )
-
-                monkeypatch.setattr(context, "add_init_script", script)
             original(self, pw, browser, context, page, *args, **kwargs)
             if mutant == "M1":
                 self._network_cdp.send("Network.setBlockedURLs", {"urls": []})

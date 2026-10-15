@@ -7,6 +7,25 @@ from test_facebook_review import browser_fixture, finish
 from test_facebook_round5 import POST_PATH, rows, submit
 from test_facebook_round6 import reset_seams  # noqa: F401
 
+from metamuse import facebook
+
+
+def test_r9_synchronous_xhr_cdp_identity():
+    session = object.__new__(facebook._PlaywrightSession)
+    session._active_control = "expand_1"
+    session._network_frame_id = "main"
+    session._expansion_network_requests = set()
+    session._note_expansion_request(
+        {
+            "type": "XHR",
+            "frameId": "main",
+            "requestId": "xhr-1",
+            "hasUserGesture": True,
+            "initiator": {"stack": {"callFrames": []}},
+        }
+    )
+    assert session._expansion_network_requests == {"xhr-1"}
+
 
 @browser_deadline
 def test_r6_xhr_expansion_failure_preserves_observed_data(tmp_path, monkeypatch):
