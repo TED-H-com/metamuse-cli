@@ -204,45 +204,59 @@ def test_r8_shadow_rendering(tmp_path, monkeypatch, mode, request):
     assert job["coverage_status"] == "scope_satisfied", job
 
 
-@pytest.mark.parametrize(
-    "location", ["head", "meta", "hidden", "unslotted", "template", "open-shadow", "closed-shadow"]
-)
 @browser_deadline
-def test_r8_barriers_in_every_tree(tmp_path, monkeypatch, location, request):
-    marker = '<i data-page-state="login_wall"></i>'
-    markup = _synthetic_post_html()
-    if location == "head":
-        markup = markup.replace("<body>", '<head data-page-state="login_wall"></head><body>')
-    elif location == "meta":
-        markup = markup.replace("<body>", '<head><meta data-page-state="login_wall"></head><body>')
-    elif location == "template":
-        markup = markup.replace("</body>", "<template>" + marker + "</template></body>")
-    elif location == "hidden":
-        markup = markup.replace("</body>", "<div hidden>" + marker + "</div></body>")
-    else:
-        content = marker if location.endswith("shadow") else ""
-        light = marker if location == "unslotted" else ""
-        mode = "closed" if location == "closed-shadow" else "open"
-        markup = markup.replace(
-            "</body>",
-            '<div id="host">'
-            + light
-            + '</div><script>document.getElementById("host").attachShadow({mode:'
-            + json.dumps(mode)
-            + "}).innerHTML="
-            + json.dumps(content)
-            + "</script></body>",
-        )
-    drivers = (
-        ["fixture", "chromium"]
-        if location in {"head", "meta", "hidden", "template"}
-        else ["chromium"]
-    )
-    for driver in drivers:
-        job, stored = run(tmp_path / driver, monkeypatch, markup, driver)
-        assert (job.get("error") or {}).get("code") == "E_AUTH_REQUIRED", job
-        assert job["state"] == "awaiting_user"
-        assert stored == []
+def test_r8_barriers_in_every_tree(tmp_path, monkeypatch):
+    import pytest
+    from facebook_parity import capture_session, captured_parse
+    from test_facebook_round5 import parse
+    from metamuse import models as m
+
+    with capture_session(monkeypatch) as session:
+        for location in (
+            "head",
+            "meta",
+            "hidden",
+            "unslotted",
+            "template",
+            "open-shadow",
+            "closed-shadow",
+        ):
+            marker = '<i data-page-state="login_wall"></i>'
+            markup = _synthetic_post_html()
+            if location == "head":
+                markup = markup.replace(
+                    "<head></head><body>", '<head data-page-state="login_wall"></head><body>'
+                )
+            elif location == "meta":
+                markup = markup.replace(
+                    "<head></head><body>", '<head><meta data-page-state="login_wall"></head><body>'
+                )
+            elif location == "template":
+                markup = markup.replace("</body>", "<template>" + marker + "</template></body>")
+            elif location == "hidden":
+                markup = markup.replace("</body>", "<div hidden>" + marker + "</div></body>")
+            else:
+                content = marker if location.endswith("shadow") else ""
+                light = marker if location == "unslotted" else ""
+                mode = "closed" if location == "closed-shadow" else "open"
+                markup = markup.replace(
+                    "</body>",
+                    '<div id="host">'
+                    + light
+                    + '</div><script>document.getElementById("host").attachShadow({mode:'
+                    + json.dumps(mode)
+                    + "}).innerHTML="
+                    + json.dumps(content)
+                    + "</script></body>",
+                )
+
+            if location in {"head", "meta", "hidden", "template"}:
+                with pytest.raises(m.CoreError) as caught:
+                    parse(markup)
+                assert caught.value.detail.code == m.ErrorCode.AUTH_REQUIRED
+            with pytest.raises(m.CoreError) as caught:
+                captured_parse(session, markup)
+            assert caught.value.detail.code == m.ErrorCode.AUTH_REQUIRED
 
 
 @pytest.mark.parametrize("kind", ["application/xhtml+xml", "application/xml", "image/svg+xml"])

@@ -640,3 +640,11 @@ A trusted click moves the pointer to the quad first, then resolves and checks
 the hit node through its composed ancestors, and immediately sends mousePressed
 and mouseReleased. Hover-revealed overlays therefore fail the hit check without
 receiving a click; the observed data remains with expansion_failed/partial.
+
+Read-only clobbering, foreign-template/slot and barrier-location rows share one
+sandboxed capture session per group. Each row replaces the document and flushes
+pending DOM events before capture; no row relies on a previous row's DOM. Click
+and expansion regressions retain separate browser sessions and stores, preventing
+state, navigation, listener or budget leakage between state-changing cases.
+Normalisation preserves each evidence node's head/body/none container as well as
+the previously compared dimensions.

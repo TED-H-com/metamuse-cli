@@ -254,3 +254,19 @@ def as_document(markup):
     if re.search(r"<(?:!doctype|html|head|body)(?:\s|>)", markup, re.I):
         return markup
     return "<html><head></head><body>" + markup + "</body></html>"
+
+
+def captured_parse(session, markup):
+    from metamuse import facebook
+    from test_facebook_review import URL
+
+    session._page.set_content(as_document(markup), wait_until="load")
+    session._network_cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
+    html, nodes, gaps = session._capture()
+    return facebook.classify_and_parse_observation(
+        facebook.PageObservation(
+            url=URL, status_code=200, html=html, capture_nodes=nodes, capture_gaps=gaps
+        ),
+        permalink=facebook.parse_post_permalink(URL),
+        require_comments_section=True,
+    )
