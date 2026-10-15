@@ -439,3 +439,8 @@ private only in a chain or cookie context: Cookie/Set-Cookie, document.cookie,
 curl -b/--cookie, Netscape jars and HAR cookies arrays. Sensitive names such as
 sid remain private in ordinary comma-separated assignments. Equality comparisons
 are not assignment operators.
+
+Placeholder exemptions apply only after the entire value extent is known.
+A value must be exactly one placeholder; prefix/suffix lookalikes are credentials.
+Nested shell expansions such as ${A:-${B}} use a brace-balance counter whose outer
+closing brace must be the final character.

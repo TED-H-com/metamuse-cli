@@ -1508,7 +1508,15 @@ def _credential_value_exempt(key: str, value: Any) -> bool:
     ):
         return True
     if value.startswith("${") and value.endswith("}"):
-        return True
+        balance = 0
+        for index, char in enumerate(value[1:], 1):
+            if char == "{":
+                balance += 1
+            elif char == "}":
+                balance -= 1
+                if balance == 0:
+                    return index == len(value) - 1
+        return False
     reference = value.removesuffix(";")
     if _type_reference(reference):
         return True
