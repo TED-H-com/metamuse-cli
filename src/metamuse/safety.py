@@ -1661,17 +1661,26 @@ def _decoding_depths(length, layers):
     """
     if not layers:
         return None
-    depths = bytearray(length)
+    depths = None
     for edits in layers:
-        parts = []
-        position = 0
+        view_length = length + edits[-1].end - edits[-1].original_end
+        result = bytearray(view_length)
+        previous = memoryview(depths) if depths is not None else None
+        position = cursor = 0
         for edit in edits:
-            parts.append(depths[position : edit.original_start])
-            prior = depths[edit.original_start : edit.original_end]
-            parts.append(bytes([max(prior, default=0) + 1]) * (edit.end - edit.start))
-            position = edit.original_end
-        parts.append(depths[position:])
-        depths = bytearray().join(parts)
+            if previous is not None:
+                result[cursor : edit.start] = previous[position : edit.original_start]
+            level = (
+                max(previous[edit.original_start : edit.original_end], default=0)
+                if previous is not None
+                else 0
+            )
+            result[edit.start : edit.end] = bytes([level + 1]) * (edit.end - edit.start)
+            position, cursor = edit.original_end, edit.end
+        if previous is not None:
+            result[cursor:] = previous[position:]
+        depths, length = result, view_length
+
     return depths
 
 
@@ -1680,6 +1689,7 @@ class _Syntax:
 
     def __init__(self, text, depths=None):
         self.depths = depths
+        self.max_depth = max(depths, default=0) if depths is not None else 0
         self.form = bool(
             "&" in text and re.fullmatch(_NAME + r"=[^&\s]*+(?:&" + _NAME + r"=[^&\s]*+)*+", text)
         )
@@ -1700,12 +1710,14 @@ class _Syntax:
             if char.startswith("\\"):
                 continue
             if char in "\"'":
-                previous = previous_quotes.get(char)
-                if previous is not None:
-                    quote_ends[previous] = pos + 1
-                previous_quotes[char] = pos
+                level = self.depth(pos)
+                for pending in range(level, self.max_depth + 1):
+                    previous = previous_quotes.pop((char, pending), None)
+                    if previous is not None:
+                        quote_ends[previous] = pos + 1
+                previous_quotes[char, level] = pos
             if quote:
-                if char == quote:
+                if char == quote and self.depth(pos) <= self.depth(opening):
                     self.ends[opening] = pos + 1
                     self.quotes.append((opening, pos))
                     self.quote_closings[pos] = opening
@@ -1718,7 +1730,11 @@ class _Syntax:
                     self.separator_context[pos] = stack[-1]
             elif char in "([{":
                 stack.append((char, pos))
-            elif stack and char == {"(": ")", "[": "]", "{": "}"}[stack[-1][0]]:
+            elif (
+                stack
+                and char == {"(": ")", "[": "]", "{": "}"}[stack[-1][0]]
+                and self.depth(pos) <= self.depth(stack[-1][1])
+            ):
                 _, begin = stack.pop()
                 self.ends[begin] = pos + 1
                 self.closings[pos] = begin
@@ -1737,7 +1753,7 @@ class _Syntax:
                 continue
             if triple is None:
                 triple = (delimiter, match.start())
-            elif delimiter == triple[0]:
+            elif delimiter == triple[0] and self.depth(match.start()) <= self.depth(triple[1]):
                 self.ends[triple[1]] = match.end()
                 triple = None
         if triple is not None:
@@ -1780,6 +1796,9 @@ class _Syntax:
             self.depths[position] if self.depths is not None and position < len(self.depths) else 0
         )
 
+    def layer(self, start, end):
+        return max(self.depths[start:end], default=0) if self.depths is not None else 0
+
     def value(self, text, start, *, list_separators=False, operator_depth=None):
         if start >= len(text):
             return start
@@ -1818,7 +1837,7 @@ class _Syntax:
                 if (
                     list_separators
                     or (text[end] == "," and context and context[0] in "({[" and context[1] < start)
-                    or (text[end] in ";&" and self.form)
+                    or (text[end] in ";&" and self.form and level > 0)
                     or (text[end] == ";" and separator.match(text, end + 1))
                 ):
                     break
@@ -1858,7 +1877,7 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
     pattern = re.compile(
         r"(?:(?P<q>[\"'])(?P<quotedkey>" + _NAME + r")(?P=q)(?:\])?|"
         r"(?<![A-Za-z0-9_.%?&#-])(?P<flag>--|-D|-)?(?P<key>" + _NAME + r"))"
-        r"(?:\s*+(?P<sep>=>|=(?!=)|:(?!=)|[：＝])\s*+|(?P<flagspace>\s++))",
+        r"(?:\s*+(?P<sep>=>|=|:(?!=)|[：＝])\s*+|(?P<flagspace>\s++))",
     )
     position = line_index = 0
     while match := pattern.search(text, position):
@@ -1883,6 +1902,12 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
                 and syntax.depth(start) <= operator_depth
             ):
                 start += 1
+        if (
+            match["sep"] == "="
+            and text[start : start + 1] == "="
+            and text[match.start("sep") - 1 : match.start("sep")].isspace()
+        ):
+            continue  # A spaced equality comparison is not an assignment.
         annotation = False
         if match["sep"] == ":" and not match["q"]:
             equals = text.find("=", start, min(len(text), start + 256))
@@ -1921,6 +1946,22 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             text[start:scalar_end].split(";", 1)[0].strip()
         ):
             scalar_end = None
+        for boundary_name, boundary in (("yaml", yaml_end), ("scalar", scalar_end)):
+            if boundary is not None and syntax.depth(boundary) > operator_depth:
+                while line_index < len(syntax.line_ends) and (
+                    syntax.line_ends[line_index] < boundary
+                    or syntax.depth(syntax.line_ends[line_index]) > operator_depth
+                ):
+                    line_index += 1
+                boundary = (
+                    syntax.line_ends[line_index]
+                    if line_index < len(syntax.line_ends)
+                    else len(text)
+                )
+                if boundary_name == "yaml":
+                    yaml_end = boundary
+                else:
+                    scalar_end = boundary
         end = (
             max(start, yaml_end)
             if yaml_end is not None
@@ -1933,10 +1974,13 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             and text[start : start + 1] in {'"', "'"}
             and syntax.depth(start) <= operator_depth
         )
-        if match["q"] and not quoted and any(c in text[start:end] for c in "\"'"):
+        if not quoted and any(c in text[start:end] for c in "\"'"):
             while line_index < len(syntax.line_ends) and syntax.line_ends[line_index] < start:
                 line_index += 1
-            end = syntax.line_ends[line_index] if line_index < len(syntax.line_ends) else len(text)
+            end = max(
+                end,
+                syntax.line_ends[line_index] if line_index < len(syntax.line_ends) else len(text),
+            )
         if (
             match["flag"]
             and not quoted
@@ -1980,7 +2024,7 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
 
 
 def _header_spans(text, syntax):
-    pattern = re.compile(r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*(?:=(?!=)|[:：＝])\s*+")
+    pattern = re.compile(r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*(?P<sep>=|[:：＝])\s*+")
     line_end = re.compile(r"[\r\n]")
     fold = re.compile(r"\r?\n\s+")
     position = quote_index = 0
@@ -1995,6 +2039,13 @@ def _header_spans(text, syntax):
         } and not name.endswith("cookie"):
             continue
         start = match.end()
+        if (
+            match["sep"] == "="
+            and text[start : start + 1] == "="
+            and text[match.start("sep") - 1 : match.start("sep")].isspace()
+        ):
+            continue
+        operator_depth = syntax.depth(match.start("sep"))
         while quote_index < len(syntax.quotes) and syntax.quotes[quote_index][1] < match.start():
             quote_index += 1
         limit = len(text)
@@ -2002,10 +2053,17 @@ def _header_spans(text, syntax):
             begin, finish = syntax.quotes[quote_index]
             if begin < match.start() < finish:
                 limit = finish
-        boundary = line_end.search(text, start, limit)
+
+        def boundary_after(start, limit=limit, operator_depth=operator_depth):
+            boundary = line_end.search(text, start, limit)
+            while boundary and syntax.depth(boundary.start()) > operator_depth:
+                boundary = line_end.search(text, boundary.end(), limit)
+            return boundary
+
+        boundary = boundary_after(start)
         end = boundary.start() if boundary else limit
         while folded := fold.match(text, end, limit):
-            boundary = line_end.search(text, folded.end(), limit)
+            boundary = boundary_after(folded.end())
             end = boundary.start() if boundary else limit
         if text.startswith(_REDACTED, start) and text[
             start + len(_REDACTED) : start + len(_REDACTED) + 1
@@ -2102,10 +2160,11 @@ def _query_spans(text, syntax, encoded_positions):
             encoded = encoded_positions.contains(boundary.start())
             if (
                 (boundary.group() == "?" and not encoded)
+                or (boundary.group() == "?" and encoded_positions.form)
                 or (boundary.group() not in {"?", "&", "#"} and encoded)
                 or (
                     syntax.depth(boundary.start()) > operator_depth
-                    and boundary.group() in {"&", "#", "?"}
+                    and boundary.group() in {"&", "#"}
                 )
                 or (
                     boundary.group() in "\"'[]{}()"
@@ -2179,10 +2238,8 @@ def _cookie_spans(text, syntax):
             text, match.end(), list_separators=True, operator_depth=syntax.depth(match.end() - 1)
         )
         sensitive = redaction_sensitive_value(match["key"], text[match.end() : end])
-        generic = (
-            not _credential_value_exempt(match["key"], text[match.end() : end])
-            and bool(text[match.end() : end].strip("\"'"))
-            and not text[match.end() : end].strip("\"'").isnumeric()
+        generic = not _credential_value_exempt(match["key"], text[match.end() : end]) and bool(
+            text[match.end() : end].strip("\"'")
         )
         members = 1
         position = max(end, match.end())
@@ -2202,11 +2259,9 @@ def _cookie_spans(text, syntax):
                 operator_depth=syntax.depth(next_pair.end() - 1),
             )
             sensitive |= redaction_sensitive_value(next_pair["key"], text[next_pair.end() : finish])
-            generic |= (
-                not _credential_value_exempt(next_pair["key"], text[next_pair.end() : finish])
-                and bool(text[next_pair.end() : finish].strip("\"'"))
-                and not text[next_pair.end() : finish].strip("\"'").isnumeric()
-            )
+            generic |= not _credential_value_exempt(
+                next_pair["key"], text[next_pair.end() : finish]
+            ) and bool(text[next_pair.end() : finish].strip("\"'"))
             end = position = max(finish, next_pair.end())
             members += 1
         if members > 1 and (sensitive or generic):
@@ -2266,7 +2321,7 @@ def _jwt_spans(text):
         yield *match.span(), "api_key", _REDACTED
 
 
-def _pem_spans(text):
+def _pem_spans(text, syntax):
     label_pattern = r"(?P<label>(?:[A-Z0-9]+ ){0,6}PRIVATE KEY(?: BLOCK)?)"
     begin = re.compile(r"-----BEGIN " + label_pattern + r"-----", re.I)
     end_lines = {}
@@ -2275,10 +2330,14 @@ def _pem_spans(text):
     cursors = {}
     position = 0
     while match := begin.search(text, position):
+        level = syntax.layer(match.start(), match.end())
         label = match["label"].upper()
         ends = end_lines.get(label, [])
         index = cursors.get(label, 0)
-        while index < len(ends) and ends[index].start() < match.end():
+        while index < len(ends) and (
+            ends[index].start() < match.end()
+            or syntax.layer(ends[index].start(), ends[index].end()) > level
+        ):
             index += 1
         end = ends[index].end() if index < len(ends) else len(text)
         cursors[label] = index + 1
@@ -2312,9 +2371,13 @@ def _xml_spans(text, syntax):
             position = value_start + 1
             continue
         value_start += 1
+        level = max(syntax.layer(match.start(), match.end()), syntax.depth(value_start - 1))
         ends = closings.get(key.lower(), [])
         index = cursors.get(key.lower(), 0)
-        while index < len(ends) and ends[index].start() < match.end():
+        while index < len(ends) and (
+            ends[index].start() < match.end()
+            or syntax.layer(ends[index].start(), ends[index].end()) > level
+        ):
             index += 1
         end = ends[index].start() if index < len(ends) else len(text)
         cursors[key.lower()] = index + 1
@@ -2328,12 +2391,22 @@ def _xml_spans(text, syntax):
 
 def _curl_spans(text, syntax):
     position = 0
-    pattern = re.compile(r"(?<![A-Za-z0-9_])(?P<flag>-u|--user|-b|--cookie)[^\S\r\n]++")
+    pattern = re.compile(
+        r"(?<![A-Za-z0-9_-])(?:(?P<long>--user|--cookie)(?:=|[^\S\r\n]++)|"
+        r"(?P<short>-[ub])[^\S\r\n]*+)"
+    )
     while match := pattern.search(text, position):
         start = match.end()
-        end = syntax.value(text, start)
+        if syntax.quote_closings.get(start, start) < match.start():
+            start += 1  # A quoted flag ends before its separate argument.
+            if start >= len(text) or not text[start].isspace():
+                position = start
+                continue
+            while start < len(text) and text[start].isspace():
+                start += 1
+        end = syntax.value(text, start, operator_depth=syntax.depth(match.start()))
         position = max(end, match.end())
-        if match["flag"] in {"-b", "--cookie"}:
+        if (match["long"] or match["short"]) in {"-b", "--cookie"}:
             if redaction_sensitive_value("cookie", text[start:end]):
                 quoted = text[start : start + 1] in {'"', "'"}
                 yield (
@@ -2407,41 +2480,56 @@ def _har_spans(text, syntax):
                 record["value"] = (start, end)
             elif text[start : start + 1] == "[" and text[start:end].strip() != "[]":
                 record["cookies"] = (start, end)
-    # Objects occur in opening order. In a HAR object the cookie/value span can
-    # only precede its child objects; this avoids a per-span sort or rebuild.
+    # Fields can occur in any order, including before their parent's cookies.
+    # Revisit the token stream once to emit spans in order, without sorting or
+    # restarting inside any value.
+    selected = {}
     for record in objects:
         if record.get("cookies"):
-            yield *record["cookies"], "cookie", '"' + _REDACTED + '"'
-        elif record["private"] and record["value"]:
+            start, end = record["cookies"]
+            selected[start] = (start, end, "cookie", '"' + _REDACTED + '"')
+        if record["private"] and record["value"]:
             start, end = record["value"]
             if redaction_sensitive_value("password", text[start:end]):
                 quoted = text[start : start + 1] == '"'
-                yield (
+                selected[start] = (
                     start + int(quoted),
                     end - int(quoted and text[end - 1 : end] == '"'),
                     "sensitive_field",
                     _REDACTED if quoted else '"' + _REDACTED + '"',
                 )
+    for match in token.finditer(text):
+        if match.start() in selected:
+            yield selected[match.start()]
 
 
 def _command_spans(text, syntax):
     pattern = re.compile(
-        r"(?i)\b(?:IDENTIFIED\s++BY|WITH\s++PASSWORD|sshpass\s++-p)\s++|\b(?:mysql|mariadb|mysqldump)\b[^\r\n]*+|(?m:^PuTTY-User-Key-File-[0-9]++:)"
+        r"(?i)(?P<mysql>\b(?:mysql|mariadb|mysqldump)\b)|"
+        r"(?P<attached>\s-p(?=\S))|(?P<boundary>[\r\n;&|])|"
+        r"\b(?:IDENTIFIED\s++BY|WITH\s++PASSWORD|sshpass\s++-p)\s++|"
+        r"(?P<putty>(?m:^PuTTY-User-Key-File-[0-9]++:))"
     )
     position = 0
+    mysql = False
+    mysql_depth = 0
     while match := pattern.search(text, position):
-        if match[0].lower().startswith("putty-"):
+        position = match.end()
+        if match["putty"]:
             yield match.start(), len(text), "private_key", _REDACTED
             return
-        if re.match(r"(?i)(?:mysql|mariadb|mysqldump)\b", match[0]):
-            flag = re.search(r"\s-p(?=\S)", match[0])
-            if not flag:
-                position = match.end()
-                continue
-            start = match.start() + flag.end()
-        else:
-            start = match.end()
-        end = syntax.value(text, start)
+        if match["boundary"]:
+            if syntax.depth(match.start()) <= mysql_depth:
+                mysql = False
+            continue
+        if match["mysql"]:
+            mysql = True
+            mysql_depth = syntax.depth(match.start())
+            continue
+        if match["attached"] and not mysql:
+            continue
+        start = match.end()
+        end = syntax.value(text, start, operator_depth=syntax.depth(match.start()))
         position = max(match.end(), end)
         if redaction_sensitive_value("password", text[start:end]):
             quoted = text[start : start + 1] in {'"', "'"}
@@ -2465,7 +2553,7 @@ def _view_spans(text, encoded_positions, syntax):
             _bearer_spans(text),
             _prefix_spans(text),
             _jwt_spans(text),
-            _pem_spans(text),
+            _pem_spans(text, syntax),
             _xml_spans(text, syntax),
             _curl_spans(text, syntax),
             _har_spans(text, syntax),
@@ -2506,14 +2594,46 @@ def _close_bearer_spans(text, spans):
 
 
 def _form_ranges(text):
-    """Only a complete form body or an actual URL query gives '+' space syntax."""
-    if re.fullmatch(_NAME + r"=[^&\s]*+(?:&" + _NAME + r"=[^&\s]*+)*+", text):
-        yield 0, len(text)
-        return
-    for match in re.finditer(r"(?i)[A-Za-z][A-Za-z0-9+.-]*+://[^\s\"'<>]++", text):
-        question = text.find("?", match.start(), match.end())
-        if question >= 0:
-            yield question + 1, match.end()
+    """Only a complete form body or an actual URL query gives '+' space syntax.
+
+    Packet records and pasted captures contain independent form-body lines. A
+    prose line with whitespace is never a form body, regardless of earlier '?'.
+    """
+    form = re.compile(_NAME + r"=[^&\s]*+(?:&" + _NAME + r"=[^&\s]*+)*+")
+    encoded_form = re.compile(_NAME + r"(?:\+|\\{1,8}u002[bB])*+%(?:25){0,2}3[dD][^\s]*+")
+
+    def bodies():
+        for line in re.finditer(r"[^\r\n]++", text):
+            label = re.match(r"(?i)body:[^\S\r\n]*+", line[0])
+            begin = label.end() if label else 0
+            if form.fullmatch(line[0][begin:]) or encoded_form.fullmatch(line[0][begin:]):
+                yield line.start() + begin, line.end(), "form", ""
+
+    def quoted_bodies():
+        opening = None
+        for match in re.finditer(r"\\[\s\S]|[\"']", text):
+            if match[0].startswith("\\"):
+                continue
+            if opening is None:
+                opening = (match[0], match.start())
+            elif match[0] == opening[0]:
+                start = opening[1] + 1
+                value = text[start : match.start()]
+                if form.fullmatch(value) or encoded_form.fullmatch(value):
+                    yield start, match.start(), "form", ""
+                opening = None
+
+    def queries():
+        for match in re.finditer(
+            r"(?i)(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://[^\s\"'<>]++", text
+        ):
+            question = text.find("?", match.start(), match.end())
+            fragment = text.find("#", match.start(), match.end())
+            if question >= 0 and (fragment < 0 or question < fragment):
+                yield question + 1, fragment if fragment >= 0 else match.end(), "form", ""
+
+    for start, end, _, _ in _merge_spans([bodies(), quoted_bodies(), queries()]):
+        yield start, end
 
 
 def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
@@ -2560,7 +2680,8 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     # even when JSON unescaping reveals quotes inside the credential itself.
     original_syntax = _Syntax(text) if layers else None
     original_fields = _assignment_spans(text, original_syntax) if layers else ()
-    spans = list(_merge_spans([spans, original_fields, _bearer_spans(text)]))
+    original_headers = _header_spans(text, original_syntax) if layers else ()
+    spans = list(_merge_spans([spans, original_fields, original_headers, _bearer_spans(text)]))
     if not spans:
         return text, []
     parts = []
@@ -2591,6 +2712,7 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         text = output
     else:
         counts["redaction_unstable"] = 1
+        text = _REDACTED  # Consumers that cannot refuse must not retain a partial mask.
     return text, [{"kind": kind, "count": count} for kind, count in sorted(counts.items())]
 
 
