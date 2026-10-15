@@ -21,6 +21,7 @@ from metamuse.config import load_config
 from metamuse.store import Store, TransactionWriter, _StorageBusy
 
 _T = TypeVar("_T")
+_UNCLAIMED_BUSY_TIMEOUT_SECONDS = 1.0
 
 UncertainState = Literal["open_uncertain", "send_uncertain", "needs_reconcile"]
 UNCERTAIN = ("open_uncertain", "send_uncertain", "needs_reconcile")
@@ -406,7 +407,8 @@ class Executor:
         delay = 0.05
         while not self._stop.is_set():
             try:
-                return action()
+                with self.store._busy_timeout(_UNCLAIMED_BUSY_TIMEOUT_SECONDS):
+                    return action()
             except _StorageBusy:
                 self.storage_busy_retries = min(self.storage_busy_retries + 1, 2**31 - 1)
                 self._busy_observer()
@@ -454,7 +456,10 @@ class Executor:
             try:
                 if self.epoch is not None:
                     try:
-                        with self.store.transaction() as conn:
+                        with (
+                            self.store._busy_timeout(_UNCLAIMED_BUSY_TIMEOUT_SECONDS),
+                            self.store.transaction() as conn,
+                        ):
                             conn.execute(
                                 "UPDATE worker_state SET owner_nonce=NULL,heartbeat=NULL "
                                 "WHERE worker_epoch=? AND owner_nonce=?",

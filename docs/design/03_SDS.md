@@ -129,7 +129,16 @@ worker run、預設MCP附帶worker、CLI --run都搶相同OS lock。MCP --no-wor
 未claim step時（startup epoch/recovery、heartbeat、atomic claim/cancel sweep、idle及
 safe-read已requeue後的等待維護）只對_StorageBusy重試。transaction先rollback，exponential
 backoff加jitter：25–50 ms起，倍增至1–2秒，每次wait最多2秒，stop喚醒且不再開始下一次。
-已進SQLite的lock wait仍可等待30秒才觀察stop。run_once與run共用此維護行為；worker持續持OS lock。
+每個unclaimed action以scoped thread-local override將connect及busy_timeout（含read-only
+version probe）限為1秒，其他caller與claimed transaction仍為30秒。原MEASURE的548次中
+531次（96.9%）在1秒內，p50 12.16 ms；tail stall留給可stop的外層重試。
+exit metadata cleanup同樣限1秒，只略過busy；其他錯誤先釋放OS lock再傳出。
+未claim的stop最多一個1秒attempt加1秒cleanup，即2秒SQLite lock wait；不涵蓋fsync、
+filesystem／OS maintenance lock或任意handler的執行時間。run_once與run共用此維護行為。
+已claim須先到handler邊界；其後finalization最多30秒加fallback 30秒，fallback若逾時就傳出。
+zero-handoff另有settlement 30秒及failure-event 30秒，最多四個連續wait即120秒，再加1秒cleanup。
+pre-handler guard及handler各checkpoint／boundary transaction各自仍有30秒；I/O另受自身timeout。
+MCP shutdown join worker thread以避免遺棄已claim的step或OS lock。
 storage_busy_retries累計並飽和於2**31−1，既有attached status／inspect／同context doctor可見。
 startup contention為starting且不可用，ownership commit後才running；非busy失敗為failed，
 worker_error_code只含固定code（unexpected exception為E_STORAGE），不含message或path。

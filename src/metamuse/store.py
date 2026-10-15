@@ -205,6 +205,11 @@ def _statements(script: str) -> Iterator[str]:
 
 
 _BUSY_TIMEOUT_SECONDS = 30
+_BUSY_TIMEOUT_OVERRIDE = threading.local()
+
+
+def _busy_timeout_seconds() -> float:
+    return getattr(_BUSY_TIMEOUT_OVERRIDE, "seconds", _BUSY_TIMEOUT_SECONDS)
 
 
 class _StorageBusy(m.CoreError):
@@ -223,6 +228,20 @@ def _storage_error(exc: sqlite3.Error, message: str) -> m.CoreError:
 
 
 class Store:
+    @staticmethod
+    @contextmanager
+    def _busy_timeout(seconds: float) -> Iterator[None]:
+        """Scope connection waits to this thread; restore even on failed attempts."""
+        previous = getattr(_BUSY_TIMEOUT_OVERRIDE, "seconds", None)
+        _BUSY_TIMEOUT_OVERRIDE.seconds = seconds
+        try:
+            yield
+        finally:
+            if previous is None:
+                del _BUSY_TIMEOUT_OVERRIDE.seconds
+            else:
+                _BUSY_TIMEOUT_OVERRIDE.seconds = previous
+
     def __init__(
         self,
         paths: WorkspacePaths,
@@ -272,7 +291,7 @@ class Store:
                 sqlite3.connect(
                     f"{self.paths.database.as_uri()}?mode=ro",
                     uri=True,
-                    timeout=_BUSY_TIMEOUT_SECONDS,
+                    timeout=_busy_timeout_seconds(),
                 )
             ) as probe:
                 _configure(probe, writable=False)
@@ -283,7 +302,7 @@ class Store:
                 )
         private_file(self.paths.database)
         conn = sqlite3.connect(
-            self.paths.database, timeout=_BUSY_TIMEOUT_SECONDS, isolation_level=None
+            self.paths.database, timeout=_busy_timeout_seconds(), isolation_level=None
         )
         try:
             _configure(conn)
@@ -1529,7 +1548,7 @@ def _configure(conn: sqlite3.Connection, *, writable: bool = True) -> None:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA recursive_triggers=ON")
-    conn.execute(f"PRAGMA busy_timeout={int(_BUSY_TIMEOUT_SECONDS * 1000)}")
+    conn.execute(f"PRAGMA busy_timeout={int(_busy_timeout_seconds() * 1000)}")
     if writable:
         # Changing journal mode can itself need a write lock. Existing WAL readers
         # only inspect the mode; a failed transition is classified by _open as busy.

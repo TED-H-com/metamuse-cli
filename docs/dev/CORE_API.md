@@ -276,8 +276,23 @@ an already requeued safe-read delay. `Executor.run_once()` uses the same mainten
 retry path as `run()`. Only internal `_StorageBusy` errors qualify. Each failed
 transaction rolls back before a jittered exponential wait (initial range 25–50 ms,
 doubling to a 1–2 second range). Each backoff wait is at most 2 seconds and wakes on
-`request_stop()`; no further attempt begins after stop. An in-progress SQLite lock
-wait can still take up to its 30-second timeout before stop is observed.
+`request_stop()`; no further attempt begins after stop. Every unclaimed action uses a scoped thread-local 1-second connection/busy timeout,
+including the read-only version probe. The default remains 30 seconds elsewhere.
+The loaded 548-transaction sample put 531 (96.9%) within one second; the 12.16 ms
+median fits easily, while tail stalls are retried instead of lengthening each attempt.
+Exit metadata cleanup also uses one second, skips only busy errors, and releases the
+OS lock before propagating any other cleanup failure.
+
+With no step claimed, SQLite contention delays stop by at most one 1-second attempt
+plus one 1-second cleanup (2 seconds). Backoff wakes immediately. These are lock-wait
+bounds, not deadlines on fsync, filesystem/OS maintenance locks or arbitrary handlers.
+A claimed handler reaches its boundary first. After it returns, finalization can wait
+30 seconds and its fallback another 30; if the fallback times out, durable state is
+left for recovery. Zero-handoff processing can additionally wait 30 in settlement
+and 30 in its failure-event write: at most four successive waits (120 seconds), plus
+the 1-second exit cleanup. The pre-handler guard and each handler checkpoint/boundary
+transaction independently retain 30 seconds. Handler I/O has its own bounds. MCP
+shutdown joins the worker thread so it cannot abandon a claimed step or its OS lock.
 
 `storage_busy_retries` is a cumulative, saturating counter (maximum 2**31−1).
 The existing attached-worker status/inspect/doctor data exposes it together with
