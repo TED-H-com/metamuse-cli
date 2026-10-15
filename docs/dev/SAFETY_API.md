@@ -363,8 +363,8 @@ encoded '?' ends it. Encoded whitespace/quotes are value data, not URL-token bou
 
 Prefix rules are independently written: GitHub classic body 36 or PAT 22+59, GitLab 20,
 Slack 10–13 digit segments and 24–64 character body (including xoxa-2), AWS 16 after the
-prefix, Google 35, npm 36, Hugging Face 34, Stripe live body 24–200. The existing sk-style
-8–200 body compatibility rule remains, including Anthropic prefixes. Three JWT segments
+prefix, Google 35, npm 36, Hugging Face 34, Stripe live body 24–200. The sk-style
+body compatibility rule has a minimum of 8 characters and no upper bound, including Anthropic prefixes. Three JWT segments
 and matching PEM labels are separately recognized. Formats outside these documented/
 compatibility bounds need a sensitive name to be recognized; this is a guard, not a
 universal secret scanner or a proof that text is public.
