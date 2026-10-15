@@ -188,6 +188,10 @@ ROUND9_CASES = {
     "R9_ACCEPT_METADATA": ["tests/test_facebook_r9_capture.py", "-k", "metadata_display_override"],
     "R9_ACCEPT_WHITESPACE": ["tests/test_facebook_r9_capture.py", "-k", "unmodelled_layout"],
     "R9_ACCEPT_INTEGRATION": ["tests/test_facebook_r9_capture.py", "-k", "unmodelled_layout"],
+    **{
+        f"R9_ACCEPT_{kind}": ["tests/test_facebook_r9_capture.py", "-k", "lexical_differentials"]
+        for kind in ("ENTITIES", "NULL", "CDATA", "PI")
+    },
     "R9_IMG_LOOKTHROUGH": [
         "tests/test_facebook_r9_capture.py",
         "-k",

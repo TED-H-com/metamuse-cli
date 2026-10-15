@@ -108,6 +108,14 @@ def apply(monkeypatch, name):
                 [('if ns == MATH and parent["tag"]', 'if False and parent["tag"]')],
                 module=cap,
             )
+        elif construct == "entities":
+            monkeypatch.setattr(cap, "fixture_attributes_safe", lambda raw: True)
+        elif construct == "null":
+            monkeypatch.setattr(cap.FixtureTree, "feed", cap.HTMLParser.feed)
+        elif construct == "cdata":
+            monkeypatch.setattr(cap.FixtureTree, "unknown_decl", lambda self, data: None)
+        elif construct == "pi":
+            monkeypatch.setattr(cap.FixtureTree, "handle_pi", lambda self, data: None)
         elif construct == "foreign":
             rewrite(
                 monkeypatch,

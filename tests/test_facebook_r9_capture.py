@@ -4,10 +4,10 @@
 
 import pytest
 from browser_deadline import browser_deadline
+from facebook_parity import capture_session
 from test_facebook import _synthetic_post_html
 from test_facebook_r8_capture import run
-from test_facebook_review import URL, browser_fixture
-from test_facebook_round5 import POST_PATH, parse
+from test_facebook_round5 import parse
 from test_facebook_round6 import reset_seams  # noqa: F401
 
 from metamuse import _facebook_capture as capture
@@ -38,6 +38,36 @@ def test_r9_fixture_counts_implicit_document_nodes():
     nodes = capture.fixture_capture("<!doctype html><html><body><span>TEXT</span></body></html>")
     assert len(nodes) == 7  # document, doctype, html, head, body, span, text
     assert [n["tag"] for n in nodes if n["kind"] == 1] == ["html", "head", "body", "span"]
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<span title="&notit;">TEXT</span>',
+        '<span title="&ampfoo">TEXT</span>',
+        "<span>A\0B</span>",
+        "<svg><text><![CDATA[TEXT]]></text></svg>",
+        "<?test value?><span>TEXT</span>",
+    ],
+)
+def test_r9_fixture_refuses_lexical_differentials(markup):
+    with pytest.raises(m.CoreError) as caught:
+        capture.fixture_capture(markup)
+    assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
+    assert caught.value.detail.message == "Facebook structured capture could not be completed"
+
+
+@pytest.mark.parametrize(
+    "markup,value",
+    [
+        ('<span title="&amp;">TEXT</span>', "&"),
+        ('<span title="&notin;">TEXT</span>', "∉"),
+        ('<span title="&unknown;">TEXT</span>', "&unknown;"),
+    ],
+)
+def test_r9_fixture_accepts_unambiguous_entities(markup, value):
+    node = next(n for n in capture.fixture_capture(markup) if n["tag"] == "span")
+    assert node["attrs"]["title"] == value
 
 
 @pytest.mark.parametrize(
@@ -134,54 +164,40 @@ def test_r9_clobbering_accessor_corpus(tmp_path, monkeypatch):
     from metamuse import _facebook_dom as dom
 
     def result(session, markup):
-        session._page.set_content(markup, wait_until="domcontentloaded")
+        session._page.set_content(markup, wait_until="load")
         session._network_cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})
         _, nodes, gaps = session._capture()
         e = facebook._DOMExtractor()
         e.walk(nodes)
         return (e.meta_state, e.post_attrs, e.post_text_parts, e.comments, gaps)
 
-    with browser_fixture(
-        tmp_path,
-        monkeypatch,
-        {POST_PATH: _synthetic_post_html()},
-        unsandboxed=False,
-        read_timeout=300,
-    ) as (_, _, _, _, _, guard, driver):
-        state = facebook.SanitizedStorageState(
-            cookies=[], origins=[], secret_tokens=(), cookie_hosts=(), dropped_cookie_domains=()
-        )
-        session = driver.open_session(state, guard, timeout_ms=300000, max_bytes=100000000)
-        try:
-            session.goto_post(URL)
-            contexts = [
-                '<div data-page-state="login_wall"></div>',
-                '<div data-checkpoint="true"></div>',
-                '<article data-fb-role="comment" data-comment-id="c1"><div data-fb-role="comment-body">PAINTED_IN_FORM</div></article>',
-            ]
-            for marker in contexts:
-                baseline = result(
-                    session, _synthetic_post_html().replace("</body>", marker + "</body>")
-                )
-                for name in sorted(
-                    {v[1] for v in dom.ACCESSORS.values()} | set(dom.GLOBAL_METHODS.values())
-                ):
-                    plants = [
-                        f'<form><input name="{name}">{marker}</form>',
-                        *[
-                            f'<{tag} name="{name}">'
-                            + ("" if tag in capture.VOID else f"</{tag}>")
-                            + marker
-                            for tag in ("form", "embed", "img", "iframe", "object")
-                        ],
-                    ]
-                    for plant in plants:
-                        actual = result(
-                            session, _synthetic_post_html().replace("</body>", plant + "</body>")
-                        )
-                        assert actual == baseline, (name, marker, plant, actual, baseline)
-        finally:
-            session.close()
+    with capture_session(monkeypatch) as session:
+        contexts = [
+            '<div data-page-state="login_wall"></div>',
+            '<div data-checkpoint="true"></div>',
+            '<article data-fb-role="comment" data-comment-id="c1"><div data-fb-role="comment-body">PAINTED_IN_FORM</div></article>',
+        ]
+        for marker in contexts:
+            baseline = result(
+                session, _synthetic_post_html().replace("</body>", marker + "</body>")
+            )
+            for name in sorted(
+                {v[1] for v in dom.ACCESSORS.values()} | set(dom.GLOBAL_METHODS.values())
+            ):
+                plants = [
+                    f'<form><input name="{name}">{marker}</form>',
+                    *[
+                        f'<{tag} name="{name}">'
+                        + ("" if tag in capture.VOID else f"</{tag}>")
+                        + marker
+                        for tag in ("form", "embed", "img", "iframe", "object")
+                    ],
+                ]
+                for plant in plants:
+                    actual = result(
+                        session, _synthetic_post_html().replace("</body>", plant + "</body>")
+                    )
+                    assert actual == baseline, (name, marker, plant, actual, baseline)
 
 
 @pytest.mark.parametrize(

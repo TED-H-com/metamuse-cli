@@ -942,12 +942,20 @@ generator. Accepted inputs must agree with sandboxed Chromium on node kind, tag,
 namespace, attributes, text, rendered flag, light-parent relation and composed
 order. Normalisation removes document/fragment/doctype/comment records and empty
 html/head/body scaffolding; it preserves evidence nodes and their parent/order.
-Unsupported inputs are counted as refusals. The default Chromium audit has an
+Unsupported inputs are counted as refusals. The capture-only audit opens one sandboxed, policy-proxied loopback session
+without a job store, permit setup or TLS key generation. It waits for static load
+and flushes DOM events before each capture; job-level parity is checked separately.
+The default Chromium audit has an
 independent 90-second deadline; the job/browser budgets remain 300 seconds.
 Potentially rendered whitespace-only text nodes are refused: their boxes depend
 on layout and whitespace collapse. Mixed text keeps its source whitespace. MathML
 text-integration-point element children, paragraph-implying block starts and
 foreign-content foster parenting also refuse. HTML5 `</br>` creates a `br` node.
+Literal NULs, foreign CDATA/conditional declarations, processing instructions and
+ambiguous legacy character references in start tags are refused. Exact named
+references ending in semicolons retain the HTML5 decoding; text is never decoded
+a second time. These lexical refusals cover differences in the standard-library
+parser rather than claiming it is a full HTML5 tokenizer.
 Metadata display overrides are refused rather than approximated. Implicit HTML,
 head and body nodes are materialised before bounds checking, so the document
 scaffold is charged exactly like Chromium; misplaced explicit wrappers refuse.

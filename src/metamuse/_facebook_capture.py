@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import re
 from collections import Counter
+from html.entities import html5 as HTML_ENTITIES
 from html.parser import HTMLParser
 from typing import Any
 
@@ -28,6 +29,20 @@ VOID = frozenset(
         "link meta param source track wbr"
     ).split()
 )
+LEGACY_ENTITIES = frozenset(key for key in HTML_ENTITIES if not key.endswith(";"))
+
+
+def fixture_attributes_safe(raw: str) -> bool:
+    # HTMLParser unescapes legacy prefixes in attributes where HTML5 keeps the
+    # spelling literal (e.g. &notit;). Accept exact semicolon-terminated names;
+    # refuse ambiguous legacy spellings rather than approximating the tokenizer.
+    for match in re.finditer(r"&([A-Za-z][A-Za-z0-9]*)(;?)", raw):
+        name, semicolon = match.groups()
+        if semicolon and name + ";" in HTML_ENTITIES:
+            continue
+        if any(name.startswith(prefix) for prefix in LEGACY_ENTITIES):
+            return False
+    return True
 
 
 def failure() -> m.CoreError:
@@ -335,7 +350,14 @@ class FixtureTree(HTMLParser):
         self.open_tags: Counter[str] = Counter()
         self.wrappers: set[str] = set()
 
+    def feed(self, data):
+        if "\0" in data:
+            raise failure()  # HTML5 removes/replaces NULs by tokenizer state.
+        super().feed(data)
+
     def handle_starttag(self, tag, attrs):
+        if not fixture_attributes_safe(self.get_starttag_text()):
+            raise failure()
         parent = self.nodes[self.stack[-1]]
         tags = self.open_tags
         ns = parent["ns"] or HTML
@@ -553,6 +575,12 @@ class FixtureTree(HTMLParser):
                 kind=10, tag="", ns="", attrs={}, text="", rendered=False, children=[], composed=[]
             )
         )
+
+    def unknown_decl(self, data):
+        raise failure()  # Foreign CDATA and conditional declarations need HTML5.
+
+    def handle_pi(self, data):
+        raise failure()  # HTML turns processing instructions into comment nodes.
 
     def finish(self):
         if self.stack != [0]:

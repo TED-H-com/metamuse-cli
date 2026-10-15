@@ -2,10 +2,68 @@
 """Differential normalisation and a deterministic, deliberately hostile corpus."""
 
 import ast
+import http.server
 import json
 import random
 import re
+import threading
+from contextlib import contextmanager
 from pathlib import Path
+
+
+@contextmanager
+def capture_session(monkeypatch):
+    """Read-only browser checks need no store, permit, secrets or TLS key files."""
+    import pytest
+    from test_facebook import _allow_loopback_sockets, _synthetic_post_html
+    from test_facebook_review import URL
+
+    from metamuse import facebook
+
+    if facebook.find_playwright_browser() is None:
+        pytest.skip("Playwright or Chromium is not installed")
+    _allow_loopback_sockets(monkeypatch)
+    for key in facebook.PROXY_ENV_VARS:
+        monkeypatch.delenv(key, raising=False)
+    body = _synthetic_post_html().encode()
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    session = None
+    try:
+        guard = facebook.EgressGuard.for_fixture_test(
+            allowed_hosts=("www.facebook.com", "127.0.0.1"), resolver=lambda _: ["127.0.0.1"]
+        )
+        driver = facebook.PlaywrightBrowserDriver(
+            _test_origin=f"http://127.0.0.1:{server.server_port}"
+        )
+        state = facebook.SanitizedStorageState(
+            cookies=[], origins=[], secret_tokens=(), cookie_hosts=(), dropped_cookie_domains=()
+        )
+        session = driver.open_session(state, guard, timeout_ms=300000, max_bytes=100000000)
+        session.goto_post(URL)
+        yield session
+    finally:
+        try:
+            if session is not None:
+                session.close()
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
 
 
 def normalise(nodes):
