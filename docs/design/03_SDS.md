@@ -1093,8 +1093,10 @@ without a preview. The ASCII canonical URL must also fit this outbound bound.
 URLInput still needs a core-owned schema/validation bound.
 
 Remote configuration labels that are invalid or credential-shaped return fixed
-E_INPUT_INVALID naming only the setting. Approval callback Exceptions preserve the
-original refusal without a preview; logging contains only a fixed line and type.
+E_INPUT_INVALID naming only the setting. Approval callback E_UNSUPPORTED means no
+applicable preview and preserves the original refusal. Other CoreError refusals
+propagate their fixed code, message and next action. Unexpected exceptions preserve
+the original refusal and log only a fixed line and type. These paths produce no preview.
 Challenge normalization scans every response body in overlapping 32 KiB blocks,
 checking the step cancellation/wall deadline once per block and retaining the existing
 timeout error on expiry. Measured CPU costs per 512 MiB are documented in COLLECT.md.
