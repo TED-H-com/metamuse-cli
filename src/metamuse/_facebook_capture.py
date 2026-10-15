@@ -84,6 +84,11 @@ def encode(nodes: list[dict[str, Any]]) -> str:
     return json.dumps(nodes, ensure_ascii=False, separators=(",", ":"))
 
 
+def html_tag(node: dict[str, Any]) -> str:
+    """Only HTML-namespace nodes have HTML tag semantics."""
+    return node["tag"] if node["ns"] == HTML else ""
+
+
 def controls(nodes: list[dict[str, Any]]):
     """One identity assignment in composed order, shared by capture and extraction."""
     pending, seen, result = [0], set(), []

@@ -3044,6 +3044,8 @@ class _DOMExtractor:
     """Walk structured nodes, with broad stop evidence and composed rendered text."""
 
     _VOID_TAGS = capture.VOID
+    BLOCK_TAGS = frozenset("div p section article li blockquote pre h1 h2 h3".split())
+    HTML_TAGS = _VOID_TAGS | BLOCK_TAGS | {"form", "script"}
 
     def __init__(self) -> None:
         self._visibility_stack: list[bool] = []
@@ -3099,9 +3101,9 @@ class _DOMExtractor:
         # Discovery includes non-composed light nodes, template contents, head,
         # and every shadow root. Visibility never suppresses a stop marker.
         for node in nodes:
-            self._barrier(node["tag"], list(node["attrs"].items()))
+            self._barrier(capture.html_tag(node), list(node["attrs"].items()))
             if (
-                node["tag"] == "script"
+                capture.html_tag(node) == "script"
                 and node["attrs"].get("type", "").lower() == "application/json"
                 and "data-fb-post-payload" in node["attrs"]
             ):
@@ -3146,15 +3148,15 @@ class _DOMExtractor:
                 continue
             element = node["kind"] == 1
             if exiting:
-                if element and not (node["ns"] == capture.HTML and node["tag"] in self._VOID_TAGS):
-                    self.handle_endtag(node["tag"])
+                if element and not (capture.html_tag(node) in self._VOID_TAGS):
+                    self.handle_endtag(capture.html_tag(node))
                 continue
             if element:
                 self.handle_starttag(
-                    node["tag"],
+                    capture.html_tag(node),
                     list(node["attrs"].items()),
                     visible=node["rendered"],
-                    void=node["ns"] == capture.HTML and node["tag"] in self._VOID_TAGS,
+                    void=capture.html_tag(node) in self._VOID_TAGS,
                 )
             events.append((i, True))
             events.extend((j, False) for j in reversed(node["composed"]))
@@ -3203,18 +3205,7 @@ class _DOMExtractor:
                 if self._in_comment_body and self._current_comment is not None:
                     self._current_comment["text_parts"].append("\n")
             return
-        if visibility and tag in {
-            "div",
-            "p",
-            "section",
-            "article",
-            "li",
-            "blockquote",
-            "pre",
-            "h1",
-            "h2",
-            "h3",
-        }:
+        if visibility and tag in self.BLOCK_TAGS:
             self._block_boundary()
         self._stack.append((self._in_post_body, self._in_comment_body, self._current_comment))
 
@@ -3277,18 +3268,7 @@ class _DOMExtractor:
 
     def handle_endtag(self, tag: str) -> None:
         visibility = self._visibility_stack.pop() if self._visibility_stack else True
-        if visibility and tag.lower() in {
-            "div",
-            "p",
-            "section",
-            "article",
-            "li",
-            "blockquote",
-            "pre",
-            "h1",
-            "h2",
-            "h3",
-        }:
+        if visibility and tag.lower() in self.BLOCK_TAGS:
             self._block_boundary(nested_only=True)
         if self._stack:
             self._in_post_body, self._in_comment_body, self._current_comment = self._stack.pop()
