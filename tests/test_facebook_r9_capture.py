@@ -319,7 +319,7 @@ def test_r9_click_identity(tmp_path, monkeypatch, kind, request):
     elif kind == "hidden-before-capture":
         markup = markup.replace(
             '<button data-expand-kind="more_comments" data-expand-id="more">More</button>',
-            '<div data-expand-kind="more_comments" data-expand-id="more" style="width:150px;height:40px"><span style="visibility:visible">More</span></div>',
+            '<div data-expand-kind="more_comments" data-expand-id="more" style="width:150px;height:40px"><span style="display:block;width:150px;height:40px;visibility:visible">More</span></div>',
         )
         original = facebook._PlaywrightSession._progress_signature
 
