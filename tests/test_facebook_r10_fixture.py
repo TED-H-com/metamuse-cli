@@ -122,3 +122,17 @@ def insertion_mode_corpus():
         ("table", "td"),
     ):
         yield f"<{outside}><{inside}>TEXT</{inside}></{outside}>"
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        "TEXT<html><head></head><body></body></html>",
+        '<!doctype html><meta name="x"><div>TEXT</div>',
+        "<!doctype html><!doctype html><html><head></head><body></body></html>",
+    ],
+)
+def test_r10_fixture_refuses_document_prefix_repairs(markup):
+    with pytest.raises(m.CoreError) as caught:
+        capture.fixture_capture(markup)
+    assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT

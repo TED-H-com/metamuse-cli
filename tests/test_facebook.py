@@ -1132,7 +1132,7 @@ def test_expansion_budget_and_unexpanded_gaps_produce_partial(tmp_path: Path):
         (
             "checkpoint",
             200,
-            '<html><body data-fb-state="checkpoint"><div>Security check</div></body></html>',
+            '<html><head></head><body data-fb-state="checkpoint"><div>Security check</div></body></html>',
             m.ErrorCode.CHECKPOINT_REQUIRED,
             "awaiting_user",
         ),

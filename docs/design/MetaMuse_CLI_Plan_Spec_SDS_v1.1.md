@@ -1018,6 +1018,11 @@ state, navigation, listener or budget leakage between state-changing cases.
 Normalisation preserves each evidence node's head/body/none container as well as
 the previously compared dimensions.
 
+The explicit-document fixture form also refuses leading non-whitespace text,
+duplicate doctypes and doctype-bearing fragments. Those trigger HTML5 document
+insertion rather than the documented body-fragment context. The expanded
+insertion-mode corpus and container comparison expose these placements.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -2196,6 +2201,11 @@ and expansion regressions retain separate browser sessions and stores, preventin
 state, navigation, listener or budget leakage between state-changing cases.
 Normalisation preserves each evidence node's head/body/none container as well as
 the previously compared dimensions.
+
+The explicit-document fixture form also refuses leading non-whitespace text,
+duplicate doctypes and doctype-bearing fragments. Those trigger HTML5 document
+insertion rather than the documented body-fragment context. The expanded
+insertion-mode corpus and container comparison expose these placements.
 
 ---
 
