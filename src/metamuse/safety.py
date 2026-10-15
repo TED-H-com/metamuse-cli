@@ -2166,7 +2166,14 @@ class _Syntax:
                 else:
                     follower_depth = self.depth(run.end())
                     for position in range(run.start(), run.end()):
-                        valid[position] = follower_depth <= self.depth(position)
+                        valid[position] = (
+                            follower_depth <= self.depth(position)
+                            or self.json_content is not None
+                            and self.json_content[run.end()]
+                            and self.json_lines is not None
+                            and self.json_lines[run.end()]
+                            and text[run.end()] in "\r\n"
+                        )
         self.valid_closers = valid
         tokens = array("I")
         for token in re.finditer(
@@ -2539,6 +2546,7 @@ class _Syntax:
                 return self.trim(text, start, pos) if trim else pos
             end = found.end()
         return self.trim(text, start, limit) if trim else limit
+
 
 
 
@@ -3059,7 +3067,12 @@ def _userinfo_spans(text, syntax):
             end = min(end, raw_ends.first(position))
         end = min(end, next_boundary)
         first_at = ats.first(position)
-        colon = text.find(":", position, min(first_at, end))
+        adjacent_bound = syntax.owned_end(text, match.start(), position)
+        colon = text.find(
+            ":",
+            position,
+            min(first_at, end, adjacent_bound if adjacent_bound is not None else len(text)),
+        )
         if colon >= 0 and syntax.quote_token(text, colon + 1):
             # The password's quote is innermost; an adjacent URL bracket cannot
             # close it. Natural authority terminators still bound the URL.
@@ -3086,6 +3099,7 @@ def _userinfo_spans(text, syntax):
             if colon >= 0 and syntax.private(text, "password", colon + 1, at):
                 yield colon + 1, at, "url_token", _REDACTED
         match = following
+
 
 
 

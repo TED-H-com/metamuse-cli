@@ -356,3 +356,31 @@ def test_r7_private_block_owns_its_final_line(final):
 def test_r7_form_body_continues_through_markup_quotes():
     text = 'Log: body=<input+name="password"+value="' + V + '">'
     assert V not in redact_text(text)[0]
+
+
+@pytest.mark.parametrize("template", ["password='pa'\"'\"' {v}'", "password='pa'\\'' {v}'"])
+def test_r7_shell_idiom_space_is_still_value_data(template):
+    assert V not in redact_text(template.format(v=V))[0]
+
+
+@pytest.mark.parametrize("context", ["It's failing: ", "<!-- "])
+def test_r7_json_line_escape_follows_an_owned_literal(context):
+    import json
+
+    text = json.dumps({"note": context + "\n'" + 'token=os.getenv("TOKEN")' + "'\n" + context})
+    assert redact_text(text) == (text, [])
+
+
+def test_r7_url_candidate_cannot_claim_next_json_fields_colon():
+    text = '{"url":"https://example.invalid","email":"alice@example.invalid"}'
+    assert redact_text(text) == (text, [])
+
+
+@pytest.mark.parametrize("value", ["value]", "${PW}.", "[REDACTED].", "value.,;"])
+def test_r7_d3_exemption_never_trims_an_own_quoted_value(value):
+    assert redact_text('password="' + value + '"')[0] == 'password="[REDACTED]"'
+
+
+def test_r7_mixed_layer_userinfo_with_encoded_operator_is_private():
+    text = "https://alice%3a<" + V + "%3e@example.invalid/p"
+    assert V not in redact_text(text)[0]
