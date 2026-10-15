@@ -143,7 +143,10 @@ pre-handler guard及handler各checkpoint／boundary transaction各自仍有30秒
 MCP shutdown join worker thread以避免遺棄已claim的step或OS lock。
 storage_busy_retries累計並飽和於2**31−1，既有attached status／inspect／同context doctor可見。
 startup contention為starting且不可用，ownership commit後才running；非busy失敗為failed，
-worker_error_code只含固定code（unexpected exception為E_STORAGE），不含message或path。
+worker_error_code只含固定code（unexpected internal exception同tool failure慣例為E_STORAGE），
+不含message或path。兩種failure皆以log_safe_exception記mcp.attached_worker及固定code，
+僅class與去path的basename／line／function frames；startup stop直接starting→stopped，不短暫running。
+startup failure後新提交仍accepted/queued且worker_available:false。
 startup worker失敗亦保留MCP server供查診斷，不因worker失敗終止stdio服務。
 ready handoff最多2秒，未完成ownership則以starting開始服務；首次短busy、lock_busy或failure亦設ready。
 另一CLI doctor只觀察OS lock可用性，不讀另一process的失敗記憶。

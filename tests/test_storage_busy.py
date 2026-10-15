@@ -389,18 +389,24 @@ def test_attached_failure_diagnostics_are_code_only_in_doctor_and_mcp(
     attached = mcp._AttachedWorker(ctx, True)
     ctx.worker_status = attached.status
     attached.thread.start()
-    attached.thread.join(30)
-    assert not attached.thread.is_alive()
-    if method == "_start" and code == m.ErrorCode.JOB_BUSY:
-        assert attached.status()["attached_worker"] == "lock_busy"
-        return
-    assert attached.start_error is None  # the MCP server can continue serving diagnostics
-    for result in [
-        attached.status(),
-        cli._dispatch(ctx, cli.parser().parse_args(["doctor"])).data,
-        mcp.call_tool(ctx, "metamuse_inspect", {}).structured_content["data"],
-    ]:
-        assert result["attached_worker"] == "failed"
-        assert result["worker_available"] is False
-        assert result["worker_error_code"] == (code or m.ErrorCode.STORAGE).value
-        assert "synthetic private" not in str(result)
+    try:
+        attached.thread.join(5)
+        assert not attached.thread.is_alive()
+        if method == "_start" and code == m.ErrorCode.JOB_BUSY:
+            assert attached.status()["attached_worker"] == "lock_busy"
+            return
+        assert not hasattr(
+            attached, "start_error"
+        )  # the MCP server can continue serving diagnostics
+        for result in [
+            attached.status(),
+            cli._dispatch(ctx, cli.parser().parse_args(["doctor"])).data,
+            mcp.call_tool(ctx, "metamuse_inspect", {}).structured_content["data"],
+        ]:
+            assert result["attached_worker"] == "failed"
+            assert result["worker_available"] is False
+            assert result["worker_error_code"] == (code or m.ErrorCode.STORAGE).value
+            assert "synthetic private" not in str(result)
+    finally:
+        attached.stop()
+        attached.thread.join(10)

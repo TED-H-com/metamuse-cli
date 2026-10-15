@@ -227,15 +227,13 @@ class _AttachedWorker:
         self.stopping = threading.Event()
         self.state = "starting" if enabled else "disabled"
         self.thread = threading.Thread(target=self._run, name="metamuse-worker")
-        # Worker failure is diagnostic state, including during startup. Keep the
-        # stdio startup handoff empty so the server can still serve inspection.
-        self.start_error: BaseException | None = None
         self.error_code: m.ErrorCode | None = None
 
     def status(self) -> dict[str, Any]:
         available = (
             self.executor is not None
             and self.executor.handle is not None
+            and self.executor.epoch is not None
             and self.thread.is_alive()
             and self.state == "running"
             and not self.stopping.is_set()
@@ -280,7 +278,8 @@ class _AttachedWorker:
                 return
             executor.store = worker_store
             with executor:
-                self.state = "running"
+                if executor.epoch is not None and not executor._stop.is_set():
+                    self.state = "running"
                 self.ready.set()
                 if self.stopping.is_set():
                     executor.request_stop()
@@ -291,11 +290,23 @@ class _AttachedWorker:
             else:
                 self.error_code = exc.detail.code
                 self.state = "failed"
-        except BaseException:
+                log_safe_exception(
+                    self.ctx.logger,
+                    exc,
+                    operation="mcp.attached_worker",
+                    code=self.error_code.value,
+                )
+        except BaseException as exc:
             self.error_code = m.ErrorCode.STORAGE
             self.state = "failed"
+            log_safe_exception(
+                self.ctx.logger,
+                exc,
+                operation="mcp.attached_worker",
+                code=self.error_code.value,
+            )
         finally:
-            if self.state == "running":
+            if self.state in ("starting", "running"):
                 self.state = "stopped"
             self.ready.set()
 

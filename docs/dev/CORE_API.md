@@ -300,7 +300,13 @@ The existing attached-worker status/inspect/doctor data exposes it together with
 `attached_worker` and nullable `worker_error_code`. Startup contention remains
 `starting` and unavailable until ownership metadata commits; an established worker
 retains its OS lock while retrying. Non-busy failure reports `failed` and only a fixed
-error code (unexpected exceptions use E_STORAGE), never exception text or paths.
+error code, never exception text or paths. E_STORAGE also covers unexpected internal
+worker failures, following the existing unexpected-tool-failure convention. Both
+CoreError and unexpected failures call log_safe_exception with operation
+mcp.attached_worker and the fixed code; logs contain only class names and sanitized
+basename/line/function frames. Startup failure leaves the server serving, and later
+job acceptance stays queued with worker_available false. A stopped startup goes
+directly from starting to stopped, without reporting running before ownership.
 The MCP server keeps serving diagnostics even if its attached worker fails at startup.
 The start handoff waits at most 2 seconds for ready, then serves with `starting` if
 ownership has not committed. Ready is also signaled on the first short busy attempt,
