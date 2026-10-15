@@ -18,8 +18,11 @@ from __future__ import annotations
 
 import ipaddress
 import select
+import socket
+import threading
 import time
 from collections.abc import Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 from urllib.parse import urlsplit
@@ -345,26 +348,111 @@ class CurlHttp:
 
 
 class CurlSocket:
-    """Byte pipe over one curl WebSocket. ``recv`` stops at ``timeout``."""
+    """Serial curl ownership with a separately owned socket cancellation handle."""
 
     def __init__(self, ws: Any, peer_address: str) -> None:
         self._ws = ws
         self.peer_address = peer_address
         self._closed = False
+        self._cleaned = False
+        self._active = False
+        self._operation_lock = threading.Lock()
+        self._state_lock = threading.Lock()
+        self._interrupt: socket.socket | None = None
+        # Cache on the connector/owner thread, before this pipe can be notified.
+        # A duplicate pins the socket identity even if curl releases its own fd.
+        # Never getinfo, close or otherwise use curl concurrently with an operation:
+        # https://curl.se/libcurl/c/threadsafe.html (Handles).
+        curl = getattr(ws, "curl", None)
+        if curl is not None:
+            from curl_cffi.const import CurlInfo
+            from curl_cffi.requests.websockets import CURL_SOCKET_BAD
+
+            try:
+                fd = curl.getinfo(CurlInfo.ACTIVESOCKET)
+                if type(fd) is not int or fd < 0 or fd == CURL_SOCKET_BAD:
+                    raise ValueError("no socket")
+                # Use the native descriptor duplicator, not socket.socket.dup():
+                # that method calls settimeout and changes curl's shared O_NONBLOCK.
+                duplicate = socket.dup(fd)
+                try:
+                    self._interrupt = socket.socket(fileno=duplicate)
+                except BaseException:
+                    socket.close(duplicate)
+                    raise
+            except (TypeError, AttributeError):
+                failure = _api_mismatch()
+            except Exception:
+                failure = CoreError(
+                    ErrorCode.NETWORK_TIMEOUT,
+                    "Muse socket has no file descriptor",
+                    next_action="Retry the connection.",
+                )
+            else:
+                failure = None
+            if failure is not None:
+                self.close()
+                raise failure
+            # A peer close is handled below by the owner. Avoid the backend's
+            # ordinary close-frame send/cleanup path during cancellation.
+            ws.autoclose = False
+
+    @contextmanager
+    def _operation(self):
+        with self._operation_lock:
+            with self._state_lock:
+                self._active = True
+            try:
+                yield
+            finally:
+                with self._state_lock:
+                    self._active = False
+                    cleanup = self._closed
+                if cleanup:
+                    self._cleanup()
+
+    def _cleanup(self) -> None:
+        # No native operation is active. Claim exactly once before touching curl.
+        with self._state_lock:
+            if self._cleaned:
+                return
+            self._cleaned = True
+            interrupt, self._interrupt = self._interrupt, None
+        try:
+            # close() sends a WebSocket close frame; cancellation must not send.
+            # terminate() only cleans up. Descriptor-less test doubles may expose
+            # only close(), which is safe here after their operation has unwound.
+            closer = None
+            if not getattr(self._ws, "closed", False):
+                closer = getattr(self._ws, "terminate", None) or getattr(self._ws, "close", None)
+            if closer is not None:
+                closer()
+        except Exception:
+            pass
+        finally:
+            if interrupt is not None:
+                interrupt.close()
 
     def send(self, data: bytes) -> None:
         failed = False
-        try:
-            self._ws.send_bytes(data)
-        except Exception:
-            failed = True
+        with self._operation():
+            if self._closed:
+                failed = True
+            else:
+                try:
+                    self._ws.send_bytes(data)
+                except Exception:
+                    failed = True
         if failed:
             _send_uncertain()
 
     def recv(self, timeout: float) -> bytes | None:
-        from curl_cffi.const import CurlECode, CurlInfo, CurlWsFlag
+        with self._operation():
+            return self._recv(timeout)
+
+    def _recv(self, timeout: float) -> bytes | None:
+        from curl_cffi.const import CurlECode, CurlWsFlag
         from curl_cffi.curl import CurlError
-        from curl_cffi.requests.websockets import CURL_SOCKET_BAD
 
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
             raise CoreError(
@@ -383,6 +471,8 @@ class CurlSocket:
         total = 0
         pieces = 0
         while True:
+            if self._closed:
+                return None
             if time.monotonic() >= deadline:
                 return None
             if pieces >= _WS_PIECE_MAX:
@@ -418,25 +508,16 @@ class CurlSocket:
                 again = False
             if failure is not None:
                 raise failure
+            if self._closed:
+                return None
             if again:
                 if time.monotonic() >= deadline:
                     return None
                 remaining = deadline - time.monotonic()
-                try:
-                    sock = self._ws.curl.getinfo(CurlInfo.ACTIVESOCKET)
-                except (TypeError, AttributeError):
-                    sock_failure = _api_mismatch()
-                else:
-                    sock_failure = None
-                if sock_failure is not None:
-                    raise sock_failure
-                if sock == CURL_SOCKET_BAD:
-                    raise CoreError(
-                        ErrorCode.NETWORK_TIMEOUT,
-                        "Muse socket has no file descriptor",
-                        next_action="Retry the connection.",
-                    )
-                select.select([sock], [], [], min(remaining, 0.5))
+                if self._interrupt is None:
+                    # Descriptor-less fakes work until they request socket I/O.
+                    raise _api_mismatch()
+                select.select([self._interrupt], [], [], min(remaining, 0.5))
                 if time.monotonic() >= deadline:
                     return None
                 continue
@@ -446,6 +527,7 @@ class CurlSocket:
             if frame.flags & (CurlWsFlag.PING | CurlWsFlag.PONG):
                 continue
             if frame.flags & CurlWsFlag.CLOSE:
+                self.close()
                 return None
             piece = bytes(chunk)
             if total + len(piece) > _WS_MESSAGE_MAX_BYTES:
@@ -463,15 +545,21 @@ class CurlSocket:
                 return b"".join(chunks)
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        closer = getattr(self._ws, "close", None)
-        if closer is not None:
-            try:
-                closer()
-            except Exception:
+        with self._state_lock:
+            if self._closed:
                 return
+            self._closed = True
+            if self._interrupt is not None:
+                try:
+                    self._interrupt.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass  # Already disconnected; the owner still cleans up.
+            cleanup = not self._active
+        # Never wait for recv/send or a transport lock in a notification. An
+        # active operation cleans up in its finally; an idle handle can safely
+        # transfer to this thread without simultaneous libcurl access.
+        if cleanup:
+            self._cleanup()
 
 
 class CurlConnector:
