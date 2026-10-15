@@ -128,3 +128,27 @@ def check(source, table, accessors):
         variable, accessor, alias = match.groups()
         if accessor in dom_results or alias:
             assert variable.startswith("n_"), (variable, accessor, alias)
+    for match in re.finditer(
+        r"\b(?:const|let)\s+([\w$]+)\s*=\s*"
+        r"(?:v_(?:raw|pending|children|assigned)\s*(?:\[|\.pop\s*\()|(?:parent|shadow)\s*\()",
+        source,
+    ):
+        assert match[1].startswith("n_"), match[0]
+    # DOM-returning helper calls have the same postfix restriction as accessors.
+    for i in range(len(tokens) - 1):
+        dom_call = tokens[i] in {"parent", "shadow"} or (
+            tokens[i] == "apply" and tokens[i + 2] in {"computedStyle", "v_open"}
+        )
+        if not dom_call or tokens[i + 1] != "(":
+            continue
+        if i and tokens[i - 1] == "function":
+            continue
+        depth, j = 1, i + 2
+        while depth:
+            depth += (tokens[j] == "(") - (tokens[j] == ")")
+            j += 1
+        assert j == len(tokens) or tokens[j] not in {".", "?.", "["}
+    for match in re.finditer(
+        r"\b(?:const|let)\s+([\w$]+)\s*=\s*apply\s*\(\s*(?:computedStyle|v_open)\b", source
+    ):
+        assert match[1].startswith("n_"), match[0]
