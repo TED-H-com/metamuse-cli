@@ -131,7 +131,10 @@ def category(shape, special, encoding):
         return "literal_syntax_terminator"
     if special == "'" and shape in {"json_sq", "env_sq"}:
         return "literal_syntax_terminator"
-    if shape in {"userinfo", "userinfo_pg"} and special in "/?#\\" and special:
+    if (
+        (shape == "userinfo" and special in "/?#\\")
+        or (shape == "userinfo_pg" and special in "/?#")
+    ) and special:
         return "literal_url_terminator"
     if (shape in {"query", "query_first", "form_first"} and special in {"&", "#"}) or (
         shape == "form_first" and special == ";"
@@ -317,6 +320,16 @@ def verify(rows):
         if row.category is not None:
             assert row.category in CATEGORIES, row
             counts["out_of_scope:" + row.category] += 1
+            # Authority-terminated candidates have no userinfo at all; check
+            # their first marker's documented visibility instead of skipping it.
+            first = row.markers[0] if row.markers else None
+            if first:
+                visible_first = first in output
+                counts["excluded_first_visible"] += visible_first
+                if row.category != "literal_url_terminator" and not row.shape.startswith(
+                    ("userinfo:", "userinfo_pg:")
+                ):
+                    assert not visible_first, (row, output)
         elif row.benign:
             counts["benign"] += 1
             counts["benign_changed"] += (output, findings) != (row.text, [])

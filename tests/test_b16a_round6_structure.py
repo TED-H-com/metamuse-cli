@@ -233,3 +233,33 @@ def test_r6_multiline_xml_attributes_do_not_hide_body(element, layers):
 def test_r6_html_character_references_name_the_private_field(attribute):
     text = "<input " + attribute + '="pass&#119;ord" value="' + MARKER + '">'
     assert MARKER not in redact_text(text)[0]
+
+
+def test_r6_decoded_quote_cannot_shorten_shallower_value():
+    from metamuse.safety import _decode_view, _decoding_depths, _Syntax
+
+    text = "password=prefix%22inner%22" + MARKER
+    view, edits = _decode_view(text)
+    syntax = _Syntax(view, _decoding_depths(len(text), [edits]))
+    assert syntax.value(view, len("password="), operator_depth=0) == len(view)
+    assert MARKER not in redact_text(text)[0]
+
+
+def test_r6_deeper_close_does_not_force_shallower_pending_pair():
+    from metamuse.safety import _Syntax
+
+    text = "\"outer 'inner\" tail'"
+    depths = bytearray(len(text))
+    depths[0] = depths[text.index('"', 1)] = 1
+    syntax = _Syntax(text, depths)
+    opening = text.index("'")
+    assert syntax.ends.get(opening) == len(text)
+    assert syntax.quote_closings.get(len(text) - 1) == opening
+
+
+def test_r6_har_does_not_resynchronize_within_failed_candidate():
+    marker = f"{'HARSTATE'}_MARKER_PRIVATE_432198"
+    text = '{"name":"sid", ,"value":"' + marker + '"}'
+    from metamuse.safety import _har_json_spans
+
+    assert list(_har_json_spans(text)) == []

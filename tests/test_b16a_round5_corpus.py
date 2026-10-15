@@ -4,7 +4,16 @@ from b16a_r5_corpus import seeded_subset, verify
 
 
 def test_r5_class_matrix_seeded_subset():
-    result = verify(seeded_subset())
+    rows = list(seeded_subset())
+    from collections import Counter
+
+    assert len(rows) == 2280
+    counts = Counter(row.shape for row in rows)
+    assert counts["authority"] == 280
+    assert counts["authority_mirror"] == 448
+    assert counts["quoted_argument"] == 104
+    assert counts["exempt_mirror"] == 66
+    result = verify(rows)
     assert (
         result.get("leaks", 0)
         == result.get("nonfixpoint", 0)
