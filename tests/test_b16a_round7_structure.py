@@ -27,6 +27,21 @@ def test_r7_owned_delimiters_ignore_unrelated_pairing(prefix, shape):
 
 
 
+@pytest.mark.parametrize(
+    "follower", list("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~") + ["a", "1", " ", ""]
+)
+def test_r7_d2_follower_cut_is_exact(follower):
+    text = "password='pa'" + follower + V + "'"
+    # Runs of closing characters can precede a permitted follower. This row
+    # deliberately puts a marker immediately after the follower, so only
+    # whitespace/comma/semicolon/ampersand validate the internal closer.
+    expected = "password='[REDACTED]'" + (
+        follower + V + "'" if follower in {" ", ",", ";", "&"} else ""
+    )
+    assert redact_text(text)[0] == expected, (text, redact_text(text), expected)
+
+
+
 @pytest.mark.parametrize("prefix", ["(", "[", "{", "<"])
 @pytest.mark.parametrize(
     "shape",
@@ -38,6 +53,15 @@ def test_r7_owned_delimiters_ignore_unrelated_pairing(prefix, shape):
 )
 def test_r7_innermost_value_quote_owns_extent(prefix, shape):
     text = prefix + shape.format(v=V)
+    assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
+@pytest.mark.parametrize(
+    "shape", ["<https://alice:pa>{v}@example.invalid/p", "<https://example.invalid/p?token=pa>{v}"]
+)
+def test_r7_autolink_invalid_follower_is_data(shape):
+    text = shape.format(v=V)
     assert V not in redact_text(text)[0], (text, redact_text(text))
 
 
