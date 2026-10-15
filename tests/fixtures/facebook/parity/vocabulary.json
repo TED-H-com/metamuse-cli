@@ -1,0 +1,4634 @@
+[
+  {
+    "label": "html:a",
+    "markup": "<a>TEXT</a>"
+  },
+  {
+    "label": "html:address",
+    "markup": "<address>TEXT</address>"
+  },
+  {
+    "label": "html:area",
+    "markup": "<area>"
+  },
+  {
+    "label": "html:article",
+    "markup": "<article>TEXT</article>"
+  },
+  {
+    "label": "html:aside",
+    "markup": "<aside>TEXT</aside>"
+  },
+  {
+    "label": "html:audio",
+    "markup": "<audio>TEXT</audio>"
+  },
+  {
+    "label": "html:b",
+    "markup": "<b>TEXT</b>"
+  },
+  {
+    "label": "html:base",
+    "markup": "<base>"
+  },
+  {
+    "label": "html:basefont",
+    "markup": "<basefont>"
+  },
+  {
+    "label": "html:bgsound",
+    "markup": "<bgsound>"
+  },
+  {
+    "label": "html:blockquote",
+    "markup": "<blockquote>TEXT</blockquote>"
+  },
+  {
+    "label": "html:br",
+    "markup": "<br>"
+  },
+  {
+    "label": "html:button",
+    "markup": "<button>TEXT</button>"
+  },
+  {
+    "label": "html:canvas",
+    "markup": "<canvas>TEXT</canvas>"
+  },
+  {
+    "label": "html:caption",
+    "markup": "<caption>TEXT</caption>"
+  },
+  {
+    "label": "html:code",
+    "markup": "<code>TEXT</code>"
+  },
+  {
+    "label": "html:col",
+    "markup": "<col>"
+  },
+  {
+    "label": "html:colgroup",
+    "markup": "<colgroup>TEXT</colgroup>"
+  },
+  {
+    "label": "html:details",
+    "markup": "<details>TEXT</details>"
+  },
+  {
+    "label": "html:div",
+    "markup": "<div>TEXT</div>"
+  },
+  {
+    "label": "html:em",
+    "markup": "<em>TEXT</em>"
+  },
+  {
+    "label": "html:embed",
+    "markup": "<embed>"
+  },
+  {
+    "label": "html:fieldset",
+    "markup": "<fieldset>TEXT</fieldset>"
+  },
+  {
+    "label": "html:figcaption",
+    "markup": "<figcaption>TEXT</figcaption>"
+  },
+  {
+    "label": "html:figure",
+    "markup": "<figure>TEXT</figure>"
+  },
+  {
+    "label": "html:footer",
+    "markup": "<footer>TEXT</footer>"
+  },
+  {
+    "label": "html:form",
+    "markup": "<form>TEXT</form>"
+  },
+  {
+    "label": "html:frame",
+    "markup": "<frame>"
+  },
+  {
+    "label": "html:h1",
+    "markup": "<h1>TEXT</h1>"
+  },
+  {
+    "label": "html:h2",
+    "markup": "<h2>TEXT</h2>"
+  },
+  {
+    "label": "html:h3",
+    "markup": "<h3>TEXT</h3>"
+  },
+  {
+    "label": "html:h4",
+    "markup": "<h4>TEXT</h4>"
+  },
+  {
+    "label": "html:h5",
+    "markup": "<h5>TEXT</h5>"
+  },
+  {
+    "label": "html:h6",
+    "markup": "<h6>TEXT</h6>"
+  },
+  {
+    "label": "html:header",
+    "markup": "<header>TEXT</header>"
+  },
+  {
+    "label": "html:hr",
+    "markup": "<hr>"
+  },
+  {
+    "label": "html:i",
+    "markup": "<i>TEXT</i>"
+  },
+  {
+    "label": "html:img",
+    "markup": "<img>"
+  },
+  {
+    "label": "html:input",
+    "markup": "<input>"
+  },
+  {
+    "label": "html:keygen",
+    "markup": "<keygen>"
+  },
+  {
+    "label": "html:label",
+    "markup": "<label>TEXT</label>"
+  },
+  {
+    "label": "html:legend",
+    "markup": "<legend>TEXT</legend>"
+  },
+  {
+    "label": "html:li",
+    "markup": "<li>TEXT</li>"
+  },
+  {
+    "label": "html:link",
+    "markup": "<link>"
+  },
+  {
+    "label": "html:main",
+    "markup": "<main>TEXT</main>"
+  },
+  {
+    "label": "html:mark",
+    "markup": "<mark>TEXT</mark>"
+  },
+  {
+    "label": "html:meta",
+    "markup": "<meta>"
+  },
+  {
+    "label": "html:meter",
+    "markup": "<meter>TEXT</meter>"
+  },
+  {
+    "label": "html:nav",
+    "markup": "<nav>TEXT</nav>"
+  },
+  {
+    "label": "html:noscript",
+    "markup": "<noscript>TEXT</noscript>"
+  },
+  {
+    "label": "html:object",
+    "markup": "<object>TEXT</object>"
+  },
+  {
+    "label": "html:ol",
+    "markup": "<ol>TEXT</ol>"
+  },
+  {
+    "label": "html:p",
+    "markup": "<p>TEXT</p>"
+  },
+  {
+    "label": "html:param",
+    "markup": "<param>"
+  },
+  {
+    "label": "html:pre",
+    "markup": "<pre>TEXT</pre>"
+  },
+  {
+    "label": "html:progress",
+    "markup": "<progress>TEXT</progress>"
+  },
+  {
+    "label": "html:s",
+    "markup": "<s>TEXT</s>"
+  },
+  {
+    "label": "html:script",
+    "markup": "<script>TEXT</script>"
+  },
+  {
+    "label": "html:section",
+    "markup": "<section>TEXT</section>"
+  },
+  {
+    "label": "html:small",
+    "markup": "<small>TEXT</small>"
+  },
+  {
+    "label": "html:source",
+    "markup": "<source>"
+  },
+  {
+    "label": "html:span",
+    "markup": "<span>TEXT</span>"
+  },
+  {
+    "label": "html:strong",
+    "markup": "<strong>TEXT</strong>"
+  },
+  {
+    "label": "html:style",
+    "markup": "<style>TEXT</style>"
+  },
+  {
+    "label": "html:summary",
+    "markup": "<summary>TEXT</summary>"
+  },
+  {
+    "label": "html:table",
+    "markup": "<table>TEXT</table>"
+  },
+  {
+    "label": "html:tbody",
+    "markup": "<tbody>TEXT</tbody>"
+  },
+  {
+    "label": "html:td",
+    "markup": "<td>TEXT</td>"
+  },
+  {
+    "label": "html:template",
+    "markup": "<template>TEXT</template>"
+  },
+  {
+    "label": "html:tfoot",
+    "markup": "<tfoot>TEXT</tfoot>"
+  },
+  {
+    "label": "html:th",
+    "markup": "<th>TEXT</th>"
+  },
+  {
+    "label": "html:thead",
+    "markup": "<thead>TEXT</thead>"
+  },
+  {
+    "label": "html:time",
+    "markup": "<time>TEXT</time>"
+  },
+  {
+    "label": "html:tr",
+    "markup": "<tr>TEXT</tr>"
+  },
+  {
+    "label": "html:track",
+    "markup": "<track>"
+  },
+  {
+    "label": "html:u",
+    "markup": "<u>TEXT</u>"
+  },
+  {
+    "label": "html:ul",
+    "markup": "<ul>TEXT</ul>"
+  },
+  {
+    "label": "html:video",
+    "markup": "<video>TEXT</video>"
+  },
+  {
+    "label": "html:wbr",
+    "markup": "<wbr>"
+  },
+  {
+    "label": "svg:circle",
+    "markup": "<svg><circle><text>TEXT</text></circle></svg>"
+  },
+  {
+    "label": "svg:circle hidden=\"until-found\"",
+    "markup": "<svg><circle hidden=\"until-found\"><text>TEXT</text></circle></svg>"
+  },
+  {
+    "label": "svg:circle style=\"display:contents\"",
+    "markup": "<svg><circle style=\"display:contents\"><text>TEXT</text></circle></svg>"
+  },
+  {
+    "label": "svg:defs",
+    "markup": "<svg><defs><text>TEXT</text></defs></svg>"
+  },
+  {
+    "label": "svg:defs hidden=\"until-found\"",
+    "markup": "<svg><defs hidden=\"until-found\"><text>TEXT</text></defs></svg>"
+  },
+  {
+    "label": "svg:defs style=\"display:contents\"",
+    "markup": "<svg><defs style=\"display:contents\"><text>TEXT</text></defs></svg>"
+  },
+  {
+    "label": "svg:ellipse",
+    "markup": "<svg><ellipse><text>TEXT</text></ellipse></svg>"
+  },
+  {
+    "label": "svg:ellipse hidden=\"until-found\"",
+    "markup": "<svg><ellipse hidden=\"until-found\"><text>TEXT</text></ellipse></svg>"
+  },
+  {
+    "label": "svg:ellipse style=\"display:contents\"",
+    "markup": "<svg><ellipse style=\"display:contents\"><text>TEXT</text></ellipse></svg>"
+  },
+  {
+    "label": "svg:g",
+    "markup": "<svg><g><text>TEXT</text></g></svg>"
+  },
+  {
+    "label": "svg:g hidden=\"until-found\"",
+    "markup": "<svg><g hidden=\"until-found\"><text>TEXT</text></g></svg>"
+  },
+  {
+    "label": "svg:g style=\"display:contents\"",
+    "markup": "<svg><g style=\"display:contents\"><text>TEXT</text></g></svg>"
+  },
+  {
+    "label": "svg:line",
+    "markup": "<svg><line><text>TEXT</text></line></svg>"
+  },
+  {
+    "label": "svg:line hidden=\"until-found\"",
+    "markup": "<svg><line hidden=\"until-found\"><text>TEXT</text></line></svg>"
+  },
+  {
+    "label": "svg:line style=\"display:contents\"",
+    "markup": "<svg><line style=\"display:contents\"><text>TEXT</text></line></svg>"
+  },
+  {
+    "label": "svg:path",
+    "markup": "<svg><path><text>TEXT</text></path></svg>"
+  },
+  {
+    "label": "svg:path hidden=\"until-found\"",
+    "markup": "<svg><path hidden=\"until-found\"><text>TEXT</text></path></svg>"
+  },
+  {
+    "label": "svg:path style=\"display:contents\"",
+    "markup": "<svg><path style=\"display:contents\"><text>TEXT</text></path></svg>"
+  },
+  {
+    "label": "svg:polygon",
+    "markup": "<svg><polygon><text>TEXT</text></polygon></svg>"
+  },
+  {
+    "label": "svg:polygon hidden=\"until-found\"",
+    "markup": "<svg><polygon hidden=\"until-found\"><text>TEXT</text></polygon></svg>"
+  },
+  {
+    "label": "svg:polygon style=\"display:contents\"",
+    "markup": "<svg><polygon style=\"display:contents\"><text>TEXT</text></polygon></svg>"
+  },
+  {
+    "label": "svg:polyline",
+    "markup": "<svg><polyline><text>TEXT</text></polyline></svg>"
+  },
+  {
+    "label": "svg:polyline hidden=\"until-found\"",
+    "markup": "<svg><polyline hidden=\"until-found\"><text>TEXT</text></polyline></svg>"
+  },
+  {
+    "label": "svg:polyline style=\"display:contents\"",
+    "markup": "<svg><polyline style=\"display:contents\"><text>TEXT</text></polyline></svg>"
+  },
+  {
+    "label": "svg:rect",
+    "markup": "<svg><rect><text>TEXT</text></rect></svg>"
+  },
+  {
+    "label": "svg:rect hidden=\"until-found\"",
+    "markup": "<svg><rect hidden=\"until-found\"><text>TEXT</text></rect></svg>"
+  },
+  {
+    "label": "svg:rect style=\"display:contents\"",
+    "markup": "<svg><rect style=\"display:contents\"><text>TEXT</text></rect></svg>"
+  },
+  {
+    "label": "svg:svg",
+    "markup": "<svg><text>TEXT</text></svg>"
+  },
+  {
+    "label": "svg:svg hidden=\"until-found\"",
+    "markup": "<svg hidden=\"until-found\"><text>TEXT</text></svg>"
+  },
+  {
+    "label": "svg:svg style=\"display:contents\"",
+    "markup": "<svg style=\"display:contents\"><text>TEXT</text></svg>"
+  },
+  {
+    "label": "svg:symbol",
+    "markup": "<svg><symbol><text>TEXT</text></symbol></svg>"
+  },
+  {
+    "label": "svg:symbol hidden=\"until-found\"",
+    "markup": "<svg><symbol hidden=\"until-found\"><text>TEXT</text></symbol></svg>"
+  },
+  {
+    "label": "svg:symbol style=\"display:contents\"",
+    "markup": "<svg><symbol style=\"display:contents\"><text>TEXT</text></symbol></svg>"
+  },
+  {
+    "label": "svg:text",
+    "markup": "<svg><text>TEXT</text></svg>"
+  },
+  {
+    "label": "svg:text hidden=\"until-found\"",
+    "markup": "<svg><text hidden=\"until-found\">TEXT</text></svg>"
+  },
+  {
+    "label": "svg:text style=\"display:contents\"",
+    "markup": "<svg><text style=\"display:contents\">TEXT</text></svg>"
+  },
+  {
+    "label": "svg:tspan",
+    "markup": "<svg><tspan>TEXT</tspan></svg>"
+  },
+  {
+    "label": "svg:tspan hidden=\"until-found\"",
+    "markup": "<svg><tspan hidden=\"until-found\">TEXT</tspan></svg>"
+  },
+  {
+    "label": "svg:tspan style=\"display:contents\"",
+    "markup": "<svg><tspan style=\"display:contents\">TEXT</tspan></svg>"
+  },
+  {
+    "label": "svg:use",
+    "markup": "<svg><use><text>TEXT</text></use></svg>"
+  },
+  {
+    "label": "svg:use hidden=\"until-found\"",
+    "markup": "<svg><use hidden=\"until-found\"><text>TEXT</text></use></svg>"
+  },
+  {
+    "label": "svg:use style=\"display:contents\"",
+    "markup": "<svg><use style=\"display:contents\"><text>TEXT</text></use></svg>"
+  },
+  {
+    "label": "svg:attribute:viewBox=\"0 0 100 100\"",
+    "markup": "<svg viewBox=\"0 0 100 100\"></svg>"
+  },
+  {
+    "label": "svg:attribute:preserveAspectRatio=\"none\"",
+    "markup": "<svg preserveAspectRatio=\"none\"></svg>"
+  },
+  {
+    "label": "svg:attribute:definitionURL=\"synthetic\"",
+    "markup": "<svg definitionURL=\"synthetic\"></svg>"
+  },
+  {
+    "label": "svg:attribute:xmlns:xlink=\"http://www.w3.org/1999/xlink\"",
+    "markup": "<svg xmlns:xlink=\"http://www.w3.org/1999/xlink\"></svg>"
+  },
+  {
+    "label": "math:math",
+    "markup": "<math><mi>TEXT</mi></math>"
+  },
+  {
+    "label": "math:math hidden=\"until-found\"",
+    "markup": "<math hidden=\"until-found\"><mi>TEXT</mi></math>"
+  },
+  {
+    "label": "math:math style=\"display:contents\"",
+    "markup": "<math style=\"display:contents\"><mi>TEXT</mi></math>"
+  },
+  {
+    "label": "math:mfrac",
+    "markup": "<math><mfrac><mi>TEXT</mi></mfrac></math>"
+  },
+  {
+    "label": "math:mfrac hidden=\"until-found\"",
+    "markup": "<math><mfrac hidden=\"until-found\"><mi>TEXT</mi></mfrac></math>"
+  },
+  {
+    "label": "math:mfrac style=\"display:contents\"",
+    "markup": "<math><mfrac style=\"display:contents\"><mi>TEXT</mi></mfrac></math>"
+  },
+  {
+    "label": "math:mi",
+    "markup": "<math><mi>TEXT</mi></math>"
+  },
+  {
+    "label": "math:mi hidden=\"until-found\"",
+    "markup": "<math><mi hidden=\"until-found\">TEXT</mi></math>"
+  },
+  {
+    "label": "math:mi style=\"display:contents\"",
+    "markup": "<math><mi style=\"display:contents\">TEXT</mi></math>"
+  },
+  {
+    "label": "math:mn",
+    "markup": "<math><mn>TEXT</mn></math>"
+  },
+  {
+    "label": "math:mn hidden=\"until-found\"",
+    "markup": "<math><mn hidden=\"until-found\">TEXT</mn></math>"
+  },
+  {
+    "label": "math:mn style=\"display:contents\"",
+    "markup": "<math><mn style=\"display:contents\">TEXT</mn></math>"
+  },
+  {
+    "label": "math:mo",
+    "markup": "<math><mo>TEXT</mo></math>"
+  },
+  {
+    "label": "math:mo hidden=\"until-found\"",
+    "markup": "<math><mo hidden=\"until-found\">TEXT</mo></math>"
+  },
+  {
+    "label": "math:mo style=\"display:contents\"",
+    "markup": "<math><mo style=\"display:contents\">TEXT</mo></math>"
+  },
+  {
+    "label": "math:mover",
+    "markup": "<math><mover><mi>TEXT</mi></mover></math>"
+  },
+  {
+    "label": "math:mover hidden=\"until-found\"",
+    "markup": "<math><mover hidden=\"until-found\"><mi>TEXT</mi></mover></math>"
+  },
+  {
+    "label": "math:mover style=\"display:contents\"",
+    "markup": "<math><mover style=\"display:contents\"><mi>TEXT</mi></mover></math>"
+  },
+  {
+    "label": "math:mrow",
+    "markup": "<math><mrow><mi>TEXT</mi></mrow></math>"
+  },
+  {
+    "label": "math:mrow hidden=\"until-found\"",
+    "markup": "<math><mrow hidden=\"until-found\"><mi>TEXT</mi></mrow></math>"
+  },
+  {
+    "label": "math:mrow style=\"display:contents\"",
+    "markup": "<math><mrow style=\"display:contents\"><mi>TEXT</mi></mrow></math>"
+  },
+  {
+    "label": "math:ms",
+    "markup": "<math><ms>TEXT</ms></math>"
+  },
+  {
+    "label": "math:ms hidden=\"until-found\"",
+    "markup": "<math><ms hidden=\"until-found\">TEXT</ms></math>"
+  },
+  {
+    "label": "math:ms style=\"display:contents\"",
+    "markup": "<math><ms style=\"display:contents\">TEXT</ms></math>"
+  },
+  {
+    "label": "math:msqrt",
+    "markup": "<math><msqrt><mi>TEXT</mi></msqrt></math>"
+  },
+  {
+    "label": "math:msqrt hidden=\"until-found\"",
+    "markup": "<math><msqrt hidden=\"until-found\"><mi>TEXT</mi></msqrt></math>"
+  },
+  {
+    "label": "math:msqrt style=\"display:contents\"",
+    "markup": "<math><msqrt style=\"display:contents\"><mi>TEXT</mi></msqrt></math>"
+  },
+  {
+    "label": "math:msub",
+    "markup": "<math><msub><mi>TEXT</mi></msub></math>"
+  },
+  {
+    "label": "math:msub hidden=\"until-found\"",
+    "markup": "<math><msub hidden=\"until-found\"><mi>TEXT</mi></msub></math>"
+  },
+  {
+    "label": "math:msub style=\"display:contents\"",
+    "markup": "<math><msub style=\"display:contents\"><mi>TEXT</mi></msub></math>"
+  },
+  {
+    "label": "math:msup",
+    "markup": "<math><msup><mi>TEXT</mi></msup></math>"
+  },
+  {
+    "label": "math:msup hidden=\"until-found\"",
+    "markup": "<math><msup hidden=\"until-found\"><mi>TEXT</mi></msup></math>"
+  },
+  {
+    "label": "math:msup style=\"display:contents\"",
+    "markup": "<math><msup style=\"display:contents\"><mi>TEXT</mi></msup></math>"
+  },
+  {
+    "label": "math:mtable",
+    "markup": "<math><mtable><mi>TEXT</mi></mtable></math>"
+  },
+  {
+    "label": "math:mtable hidden=\"until-found\"",
+    "markup": "<math><mtable hidden=\"until-found\"><mi>TEXT</mi></mtable></math>"
+  },
+  {
+    "label": "math:mtable style=\"display:contents\"",
+    "markup": "<math><mtable style=\"display:contents\"><mi>TEXT</mi></mtable></math>"
+  },
+  {
+    "label": "math:mtd",
+    "markup": "<math><mtd><mi>TEXT</mi></mtd></math>"
+  },
+  {
+    "label": "math:mtd hidden=\"until-found\"",
+    "markup": "<math><mtd hidden=\"until-found\"><mi>TEXT</mi></mtd></math>"
+  },
+  {
+    "label": "math:mtd style=\"display:contents\"",
+    "markup": "<math><mtd style=\"display:contents\"><mi>TEXT</mi></mtd></math>"
+  },
+  {
+    "label": "math:mtext",
+    "markup": "<math><mtext>TEXT</mtext></math>"
+  },
+  {
+    "label": "math:mtext hidden=\"until-found\"",
+    "markup": "<math><mtext hidden=\"until-found\">TEXT</mtext></math>"
+  },
+  {
+    "label": "math:mtext style=\"display:contents\"",
+    "markup": "<math><mtext style=\"display:contents\">TEXT</mtext></math>"
+  },
+  {
+    "label": "math:mtr",
+    "markup": "<math><mtr><mi>TEXT</mi></mtr></math>"
+  },
+  {
+    "label": "math:mtr hidden=\"until-found\"",
+    "markup": "<math><mtr hidden=\"until-found\"><mi>TEXT</mi></mtr></math>"
+  },
+  {
+    "label": "math:mtr style=\"display:contents\"",
+    "markup": "<math><mtr style=\"display:contents\"><mi>TEXT</mi></mtr></math>"
+  },
+  {
+    "label": "math:munder",
+    "markup": "<math><munder><mi>TEXT</mi></munder></math>"
+  },
+  {
+    "label": "math:munder hidden=\"until-found\"",
+    "markup": "<math><munder hidden=\"until-found\"><mi>TEXT</mi></munder></math>"
+  },
+  {
+    "label": "math:munder style=\"display:contents\"",
+    "markup": "<math><munder style=\"display:contents\"><mi>TEXT</mi></munder></math>"
+  },
+  {
+    "label": "math:attribute:viewBox=\"0 0 100 100\"",
+    "markup": "<math viewBox=\"0 0 100 100\"></math>"
+  },
+  {
+    "label": "math:attribute:preserveAspectRatio=\"none\"",
+    "markup": "<math preserveAspectRatio=\"none\"></math>"
+  },
+  {
+    "label": "math:attribute:definitionURL=\"synthetic\"",
+    "markup": "<math definitionURL=\"synthetic\"></math>"
+  },
+  {
+    "label": "math:attribute:xmlns:xlink=\"http://www.w3.org/1999/xlink\"",
+    "markup": "<math xmlns:xlink=\"http://www.w3.org/1999/xlink\"></math>"
+  },
+  {
+    "label": "div:display:none",
+    "markup": "<div style=\"display:none\">TEXT</div>"
+  },
+  {
+    "label": "div:display:block",
+    "markup": "<div style=\"display:block\">TEXT</div>"
+  },
+  {
+    "label": "div:display:inline",
+    "markup": "<div style=\"display:inline\">TEXT</div>"
+  },
+  {
+    "label": "div:display:inline-block",
+    "markup": "<div style=\"display:inline-block\">TEXT</div>"
+  },
+  {
+    "label": "div:display:flex",
+    "markup": "<div style=\"display:flex\">TEXT</div>"
+  },
+  {
+    "label": "div:display:inline-flex",
+    "markup": "<div style=\"display:inline-flex\">TEXT</div>"
+  },
+  {
+    "label": "div:display:grid",
+    "markup": "<div style=\"display:grid\">TEXT</div>"
+  },
+  {
+    "label": "div:display:inline-grid",
+    "markup": "<div style=\"display:inline-grid\">TEXT</div>"
+  },
+  {
+    "label": "div:display:contents",
+    "markup": "<div style=\"display:contents\">TEXT</div>"
+  },
+  {
+    "label": "div:display:flow-root",
+    "markup": "<div style=\"display:flow-root\">TEXT</div>"
+  },
+  {
+    "label": "div:display:list-item",
+    "markup": "<div style=\"display:list-item\">TEXT</div>"
+  },
+  {
+    "label": "div:display:table",
+    "markup": "<div style=\"display:table\">TEXT</div>"
+  },
+  {
+    "label": "div:display:inline-table",
+    "markup": "<div style=\"display:inline-table\">TEXT</div>"
+  },
+  {
+    "label": "div:display:table-row-group",
+    "markup": "<div style=\"display:table-row-group\">TEXT</div>"
+  },
+  {
+    "label": "div:display:table-header-group",
+    "markup": "<div style=\"display:table-header-group\">TEXT</div>"
+  },
+  {
+    "label": "div:display:table-footer-group",
+    "markup": "<div style=\"display:table-footer-group\">TEXT</div>"
+  },
+  {
+    "label": "div:display:table-row",
+    "markup": "<div style=\"display:table-row\">TEXT</div>"
+  },
+  {
+    "label": "div:display:table-column-group",
+    "markup": "<div style=\"display:table-column-group\">TEXT</div>"
+  },
+  {
+    "label": "div:display:table-column",
+    "markup": "<div style=\"display:table-column\">TEXT</div>"
+  },
+  {
+    "label": "div:display:table-cell",
+    "markup": "<div style=\"display:table-cell\">TEXT</div>"
+  },
+  {
+    "label": "div:display:table-caption",
+    "markup": "<div style=\"display:table-caption\">TEXT</div>"
+  },
+  {
+    "label": "div:display:ruby",
+    "markup": "<div style=\"display:ruby\">TEXT</div>"
+  },
+  {
+    "label": "div:display:ruby-base",
+    "markup": "<div style=\"display:ruby-base\">TEXT</div>"
+  },
+  {
+    "label": "div:display:ruby-text",
+    "markup": "<div style=\"display:ruby-text\">TEXT</div>"
+  },
+  {
+    "label": "div:display:ruby-base-container",
+    "markup": "<div style=\"display:ruby-base-container\">TEXT</div>"
+  },
+  {
+    "label": "div:display:ruby-text-container",
+    "markup": "<div style=\"display:ruby-text-container\">TEXT</div>"
+  },
+  {
+    "label": "div:display:inherit",
+    "markup": "<div style=\"display:inherit\">TEXT</div>"
+  },
+  {
+    "label": "div:display:initial",
+    "markup": "<div style=\"display:initial\">TEXT</div>"
+  },
+  {
+    "label": "div:display:unset",
+    "markup": "<div style=\"display:unset\">TEXT</div>"
+  },
+  {
+    "label": "div:display:revert",
+    "markup": "<div style=\"display:revert\">TEXT</div>"
+  },
+  {
+    "label": "div:display:revert-layer",
+    "markup": "<div style=\"display:revert-layer\">TEXT</div>"
+  },
+  {
+    "label": "div:content-visibility:visible",
+    "markup": "<div style=\"content-visibility:visible\">TEXT</div>"
+  },
+  {
+    "label": "div:content-visibility:hidden",
+    "markup": "<div style=\"content-visibility:hidden\">TEXT</div>"
+  },
+  {
+    "label": "div:content-visibility:auto",
+    "markup": "<div style=\"content-visibility:auto\">TEXT</div>"
+  },
+  {
+    "label": "div:content-visibility:inherit",
+    "markup": "<div style=\"content-visibility:inherit\">TEXT</div>"
+  },
+  {
+    "label": "div:content-visibility:initial",
+    "markup": "<div style=\"content-visibility:initial\">TEXT</div>"
+  },
+  {
+    "label": "div:content-visibility:unset",
+    "markup": "<div style=\"content-visibility:unset\">TEXT</div>"
+  },
+  {
+    "label": "div:content-visibility:revert",
+    "markup": "<div style=\"content-visibility:revert\">TEXT</div>"
+  },
+  {
+    "label": "div:content-visibility:revert-layer",
+    "markup": "<div style=\"content-visibility:revert-layer\">TEXT</div>"
+  },
+  {
+    "label": "div:visibility:visible",
+    "markup": "<div style=\"visibility:visible\">TEXT</div>"
+  },
+  {
+    "label": "div:visibility:hidden",
+    "markup": "<div style=\"visibility:hidden\">TEXT</div>"
+  },
+  {
+    "label": "div:visibility:collapse",
+    "markup": "<div style=\"visibility:collapse\">TEXT</div>"
+  },
+  {
+    "label": "div:visibility:inherit",
+    "markup": "<div style=\"visibility:inherit\">TEXT</div>"
+  },
+  {
+    "label": "div:visibility:initial",
+    "markup": "<div style=\"visibility:initial\">TEXT</div>"
+  },
+  {
+    "label": "div:visibility:unset",
+    "markup": "<div style=\"visibility:unset\">TEXT</div>"
+  },
+  {
+    "label": "div:visibility:revert",
+    "markup": "<div style=\"visibility:revert\">TEXT</div>"
+  },
+  {
+    "label": "div:visibility:revert-layer",
+    "markup": "<div style=\"visibility:revert-layer\">TEXT</div>"
+  },
+  {
+    "label": "span:display:none",
+    "markup": "<span style=\"display:none\">TEXT</span>"
+  },
+  {
+    "label": "span:display:block",
+    "markup": "<span style=\"display:block\">TEXT</span>"
+  },
+  {
+    "label": "span:display:inline",
+    "markup": "<span style=\"display:inline\">TEXT</span>"
+  },
+  {
+    "label": "span:display:inline-block",
+    "markup": "<span style=\"display:inline-block\">TEXT</span>"
+  },
+  {
+    "label": "span:display:flex",
+    "markup": "<span style=\"display:flex\">TEXT</span>"
+  },
+  {
+    "label": "span:display:inline-flex",
+    "markup": "<span style=\"display:inline-flex\">TEXT</span>"
+  },
+  {
+    "label": "span:display:grid",
+    "markup": "<span style=\"display:grid\">TEXT</span>"
+  },
+  {
+    "label": "span:display:inline-grid",
+    "markup": "<span style=\"display:inline-grid\">TEXT</span>"
+  },
+  {
+    "label": "span:display:contents",
+    "markup": "<span style=\"display:contents\">TEXT</span>"
+  },
+  {
+    "label": "span:display:flow-root",
+    "markup": "<span style=\"display:flow-root\">TEXT</span>"
+  },
+  {
+    "label": "span:display:list-item",
+    "markup": "<span style=\"display:list-item\">TEXT</span>"
+  },
+  {
+    "label": "span:display:table",
+    "markup": "<span style=\"display:table\">TEXT</span>"
+  },
+  {
+    "label": "span:display:inline-table",
+    "markup": "<span style=\"display:inline-table\">TEXT</span>"
+  },
+  {
+    "label": "span:display:table-row-group",
+    "markup": "<span style=\"display:table-row-group\">TEXT</span>"
+  },
+  {
+    "label": "span:display:table-header-group",
+    "markup": "<span style=\"display:table-header-group\">TEXT</span>"
+  },
+  {
+    "label": "span:display:table-footer-group",
+    "markup": "<span style=\"display:table-footer-group\">TEXT</span>"
+  },
+  {
+    "label": "span:display:table-row",
+    "markup": "<span style=\"display:table-row\">TEXT</span>"
+  },
+  {
+    "label": "span:display:table-column-group",
+    "markup": "<span style=\"display:table-column-group\">TEXT</span>"
+  },
+  {
+    "label": "span:display:table-column",
+    "markup": "<span style=\"display:table-column\">TEXT</span>"
+  },
+  {
+    "label": "span:display:table-cell",
+    "markup": "<span style=\"display:table-cell\">TEXT</span>"
+  },
+  {
+    "label": "span:display:table-caption",
+    "markup": "<span style=\"display:table-caption\">TEXT</span>"
+  },
+  {
+    "label": "span:display:ruby",
+    "markup": "<span style=\"display:ruby\">TEXT</span>"
+  },
+  {
+    "label": "span:display:ruby-base",
+    "markup": "<span style=\"display:ruby-base\">TEXT</span>"
+  },
+  {
+    "label": "span:display:ruby-text",
+    "markup": "<span style=\"display:ruby-text\">TEXT</span>"
+  },
+  {
+    "label": "span:display:ruby-base-container",
+    "markup": "<span style=\"display:ruby-base-container\">TEXT</span>"
+  },
+  {
+    "label": "span:display:ruby-text-container",
+    "markup": "<span style=\"display:ruby-text-container\">TEXT</span>"
+  },
+  {
+    "label": "span:display:inherit",
+    "markup": "<span style=\"display:inherit\">TEXT</span>"
+  },
+  {
+    "label": "span:display:initial",
+    "markup": "<span style=\"display:initial\">TEXT</span>"
+  },
+  {
+    "label": "span:display:unset",
+    "markup": "<span style=\"display:unset\">TEXT</span>"
+  },
+  {
+    "label": "span:display:revert",
+    "markup": "<span style=\"display:revert\">TEXT</span>"
+  },
+  {
+    "label": "span:display:revert-layer",
+    "markup": "<span style=\"display:revert-layer\">TEXT</span>"
+  },
+  {
+    "label": "span:content-visibility:visible",
+    "markup": "<span style=\"content-visibility:visible\">TEXT</span>"
+  },
+  {
+    "label": "span:content-visibility:hidden",
+    "markup": "<span style=\"content-visibility:hidden\">TEXT</span>"
+  },
+  {
+    "label": "span:content-visibility:auto",
+    "markup": "<span style=\"content-visibility:auto\">TEXT</span>"
+  },
+  {
+    "label": "span:content-visibility:inherit",
+    "markup": "<span style=\"content-visibility:inherit\">TEXT</span>"
+  },
+  {
+    "label": "span:content-visibility:initial",
+    "markup": "<span style=\"content-visibility:initial\">TEXT</span>"
+  },
+  {
+    "label": "span:content-visibility:unset",
+    "markup": "<span style=\"content-visibility:unset\">TEXT</span>"
+  },
+  {
+    "label": "span:content-visibility:revert",
+    "markup": "<span style=\"content-visibility:revert\">TEXT</span>"
+  },
+  {
+    "label": "span:content-visibility:revert-layer",
+    "markup": "<span style=\"content-visibility:revert-layer\">TEXT</span>"
+  },
+  {
+    "label": "span:visibility:visible",
+    "markup": "<span style=\"visibility:visible\">TEXT</span>"
+  },
+  {
+    "label": "span:visibility:hidden",
+    "markup": "<span style=\"visibility:hidden\">TEXT</span>"
+  },
+  {
+    "label": "span:visibility:collapse",
+    "markup": "<span style=\"visibility:collapse\">TEXT</span>"
+  },
+  {
+    "label": "span:visibility:inherit",
+    "markup": "<span style=\"visibility:inherit\">TEXT</span>"
+  },
+  {
+    "label": "span:visibility:initial",
+    "markup": "<span style=\"visibility:initial\">TEXT</span>"
+  },
+  {
+    "label": "span:visibility:unset",
+    "markup": "<span style=\"visibility:unset\">TEXT</span>"
+  },
+  {
+    "label": "span:visibility:revert",
+    "markup": "<span style=\"visibility:revert\">TEXT</span>"
+  },
+  {
+    "label": "span:visibility:revert-layer",
+    "markup": "<span style=\"visibility:revert-layer\">TEXT</span>"
+  },
+  {
+    "label": "img:display:none",
+    "markup": "<img style=\"display:none\">"
+  },
+  {
+    "label": "img:display:block",
+    "markup": "<img style=\"display:block\">"
+  },
+  {
+    "label": "img:display:inline",
+    "markup": "<img style=\"display:inline\">"
+  },
+  {
+    "label": "img:display:inline-block",
+    "markup": "<img style=\"display:inline-block\">"
+  },
+  {
+    "label": "img:display:flex",
+    "markup": "<img style=\"display:flex\">"
+  },
+  {
+    "label": "img:display:inline-flex",
+    "markup": "<img style=\"display:inline-flex\">"
+  },
+  {
+    "label": "img:display:grid",
+    "markup": "<img style=\"display:grid\">"
+  },
+  {
+    "label": "img:display:inline-grid",
+    "markup": "<img style=\"display:inline-grid\">"
+  },
+  {
+    "label": "img:display:contents",
+    "markup": "<img style=\"display:contents\">"
+  },
+  {
+    "label": "img:display:flow-root",
+    "markup": "<img style=\"display:flow-root\">"
+  },
+  {
+    "label": "img:display:list-item",
+    "markup": "<img style=\"display:list-item\">"
+  },
+  {
+    "label": "img:display:table",
+    "markup": "<img style=\"display:table\">"
+  },
+  {
+    "label": "img:display:inline-table",
+    "markup": "<img style=\"display:inline-table\">"
+  },
+  {
+    "label": "img:display:table-row-group",
+    "markup": "<img style=\"display:table-row-group\">"
+  },
+  {
+    "label": "img:display:table-header-group",
+    "markup": "<img style=\"display:table-header-group\">"
+  },
+  {
+    "label": "img:display:table-footer-group",
+    "markup": "<img style=\"display:table-footer-group\">"
+  },
+  {
+    "label": "img:display:table-row",
+    "markup": "<img style=\"display:table-row\">"
+  },
+  {
+    "label": "img:display:table-column-group",
+    "markup": "<img style=\"display:table-column-group\">"
+  },
+  {
+    "label": "img:display:table-column",
+    "markup": "<img style=\"display:table-column\">"
+  },
+  {
+    "label": "img:display:table-cell",
+    "markup": "<img style=\"display:table-cell\">"
+  },
+  {
+    "label": "img:display:table-caption",
+    "markup": "<img style=\"display:table-caption\">"
+  },
+  {
+    "label": "img:display:ruby",
+    "markup": "<img style=\"display:ruby\">"
+  },
+  {
+    "label": "img:display:ruby-base",
+    "markup": "<img style=\"display:ruby-base\">"
+  },
+  {
+    "label": "img:display:ruby-text",
+    "markup": "<img style=\"display:ruby-text\">"
+  },
+  {
+    "label": "img:display:ruby-base-container",
+    "markup": "<img style=\"display:ruby-base-container\">"
+  },
+  {
+    "label": "img:display:ruby-text-container",
+    "markup": "<img style=\"display:ruby-text-container\">"
+  },
+  {
+    "label": "img:display:inherit",
+    "markup": "<img style=\"display:inherit\">"
+  },
+  {
+    "label": "img:display:initial",
+    "markup": "<img style=\"display:initial\">"
+  },
+  {
+    "label": "img:display:unset",
+    "markup": "<img style=\"display:unset\">"
+  },
+  {
+    "label": "img:display:revert",
+    "markup": "<img style=\"display:revert\">"
+  },
+  {
+    "label": "img:display:revert-layer",
+    "markup": "<img style=\"display:revert-layer\">"
+  },
+  {
+    "label": "img:content-visibility:visible",
+    "markup": "<img style=\"content-visibility:visible\">"
+  },
+  {
+    "label": "img:content-visibility:hidden",
+    "markup": "<img style=\"content-visibility:hidden\">"
+  },
+  {
+    "label": "img:content-visibility:auto",
+    "markup": "<img style=\"content-visibility:auto\">"
+  },
+  {
+    "label": "img:content-visibility:inherit",
+    "markup": "<img style=\"content-visibility:inherit\">"
+  },
+  {
+    "label": "img:content-visibility:initial",
+    "markup": "<img style=\"content-visibility:initial\">"
+  },
+  {
+    "label": "img:content-visibility:unset",
+    "markup": "<img style=\"content-visibility:unset\">"
+  },
+  {
+    "label": "img:content-visibility:revert",
+    "markup": "<img style=\"content-visibility:revert\">"
+  },
+  {
+    "label": "img:content-visibility:revert-layer",
+    "markup": "<img style=\"content-visibility:revert-layer\">"
+  },
+  {
+    "label": "img:visibility:visible",
+    "markup": "<img style=\"visibility:visible\">"
+  },
+  {
+    "label": "img:visibility:hidden",
+    "markup": "<img style=\"visibility:hidden\">"
+  },
+  {
+    "label": "img:visibility:collapse",
+    "markup": "<img style=\"visibility:collapse\">"
+  },
+  {
+    "label": "img:visibility:inherit",
+    "markup": "<img style=\"visibility:inherit\">"
+  },
+  {
+    "label": "img:visibility:initial",
+    "markup": "<img style=\"visibility:initial\">"
+  },
+  {
+    "label": "img:visibility:unset",
+    "markup": "<img style=\"visibility:unset\">"
+  },
+  {
+    "label": "img:visibility:revert",
+    "markup": "<img style=\"visibility:revert\">"
+  },
+  {
+    "label": "img:visibility:revert-layer",
+    "markup": "<img style=\"visibility:revert-layer\">"
+  },
+  {
+    "label": "html:table-context:table",
+    "markup": "<table><tbody><tr><td>TEXT</td></tr></tbody></table>"
+  },
+  {
+    "label": "html:table-context:caption",
+    "markup": "<table><caption>TEXT</caption></table>"
+  },
+  {
+    "label": "html:table-context:colgroup",
+    "markup": "<table><colgroup><col></colgroup></table>"
+  },
+  {
+    "label": "html:table-context:thead",
+    "markup": "<table><thead><tr><th>TEXT</th></tr></thead></table>"
+  },
+  {
+    "label": "html:table-context:tfoot",
+    "markup": "<table><tfoot><tr><td>TEXT</td></tr></tfoot></table>"
+  },
+  {
+    "label": "html:table-context:tbody",
+    "markup": "<table><tbody><tr><td>TEXT</td></tr></tbody></table>"
+  },
+  {
+    "label": "svg:valid-parent:svg",
+    "markup": "<svg></svg>"
+  },
+  {
+    "label": "svg:valid-parent:g",
+    "markup": "<svg><g></g></svg>"
+  },
+  {
+    "label": "svg:valid-parent:text",
+    "markup": "<svg><text>TEXT</text></svg>"
+  },
+  {
+    "label": "svg:valid-parent:tspan",
+    "markup": "<svg><text><tspan>TEXT</tspan></text></svg>"
+  },
+  {
+    "label": "svg:valid-parent:rect",
+    "markup": "<svg><rect></rect></svg>"
+  },
+  {
+    "label": "svg:valid-parent:circle",
+    "markup": "<svg><circle></circle></svg>"
+  },
+  {
+    "label": "svg:valid-parent:ellipse",
+    "markup": "<svg><ellipse></ellipse></svg>"
+  },
+  {
+    "label": "svg:valid-parent:line",
+    "markup": "<svg><line></line></svg>"
+  },
+  {
+    "label": "svg:valid-parent:path",
+    "markup": "<svg><path></path></svg>"
+  },
+  {
+    "label": "svg:valid-parent:polygon",
+    "markup": "<svg><polygon></polygon></svg>"
+  },
+  {
+    "label": "svg:valid-parent:polyline",
+    "markup": "<svg><polyline></polyline></svg>"
+  },
+  {
+    "label": "svg:valid-parent:defs",
+    "markup": "<svg><defs></defs></svg>"
+  },
+  {
+    "label": "svg:valid-parent:symbol",
+    "markup": "<svg><symbol></symbol></svg>"
+  },
+  {
+    "label": "svg:valid-parent:use",
+    "markup": "<svg><use></use></svg>"
+  },
+  {
+    "label": "html:cross:a:none",
+    "markup": "<a style=\"display:none\">TEXT</a>"
+  },
+  {
+    "label": "html:cross:a:block",
+    "markup": "<a style=\"display:block\">TEXT</a>"
+  },
+  {
+    "label": "html:cross:a:inline",
+    "markup": "<a style=\"display:inline\">TEXT</a>"
+  },
+  {
+    "label": "html:cross:a:contents",
+    "markup": "<a style=\"display:contents\">TEXT</a>"
+  },
+  {
+    "label": "html:cross:a:initial",
+    "markup": "<a style=\"display:initial\">TEXT</a>"
+  },
+  {
+    "label": "html:cross:a:unset",
+    "markup": "<a style=\"display:unset\">TEXT</a>"
+  },
+  {
+    "label": "html:cross:a:revert",
+    "markup": "<a style=\"display:revert\">TEXT</a>"
+  },
+  {
+    "label": "html:cross:a:revert-layer",
+    "markup": "<a style=\"display:revert-layer\">TEXT</a>"
+  },
+  {
+    "label": "html:cross:a:table-column",
+    "markup": "<a style=\"display:table-column\">TEXT</a>"
+  },
+  {
+    "label": "html:cross:a:table-column-group",
+    "markup": "<a style=\"display:table-column-group\">TEXT</a>"
+  },
+  {
+    "label": "html:cross:address:none",
+    "markup": "<address style=\"display:none\">TEXT</address>"
+  },
+  {
+    "label": "html:cross:address:block",
+    "markup": "<address style=\"display:block\">TEXT</address>"
+  },
+  {
+    "label": "html:cross:address:inline",
+    "markup": "<address style=\"display:inline\">TEXT</address>"
+  },
+  {
+    "label": "html:cross:address:contents",
+    "markup": "<address style=\"display:contents\">TEXT</address>"
+  },
+  {
+    "label": "html:cross:address:initial",
+    "markup": "<address style=\"display:initial\">TEXT</address>"
+  },
+  {
+    "label": "html:cross:address:unset",
+    "markup": "<address style=\"display:unset\">TEXT</address>"
+  },
+  {
+    "label": "html:cross:address:revert",
+    "markup": "<address style=\"display:revert\">TEXT</address>"
+  },
+  {
+    "label": "html:cross:address:revert-layer",
+    "markup": "<address style=\"display:revert-layer\">TEXT</address>"
+  },
+  {
+    "label": "html:cross:address:table-column",
+    "markup": "<address style=\"display:table-column\">TEXT</address>"
+  },
+  {
+    "label": "html:cross:address:table-column-group",
+    "markup": "<address style=\"display:table-column-group\">TEXT</address>"
+  },
+  {
+    "label": "html:cross:area:none",
+    "markup": "<area style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:area:block",
+    "markup": "<area style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:area:inline",
+    "markup": "<area style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:area:contents",
+    "markup": "<area style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:area:initial",
+    "markup": "<area style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:area:unset",
+    "markup": "<area style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:area:revert",
+    "markup": "<area style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:area:revert-layer",
+    "markup": "<area style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:area:table-column",
+    "markup": "<area style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:area:table-column-group",
+    "markup": "<area style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:article:none",
+    "markup": "<article style=\"display:none\">TEXT</article>"
+  },
+  {
+    "label": "html:cross:article:block",
+    "markup": "<article style=\"display:block\">TEXT</article>"
+  },
+  {
+    "label": "html:cross:article:inline",
+    "markup": "<article style=\"display:inline\">TEXT</article>"
+  },
+  {
+    "label": "html:cross:article:contents",
+    "markup": "<article style=\"display:contents\">TEXT</article>"
+  },
+  {
+    "label": "html:cross:article:initial",
+    "markup": "<article style=\"display:initial\">TEXT</article>"
+  },
+  {
+    "label": "html:cross:article:unset",
+    "markup": "<article style=\"display:unset\">TEXT</article>"
+  },
+  {
+    "label": "html:cross:article:revert",
+    "markup": "<article style=\"display:revert\">TEXT</article>"
+  },
+  {
+    "label": "html:cross:article:revert-layer",
+    "markup": "<article style=\"display:revert-layer\">TEXT</article>"
+  },
+  {
+    "label": "html:cross:article:table-column",
+    "markup": "<article style=\"display:table-column\">TEXT</article>"
+  },
+  {
+    "label": "html:cross:article:table-column-group",
+    "markup": "<article style=\"display:table-column-group\">TEXT</article>"
+  },
+  {
+    "label": "html:cross:aside:none",
+    "markup": "<aside style=\"display:none\">TEXT</aside>"
+  },
+  {
+    "label": "html:cross:aside:block",
+    "markup": "<aside style=\"display:block\">TEXT</aside>"
+  },
+  {
+    "label": "html:cross:aside:inline",
+    "markup": "<aside style=\"display:inline\">TEXT</aside>"
+  },
+  {
+    "label": "html:cross:aside:contents",
+    "markup": "<aside style=\"display:contents\">TEXT</aside>"
+  },
+  {
+    "label": "html:cross:aside:initial",
+    "markup": "<aside style=\"display:initial\">TEXT</aside>"
+  },
+  {
+    "label": "html:cross:aside:unset",
+    "markup": "<aside style=\"display:unset\">TEXT</aside>"
+  },
+  {
+    "label": "html:cross:aside:revert",
+    "markup": "<aside style=\"display:revert\">TEXT</aside>"
+  },
+  {
+    "label": "html:cross:aside:revert-layer",
+    "markup": "<aside style=\"display:revert-layer\">TEXT</aside>"
+  },
+  {
+    "label": "html:cross:aside:table-column",
+    "markup": "<aside style=\"display:table-column\">TEXT</aside>"
+  },
+  {
+    "label": "html:cross:aside:table-column-group",
+    "markup": "<aside style=\"display:table-column-group\">TEXT</aside>"
+  },
+  {
+    "label": "html:cross:audio:none",
+    "markup": "<audio style=\"display:none\">TEXT</audio>"
+  },
+  {
+    "label": "html:cross:audio:block",
+    "markup": "<audio style=\"display:block\">TEXT</audio>"
+  },
+  {
+    "label": "html:cross:audio:inline",
+    "markup": "<audio style=\"display:inline\">TEXT</audio>"
+  },
+  {
+    "label": "html:cross:audio:contents",
+    "markup": "<audio style=\"display:contents\">TEXT</audio>"
+  },
+  {
+    "label": "html:cross:audio:initial",
+    "markup": "<audio style=\"display:initial\">TEXT</audio>"
+  },
+  {
+    "label": "html:cross:audio:unset",
+    "markup": "<audio style=\"display:unset\">TEXT</audio>"
+  },
+  {
+    "label": "html:cross:audio:revert",
+    "markup": "<audio style=\"display:revert\">TEXT</audio>"
+  },
+  {
+    "label": "html:cross:audio:revert-layer",
+    "markup": "<audio style=\"display:revert-layer\">TEXT</audio>"
+  },
+  {
+    "label": "html:cross:audio:table-column",
+    "markup": "<audio style=\"display:table-column\">TEXT</audio>"
+  },
+  {
+    "label": "html:cross:audio:table-column-group",
+    "markup": "<audio style=\"display:table-column-group\">TEXT</audio>"
+  },
+  {
+    "label": "html:cross:b:none",
+    "markup": "<b style=\"display:none\">TEXT</b>"
+  },
+  {
+    "label": "html:cross:b:block",
+    "markup": "<b style=\"display:block\">TEXT</b>"
+  },
+  {
+    "label": "html:cross:b:inline",
+    "markup": "<b style=\"display:inline\">TEXT</b>"
+  },
+  {
+    "label": "html:cross:b:contents",
+    "markup": "<b style=\"display:contents\">TEXT</b>"
+  },
+  {
+    "label": "html:cross:b:initial",
+    "markup": "<b style=\"display:initial\">TEXT</b>"
+  },
+  {
+    "label": "html:cross:b:unset",
+    "markup": "<b style=\"display:unset\">TEXT</b>"
+  },
+  {
+    "label": "html:cross:b:revert",
+    "markup": "<b style=\"display:revert\">TEXT</b>"
+  },
+  {
+    "label": "html:cross:b:revert-layer",
+    "markup": "<b style=\"display:revert-layer\">TEXT</b>"
+  },
+  {
+    "label": "html:cross:b:table-column",
+    "markup": "<b style=\"display:table-column\">TEXT</b>"
+  },
+  {
+    "label": "html:cross:b:table-column-group",
+    "markup": "<b style=\"display:table-column-group\">TEXT</b>"
+  },
+  {
+    "label": "html:cross:base:none",
+    "markup": "<base style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:base:block",
+    "markup": "<base style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:base:inline",
+    "markup": "<base style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:base:contents",
+    "markup": "<base style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:base:initial",
+    "markup": "<base style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:base:unset",
+    "markup": "<base style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:base:revert",
+    "markup": "<base style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:base:revert-layer",
+    "markup": "<base style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:base:table-column",
+    "markup": "<base style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:base:table-column-group",
+    "markup": "<base style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:basefont:none",
+    "markup": "<basefont style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:basefont:block",
+    "markup": "<basefont style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:basefont:inline",
+    "markup": "<basefont style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:basefont:contents",
+    "markup": "<basefont style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:basefont:initial",
+    "markup": "<basefont style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:basefont:unset",
+    "markup": "<basefont style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:basefont:revert",
+    "markup": "<basefont style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:basefont:revert-layer",
+    "markup": "<basefont style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:basefont:table-column",
+    "markup": "<basefont style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:basefont:table-column-group",
+    "markup": "<basefont style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:bgsound:none",
+    "markup": "<bgsound style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:bgsound:block",
+    "markup": "<bgsound style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:bgsound:inline",
+    "markup": "<bgsound style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:bgsound:contents",
+    "markup": "<bgsound style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:bgsound:initial",
+    "markup": "<bgsound style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:bgsound:unset",
+    "markup": "<bgsound style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:bgsound:revert",
+    "markup": "<bgsound style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:bgsound:revert-layer",
+    "markup": "<bgsound style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:bgsound:table-column",
+    "markup": "<bgsound style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:bgsound:table-column-group",
+    "markup": "<bgsound style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:blockquote:none",
+    "markup": "<blockquote style=\"display:none\">TEXT</blockquote>"
+  },
+  {
+    "label": "html:cross:blockquote:block",
+    "markup": "<blockquote style=\"display:block\">TEXT</blockquote>"
+  },
+  {
+    "label": "html:cross:blockquote:inline",
+    "markup": "<blockquote style=\"display:inline\">TEXT</blockquote>"
+  },
+  {
+    "label": "html:cross:blockquote:contents",
+    "markup": "<blockquote style=\"display:contents\">TEXT</blockquote>"
+  },
+  {
+    "label": "html:cross:blockquote:initial",
+    "markup": "<blockquote style=\"display:initial\">TEXT</blockquote>"
+  },
+  {
+    "label": "html:cross:blockquote:unset",
+    "markup": "<blockquote style=\"display:unset\">TEXT</blockquote>"
+  },
+  {
+    "label": "html:cross:blockquote:revert",
+    "markup": "<blockquote style=\"display:revert\">TEXT</blockquote>"
+  },
+  {
+    "label": "html:cross:blockquote:revert-layer",
+    "markup": "<blockquote style=\"display:revert-layer\">TEXT</blockquote>"
+  },
+  {
+    "label": "html:cross:blockquote:table-column",
+    "markup": "<blockquote style=\"display:table-column\">TEXT</blockquote>"
+  },
+  {
+    "label": "html:cross:blockquote:table-column-group",
+    "markup": "<blockquote style=\"display:table-column-group\">TEXT</blockquote>"
+  },
+  {
+    "label": "html:cross:body:none",
+    "markup": "<html><head></head><body style=\"display:none\">TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:body:block",
+    "markup": "<html><head></head><body style=\"display:block\">TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:body:inline",
+    "markup": "<html><head></head><body style=\"display:inline\">TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:body:contents",
+    "markup": "<html><head></head><body style=\"display:contents\">TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:body:initial",
+    "markup": "<html><head></head><body style=\"display:initial\">TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:body:unset",
+    "markup": "<html><head></head><body style=\"display:unset\">TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:body:revert",
+    "markup": "<html><head></head><body style=\"display:revert\">TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:body:revert-layer",
+    "markup": "<html><head></head><body style=\"display:revert-layer\">TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:body:table-column",
+    "markup": "<html><head></head><body style=\"display:table-column\">TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:body:table-column-group",
+    "markup": "<html><head></head><body style=\"display:table-column-group\">TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:br:none",
+    "markup": "<br style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:br:block",
+    "markup": "<br style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:br:inline",
+    "markup": "<br style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:br:contents",
+    "markup": "<br style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:br:initial",
+    "markup": "<br style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:br:unset",
+    "markup": "<br style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:br:revert",
+    "markup": "<br style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:br:revert-layer",
+    "markup": "<br style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:br:table-column",
+    "markup": "<br style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:br:table-column-group",
+    "markup": "<br style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:button:none",
+    "markup": "<button style=\"display:none\">TEXT</button>"
+  },
+  {
+    "label": "html:cross:button:block",
+    "markup": "<button style=\"display:block\">TEXT</button>"
+  },
+  {
+    "label": "html:cross:button:inline",
+    "markup": "<button style=\"display:inline\">TEXT</button>"
+  },
+  {
+    "label": "html:cross:button:contents",
+    "markup": "<button style=\"display:contents\">TEXT</button>"
+  },
+  {
+    "label": "html:cross:button:initial",
+    "markup": "<button style=\"display:initial\">TEXT</button>"
+  },
+  {
+    "label": "html:cross:button:unset",
+    "markup": "<button style=\"display:unset\">TEXT</button>"
+  },
+  {
+    "label": "html:cross:button:revert",
+    "markup": "<button style=\"display:revert\">TEXT</button>"
+  },
+  {
+    "label": "html:cross:button:revert-layer",
+    "markup": "<button style=\"display:revert-layer\">TEXT</button>"
+  },
+  {
+    "label": "html:cross:button:table-column",
+    "markup": "<button style=\"display:table-column\">TEXT</button>"
+  },
+  {
+    "label": "html:cross:button:table-column-group",
+    "markup": "<button style=\"display:table-column-group\">TEXT</button>"
+  },
+  {
+    "label": "html:cross:canvas:none",
+    "markup": "<canvas style=\"display:none\">TEXT</canvas>"
+  },
+  {
+    "label": "html:cross:canvas:block",
+    "markup": "<canvas style=\"display:block\">TEXT</canvas>"
+  },
+  {
+    "label": "html:cross:canvas:inline",
+    "markup": "<canvas style=\"display:inline\">TEXT</canvas>"
+  },
+  {
+    "label": "html:cross:canvas:contents",
+    "markup": "<canvas style=\"display:contents\">TEXT</canvas>"
+  },
+  {
+    "label": "html:cross:canvas:initial",
+    "markup": "<canvas style=\"display:initial\">TEXT</canvas>"
+  },
+  {
+    "label": "html:cross:canvas:unset",
+    "markup": "<canvas style=\"display:unset\">TEXT</canvas>"
+  },
+  {
+    "label": "html:cross:canvas:revert",
+    "markup": "<canvas style=\"display:revert\">TEXT</canvas>"
+  },
+  {
+    "label": "html:cross:canvas:revert-layer",
+    "markup": "<canvas style=\"display:revert-layer\">TEXT</canvas>"
+  },
+  {
+    "label": "html:cross:canvas:table-column",
+    "markup": "<canvas style=\"display:table-column\">TEXT</canvas>"
+  },
+  {
+    "label": "html:cross:canvas:table-column-group",
+    "markup": "<canvas style=\"display:table-column-group\">TEXT</canvas>"
+  },
+  {
+    "label": "html:cross:caption:none",
+    "markup": "<caption style=\"display:none\">TEXT</caption>"
+  },
+  {
+    "label": "html:cross:caption:block",
+    "markup": "<caption style=\"display:block\">TEXT</caption>"
+  },
+  {
+    "label": "html:cross:caption:inline",
+    "markup": "<caption style=\"display:inline\">TEXT</caption>"
+  },
+  {
+    "label": "html:cross:caption:contents",
+    "markup": "<caption style=\"display:contents\">TEXT</caption>"
+  },
+  {
+    "label": "html:cross:caption:initial",
+    "markup": "<caption style=\"display:initial\">TEXT</caption>"
+  },
+  {
+    "label": "html:cross:caption:unset",
+    "markup": "<caption style=\"display:unset\">TEXT</caption>"
+  },
+  {
+    "label": "html:cross:caption:revert",
+    "markup": "<caption style=\"display:revert\">TEXT</caption>"
+  },
+  {
+    "label": "html:cross:caption:revert-layer",
+    "markup": "<caption style=\"display:revert-layer\">TEXT</caption>"
+  },
+  {
+    "label": "html:cross:caption:table-column",
+    "markup": "<caption style=\"display:table-column\">TEXT</caption>"
+  },
+  {
+    "label": "html:cross:caption:table-column-group",
+    "markup": "<caption style=\"display:table-column-group\">TEXT</caption>"
+  },
+  {
+    "label": "html:cross:code:none",
+    "markup": "<code style=\"display:none\">TEXT</code>"
+  },
+  {
+    "label": "html:cross:code:block",
+    "markup": "<code style=\"display:block\">TEXT</code>"
+  },
+  {
+    "label": "html:cross:code:inline",
+    "markup": "<code style=\"display:inline\">TEXT</code>"
+  },
+  {
+    "label": "html:cross:code:contents",
+    "markup": "<code style=\"display:contents\">TEXT</code>"
+  },
+  {
+    "label": "html:cross:code:initial",
+    "markup": "<code style=\"display:initial\">TEXT</code>"
+  },
+  {
+    "label": "html:cross:code:unset",
+    "markup": "<code style=\"display:unset\">TEXT</code>"
+  },
+  {
+    "label": "html:cross:code:revert",
+    "markup": "<code style=\"display:revert\">TEXT</code>"
+  },
+  {
+    "label": "html:cross:code:revert-layer",
+    "markup": "<code style=\"display:revert-layer\">TEXT</code>"
+  },
+  {
+    "label": "html:cross:code:table-column",
+    "markup": "<code style=\"display:table-column\">TEXT</code>"
+  },
+  {
+    "label": "html:cross:code:table-column-group",
+    "markup": "<code style=\"display:table-column-group\">TEXT</code>"
+  },
+  {
+    "label": "html:cross:col:none",
+    "markup": "<col style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:col:block",
+    "markup": "<col style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:col:inline",
+    "markup": "<col style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:col:contents",
+    "markup": "<col style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:col:initial",
+    "markup": "<col style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:col:unset",
+    "markup": "<col style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:col:revert",
+    "markup": "<col style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:col:revert-layer",
+    "markup": "<col style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:col:table-column",
+    "markup": "<col style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:col:table-column-group",
+    "markup": "<col style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:colgroup:none",
+    "markup": "<colgroup style=\"display:none\">TEXT</colgroup>"
+  },
+  {
+    "label": "html:cross:colgroup:block",
+    "markup": "<colgroup style=\"display:block\">TEXT</colgroup>"
+  },
+  {
+    "label": "html:cross:colgroup:inline",
+    "markup": "<colgroup style=\"display:inline\">TEXT</colgroup>"
+  },
+  {
+    "label": "html:cross:colgroup:contents",
+    "markup": "<colgroup style=\"display:contents\">TEXT</colgroup>"
+  },
+  {
+    "label": "html:cross:colgroup:initial",
+    "markup": "<colgroup style=\"display:initial\">TEXT</colgroup>"
+  },
+  {
+    "label": "html:cross:colgroup:unset",
+    "markup": "<colgroup style=\"display:unset\">TEXT</colgroup>"
+  },
+  {
+    "label": "html:cross:colgroup:revert",
+    "markup": "<colgroup style=\"display:revert\">TEXT</colgroup>"
+  },
+  {
+    "label": "html:cross:colgroup:revert-layer",
+    "markup": "<colgroup style=\"display:revert-layer\">TEXT</colgroup>"
+  },
+  {
+    "label": "html:cross:colgroup:table-column",
+    "markup": "<colgroup style=\"display:table-column\">TEXT</colgroup>"
+  },
+  {
+    "label": "html:cross:colgroup:table-column-group",
+    "markup": "<colgroup style=\"display:table-column-group\">TEXT</colgroup>"
+  },
+  {
+    "label": "html:cross:details:none",
+    "markup": "<details style=\"display:none\">TEXT</details>"
+  },
+  {
+    "label": "html:cross:details:block",
+    "markup": "<details style=\"display:block\">TEXT</details>"
+  },
+  {
+    "label": "html:cross:details:inline",
+    "markup": "<details style=\"display:inline\">TEXT</details>"
+  },
+  {
+    "label": "html:cross:details:contents",
+    "markup": "<details style=\"display:contents\">TEXT</details>"
+  },
+  {
+    "label": "html:cross:details:initial",
+    "markup": "<details style=\"display:initial\">TEXT</details>"
+  },
+  {
+    "label": "html:cross:details:unset",
+    "markup": "<details style=\"display:unset\">TEXT</details>"
+  },
+  {
+    "label": "html:cross:details:revert",
+    "markup": "<details style=\"display:revert\">TEXT</details>"
+  },
+  {
+    "label": "html:cross:details:revert-layer",
+    "markup": "<details style=\"display:revert-layer\">TEXT</details>"
+  },
+  {
+    "label": "html:cross:details:table-column",
+    "markup": "<details style=\"display:table-column\">TEXT</details>"
+  },
+  {
+    "label": "html:cross:details:table-column-group",
+    "markup": "<details style=\"display:table-column-group\">TEXT</details>"
+  },
+  {
+    "label": "html:cross:div:none",
+    "markup": "<div style=\"display:none\">TEXT</div>"
+  },
+  {
+    "label": "html:cross:div:block",
+    "markup": "<div style=\"display:block\">TEXT</div>"
+  },
+  {
+    "label": "html:cross:div:inline",
+    "markup": "<div style=\"display:inline\">TEXT</div>"
+  },
+  {
+    "label": "html:cross:div:contents",
+    "markup": "<div style=\"display:contents\">TEXT</div>"
+  },
+  {
+    "label": "html:cross:div:initial",
+    "markup": "<div style=\"display:initial\">TEXT</div>"
+  },
+  {
+    "label": "html:cross:div:unset",
+    "markup": "<div style=\"display:unset\">TEXT</div>"
+  },
+  {
+    "label": "html:cross:div:revert",
+    "markup": "<div style=\"display:revert\">TEXT</div>"
+  },
+  {
+    "label": "html:cross:div:revert-layer",
+    "markup": "<div style=\"display:revert-layer\">TEXT</div>"
+  },
+  {
+    "label": "html:cross:div:table-column",
+    "markup": "<div style=\"display:table-column\">TEXT</div>"
+  },
+  {
+    "label": "html:cross:div:table-column-group",
+    "markup": "<div style=\"display:table-column-group\">TEXT</div>"
+  },
+  {
+    "label": "html:cross:em:none",
+    "markup": "<em style=\"display:none\">TEXT</em>"
+  },
+  {
+    "label": "html:cross:em:block",
+    "markup": "<em style=\"display:block\">TEXT</em>"
+  },
+  {
+    "label": "html:cross:em:inline",
+    "markup": "<em style=\"display:inline\">TEXT</em>"
+  },
+  {
+    "label": "html:cross:em:contents",
+    "markup": "<em style=\"display:contents\">TEXT</em>"
+  },
+  {
+    "label": "html:cross:em:initial",
+    "markup": "<em style=\"display:initial\">TEXT</em>"
+  },
+  {
+    "label": "html:cross:em:unset",
+    "markup": "<em style=\"display:unset\">TEXT</em>"
+  },
+  {
+    "label": "html:cross:em:revert",
+    "markup": "<em style=\"display:revert\">TEXT</em>"
+  },
+  {
+    "label": "html:cross:em:revert-layer",
+    "markup": "<em style=\"display:revert-layer\">TEXT</em>"
+  },
+  {
+    "label": "html:cross:em:table-column",
+    "markup": "<em style=\"display:table-column\">TEXT</em>"
+  },
+  {
+    "label": "html:cross:em:table-column-group",
+    "markup": "<em style=\"display:table-column-group\">TEXT</em>"
+  },
+  {
+    "label": "html:cross:embed:none",
+    "markup": "<embed style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:embed:block",
+    "markup": "<embed style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:embed:inline",
+    "markup": "<embed style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:embed:contents",
+    "markup": "<embed style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:embed:initial",
+    "markup": "<embed style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:embed:unset",
+    "markup": "<embed style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:embed:revert",
+    "markup": "<embed style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:embed:revert-layer",
+    "markup": "<embed style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:embed:table-column",
+    "markup": "<embed style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:embed:table-column-group",
+    "markup": "<embed style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:fieldset:none",
+    "markup": "<fieldset style=\"display:none\">TEXT</fieldset>"
+  },
+  {
+    "label": "html:cross:fieldset:block",
+    "markup": "<fieldset style=\"display:block\">TEXT</fieldset>"
+  },
+  {
+    "label": "html:cross:fieldset:inline",
+    "markup": "<fieldset style=\"display:inline\">TEXT</fieldset>"
+  },
+  {
+    "label": "html:cross:fieldset:contents",
+    "markup": "<fieldset style=\"display:contents\">TEXT</fieldset>"
+  },
+  {
+    "label": "html:cross:fieldset:initial",
+    "markup": "<fieldset style=\"display:initial\">TEXT</fieldset>"
+  },
+  {
+    "label": "html:cross:fieldset:unset",
+    "markup": "<fieldset style=\"display:unset\">TEXT</fieldset>"
+  },
+  {
+    "label": "html:cross:fieldset:revert",
+    "markup": "<fieldset style=\"display:revert\">TEXT</fieldset>"
+  },
+  {
+    "label": "html:cross:fieldset:revert-layer",
+    "markup": "<fieldset style=\"display:revert-layer\">TEXT</fieldset>"
+  },
+  {
+    "label": "html:cross:fieldset:table-column",
+    "markup": "<fieldset style=\"display:table-column\">TEXT</fieldset>"
+  },
+  {
+    "label": "html:cross:fieldset:table-column-group",
+    "markup": "<fieldset style=\"display:table-column-group\">TEXT</fieldset>"
+  },
+  {
+    "label": "html:cross:figcaption:none",
+    "markup": "<figcaption style=\"display:none\">TEXT</figcaption>"
+  },
+  {
+    "label": "html:cross:figcaption:block",
+    "markup": "<figcaption style=\"display:block\">TEXT</figcaption>"
+  },
+  {
+    "label": "html:cross:figcaption:inline",
+    "markup": "<figcaption style=\"display:inline\">TEXT</figcaption>"
+  },
+  {
+    "label": "html:cross:figcaption:contents",
+    "markup": "<figcaption style=\"display:contents\">TEXT</figcaption>"
+  },
+  {
+    "label": "html:cross:figcaption:initial",
+    "markup": "<figcaption style=\"display:initial\">TEXT</figcaption>"
+  },
+  {
+    "label": "html:cross:figcaption:unset",
+    "markup": "<figcaption style=\"display:unset\">TEXT</figcaption>"
+  },
+  {
+    "label": "html:cross:figcaption:revert",
+    "markup": "<figcaption style=\"display:revert\">TEXT</figcaption>"
+  },
+  {
+    "label": "html:cross:figcaption:revert-layer",
+    "markup": "<figcaption style=\"display:revert-layer\">TEXT</figcaption>"
+  },
+  {
+    "label": "html:cross:figcaption:table-column",
+    "markup": "<figcaption style=\"display:table-column\">TEXT</figcaption>"
+  },
+  {
+    "label": "html:cross:figcaption:table-column-group",
+    "markup": "<figcaption style=\"display:table-column-group\">TEXT</figcaption>"
+  },
+  {
+    "label": "html:cross:figure:none",
+    "markup": "<figure style=\"display:none\">TEXT</figure>"
+  },
+  {
+    "label": "html:cross:figure:block",
+    "markup": "<figure style=\"display:block\">TEXT</figure>"
+  },
+  {
+    "label": "html:cross:figure:inline",
+    "markup": "<figure style=\"display:inline\">TEXT</figure>"
+  },
+  {
+    "label": "html:cross:figure:contents",
+    "markup": "<figure style=\"display:contents\">TEXT</figure>"
+  },
+  {
+    "label": "html:cross:figure:initial",
+    "markup": "<figure style=\"display:initial\">TEXT</figure>"
+  },
+  {
+    "label": "html:cross:figure:unset",
+    "markup": "<figure style=\"display:unset\">TEXT</figure>"
+  },
+  {
+    "label": "html:cross:figure:revert",
+    "markup": "<figure style=\"display:revert\">TEXT</figure>"
+  },
+  {
+    "label": "html:cross:figure:revert-layer",
+    "markup": "<figure style=\"display:revert-layer\">TEXT</figure>"
+  },
+  {
+    "label": "html:cross:figure:table-column",
+    "markup": "<figure style=\"display:table-column\">TEXT</figure>"
+  },
+  {
+    "label": "html:cross:figure:table-column-group",
+    "markup": "<figure style=\"display:table-column-group\">TEXT</figure>"
+  },
+  {
+    "label": "html:cross:footer:none",
+    "markup": "<footer style=\"display:none\">TEXT</footer>"
+  },
+  {
+    "label": "html:cross:footer:block",
+    "markup": "<footer style=\"display:block\">TEXT</footer>"
+  },
+  {
+    "label": "html:cross:footer:inline",
+    "markup": "<footer style=\"display:inline\">TEXT</footer>"
+  },
+  {
+    "label": "html:cross:footer:contents",
+    "markup": "<footer style=\"display:contents\">TEXT</footer>"
+  },
+  {
+    "label": "html:cross:footer:initial",
+    "markup": "<footer style=\"display:initial\">TEXT</footer>"
+  },
+  {
+    "label": "html:cross:footer:unset",
+    "markup": "<footer style=\"display:unset\">TEXT</footer>"
+  },
+  {
+    "label": "html:cross:footer:revert",
+    "markup": "<footer style=\"display:revert\">TEXT</footer>"
+  },
+  {
+    "label": "html:cross:footer:revert-layer",
+    "markup": "<footer style=\"display:revert-layer\">TEXT</footer>"
+  },
+  {
+    "label": "html:cross:footer:table-column",
+    "markup": "<footer style=\"display:table-column\">TEXT</footer>"
+  },
+  {
+    "label": "html:cross:footer:table-column-group",
+    "markup": "<footer style=\"display:table-column-group\">TEXT</footer>"
+  },
+  {
+    "label": "html:cross:form:none",
+    "markup": "<form style=\"display:none\">TEXT</form>"
+  },
+  {
+    "label": "html:cross:form:block",
+    "markup": "<form style=\"display:block\">TEXT</form>"
+  },
+  {
+    "label": "html:cross:form:inline",
+    "markup": "<form style=\"display:inline\">TEXT</form>"
+  },
+  {
+    "label": "html:cross:form:contents",
+    "markup": "<form style=\"display:contents\">TEXT</form>"
+  },
+  {
+    "label": "html:cross:form:initial",
+    "markup": "<form style=\"display:initial\">TEXT</form>"
+  },
+  {
+    "label": "html:cross:form:unset",
+    "markup": "<form style=\"display:unset\">TEXT</form>"
+  },
+  {
+    "label": "html:cross:form:revert",
+    "markup": "<form style=\"display:revert\">TEXT</form>"
+  },
+  {
+    "label": "html:cross:form:revert-layer",
+    "markup": "<form style=\"display:revert-layer\">TEXT</form>"
+  },
+  {
+    "label": "html:cross:form:table-column",
+    "markup": "<form style=\"display:table-column\">TEXT</form>"
+  },
+  {
+    "label": "html:cross:form:table-column-group",
+    "markup": "<form style=\"display:table-column-group\">TEXT</form>"
+  },
+  {
+    "label": "html:cross:frame:none",
+    "markup": "<frame style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:frame:block",
+    "markup": "<frame style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:frame:inline",
+    "markup": "<frame style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:frame:contents",
+    "markup": "<frame style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:frame:initial",
+    "markup": "<frame style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:frame:unset",
+    "markup": "<frame style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:frame:revert",
+    "markup": "<frame style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:frame:revert-layer",
+    "markup": "<frame style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:frame:table-column",
+    "markup": "<frame style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:frame:table-column-group",
+    "markup": "<frame style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:h1:none",
+    "markup": "<h1 style=\"display:none\">TEXT</h1>"
+  },
+  {
+    "label": "html:cross:h1:block",
+    "markup": "<h1 style=\"display:block\">TEXT</h1>"
+  },
+  {
+    "label": "html:cross:h1:inline",
+    "markup": "<h1 style=\"display:inline\">TEXT</h1>"
+  },
+  {
+    "label": "html:cross:h1:contents",
+    "markup": "<h1 style=\"display:contents\">TEXT</h1>"
+  },
+  {
+    "label": "html:cross:h1:initial",
+    "markup": "<h1 style=\"display:initial\">TEXT</h1>"
+  },
+  {
+    "label": "html:cross:h1:unset",
+    "markup": "<h1 style=\"display:unset\">TEXT</h1>"
+  },
+  {
+    "label": "html:cross:h1:revert",
+    "markup": "<h1 style=\"display:revert\">TEXT</h1>"
+  },
+  {
+    "label": "html:cross:h1:revert-layer",
+    "markup": "<h1 style=\"display:revert-layer\">TEXT</h1>"
+  },
+  {
+    "label": "html:cross:h1:table-column",
+    "markup": "<h1 style=\"display:table-column\">TEXT</h1>"
+  },
+  {
+    "label": "html:cross:h1:table-column-group",
+    "markup": "<h1 style=\"display:table-column-group\">TEXT</h1>"
+  },
+  {
+    "label": "html:cross:h2:none",
+    "markup": "<h2 style=\"display:none\">TEXT</h2>"
+  },
+  {
+    "label": "html:cross:h2:block",
+    "markup": "<h2 style=\"display:block\">TEXT</h2>"
+  },
+  {
+    "label": "html:cross:h2:inline",
+    "markup": "<h2 style=\"display:inline\">TEXT</h2>"
+  },
+  {
+    "label": "html:cross:h2:contents",
+    "markup": "<h2 style=\"display:contents\">TEXT</h2>"
+  },
+  {
+    "label": "html:cross:h2:initial",
+    "markup": "<h2 style=\"display:initial\">TEXT</h2>"
+  },
+  {
+    "label": "html:cross:h2:unset",
+    "markup": "<h2 style=\"display:unset\">TEXT</h2>"
+  },
+  {
+    "label": "html:cross:h2:revert",
+    "markup": "<h2 style=\"display:revert\">TEXT</h2>"
+  },
+  {
+    "label": "html:cross:h2:revert-layer",
+    "markup": "<h2 style=\"display:revert-layer\">TEXT</h2>"
+  },
+  {
+    "label": "html:cross:h2:table-column",
+    "markup": "<h2 style=\"display:table-column\">TEXT</h2>"
+  },
+  {
+    "label": "html:cross:h2:table-column-group",
+    "markup": "<h2 style=\"display:table-column-group\">TEXT</h2>"
+  },
+  {
+    "label": "html:cross:h3:none",
+    "markup": "<h3 style=\"display:none\">TEXT</h3>"
+  },
+  {
+    "label": "html:cross:h3:block",
+    "markup": "<h3 style=\"display:block\">TEXT</h3>"
+  },
+  {
+    "label": "html:cross:h3:inline",
+    "markup": "<h3 style=\"display:inline\">TEXT</h3>"
+  },
+  {
+    "label": "html:cross:h3:contents",
+    "markup": "<h3 style=\"display:contents\">TEXT</h3>"
+  },
+  {
+    "label": "html:cross:h3:initial",
+    "markup": "<h3 style=\"display:initial\">TEXT</h3>"
+  },
+  {
+    "label": "html:cross:h3:unset",
+    "markup": "<h3 style=\"display:unset\">TEXT</h3>"
+  },
+  {
+    "label": "html:cross:h3:revert",
+    "markup": "<h3 style=\"display:revert\">TEXT</h3>"
+  },
+  {
+    "label": "html:cross:h3:revert-layer",
+    "markup": "<h3 style=\"display:revert-layer\">TEXT</h3>"
+  },
+  {
+    "label": "html:cross:h3:table-column",
+    "markup": "<h3 style=\"display:table-column\">TEXT</h3>"
+  },
+  {
+    "label": "html:cross:h3:table-column-group",
+    "markup": "<h3 style=\"display:table-column-group\">TEXT</h3>"
+  },
+  {
+    "label": "html:cross:h4:none",
+    "markup": "<h4 style=\"display:none\">TEXT</h4>"
+  },
+  {
+    "label": "html:cross:h4:block",
+    "markup": "<h4 style=\"display:block\">TEXT</h4>"
+  },
+  {
+    "label": "html:cross:h4:inline",
+    "markup": "<h4 style=\"display:inline\">TEXT</h4>"
+  },
+  {
+    "label": "html:cross:h4:contents",
+    "markup": "<h4 style=\"display:contents\">TEXT</h4>"
+  },
+  {
+    "label": "html:cross:h4:initial",
+    "markup": "<h4 style=\"display:initial\">TEXT</h4>"
+  },
+  {
+    "label": "html:cross:h4:unset",
+    "markup": "<h4 style=\"display:unset\">TEXT</h4>"
+  },
+  {
+    "label": "html:cross:h4:revert",
+    "markup": "<h4 style=\"display:revert\">TEXT</h4>"
+  },
+  {
+    "label": "html:cross:h4:revert-layer",
+    "markup": "<h4 style=\"display:revert-layer\">TEXT</h4>"
+  },
+  {
+    "label": "html:cross:h4:table-column",
+    "markup": "<h4 style=\"display:table-column\">TEXT</h4>"
+  },
+  {
+    "label": "html:cross:h4:table-column-group",
+    "markup": "<h4 style=\"display:table-column-group\">TEXT</h4>"
+  },
+  {
+    "label": "html:cross:h5:none",
+    "markup": "<h5 style=\"display:none\">TEXT</h5>"
+  },
+  {
+    "label": "html:cross:h5:block",
+    "markup": "<h5 style=\"display:block\">TEXT</h5>"
+  },
+  {
+    "label": "html:cross:h5:inline",
+    "markup": "<h5 style=\"display:inline\">TEXT</h5>"
+  },
+  {
+    "label": "html:cross:h5:contents",
+    "markup": "<h5 style=\"display:contents\">TEXT</h5>"
+  },
+  {
+    "label": "html:cross:h5:initial",
+    "markup": "<h5 style=\"display:initial\">TEXT</h5>"
+  },
+  {
+    "label": "html:cross:h5:unset",
+    "markup": "<h5 style=\"display:unset\">TEXT</h5>"
+  },
+  {
+    "label": "html:cross:h5:revert",
+    "markup": "<h5 style=\"display:revert\">TEXT</h5>"
+  },
+  {
+    "label": "html:cross:h5:revert-layer",
+    "markup": "<h5 style=\"display:revert-layer\">TEXT</h5>"
+  },
+  {
+    "label": "html:cross:h5:table-column",
+    "markup": "<h5 style=\"display:table-column\">TEXT</h5>"
+  },
+  {
+    "label": "html:cross:h5:table-column-group",
+    "markup": "<h5 style=\"display:table-column-group\">TEXT</h5>"
+  },
+  {
+    "label": "html:cross:h6:none",
+    "markup": "<h6 style=\"display:none\">TEXT</h6>"
+  },
+  {
+    "label": "html:cross:h6:block",
+    "markup": "<h6 style=\"display:block\">TEXT</h6>"
+  },
+  {
+    "label": "html:cross:h6:inline",
+    "markup": "<h6 style=\"display:inline\">TEXT</h6>"
+  },
+  {
+    "label": "html:cross:h6:contents",
+    "markup": "<h6 style=\"display:contents\">TEXT</h6>"
+  },
+  {
+    "label": "html:cross:h6:initial",
+    "markup": "<h6 style=\"display:initial\">TEXT</h6>"
+  },
+  {
+    "label": "html:cross:h6:unset",
+    "markup": "<h6 style=\"display:unset\">TEXT</h6>"
+  },
+  {
+    "label": "html:cross:h6:revert",
+    "markup": "<h6 style=\"display:revert\">TEXT</h6>"
+  },
+  {
+    "label": "html:cross:h6:revert-layer",
+    "markup": "<h6 style=\"display:revert-layer\">TEXT</h6>"
+  },
+  {
+    "label": "html:cross:h6:table-column",
+    "markup": "<h6 style=\"display:table-column\">TEXT</h6>"
+  },
+  {
+    "label": "html:cross:h6:table-column-group",
+    "markup": "<h6 style=\"display:table-column-group\">TEXT</h6>"
+  },
+  {
+    "label": "html:cross:head:none",
+    "markup": "<html><head style=\"display:none\"></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:head:block",
+    "markup": "<html><head style=\"display:block\"></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:head:inline",
+    "markup": "<html><head style=\"display:inline\"></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:head:contents",
+    "markup": "<html><head style=\"display:contents\"></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:head:initial",
+    "markup": "<html><head style=\"display:initial\"></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:head:unset",
+    "markup": "<html><head style=\"display:unset\"></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:head:revert",
+    "markup": "<html><head style=\"display:revert\"></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:head:revert-layer",
+    "markup": "<html><head style=\"display:revert-layer\"></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:head:table-column",
+    "markup": "<html><head style=\"display:table-column\"></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:head:table-column-group",
+    "markup": "<html><head style=\"display:table-column-group\"></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:header:none",
+    "markup": "<header style=\"display:none\">TEXT</header>"
+  },
+  {
+    "label": "html:cross:header:block",
+    "markup": "<header style=\"display:block\">TEXT</header>"
+  },
+  {
+    "label": "html:cross:header:inline",
+    "markup": "<header style=\"display:inline\">TEXT</header>"
+  },
+  {
+    "label": "html:cross:header:contents",
+    "markup": "<header style=\"display:contents\">TEXT</header>"
+  },
+  {
+    "label": "html:cross:header:initial",
+    "markup": "<header style=\"display:initial\">TEXT</header>"
+  },
+  {
+    "label": "html:cross:header:unset",
+    "markup": "<header style=\"display:unset\">TEXT</header>"
+  },
+  {
+    "label": "html:cross:header:revert",
+    "markup": "<header style=\"display:revert\">TEXT</header>"
+  },
+  {
+    "label": "html:cross:header:revert-layer",
+    "markup": "<header style=\"display:revert-layer\">TEXT</header>"
+  },
+  {
+    "label": "html:cross:header:table-column",
+    "markup": "<header style=\"display:table-column\">TEXT</header>"
+  },
+  {
+    "label": "html:cross:header:table-column-group",
+    "markup": "<header style=\"display:table-column-group\">TEXT</header>"
+  },
+  {
+    "label": "html:cross:hr:none",
+    "markup": "<hr style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:hr:block",
+    "markup": "<hr style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:hr:inline",
+    "markup": "<hr style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:hr:contents",
+    "markup": "<hr style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:hr:initial",
+    "markup": "<hr style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:hr:unset",
+    "markup": "<hr style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:hr:revert",
+    "markup": "<hr style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:hr:revert-layer",
+    "markup": "<hr style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:hr:table-column",
+    "markup": "<hr style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:hr:table-column-group",
+    "markup": "<hr style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:html:none",
+    "markup": "<html style=\"display:none\"><head></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:html:block",
+    "markup": "<html style=\"display:block\"><head></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:html:inline",
+    "markup": "<html style=\"display:inline\"><head></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:html:contents",
+    "markup": "<html style=\"display:contents\"><head></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:html:initial",
+    "markup": "<html style=\"display:initial\"><head></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:html:unset",
+    "markup": "<html style=\"display:unset\"><head></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:html:revert",
+    "markup": "<html style=\"display:revert\"><head></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:html:revert-layer",
+    "markup": "<html style=\"display:revert-layer\"><head></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:html:table-column",
+    "markup": "<html style=\"display:table-column\"><head></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:html:table-column-group",
+    "markup": "<html style=\"display:table-column-group\"><head></head><body>TEXT</body></html>"
+  },
+  {
+    "label": "html:cross:i:none",
+    "markup": "<i style=\"display:none\">TEXT</i>"
+  },
+  {
+    "label": "html:cross:i:block",
+    "markup": "<i style=\"display:block\">TEXT</i>"
+  },
+  {
+    "label": "html:cross:i:inline",
+    "markup": "<i style=\"display:inline\">TEXT</i>"
+  },
+  {
+    "label": "html:cross:i:contents",
+    "markup": "<i style=\"display:contents\">TEXT</i>"
+  },
+  {
+    "label": "html:cross:i:initial",
+    "markup": "<i style=\"display:initial\">TEXT</i>"
+  },
+  {
+    "label": "html:cross:i:unset",
+    "markup": "<i style=\"display:unset\">TEXT</i>"
+  },
+  {
+    "label": "html:cross:i:revert",
+    "markup": "<i style=\"display:revert\">TEXT</i>"
+  },
+  {
+    "label": "html:cross:i:revert-layer",
+    "markup": "<i style=\"display:revert-layer\">TEXT</i>"
+  },
+  {
+    "label": "html:cross:i:table-column",
+    "markup": "<i style=\"display:table-column\">TEXT</i>"
+  },
+  {
+    "label": "html:cross:i:table-column-group",
+    "markup": "<i style=\"display:table-column-group\">TEXT</i>"
+  },
+  {
+    "label": "html:cross:img:none",
+    "markup": "<img style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:img:block",
+    "markup": "<img style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:img:inline",
+    "markup": "<img style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:img:contents",
+    "markup": "<img style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:img:initial",
+    "markup": "<img style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:img:unset",
+    "markup": "<img style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:img:revert",
+    "markup": "<img style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:img:revert-layer",
+    "markup": "<img style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:img:table-column",
+    "markup": "<img style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:img:table-column-group",
+    "markup": "<img style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:input:none",
+    "markup": "<input style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:input:block",
+    "markup": "<input style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:input:inline",
+    "markup": "<input style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:input:contents",
+    "markup": "<input style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:input:initial",
+    "markup": "<input style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:input:unset",
+    "markup": "<input style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:input:revert",
+    "markup": "<input style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:input:revert-layer",
+    "markup": "<input style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:input:table-column",
+    "markup": "<input style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:input:table-column-group",
+    "markup": "<input style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:keygen:none",
+    "markup": "<keygen style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:keygen:block",
+    "markup": "<keygen style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:keygen:inline",
+    "markup": "<keygen style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:keygen:contents",
+    "markup": "<keygen style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:keygen:initial",
+    "markup": "<keygen style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:keygen:unset",
+    "markup": "<keygen style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:keygen:revert",
+    "markup": "<keygen style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:keygen:revert-layer",
+    "markup": "<keygen style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:keygen:table-column",
+    "markup": "<keygen style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:keygen:table-column-group",
+    "markup": "<keygen style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:label:none",
+    "markup": "<label style=\"display:none\">TEXT</label>"
+  },
+  {
+    "label": "html:cross:label:block",
+    "markup": "<label style=\"display:block\">TEXT</label>"
+  },
+  {
+    "label": "html:cross:label:inline",
+    "markup": "<label style=\"display:inline\">TEXT</label>"
+  },
+  {
+    "label": "html:cross:label:contents",
+    "markup": "<label style=\"display:contents\">TEXT</label>"
+  },
+  {
+    "label": "html:cross:label:initial",
+    "markup": "<label style=\"display:initial\">TEXT</label>"
+  },
+  {
+    "label": "html:cross:label:unset",
+    "markup": "<label style=\"display:unset\">TEXT</label>"
+  },
+  {
+    "label": "html:cross:label:revert",
+    "markup": "<label style=\"display:revert\">TEXT</label>"
+  },
+  {
+    "label": "html:cross:label:revert-layer",
+    "markup": "<label style=\"display:revert-layer\">TEXT</label>"
+  },
+  {
+    "label": "html:cross:label:table-column",
+    "markup": "<label style=\"display:table-column\">TEXT</label>"
+  },
+  {
+    "label": "html:cross:label:table-column-group",
+    "markup": "<label style=\"display:table-column-group\">TEXT</label>"
+  },
+  {
+    "label": "html:cross:legend:none",
+    "markup": "<legend style=\"display:none\">TEXT</legend>"
+  },
+  {
+    "label": "html:cross:legend:block",
+    "markup": "<legend style=\"display:block\">TEXT</legend>"
+  },
+  {
+    "label": "html:cross:legend:inline",
+    "markup": "<legend style=\"display:inline\">TEXT</legend>"
+  },
+  {
+    "label": "html:cross:legend:contents",
+    "markup": "<legend style=\"display:contents\">TEXT</legend>"
+  },
+  {
+    "label": "html:cross:legend:initial",
+    "markup": "<legend style=\"display:initial\">TEXT</legend>"
+  },
+  {
+    "label": "html:cross:legend:unset",
+    "markup": "<legend style=\"display:unset\">TEXT</legend>"
+  },
+  {
+    "label": "html:cross:legend:revert",
+    "markup": "<legend style=\"display:revert\">TEXT</legend>"
+  },
+  {
+    "label": "html:cross:legend:revert-layer",
+    "markup": "<legend style=\"display:revert-layer\">TEXT</legend>"
+  },
+  {
+    "label": "html:cross:legend:table-column",
+    "markup": "<legend style=\"display:table-column\">TEXT</legend>"
+  },
+  {
+    "label": "html:cross:legend:table-column-group",
+    "markup": "<legend style=\"display:table-column-group\">TEXT</legend>"
+  },
+  {
+    "label": "html:cross:li:none",
+    "markup": "<li style=\"display:none\">TEXT</li>"
+  },
+  {
+    "label": "html:cross:li:block",
+    "markup": "<li style=\"display:block\">TEXT</li>"
+  },
+  {
+    "label": "html:cross:li:inline",
+    "markup": "<li style=\"display:inline\">TEXT</li>"
+  },
+  {
+    "label": "html:cross:li:contents",
+    "markup": "<li style=\"display:contents\">TEXT</li>"
+  },
+  {
+    "label": "html:cross:li:initial",
+    "markup": "<li style=\"display:initial\">TEXT</li>"
+  },
+  {
+    "label": "html:cross:li:unset",
+    "markup": "<li style=\"display:unset\">TEXT</li>"
+  },
+  {
+    "label": "html:cross:li:revert",
+    "markup": "<li style=\"display:revert\">TEXT</li>"
+  },
+  {
+    "label": "html:cross:li:revert-layer",
+    "markup": "<li style=\"display:revert-layer\">TEXT</li>"
+  },
+  {
+    "label": "html:cross:li:table-column",
+    "markup": "<li style=\"display:table-column\">TEXT</li>"
+  },
+  {
+    "label": "html:cross:li:table-column-group",
+    "markup": "<li style=\"display:table-column-group\">TEXT</li>"
+  },
+  {
+    "label": "html:cross:link:none",
+    "markup": "<link style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:link:block",
+    "markup": "<link style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:link:inline",
+    "markup": "<link style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:link:contents",
+    "markup": "<link style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:link:initial",
+    "markup": "<link style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:link:unset",
+    "markup": "<link style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:link:revert",
+    "markup": "<link style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:link:revert-layer",
+    "markup": "<link style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:link:table-column",
+    "markup": "<link style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:link:table-column-group",
+    "markup": "<link style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:main:none",
+    "markup": "<main style=\"display:none\">TEXT</main>"
+  },
+  {
+    "label": "html:cross:main:block",
+    "markup": "<main style=\"display:block\">TEXT</main>"
+  },
+  {
+    "label": "html:cross:main:inline",
+    "markup": "<main style=\"display:inline\">TEXT</main>"
+  },
+  {
+    "label": "html:cross:main:contents",
+    "markup": "<main style=\"display:contents\">TEXT</main>"
+  },
+  {
+    "label": "html:cross:main:initial",
+    "markup": "<main style=\"display:initial\">TEXT</main>"
+  },
+  {
+    "label": "html:cross:main:unset",
+    "markup": "<main style=\"display:unset\">TEXT</main>"
+  },
+  {
+    "label": "html:cross:main:revert",
+    "markup": "<main style=\"display:revert\">TEXT</main>"
+  },
+  {
+    "label": "html:cross:main:revert-layer",
+    "markup": "<main style=\"display:revert-layer\">TEXT</main>"
+  },
+  {
+    "label": "html:cross:main:table-column",
+    "markup": "<main style=\"display:table-column\">TEXT</main>"
+  },
+  {
+    "label": "html:cross:main:table-column-group",
+    "markup": "<main style=\"display:table-column-group\">TEXT</main>"
+  },
+  {
+    "label": "html:cross:mark:none",
+    "markup": "<mark style=\"display:none\">TEXT</mark>"
+  },
+  {
+    "label": "html:cross:mark:block",
+    "markup": "<mark style=\"display:block\">TEXT</mark>"
+  },
+  {
+    "label": "html:cross:mark:inline",
+    "markup": "<mark style=\"display:inline\">TEXT</mark>"
+  },
+  {
+    "label": "html:cross:mark:contents",
+    "markup": "<mark style=\"display:contents\">TEXT</mark>"
+  },
+  {
+    "label": "html:cross:mark:initial",
+    "markup": "<mark style=\"display:initial\">TEXT</mark>"
+  },
+  {
+    "label": "html:cross:mark:unset",
+    "markup": "<mark style=\"display:unset\">TEXT</mark>"
+  },
+  {
+    "label": "html:cross:mark:revert",
+    "markup": "<mark style=\"display:revert\">TEXT</mark>"
+  },
+  {
+    "label": "html:cross:mark:revert-layer",
+    "markup": "<mark style=\"display:revert-layer\">TEXT</mark>"
+  },
+  {
+    "label": "html:cross:mark:table-column",
+    "markup": "<mark style=\"display:table-column\">TEXT</mark>"
+  },
+  {
+    "label": "html:cross:mark:table-column-group",
+    "markup": "<mark style=\"display:table-column-group\">TEXT</mark>"
+  },
+  {
+    "label": "html:cross:meta:none",
+    "markup": "<meta style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:meta:block",
+    "markup": "<meta style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:meta:inline",
+    "markup": "<meta style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:meta:contents",
+    "markup": "<meta style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:meta:initial",
+    "markup": "<meta style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:meta:unset",
+    "markup": "<meta style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:meta:revert",
+    "markup": "<meta style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:meta:revert-layer",
+    "markup": "<meta style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:meta:table-column",
+    "markup": "<meta style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:meta:table-column-group",
+    "markup": "<meta style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:meter:none",
+    "markup": "<meter style=\"display:none\">TEXT</meter>"
+  },
+  {
+    "label": "html:cross:meter:block",
+    "markup": "<meter style=\"display:block\">TEXT</meter>"
+  },
+  {
+    "label": "html:cross:meter:inline",
+    "markup": "<meter style=\"display:inline\">TEXT</meter>"
+  },
+  {
+    "label": "html:cross:meter:contents",
+    "markup": "<meter style=\"display:contents\">TEXT</meter>"
+  },
+  {
+    "label": "html:cross:meter:initial",
+    "markup": "<meter style=\"display:initial\">TEXT</meter>"
+  },
+  {
+    "label": "html:cross:meter:unset",
+    "markup": "<meter style=\"display:unset\">TEXT</meter>"
+  },
+  {
+    "label": "html:cross:meter:revert",
+    "markup": "<meter style=\"display:revert\">TEXT</meter>"
+  },
+  {
+    "label": "html:cross:meter:revert-layer",
+    "markup": "<meter style=\"display:revert-layer\">TEXT</meter>"
+  },
+  {
+    "label": "html:cross:meter:table-column",
+    "markup": "<meter style=\"display:table-column\">TEXT</meter>"
+  },
+  {
+    "label": "html:cross:meter:table-column-group",
+    "markup": "<meter style=\"display:table-column-group\">TEXT</meter>"
+  },
+  {
+    "label": "html:cross:nav:none",
+    "markup": "<nav style=\"display:none\">TEXT</nav>"
+  },
+  {
+    "label": "html:cross:nav:block",
+    "markup": "<nav style=\"display:block\">TEXT</nav>"
+  },
+  {
+    "label": "html:cross:nav:inline",
+    "markup": "<nav style=\"display:inline\">TEXT</nav>"
+  },
+  {
+    "label": "html:cross:nav:contents",
+    "markup": "<nav style=\"display:contents\">TEXT</nav>"
+  },
+  {
+    "label": "html:cross:nav:initial",
+    "markup": "<nav style=\"display:initial\">TEXT</nav>"
+  },
+  {
+    "label": "html:cross:nav:unset",
+    "markup": "<nav style=\"display:unset\">TEXT</nav>"
+  },
+  {
+    "label": "html:cross:nav:revert",
+    "markup": "<nav style=\"display:revert\">TEXT</nav>"
+  },
+  {
+    "label": "html:cross:nav:revert-layer",
+    "markup": "<nav style=\"display:revert-layer\">TEXT</nav>"
+  },
+  {
+    "label": "html:cross:nav:table-column",
+    "markup": "<nav style=\"display:table-column\">TEXT</nav>"
+  },
+  {
+    "label": "html:cross:nav:table-column-group",
+    "markup": "<nav style=\"display:table-column-group\">TEXT</nav>"
+  },
+  {
+    "label": "html:cross:noscript:none",
+    "markup": "<noscript style=\"display:none\">TEXT</noscript>"
+  },
+  {
+    "label": "html:cross:noscript:block",
+    "markup": "<noscript style=\"display:block\">TEXT</noscript>"
+  },
+  {
+    "label": "html:cross:noscript:inline",
+    "markup": "<noscript style=\"display:inline\">TEXT</noscript>"
+  },
+  {
+    "label": "html:cross:noscript:contents",
+    "markup": "<noscript style=\"display:contents\">TEXT</noscript>"
+  },
+  {
+    "label": "html:cross:noscript:initial",
+    "markup": "<noscript style=\"display:initial\">TEXT</noscript>"
+  },
+  {
+    "label": "html:cross:noscript:unset",
+    "markup": "<noscript style=\"display:unset\">TEXT</noscript>"
+  },
+  {
+    "label": "html:cross:noscript:revert",
+    "markup": "<noscript style=\"display:revert\">TEXT</noscript>"
+  },
+  {
+    "label": "html:cross:noscript:revert-layer",
+    "markup": "<noscript style=\"display:revert-layer\">TEXT</noscript>"
+  },
+  {
+    "label": "html:cross:noscript:table-column",
+    "markup": "<noscript style=\"display:table-column\">TEXT</noscript>"
+  },
+  {
+    "label": "html:cross:noscript:table-column-group",
+    "markup": "<noscript style=\"display:table-column-group\">TEXT</noscript>"
+  },
+  {
+    "label": "html:cross:object:none",
+    "markup": "<object style=\"display:none\">TEXT</object>"
+  },
+  {
+    "label": "html:cross:object:block",
+    "markup": "<object style=\"display:block\">TEXT</object>"
+  },
+  {
+    "label": "html:cross:object:inline",
+    "markup": "<object style=\"display:inline\">TEXT</object>"
+  },
+  {
+    "label": "html:cross:object:contents",
+    "markup": "<object style=\"display:contents\">TEXT</object>"
+  },
+  {
+    "label": "html:cross:object:initial",
+    "markup": "<object style=\"display:initial\">TEXT</object>"
+  },
+  {
+    "label": "html:cross:object:unset",
+    "markup": "<object style=\"display:unset\">TEXT</object>"
+  },
+  {
+    "label": "html:cross:object:revert",
+    "markup": "<object style=\"display:revert\">TEXT</object>"
+  },
+  {
+    "label": "html:cross:object:revert-layer",
+    "markup": "<object style=\"display:revert-layer\">TEXT</object>"
+  },
+  {
+    "label": "html:cross:object:table-column",
+    "markup": "<object style=\"display:table-column\">TEXT</object>"
+  },
+  {
+    "label": "html:cross:object:table-column-group",
+    "markup": "<object style=\"display:table-column-group\">TEXT</object>"
+  },
+  {
+    "label": "html:cross:ol:none",
+    "markup": "<ol style=\"display:none\">TEXT</ol>"
+  },
+  {
+    "label": "html:cross:ol:block",
+    "markup": "<ol style=\"display:block\">TEXT</ol>"
+  },
+  {
+    "label": "html:cross:ol:inline",
+    "markup": "<ol style=\"display:inline\">TEXT</ol>"
+  },
+  {
+    "label": "html:cross:ol:contents",
+    "markup": "<ol style=\"display:contents\">TEXT</ol>"
+  },
+  {
+    "label": "html:cross:ol:initial",
+    "markup": "<ol style=\"display:initial\">TEXT</ol>"
+  },
+  {
+    "label": "html:cross:ol:unset",
+    "markup": "<ol style=\"display:unset\">TEXT</ol>"
+  },
+  {
+    "label": "html:cross:ol:revert",
+    "markup": "<ol style=\"display:revert\">TEXT</ol>"
+  },
+  {
+    "label": "html:cross:ol:revert-layer",
+    "markup": "<ol style=\"display:revert-layer\">TEXT</ol>"
+  },
+  {
+    "label": "html:cross:ol:table-column",
+    "markup": "<ol style=\"display:table-column\">TEXT</ol>"
+  },
+  {
+    "label": "html:cross:ol:table-column-group",
+    "markup": "<ol style=\"display:table-column-group\">TEXT</ol>"
+  },
+  {
+    "label": "html:cross:p:none",
+    "markup": "<p style=\"display:none\">TEXT</p>"
+  },
+  {
+    "label": "html:cross:p:block",
+    "markup": "<p style=\"display:block\">TEXT</p>"
+  },
+  {
+    "label": "html:cross:p:inline",
+    "markup": "<p style=\"display:inline\">TEXT</p>"
+  },
+  {
+    "label": "html:cross:p:contents",
+    "markup": "<p style=\"display:contents\">TEXT</p>"
+  },
+  {
+    "label": "html:cross:p:initial",
+    "markup": "<p style=\"display:initial\">TEXT</p>"
+  },
+  {
+    "label": "html:cross:p:unset",
+    "markup": "<p style=\"display:unset\">TEXT</p>"
+  },
+  {
+    "label": "html:cross:p:revert",
+    "markup": "<p style=\"display:revert\">TEXT</p>"
+  },
+  {
+    "label": "html:cross:p:revert-layer",
+    "markup": "<p style=\"display:revert-layer\">TEXT</p>"
+  },
+  {
+    "label": "html:cross:p:table-column",
+    "markup": "<p style=\"display:table-column\">TEXT</p>"
+  },
+  {
+    "label": "html:cross:p:table-column-group",
+    "markup": "<p style=\"display:table-column-group\">TEXT</p>"
+  },
+  {
+    "label": "html:cross:param:none",
+    "markup": "<param style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:param:block",
+    "markup": "<param style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:param:inline",
+    "markup": "<param style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:param:contents",
+    "markup": "<param style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:param:initial",
+    "markup": "<param style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:param:unset",
+    "markup": "<param style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:param:revert",
+    "markup": "<param style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:param:revert-layer",
+    "markup": "<param style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:param:table-column",
+    "markup": "<param style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:param:table-column-group",
+    "markup": "<param style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:pre:none",
+    "markup": "<pre style=\"display:none\">TEXT</pre>"
+  },
+  {
+    "label": "html:cross:pre:block",
+    "markup": "<pre style=\"display:block\">TEXT</pre>"
+  },
+  {
+    "label": "html:cross:pre:inline",
+    "markup": "<pre style=\"display:inline\">TEXT</pre>"
+  },
+  {
+    "label": "html:cross:pre:contents",
+    "markup": "<pre style=\"display:contents\">TEXT</pre>"
+  },
+  {
+    "label": "html:cross:pre:initial",
+    "markup": "<pre style=\"display:initial\">TEXT</pre>"
+  },
+  {
+    "label": "html:cross:pre:unset",
+    "markup": "<pre style=\"display:unset\">TEXT</pre>"
+  },
+  {
+    "label": "html:cross:pre:revert",
+    "markup": "<pre style=\"display:revert\">TEXT</pre>"
+  },
+  {
+    "label": "html:cross:pre:revert-layer",
+    "markup": "<pre style=\"display:revert-layer\">TEXT</pre>"
+  },
+  {
+    "label": "html:cross:pre:table-column",
+    "markup": "<pre style=\"display:table-column\">TEXT</pre>"
+  },
+  {
+    "label": "html:cross:pre:table-column-group",
+    "markup": "<pre style=\"display:table-column-group\">TEXT</pre>"
+  },
+  {
+    "label": "html:cross:progress:none",
+    "markup": "<progress style=\"display:none\">TEXT</progress>"
+  },
+  {
+    "label": "html:cross:progress:block",
+    "markup": "<progress style=\"display:block\">TEXT</progress>"
+  },
+  {
+    "label": "html:cross:progress:inline",
+    "markup": "<progress style=\"display:inline\">TEXT</progress>"
+  },
+  {
+    "label": "html:cross:progress:contents",
+    "markup": "<progress style=\"display:contents\">TEXT</progress>"
+  },
+  {
+    "label": "html:cross:progress:initial",
+    "markup": "<progress style=\"display:initial\">TEXT</progress>"
+  },
+  {
+    "label": "html:cross:progress:unset",
+    "markup": "<progress style=\"display:unset\">TEXT</progress>"
+  },
+  {
+    "label": "html:cross:progress:revert",
+    "markup": "<progress style=\"display:revert\">TEXT</progress>"
+  },
+  {
+    "label": "html:cross:progress:revert-layer",
+    "markup": "<progress style=\"display:revert-layer\">TEXT</progress>"
+  },
+  {
+    "label": "html:cross:progress:table-column",
+    "markup": "<progress style=\"display:table-column\">TEXT</progress>"
+  },
+  {
+    "label": "html:cross:progress:table-column-group",
+    "markup": "<progress style=\"display:table-column-group\">TEXT</progress>"
+  },
+  {
+    "label": "html:cross:s:none",
+    "markup": "<s style=\"display:none\">TEXT</s>"
+  },
+  {
+    "label": "html:cross:s:block",
+    "markup": "<s style=\"display:block\">TEXT</s>"
+  },
+  {
+    "label": "html:cross:s:inline",
+    "markup": "<s style=\"display:inline\">TEXT</s>"
+  },
+  {
+    "label": "html:cross:s:contents",
+    "markup": "<s style=\"display:contents\">TEXT</s>"
+  },
+  {
+    "label": "html:cross:s:initial",
+    "markup": "<s style=\"display:initial\">TEXT</s>"
+  },
+  {
+    "label": "html:cross:s:unset",
+    "markup": "<s style=\"display:unset\">TEXT</s>"
+  },
+  {
+    "label": "html:cross:s:revert",
+    "markup": "<s style=\"display:revert\">TEXT</s>"
+  },
+  {
+    "label": "html:cross:s:revert-layer",
+    "markup": "<s style=\"display:revert-layer\">TEXT</s>"
+  },
+  {
+    "label": "html:cross:s:table-column",
+    "markup": "<s style=\"display:table-column\">TEXT</s>"
+  },
+  {
+    "label": "html:cross:s:table-column-group",
+    "markup": "<s style=\"display:table-column-group\">TEXT</s>"
+  },
+  {
+    "label": "html:cross:script:none",
+    "markup": "<script style=\"display:none\">TEXT</script>"
+  },
+  {
+    "label": "html:cross:script:block",
+    "markup": "<script style=\"display:block\">TEXT</script>"
+  },
+  {
+    "label": "html:cross:script:inline",
+    "markup": "<script style=\"display:inline\">TEXT</script>"
+  },
+  {
+    "label": "html:cross:script:contents",
+    "markup": "<script style=\"display:contents\">TEXT</script>"
+  },
+  {
+    "label": "html:cross:script:initial",
+    "markup": "<script style=\"display:initial\">TEXT</script>"
+  },
+  {
+    "label": "html:cross:script:unset",
+    "markup": "<script style=\"display:unset\">TEXT</script>"
+  },
+  {
+    "label": "html:cross:script:revert",
+    "markup": "<script style=\"display:revert\">TEXT</script>"
+  },
+  {
+    "label": "html:cross:script:revert-layer",
+    "markup": "<script style=\"display:revert-layer\">TEXT</script>"
+  },
+  {
+    "label": "html:cross:script:table-column",
+    "markup": "<script style=\"display:table-column\">TEXT</script>"
+  },
+  {
+    "label": "html:cross:script:table-column-group",
+    "markup": "<script style=\"display:table-column-group\">TEXT</script>"
+  },
+  {
+    "label": "html:cross:section:none",
+    "markup": "<section style=\"display:none\">TEXT</section>"
+  },
+  {
+    "label": "html:cross:section:block",
+    "markup": "<section style=\"display:block\">TEXT</section>"
+  },
+  {
+    "label": "html:cross:section:inline",
+    "markup": "<section style=\"display:inline\">TEXT</section>"
+  },
+  {
+    "label": "html:cross:section:contents",
+    "markup": "<section style=\"display:contents\">TEXT</section>"
+  },
+  {
+    "label": "html:cross:section:initial",
+    "markup": "<section style=\"display:initial\">TEXT</section>"
+  },
+  {
+    "label": "html:cross:section:unset",
+    "markup": "<section style=\"display:unset\">TEXT</section>"
+  },
+  {
+    "label": "html:cross:section:revert",
+    "markup": "<section style=\"display:revert\">TEXT</section>"
+  },
+  {
+    "label": "html:cross:section:revert-layer",
+    "markup": "<section style=\"display:revert-layer\">TEXT</section>"
+  },
+  {
+    "label": "html:cross:section:table-column",
+    "markup": "<section style=\"display:table-column\">TEXT</section>"
+  },
+  {
+    "label": "html:cross:section:table-column-group",
+    "markup": "<section style=\"display:table-column-group\">TEXT</section>"
+  },
+  {
+    "label": "html:cross:small:none",
+    "markup": "<small style=\"display:none\">TEXT</small>"
+  },
+  {
+    "label": "html:cross:small:block",
+    "markup": "<small style=\"display:block\">TEXT</small>"
+  },
+  {
+    "label": "html:cross:small:inline",
+    "markup": "<small style=\"display:inline\">TEXT</small>"
+  },
+  {
+    "label": "html:cross:small:contents",
+    "markup": "<small style=\"display:contents\">TEXT</small>"
+  },
+  {
+    "label": "html:cross:small:initial",
+    "markup": "<small style=\"display:initial\">TEXT</small>"
+  },
+  {
+    "label": "html:cross:small:unset",
+    "markup": "<small style=\"display:unset\">TEXT</small>"
+  },
+  {
+    "label": "html:cross:small:revert",
+    "markup": "<small style=\"display:revert\">TEXT</small>"
+  },
+  {
+    "label": "html:cross:small:revert-layer",
+    "markup": "<small style=\"display:revert-layer\">TEXT</small>"
+  },
+  {
+    "label": "html:cross:small:table-column",
+    "markup": "<small style=\"display:table-column\">TEXT</small>"
+  },
+  {
+    "label": "html:cross:small:table-column-group",
+    "markup": "<small style=\"display:table-column-group\">TEXT</small>"
+  },
+  {
+    "label": "html:cross:source:none",
+    "markup": "<source style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:source:block",
+    "markup": "<source style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:source:inline",
+    "markup": "<source style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:source:contents",
+    "markup": "<source style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:source:initial",
+    "markup": "<source style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:source:unset",
+    "markup": "<source style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:source:revert",
+    "markup": "<source style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:source:revert-layer",
+    "markup": "<source style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:source:table-column",
+    "markup": "<source style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:source:table-column-group",
+    "markup": "<source style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:span:none",
+    "markup": "<span style=\"display:none\">TEXT</span>"
+  },
+  {
+    "label": "html:cross:span:block",
+    "markup": "<span style=\"display:block\">TEXT</span>"
+  },
+  {
+    "label": "html:cross:span:inline",
+    "markup": "<span style=\"display:inline\">TEXT</span>"
+  },
+  {
+    "label": "html:cross:span:contents",
+    "markup": "<span style=\"display:contents\">TEXT</span>"
+  },
+  {
+    "label": "html:cross:span:initial",
+    "markup": "<span style=\"display:initial\">TEXT</span>"
+  },
+  {
+    "label": "html:cross:span:unset",
+    "markup": "<span style=\"display:unset\">TEXT</span>"
+  },
+  {
+    "label": "html:cross:span:revert",
+    "markup": "<span style=\"display:revert\">TEXT</span>"
+  },
+  {
+    "label": "html:cross:span:revert-layer",
+    "markup": "<span style=\"display:revert-layer\">TEXT</span>"
+  },
+  {
+    "label": "html:cross:span:table-column",
+    "markup": "<span style=\"display:table-column\">TEXT</span>"
+  },
+  {
+    "label": "html:cross:span:table-column-group",
+    "markup": "<span style=\"display:table-column-group\">TEXT</span>"
+  },
+  {
+    "label": "html:cross:strong:none",
+    "markup": "<strong style=\"display:none\">TEXT</strong>"
+  },
+  {
+    "label": "html:cross:strong:block",
+    "markup": "<strong style=\"display:block\">TEXT</strong>"
+  },
+  {
+    "label": "html:cross:strong:inline",
+    "markup": "<strong style=\"display:inline\">TEXT</strong>"
+  },
+  {
+    "label": "html:cross:strong:contents",
+    "markup": "<strong style=\"display:contents\">TEXT</strong>"
+  },
+  {
+    "label": "html:cross:strong:initial",
+    "markup": "<strong style=\"display:initial\">TEXT</strong>"
+  },
+  {
+    "label": "html:cross:strong:unset",
+    "markup": "<strong style=\"display:unset\">TEXT</strong>"
+  },
+  {
+    "label": "html:cross:strong:revert",
+    "markup": "<strong style=\"display:revert\">TEXT</strong>"
+  },
+  {
+    "label": "html:cross:strong:revert-layer",
+    "markup": "<strong style=\"display:revert-layer\">TEXT</strong>"
+  },
+  {
+    "label": "html:cross:strong:table-column",
+    "markup": "<strong style=\"display:table-column\">TEXT</strong>"
+  },
+  {
+    "label": "html:cross:strong:table-column-group",
+    "markup": "<strong style=\"display:table-column-group\">TEXT</strong>"
+  },
+  {
+    "label": "html:cross:style:none",
+    "markup": "<style style=\"display:none\">TEXT</style>"
+  },
+  {
+    "label": "html:cross:style:block",
+    "markup": "<style style=\"display:block\">TEXT</style>"
+  },
+  {
+    "label": "html:cross:style:inline",
+    "markup": "<style style=\"display:inline\">TEXT</style>"
+  },
+  {
+    "label": "html:cross:style:contents",
+    "markup": "<style style=\"display:contents\">TEXT</style>"
+  },
+  {
+    "label": "html:cross:style:initial",
+    "markup": "<style style=\"display:initial\">TEXT</style>"
+  },
+  {
+    "label": "html:cross:style:unset",
+    "markup": "<style style=\"display:unset\">TEXT</style>"
+  },
+  {
+    "label": "html:cross:style:revert",
+    "markup": "<style style=\"display:revert\">TEXT</style>"
+  },
+  {
+    "label": "html:cross:style:revert-layer",
+    "markup": "<style style=\"display:revert-layer\">TEXT</style>"
+  },
+  {
+    "label": "html:cross:style:table-column",
+    "markup": "<style style=\"display:table-column\">TEXT</style>"
+  },
+  {
+    "label": "html:cross:style:table-column-group",
+    "markup": "<style style=\"display:table-column-group\">TEXT</style>"
+  },
+  {
+    "label": "html:cross:summary:none",
+    "markup": "<summary style=\"display:none\">TEXT</summary>"
+  },
+  {
+    "label": "html:cross:summary:block",
+    "markup": "<summary style=\"display:block\">TEXT</summary>"
+  },
+  {
+    "label": "html:cross:summary:inline",
+    "markup": "<summary style=\"display:inline\">TEXT</summary>"
+  },
+  {
+    "label": "html:cross:summary:contents",
+    "markup": "<summary style=\"display:contents\">TEXT</summary>"
+  },
+  {
+    "label": "html:cross:summary:initial",
+    "markup": "<summary style=\"display:initial\">TEXT</summary>"
+  },
+  {
+    "label": "html:cross:summary:unset",
+    "markup": "<summary style=\"display:unset\">TEXT</summary>"
+  },
+  {
+    "label": "html:cross:summary:revert",
+    "markup": "<summary style=\"display:revert\">TEXT</summary>"
+  },
+  {
+    "label": "html:cross:summary:revert-layer",
+    "markup": "<summary style=\"display:revert-layer\">TEXT</summary>"
+  },
+  {
+    "label": "html:cross:summary:table-column",
+    "markup": "<summary style=\"display:table-column\">TEXT</summary>"
+  },
+  {
+    "label": "html:cross:summary:table-column-group",
+    "markup": "<summary style=\"display:table-column-group\">TEXT</summary>"
+  },
+  {
+    "label": "html:cross:table:none",
+    "markup": "<table style=\"display:none\">TEXT</table>"
+  },
+  {
+    "label": "html:cross:table:block",
+    "markup": "<table style=\"display:block\">TEXT</table>"
+  },
+  {
+    "label": "html:cross:table:inline",
+    "markup": "<table style=\"display:inline\">TEXT</table>"
+  },
+  {
+    "label": "html:cross:table:contents",
+    "markup": "<table style=\"display:contents\">TEXT</table>"
+  },
+  {
+    "label": "html:cross:table:initial",
+    "markup": "<table style=\"display:initial\">TEXT</table>"
+  },
+  {
+    "label": "html:cross:table:unset",
+    "markup": "<table style=\"display:unset\">TEXT</table>"
+  },
+  {
+    "label": "html:cross:table:revert",
+    "markup": "<table style=\"display:revert\">TEXT</table>"
+  },
+  {
+    "label": "html:cross:table:revert-layer",
+    "markup": "<table style=\"display:revert-layer\">TEXT</table>"
+  },
+  {
+    "label": "html:cross:table:table-column",
+    "markup": "<table style=\"display:table-column\">TEXT</table>"
+  },
+  {
+    "label": "html:cross:table:table-column-group",
+    "markup": "<table style=\"display:table-column-group\">TEXT</table>"
+  },
+  {
+    "label": "html:cross:tbody:none",
+    "markup": "<tbody style=\"display:none\">TEXT</tbody>"
+  },
+  {
+    "label": "html:cross:tbody:block",
+    "markup": "<tbody style=\"display:block\">TEXT</tbody>"
+  },
+  {
+    "label": "html:cross:tbody:inline",
+    "markup": "<tbody style=\"display:inline\">TEXT</tbody>"
+  },
+  {
+    "label": "html:cross:tbody:contents",
+    "markup": "<tbody style=\"display:contents\">TEXT</tbody>"
+  },
+  {
+    "label": "html:cross:tbody:initial",
+    "markup": "<tbody style=\"display:initial\">TEXT</tbody>"
+  },
+  {
+    "label": "html:cross:tbody:unset",
+    "markup": "<tbody style=\"display:unset\">TEXT</tbody>"
+  },
+  {
+    "label": "html:cross:tbody:revert",
+    "markup": "<tbody style=\"display:revert\">TEXT</tbody>"
+  },
+  {
+    "label": "html:cross:tbody:revert-layer",
+    "markup": "<tbody style=\"display:revert-layer\">TEXT</tbody>"
+  },
+  {
+    "label": "html:cross:tbody:table-column",
+    "markup": "<tbody style=\"display:table-column\">TEXT</tbody>"
+  },
+  {
+    "label": "html:cross:tbody:table-column-group",
+    "markup": "<tbody style=\"display:table-column-group\">TEXT</tbody>"
+  },
+  {
+    "label": "html:cross:td:none",
+    "markup": "<td style=\"display:none\">TEXT</td>"
+  },
+  {
+    "label": "html:cross:td:block",
+    "markup": "<td style=\"display:block\">TEXT</td>"
+  },
+  {
+    "label": "html:cross:td:inline",
+    "markup": "<td style=\"display:inline\">TEXT</td>"
+  },
+  {
+    "label": "html:cross:td:contents",
+    "markup": "<td style=\"display:contents\">TEXT</td>"
+  },
+  {
+    "label": "html:cross:td:initial",
+    "markup": "<td style=\"display:initial\">TEXT</td>"
+  },
+  {
+    "label": "html:cross:td:unset",
+    "markup": "<td style=\"display:unset\">TEXT</td>"
+  },
+  {
+    "label": "html:cross:td:revert",
+    "markup": "<td style=\"display:revert\">TEXT</td>"
+  },
+  {
+    "label": "html:cross:td:revert-layer",
+    "markup": "<td style=\"display:revert-layer\">TEXT</td>"
+  },
+  {
+    "label": "html:cross:td:table-column",
+    "markup": "<td style=\"display:table-column\">TEXT</td>"
+  },
+  {
+    "label": "html:cross:td:table-column-group",
+    "markup": "<td style=\"display:table-column-group\">TEXT</td>"
+  },
+  {
+    "label": "html:cross:template:none",
+    "markup": "<template style=\"display:none\">TEXT</template>"
+  },
+  {
+    "label": "html:cross:template:block",
+    "markup": "<template style=\"display:block\">TEXT</template>"
+  },
+  {
+    "label": "html:cross:template:inline",
+    "markup": "<template style=\"display:inline\">TEXT</template>"
+  },
+  {
+    "label": "html:cross:template:contents",
+    "markup": "<template style=\"display:contents\">TEXT</template>"
+  },
+  {
+    "label": "html:cross:template:initial",
+    "markup": "<template style=\"display:initial\">TEXT</template>"
+  },
+  {
+    "label": "html:cross:template:unset",
+    "markup": "<template style=\"display:unset\">TEXT</template>"
+  },
+  {
+    "label": "html:cross:template:revert",
+    "markup": "<template style=\"display:revert\">TEXT</template>"
+  },
+  {
+    "label": "html:cross:template:revert-layer",
+    "markup": "<template style=\"display:revert-layer\">TEXT</template>"
+  },
+  {
+    "label": "html:cross:template:table-column",
+    "markup": "<template style=\"display:table-column\">TEXT</template>"
+  },
+  {
+    "label": "html:cross:template:table-column-group",
+    "markup": "<template style=\"display:table-column-group\">TEXT</template>"
+  },
+  {
+    "label": "html:cross:tfoot:none",
+    "markup": "<tfoot style=\"display:none\">TEXT</tfoot>"
+  },
+  {
+    "label": "html:cross:tfoot:block",
+    "markup": "<tfoot style=\"display:block\">TEXT</tfoot>"
+  },
+  {
+    "label": "html:cross:tfoot:inline",
+    "markup": "<tfoot style=\"display:inline\">TEXT</tfoot>"
+  },
+  {
+    "label": "html:cross:tfoot:contents",
+    "markup": "<tfoot style=\"display:contents\">TEXT</tfoot>"
+  },
+  {
+    "label": "html:cross:tfoot:initial",
+    "markup": "<tfoot style=\"display:initial\">TEXT</tfoot>"
+  },
+  {
+    "label": "html:cross:tfoot:unset",
+    "markup": "<tfoot style=\"display:unset\">TEXT</tfoot>"
+  },
+  {
+    "label": "html:cross:tfoot:revert",
+    "markup": "<tfoot style=\"display:revert\">TEXT</tfoot>"
+  },
+  {
+    "label": "html:cross:tfoot:revert-layer",
+    "markup": "<tfoot style=\"display:revert-layer\">TEXT</tfoot>"
+  },
+  {
+    "label": "html:cross:tfoot:table-column",
+    "markup": "<tfoot style=\"display:table-column\">TEXT</tfoot>"
+  },
+  {
+    "label": "html:cross:tfoot:table-column-group",
+    "markup": "<tfoot style=\"display:table-column-group\">TEXT</tfoot>"
+  },
+  {
+    "label": "html:cross:th:none",
+    "markup": "<th style=\"display:none\">TEXT</th>"
+  },
+  {
+    "label": "html:cross:th:block",
+    "markup": "<th style=\"display:block\">TEXT</th>"
+  },
+  {
+    "label": "html:cross:th:inline",
+    "markup": "<th style=\"display:inline\">TEXT</th>"
+  },
+  {
+    "label": "html:cross:th:contents",
+    "markup": "<th style=\"display:contents\">TEXT</th>"
+  },
+  {
+    "label": "html:cross:th:initial",
+    "markup": "<th style=\"display:initial\">TEXT</th>"
+  },
+  {
+    "label": "html:cross:th:unset",
+    "markup": "<th style=\"display:unset\">TEXT</th>"
+  },
+  {
+    "label": "html:cross:th:revert",
+    "markup": "<th style=\"display:revert\">TEXT</th>"
+  },
+  {
+    "label": "html:cross:th:revert-layer",
+    "markup": "<th style=\"display:revert-layer\">TEXT</th>"
+  },
+  {
+    "label": "html:cross:th:table-column",
+    "markup": "<th style=\"display:table-column\">TEXT</th>"
+  },
+  {
+    "label": "html:cross:th:table-column-group",
+    "markup": "<th style=\"display:table-column-group\">TEXT</th>"
+  },
+  {
+    "label": "html:cross:thead:none",
+    "markup": "<thead style=\"display:none\">TEXT</thead>"
+  },
+  {
+    "label": "html:cross:thead:block",
+    "markup": "<thead style=\"display:block\">TEXT</thead>"
+  },
+  {
+    "label": "html:cross:thead:inline",
+    "markup": "<thead style=\"display:inline\">TEXT</thead>"
+  },
+  {
+    "label": "html:cross:thead:contents",
+    "markup": "<thead style=\"display:contents\">TEXT</thead>"
+  },
+  {
+    "label": "html:cross:thead:initial",
+    "markup": "<thead style=\"display:initial\">TEXT</thead>"
+  },
+  {
+    "label": "html:cross:thead:unset",
+    "markup": "<thead style=\"display:unset\">TEXT</thead>"
+  },
+  {
+    "label": "html:cross:thead:revert",
+    "markup": "<thead style=\"display:revert\">TEXT</thead>"
+  },
+  {
+    "label": "html:cross:thead:revert-layer",
+    "markup": "<thead style=\"display:revert-layer\">TEXT</thead>"
+  },
+  {
+    "label": "html:cross:thead:table-column",
+    "markup": "<thead style=\"display:table-column\">TEXT</thead>"
+  },
+  {
+    "label": "html:cross:thead:table-column-group",
+    "markup": "<thead style=\"display:table-column-group\">TEXT</thead>"
+  },
+  {
+    "label": "html:cross:time:none",
+    "markup": "<time style=\"display:none\">TEXT</time>"
+  },
+  {
+    "label": "html:cross:time:block",
+    "markup": "<time style=\"display:block\">TEXT</time>"
+  },
+  {
+    "label": "html:cross:time:inline",
+    "markup": "<time style=\"display:inline\">TEXT</time>"
+  },
+  {
+    "label": "html:cross:time:contents",
+    "markup": "<time style=\"display:contents\">TEXT</time>"
+  },
+  {
+    "label": "html:cross:time:initial",
+    "markup": "<time style=\"display:initial\">TEXT</time>"
+  },
+  {
+    "label": "html:cross:time:unset",
+    "markup": "<time style=\"display:unset\">TEXT</time>"
+  },
+  {
+    "label": "html:cross:time:revert",
+    "markup": "<time style=\"display:revert\">TEXT</time>"
+  },
+  {
+    "label": "html:cross:time:revert-layer",
+    "markup": "<time style=\"display:revert-layer\">TEXT</time>"
+  },
+  {
+    "label": "html:cross:time:table-column",
+    "markup": "<time style=\"display:table-column\">TEXT</time>"
+  },
+  {
+    "label": "html:cross:time:table-column-group",
+    "markup": "<time style=\"display:table-column-group\">TEXT</time>"
+  },
+  {
+    "label": "html:cross:tr:none",
+    "markup": "<tr style=\"display:none\">TEXT</tr>"
+  },
+  {
+    "label": "html:cross:tr:block",
+    "markup": "<tr style=\"display:block\">TEXT</tr>"
+  },
+  {
+    "label": "html:cross:tr:inline",
+    "markup": "<tr style=\"display:inline\">TEXT</tr>"
+  },
+  {
+    "label": "html:cross:tr:contents",
+    "markup": "<tr style=\"display:contents\">TEXT</tr>"
+  },
+  {
+    "label": "html:cross:tr:initial",
+    "markup": "<tr style=\"display:initial\">TEXT</tr>"
+  },
+  {
+    "label": "html:cross:tr:unset",
+    "markup": "<tr style=\"display:unset\">TEXT</tr>"
+  },
+  {
+    "label": "html:cross:tr:revert",
+    "markup": "<tr style=\"display:revert\">TEXT</tr>"
+  },
+  {
+    "label": "html:cross:tr:revert-layer",
+    "markup": "<tr style=\"display:revert-layer\">TEXT</tr>"
+  },
+  {
+    "label": "html:cross:tr:table-column",
+    "markup": "<tr style=\"display:table-column\">TEXT</tr>"
+  },
+  {
+    "label": "html:cross:tr:table-column-group",
+    "markup": "<tr style=\"display:table-column-group\">TEXT</tr>"
+  },
+  {
+    "label": "html:cross:track:none",
+    "markup": "<track style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:track:block",
+    "markup": "<track style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:track:inline",
+    "markup": "<track style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:track:contents",
+    "markup": "<track style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:track:initial",
+    "markup": "<track style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:track:unset",
+    "markup": "<track style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:track:revert",
+    "markup": "<track style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:track:revert-layer",
+    "markup": "<track style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:track:table-column",
+    "markup": "<track style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:track:table-column-group",
+    "markup": "<track style=\"display:table-column-group\">"
+  },
+  {
+    "label": "html:cross:u:none",
+    "markup": "<u style=\"display:none\">TEXT</u>"
+  },
+  {
+    "label": "html:cross:u:block",
+    "markup": "<u style=\"display:block\">TEXT</u>"
+  },
+  {
+    "label": "html:cross:u:inline",
+    "markup": "<u style=\"display:inline\">TEXT</u>"
+  },
+  {
+    "label": "html:cross:u:contents",
+    "markup": "<u style=\"display:contents\">TEXT</u>"
+  },
+  {
+    "label": "html:cross:u:initial",
+    "markup": "<u style=\"display:initial\">TEXT</u>"
+  },
+  {
+    "label": "html:cross:u:unset",
+    "markup": "<u style=\"display:unset\">TEXT</u>"
+  },
+  {
+    "label": "html:cross:u:revert",
+    "markup": "<u style=\"display:revert\">TEXT</u>"
+  },
+  {
+    "label": "html:cross:u:revert-layer",
+    "markup": "<u style=\"display:revert-layer\">TEXT</u>"
+  },
+  {
+    "label": "html:cross:u:table-column",
+    "markup": "<u style=\"display:table-column\">TEXT</u>"
+  },
+  {
+    "label": "html:cross:u:table-column-group",
+    "markup": "<u style=\"display:table-column-group\">TEXT</u>"
+  },
+  {
+    "label": "html:cross:ul:none",
+    "markup": "<ul style=\"display:none\">TEXT</ul>"
+  },
+  {
+    "label": "html:cross:ul:block",
+    "markup": "<ul style=\"display:block\">TEXT</ul>"
+  },
+  {
+    "label": "html:cross:ul:inline",
+    "markup": "<ul style=\"display:inline\">TEXT</ul>"
+  },
+  {
+    "label": "html:cross:ul:contents",
+    "markup": "<ul style=\"display:contents\">TEXT</ul>"
+  },
+  {
+    "label": "html:cross:ul:initial",
+    "markup": "<ul style=\"display:initial\">TEXT</ul>"
+  },
+  {
+    "label": "html:cross:ul:unset",
+    "markup": "<ul style=\"display:unset\">TEXT</ul>"
+  },
+  {
+    "label": "html:cross:ul:revert",
+    "markup": "<ul style=\"display:revert\">TEXT</ul>"
+  },
+  {
+    "label": "html:cross:ul:revert-layer",
+    "markup": "<ul style=\"display:revert-layer\">TEXT</ul>"
+  },
+  {
+    "label": "html:cross:ul:table-column",
+    "markup": "<ul style=\"display:table-column\">TEXT</ul>"
+  },
+  {
+    "label": "html:cross:ul:table-column-group",
+    "markup": "<ul style=\"display:table-column-group\">TEXT</ul>"
+  },
+  {
+    "label": "html:cross:video:none",
+    "markup": "<video style=\"display:none\">TEXT</video>"
+  },
+  {
+    "label": "html:cross:video:block",
+    "markup": "<video style=\"display:block\">TEXT</video>"
+  },
+  {
+    "label": "html:cross:video:inline",
+    "markup": "<video style=\"display:inline\">TEXT</video>"
+  },
+  {
+    "label": "html:cross:video:contents",
+    "markup": "<video style=\"display:contents\">TEXT</video>"
+  },
+  {
+    "label": "html:cross:video:initial",
+    "markup": "<video style=\"display:initial\">TEXT</video>"
+  },
+  {
+    "label": "html:cross:video:unset",
+    "markup": "<video style=\"display:unset\">TEXT</video>"
+  },
+  {
+    "label": "html:cross:video:revert",
+    "markup": "<video style=\"display:revert\">TEXT</video>"
+  },
+  {
+    "label": "html:cross:video:revert-layer",
+    "markup": "<video style=\"display:revert-layer\">TEXT</video>"
+  },
+  {
+    "label": "html:cross:video:table-column",
+    "markup": "<video style=\"display:table-column\">TEXT</video>"
+  },
+  {
+    "label": "html:cross:video:table-column-group",
+    "markup": "<video style=\"display:table-column-group\">TEXT</video>"
+  },
+  {
+    "label": "html:cross:wbr:none",
+    "markup": "<wbr style=\"display:none\">"
+  },
+  {
+    "label": "html:cross:wbr:block",
+    "markup": "<wbr style=\"display:block\">"
+  },
+  {
+    "label": "html:cross:wbr:inline",
+    "markup": "<wbr style=\"display:inline\">"
+  },
+  {
+    "label": "html:cross:wbr:contents",
+    "markup": "<wbr style=\"display:contents\">"
+  },
+  {
+    "label": "html:cross:wbr:initial",
+    "markup": "<wbr style=\"display:initial\">"
+  },
+  {
+    "label": "html:cross:wbr:unset",
+    "markup": "<wbr style=\"display:unset\">"
+  },
+  {
+    "label": "html:cross:wbr:revert",
+    "markup": "<wbr style=\"display:revert\">"
+  },
+  {
+    "label": "html:cross:wbr:revert-layer",
+    "markup": "<wbr style=\"display:revert-layer\">"
+  },
+  {
+    "label": "html:cross:wbr:table-column",
+    "markup": "<wbr style=\"display:table-column\">"
+  },
+  {
+    "label": "html:cross:wbr:table-column-group",
+    "markup": "<wbr style=\"display:table-column-group\">"
+  }
+]

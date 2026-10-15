@@ -57,6 +57,37 @@ def apply(monkeypatch, name):
             "classify_and_parse_observation",
             [("    except m.CoreError:\n        raise\n", "")],
         )
+    elif name == "R9_NATIVE_VOID":
+        monkeypatch.setattr(cap, "FIXTURE_HIDDEN_HTML", cap.FIXTURE_HIDDEN_HTML - {"area"})
+    elif name == "R9_SVG_OPAQUE":
+        monkeypatch.setattr(
+            cap.FixtureTree,
+            "FOREIGN",
+            {
+                **cap.FixtureTree.FOREIGN,
+                cap.SVG: cap.FixtureTree.FOREIGN[cap.SVG] | {"use", "defs", "symbol"},
+            },
+        )
+    elif name in {"R9_SVG_CHILDREN", "R9_SVG_TSPAN", "R9_FOREIGN_DISPLAY", "R9_COLUMN_DISPLAY"}:
+        old, new = {
+            "R9_SVG_CHILDREN": (
+                'if parent["ns"] == SVG and parent["tag"] not in {"svg", "g", "text", "tspan"}:',
+                "if False:",
+            ),
+            "R9_SVG_TSPAN": (
+                'if tag == "tspan" and parent["tag"] not in {"text", "tspan"}:',
+                "if False:",
+            ),
+            "R9_FOREIGN_DISPLAY": (
+                'if ns != HTML and css(style, "display") not in {None, "none"}:',
+                "if False:",
+            ),
+            "R9_COLUMN_DISPLAY": (
+                'if css(style, "display") in {"inherit", "table-column", "table-column-group"}:',
+                'if css(style, "display") == "inherit":',
+            ),
+        }[name]
+        rewrite(monkeypatch, cap.FixtureTree, "handle_starttag", [(old, new)], module=cap)
     elif name.startswith("R9_ACCEPT_"):
         construct = name.removeprefix("R9_ACCEPT_").lower()
         if construct in cap.FixtureTree.REFUSED:
@@ -89,7 +120,12 @@ def apply(monkeypatch, name):
                 monkeypatch,
                 cap.FixtureTree,
                 "handle_starttag",
-                [('if css(style, "display") == "inherit":', "if False:")],
+                [
+                    (
+                        'if css(style, "display") in {"inherit", "table-column", "table-column-group"}:',
+                        "if False:",
+                    )
+                ],
                 module=cap,
             )
         elif construct == "metadata":
@@ -97,7 +133,12 @@ def apply(monkeypatch, name):
                 monkeypatch,
                 cap.FixtureTree,
                 "handle_starttag",
-                [('and tag in {"meta", "base", "link", "param", "source", "track"}', "and False")],
+                [
+                    (
+                        'and tag in {"meta", "base", "link", "param", "source", "track", "area", "basefont"}',
+                        "and False",
+                    )
+                ],
                 module=cap,
             )
         elif construct == "whitespace":

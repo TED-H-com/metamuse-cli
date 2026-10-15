@@ -29,6 +29,9 @@ VOID = frozenset(
         "link meta param source track wbr"
     ).split()
 )
+FIXTURE_HIDDEN_HTML = frozenset(
+    "head meta title script style noscript template base link param area basefont".split()
+)
 LEGACY_ENTITIES = frozenset(key for key in HTML_ENTITIES if not key.endswith(";"))
 
 
@@ -322,9 +325,7 @@ class FixtureTree(HTMLParser):
         ).split()
     )
     FOREIGN = {
-        SVG: frozenset(
-            "svg g text rect circle line path ellipse polyline polygon tspan defs use symbol".split()
-        ),
+        SVG: frozenset("svg g text rect circle line path ellipse polyline polygon tspan".split()),
         MATH: frozenset(
             "math mrow mi mn mo mtext ms mfrac msqrt msup msub mover munder mtable mtr mtd".split()
         ),
@@ -390,11 +391,13 @@ class FixtureTree(HTMLParser):
         ):
             raise failure()
         style = attrs.get("style", "")
-        if css(style, "display") == "inherit":
-            raise failure()  # Requires resolved parent/UA display, not the inline token.
+        if css(style, "display") in {"inherit", "table-column", "table-column-group"}:
+            raise failure()  # Requires computed/used display and child box suppression.
+        if ns != HTML and css(style, "display") not in {None, "none"}:
+            raise failure()  # Foreign used display is not the inline declaration.
         if (
             ns == HTML
-            and tag in {"meta", "base", "link", "param", "source", "track"}
+            and tag in {"meta", "base", "link", "param", "source", "track", "area", "basefont"}
             and css(style, "display") is not None
         ):
             raise failure()  # Metadata display overrides are outside the static subset.
@@ -419,6 +422,13 @@ class FixtureTree(HTMLParser):
             raise failure()
         if ns != HTML and tag not in self.FOREIGN[ns]:
             raise failure()  # No HTML breakout or foreign integration points.
+        if ns == SVG:
+            if parent["ns"] == SVG and parent["tag"] not in {"svg", "g", "text", "tspan"}:
+                raise failure()  # Geometric SVG leaves cannot render child elements.
+            if parent["ns"] == SVG and parent["tag"] in {"text", "tspan"} and tag != "tspan":
+                raise failure()
+            if tag == "tspan" and parent["tag"] not in {"text", "tspan"}:
+                raise failure()  # A tspan needs an SVG text positioning context.
         if tag == "template" and ({"shadowrootmode", "shadowroot"} & attrs.keys()):
             raise failure()
         if (
@@ -602,24 +612,7 @@ class FixtureTree(HTMLParser):
             hidden = attrs.get("hidden", "").lower()
             blocked = (
                 blocked
-                or (
-                    node["ns"] == HTML
-                    and tag
-                    in {
-                        "head",
-                        "meta",
-                        "title",
-                        "script",
-                        "style",
-                        "noscript",
-                        "template",
-                        "base",
-                        "link",
-                        "param",
-                        "source",
-                        "track",
-                    }
-                )
+                or (node["ns"] == HTML and tag in FIXTURE_HIDDEN_HTML)
                 or display == "none"
                 or (display == "contents" and tag in CONTENTS_NONE)
                 or (

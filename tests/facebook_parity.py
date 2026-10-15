@@ -122,7 +122,8 @@ def literal_corpus():
             )
     result.update(
         row["markup"]
-        for row in json.loads(Path("tests/fixtures/facebook/parity/reviewer.json").read_text())
+        for path in sorted(Path("tests/fixtures/facebook/parity").glob("*.json"))
+        for row in json.loads(path.read_text())
     )
     return result
 
