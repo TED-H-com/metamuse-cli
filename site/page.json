@@ -750,8 +750,8 @@
     },
     "works": [
       {
-        "en": "<strong>Local import</strong><br><code>implemented with offline tests</code><br>Local files and text; remote URLs are rejected before a job exists.",
-        "zh": "<strong>本地匯入</strong><br><code>implemented with offline tests</code><br>本地檔案與文字；遠端 URL 在建立工作前即遭拒絕。"
+        "en": "<strong>Local import</strong><br><code>implemented with offline tests</code><br>Local files and text. The local import path rejects URLs before a job exists; approved remote inputs use their own collector.",
+        "zh": "<strong>本地匯入</strong><br><code>implemented with offline tests</code><br>本地檔案與文字。本地匯入路徑會在建立工作前拒絕 URL；已核准的遠端輸入使用各自的收集流程。"
       },
       {
         "en": "<strong>Local media and subtitles</strong><br><code>implemented with offline tests</code><br>Optional ffprobe; tests requiring it skip when absent.",

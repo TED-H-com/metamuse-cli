@@ -18,7 +18,7 @@ Each row uses one of four states: implemented with offline tests; implemented bu
 
 | Capability | State | Note |
 |---|---|---|
-| Local import | implemented with offline tests | Local files and text. |
+| Local import | implemented with offline tests | Local files and text. The local import path rejects URLs before a job exists; approved remote inputs use their own collector. |
 | Local media and subtitles | implemented with offline tests | `ffprobe` is optional. Tests that need the binary skip when it is absent. |
 | Search | implemented with offline tests | Project-scoped search over imported evidence. |
 | Packets | implemented with offline tests | Selection file to a pre-share preview. |
