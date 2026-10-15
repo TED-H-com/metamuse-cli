@@ -55,4 +55,5 @@ TEMPLATES = (
     '` {"note": "{\\"note\\": \\"https://user:__HEAD__\\\\u00e9__TAIL__@example.invalid/x\\"}"} `',
     ' {"note": "{\\"note\\": \\"https://user:__HEAD__\\\\u00e9__TAIL__@example.invalid/x\\"}"} +kr\'\'\'1',
     '4b(0a&\n{"note": "{\\"note\\": \\"https://user:__HEAD__\\\\u00e9__TAIL__@example.invalid/x\\"}"}\n%m]:w5\n\'',
+    "p+z7v %7B%5C%22earlier%5C%22%3A%20%5C%225%5C%5C%5C%22%20screen%5C%22%2C%20%5C%22cookies%5C%22%3A%20%5B%7B%5C%22name%5C%22%3A%20%5C%22theme%5C%22%2C%20%5C%22value%5C%22%3A%20%5C%22__VALUE__%5C%22%7D%5D%7D 4l',sse]0;{\\\\\\\"{",
 )

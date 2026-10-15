@@ -482,6 +482,8 @@ quoted arguments, so parentheses or brackets within an argument are data. Lookup
 and placeholder extents are indexed once; nested lookups never repeatedly copy
 or decode a suffix per assignment.
 
+HAR percent and JSON escape budgets are independent. An unrelated escaped candidate cannot consume the percent budget of a different record; each intermediate JSON layer is checked before further decoding.
+
 Every scanner continues inside an exempt outer value. Assignment, header, XML,
 query, curl and SQL/sshpass/mysql passes advance only past the matched key or
 operator until masking a value. Cookie-chain discovery likewise revisits exempt

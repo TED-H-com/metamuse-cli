@@ -2655,7 +2655,7 @@ def _query_spans(text, syntax, encoded_positions):
                 or (
                     boundary.group() not in {"?", "&", "#"}
                     and encoded
-                    and syntax.depth(boundary.start()) > operator_depth
+                    and (boundary[0].isspace() or syntax.depth(boundary.start()) > operator_depth)
                     and syntax.quote_closings.get(boundary.start(), boundary.start())
                     >= match.start()
                 )
@@ -3349,12 +3349,17 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
     )
 
 
-def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False):
+def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False, _percent_depth=0):
     # Recovery and wrapper views may overlap. Order spans with a linear numeric
     # index rather than sorting or assuming recovery visits them in source order.
     ordered = _PositionIndex(text)
     for start, end, kind, replacement in _har_candidates(
-        text, syntax, _depth=_depth, _form_depth=_form_depth, _quotes=_quotes
+        text,
+        syntax,
+        _depth=_depth,
+        _form_depth=_form_depth,
+        _quotes=_quotes,
+        _percent_depth=_percent_depth,
     ):
         if end <= start:
             continue
@@ -3372,7 +3377,7 @@ def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False):
                 )
 
 
-def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False):
+def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False, _percent_depth=0):
     """Find JSON-layer HAR records at every offset, without decoded structure."""
     if _depth > 3:
         return
@@ -3383,10 +3388,12 @@ def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False
         decoded, edits = _decode_view(text, json_escapes=True)
         if edits:
             yield from _original_spans(
-                _har_spans(decoded, _depth=_depth + 1, _quotes=_quotes), edits
+                _har_spans(
+                    decoded, _depth=_depth + 1, _quotes=_quotes, _percent_depth=_percent_depth
+                ),
+                edits,
             )
-        return
-    if '"' in text and ("name" in text or "cookies" in text or "\\" in text):
+    elif '"' in text and ("name" in text or "cookies" in text or "\\" in text):
         yield from _har_json_spans(text, _depth=_depth, _quotes=_quotes)
     # A whole JSON string is itself a wrapper, including prose around its HAR.
     stripped = text.strip()
@@ -3413,7 +3420,7 @@ def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False
                 spans = _original_spans(spans, edits)
             for a, b, k, r in spans:
                 yield field.start("value") + a, field.start("value") + b, k, r
-    if "%" in text:
+    if "%" in text and _percent_depth < 3:
         try:
             json.loads(text)
         except (ValueError, RecursionError):
@@ -3423,7 +3430,14 @@ def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False
         view, edits = _decode_view(text)
         if edits:
             yield from _original_spans(
-                _har_spans(view, _depth=_depth + 1, _form_depth=_form_depth, _quotes=_quotes), edits
+                _har_spans(
+                    view,
+                    _depth=_depth,
+                    _form_depth=_form_depth,
+                    _quotes=_quotes,
+                    _percent_depth=_percent_depth + 1,
+                ),
+                edits,
             )
 
 
