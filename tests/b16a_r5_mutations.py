@@ -245,6 +245,18 @@ add(
     "review_backslash_run",
 )
 
+add(
+    "har_non_json_whitespace_allowed",
+    SAFE,
+    within(
+        "_har_spans",
+        'whitespace = re.compile(r"[ \\t\\r\\n]*+")',
+        'whitespace = re.compile(r"\\s*+")',
+    ),
+    HAR,
+    "non_json_whitespace",
+)
+
 
 if __name__ == "__main__":
     base.main()

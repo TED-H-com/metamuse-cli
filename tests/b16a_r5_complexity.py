@@ -41,6 +41,7 @@ NEW = {
     ),
     "exempt_nested_defaults": 'token=os.getenv("T", "password={v}") ',
     "open_brackets": "[",
+    "invalid_utf8_percent": "%80",
 }
 STD = ("k_arrow", "k_arrow_json", "vm_id", "vm_id_json")
 

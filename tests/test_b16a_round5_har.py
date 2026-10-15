@@ -77,3 +77,10 @@ def test_r43_form_wrapped_har_and_no_resynchronization():
     assert marker not in result and findings
     broken = '{"broken":oops,"next":{"name":"sid","value":"' + marker + '"}}'
     assert redact_text(broken) == (broken, [])
+
+
+@pytest.mark.parametrize("prefix", ["\u00a0", '{"broken":\u00a0'])
+def test_r43_non_json_whitespace_stops_lexer(prefix):
+    marker = f"{'HAR'}_MARKER_AFTER_INVALID_WHITESPACE"
+    text = prefix + json.dumps({"cookies": [{"name": "theme", "value": marker}]})
+    assert redact_text(text) == (text, [])

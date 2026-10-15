@@ -2725,7 +2725,7 @@ def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0):
         if edits:
             yield from _original_spans(_har_spans(decoded, _depth=_depth + 1), edits)
         return
-    begin = len(text) - len(text.lstrip())
+    begin = re.match(r"[ \t\r\n]*+", text).end()
     if text[begin : begin + 1] not in {"{", "[", '"'}:
         form = re.compile(r"(?:^|&)" + _NAME + r"=(?P<value>[^&\s]*+)")
         if _form_depth < 3 and form.match(text) and not re.search(r"\s", text):
@@ -2766,7 +2766,7 @@ def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0):
         r"|[{}\[\]:,]|-?(?:0|[1-9][0-9]*+)(?:\.[0-9]++)?(?:[eE][+-]?[0-9]++)?"
         r"|true|false|null"
     )
-    whitespace = re.compile(r"\s*+")
+    whitespace = re.compile(r"[ \t\r\n]*+")
     slots = []
     nested = []
     frames = _JsonFrames()
