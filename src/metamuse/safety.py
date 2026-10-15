@@ -2825,7 +2825,11 @@ def _header_spans(text, syntax):
         } and not name.endswith("cookie"):
             continue
         start = match.end()
-        if match["sep"] == "=" and text[start : start + 1] == "=":
+        if (
+            match["sep"] == "="
+            and text[start : start + 1] == "="
+            and text[match.start("sep") - 1 : match.start("sep")].isspace()
+        ):
             continue
         level = syntax.depth(match.start("sep"))
         end = syntax.line_end(text, start, level)
@@ -2865,6 +2869,7 @@ def _header_spans(text, syntax):
         if authorized and syntax.private(text, match["key"], start, end):
             position = max(position, end)
             yield start, end, "cookie" if cookie else "authorization", _REDACTED
+
 
 
 
