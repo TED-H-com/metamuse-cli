@@ -35,7 +35,9 @@ def test_r9_fixture_refuses_metadata_display_override():
 
 
 def test_r9_fixture_counts_implicit_document_nodes():
-    nodes = capture.fixture_capture("<!doctype html><html><head></head><body><span>TEXT</span></body></html>")
+    nodes = capture.fixture_capture(
+        "<!doctype html><html><head></head><body><span>TEXT</span></body></html>"
+    )
     assert len(nodes) == 7  # document, doctype, html, head, body, span, text
     assert [n["tag"] for n in nodes if n["kind"] == 1] == ["html", "head", "body", "span"]
 
@@ -214,49 +216,61 @@ def test_r9_clobbering_accessor_corpus(tmp_path, monkeypatch):
                     assert actual == baseline, (name, marker, plant, actual, baseline)
 
 
-@pytest.mark.parametrize(
-    "plant,code",
-    [
-        ('<form id="login_form"><input name="nodeType"></form>', "E_AUTH_REQUIRED"),
-        ('<form id="login_form"><input name="attributes"></form>', "E_AUTH_REQUIRED"),
-        (
-            '<form><input name="childNodes"><div data-page-state="login_wall"></div></form>',
-            "E_AUTH_REQUIRED",
-        ),
-        (
-            '<form><input name="childNodes"><article data-fb-role="comment" data-comment-id="c1"><div data-fb-role="comment-body">PAINTED_IN_FORM</div></article></form>',
-            None,
-        ),
-        ('<form id="checkpoint_form"><input name="localName"></form>', "E_CHECKPOINT_REQUIRED"),
-        ('<form><input name="checkVisibility"></form>', None),
-        ('<form name="contentType"><input name="x"></form>', None),
-        ('<embed name="contentType">', None),
-        (
-            "<script>Object.defineProperty(document,'contentType',{get:()=> 'application/xml'});</script>",
-            None,
-        ),
-    ],
-)
-@browser_deadline
-def test_r9_reviewer_clobbering_rows(tmp_path, monkeypatch, plant, code, request):
-    markup = _synthetic_post_html().replace("</body>", plant + "</body>")
-    job, stored = run(tmp_path, monkeypatch, markup, "chromium")
-    assert (job.get("error") or {}).get("code") == code, job
-    if "PAINTED_IN_FORM" in plant:
-        assert any(r["text"] == "PAINTED_IN_FORM" for r in stored)
-        assert job["coverage_status"] == "partial"
+R9_CLOBBERING_ROWS = [
+    ('<form id="login_form"><input name="nodeType"></form>', "E_AUTH_REQUIRED"),
+    ('<form id="login_form"><input name="attributes"></form>', "E_AUTH_REQUIRED"),
+    (
+        '<form><input name="childNodes"><div data-page-state="login_wall"></div></form>',
+        "E_AUTH_REQUIRED",
+    ),
+    (
+        '<form><input name="childNodes"><article data-fb-role="comment" data-comment-id="c1"><div data-fb-role="comment-body">PAINTED_IN_FORM</div></article></form>',
+        None,
+    ),
+    ('<form id="checkpoint_form"><input name="localName"></form>', "E_CHECKPOINT_REQUIRED"),
+    ('<form><input name="checkVisibility"></form>', None),
+    ('<form name="contentType"><input name="x"></form>', None),
+    ('<embed name="contentType">', None),
+    (
+        "<script>Object.defineProperty(document,'contentType',{get:()=> 'application/xml'});</script>",
+        None,
+    ),
+]
 
 
-@pytest.mark.parametrize("tag", ["template", "slot"])
-@pytest.mark.parametrize("foreign", ["svg", "math"])
 @browser_deadline
-def test_r9_foreign_template_slot(tmp_path, monkeypatch, tag, foreign, request):
-    markup = _synthetic_post_html().replace(
-        "</body>", f"<{foreign}><{tag}></{tag}></{foreign}></body>"
-    )
-    job, _ = run(tmp_path, monkeypatch, markup, "chromium")
-    assert job["error"] is None, job
-    assert job["coverage_status"] == "scope_satisfied"
+def test_r9_reviewer_clobbering_rows(tmp_path, monkeypatch):
+    from facebook_parity import captured_parse
+
+    with capture_session(monkeypatch) as session:
+        for plant, code in R9_CLOBBERING_ROWS:
+            markup = _synthetic_post_html().replace("</body>", plant + "</body>")
+            try:
+                parsed = captured_parse(session, markup)
+            except m.CoreError as error:
+                assert error.detail.code.value == code, (plant, error.detail)
+            else:
+                assert code is None, plant
+                if "PAINTED_IN_FORM" in plant:
+                    assert any(c.text == "PAINTED_IN_FORM" for c in parsed.comments)
+                    assert not parsed.comments_exhausted or parsed.comment_count != len(
+                        parsed.comments
+                    )
+
+
+@browser_deadline
+def test_r9_foreign_template_slot(tmp_path, monkeypatch):
+    from facebook_parity import captured_parse
+
+    with capture_session(monkeypatch) as session:
+        for tag in ("template", "slot"):
+            for foreign in ("svg", "math"):
+                markup = _synthetic_post_html().replace(
+                    "</body>", f"<{foreign}><{tag}></{tag}></{foreign}></body>"
+                )
+                parsed = captured_parse(session, markup)
+                assert not parsed.missing_fields, (foreign, tag, parsed.missing_fields)
+                assert parsed.comments_exhausted
 
 
 @pytest.mark.parametrize("driver", ["fixture", "chromium"])
