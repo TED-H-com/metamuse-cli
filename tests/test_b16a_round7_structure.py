@@ -384,3 +384,39 @@ def test_r7_d3_exemption_never_trims_an_own_quoted_value(value):
 def test_r7_mixed_layer_userinfo_with_encoded_operator_is_private():
     text = "https://alice%3a<" + V + "%3e@example.invalid/p"
     assert V not in redact_text(text)[0]
+
+
+def test_r7_raw_bearer_preserves_overlapping_finding_class():
+    value = "s" + "k-" + "abcdefgh" + str(12) + "/a/bcAuthorization"
+    assert redact_text("Bearer " + value + ": ") == (
+        "Bearer [REDACTED] ",
+        [{"kind": "bearer_token", "count": 1}],
+    )
+
+
+def test_r7_query_enters_exempt_shell_error_message():
+    text = "https://example.invalid/p?sp=${SP:??skoid=" + V + "}"
+    assert V not in redact_text(text)[0]
+
+
+def test_r7_own_single_quote_never_consumes_following_line():
+    text = "password='" + V + "\npublic line'\nend"
+    assert redact_text(text)[0] == "password='[REDACTED]\npublic line'\nend"
+
+
+@pytest.mark.parametrize("quote", ['"' * 3, "'" * 3])
+def test_r7_triple_quote_keeps_complete_placeholder(quote):
+    text = "password=" + quote + "${PW}" + quote
+    assert redact_text(text) == (text, [])
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        'cu' + 'rl -b "${{C:? -u alice:{v}}}"',
+        'sshpass -p "${{P:?sshpass -p {v}}}"',
+    ],
+)
+def test_r7_flag_scanners_enter_exempt_shell_error_messages(shape):
+    text = shape.format(v=V)
+    assert V not in redact_text(text)[0]

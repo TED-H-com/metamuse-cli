@@ -727,7 +727,6 @@ adapt(
 # These guards are implied by the ownership index or conservative tail closure.
 # The runner still requires an identical 100,372-input differential digest.
 for equivalent_name in (
-    "bare_bearer_removed",
     "container_closer_depth_ignored",
     "r6_autolink_end_removed",
     "r6_quoted_assignment_overlap_ignored",
@@ -782,6 +781,44 @@ new(
     tests=CPU,
     selection="markup_nested_private and linear",
 )
+
+adapt(
+    "bare_bearer_removed",
+    base.MUTANTS["bare_bearer_removed"][1],
+    tests=STRUCT,
+    selection="raw_bearer_preserves",
+)
+
+adapt(
+    "r5_new_5a_putty_closing_boundary_narrowed",
+    base.MUTANTS["r5_new_5a_putty_closing_boundary_narrowed"][1],
+    tests=STRUCT,
+    selection="private_block_owns or review_probes",
+)
+
+adapt(
+    "mut_r6_04b_scanner_query_skip_exempt",
+    base.MUTANTS["mut_r6_04b_scanner_query_skip_exempt"][1],
+    tests=STRUCT,
+    selection="query_enters_exempt",
+)
+adapt(
+    "mut_r6_01_pair_across_newline",
+    base.MUTANTS["mut_r6_01_pair_across_newline"][1],
+    tests=STRUCT,
+    selection="single_quote_never_consumes",
+)
+file, edit, tests, selection, _ = base.MUTANTS["mut_r6_09_drop_autolink_gt"]
+add("mut_r6_09_drop_autolink_gt", file, edit, tests, selection, True)
+
+adapt(
+    "mut_r6_05_drop_triple_quote",
+    base.MUTANTS["mut_r6_05_drop_triple_quote"][1],
+    tests=STRUCT,
+    selection="triple_quote_keeps",
+)
+for name in ("mut_r6_04c_scanner_curl_skip_exempt", "mut_r6_04d_scanner_command_skip_exempt"):
+    adapt(name, base.MUTANTS[name][1], tests=STRUCT, selection="flag_scanners_enter_exempt")
 
 if __name__ == "__main__":
     from b16a_r6_mutation_run import main
