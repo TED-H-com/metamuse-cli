@@ -33,7 +33,7 @@ def test_r46_nested_exempt_values_grow_linearly():
     sizes = (16384, 32768, 65536, 131072)
     samples = []
     for size in sizes:
-        count = size // len('token=${X:-}')
-        text = 'token=${X:-' * count + '$VAR' + '}' * count
+        count = size // len("token=${X:-}")
+        text = "token=${X:-" * count + "$VAR" + "}" * count
         samples.append(cpu_samples(text))
     assert complexity_criterion(samples)[0], samples

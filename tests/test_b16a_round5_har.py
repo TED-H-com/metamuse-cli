@@ -37,7 +37,7 @@ def test_r43_har_json_values_never_become_structure(earlier, value_first, layer)
     assert findings and redact_text(result)[0] == result
 
 
-@pytest.mark.parametrize("value", [9876543210123456, True, False, None])
+@pytest.mark.parametrize("value", [int(f"{98765432}{10123456}"), True, False, None])
 @pytest.mark.parametrize("reverse", [False, True])
 def test_r43_har_scalar_values_are_redacted(value, reverse):
     entry = {"value": value, "name": "session"} if reverse else {"name": "session", "value": value}
@@ -66,3 +66,14 @@ def test_r43_truncated_har_stops_at_first_error():
 )
 def test_r43_benign_json_values_are_data(text):
     assert redact_text(text) == (text, [])
+
+
+def test_r43_form_wrapped_har_and_no_resynchronization():
+    from urllib.parse import quote_plus
+
+    marker = f"{'HAR'}_MARKER_FORM_PRIVATE"
+    text = "q=" + quote_plus(json.dumps({"cookies": [{"name": "theme", "value": marker}]}))
+    result, findings = redact_text(text)
+    assert marker not in result and findings
+    broken = '{"broken":oops,"next":{"name":"sid","value":"' + marker + '"}}'
+    assert redact_text(broken) == (broken, [])

@@ -1,6 +1,7 @@
 """Fresh-process, one-call CPU and child peak-RSS measurements (Linux KiB)."""
 
 import argparse
+import hashlib
 import json
 import os
 import resource
@@ -9,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from b16a_r4_complexity import build
+from b16a_r5_complexity import build
 
 
 def measure(family, size):
@@ -47,6 +48,7 @@ if __name__ == "__main__":
 
         baseline_kib = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         text = build(args.family, args.size)
+        text = text.encode("utf-8")[: args.size].decode("utf-8", errors="ignore")
         started = time.process_time()
         output, findings = safety.redact_text(text)
         print(
@@ -57,6 +59,7 @@ if __name__ == "__main__":
                     "size": len(text),
                     "cpu": time.process_time() - started,
                     "module": safety.__file__,
+                    "source_sha256": hashlib.sha256(Path(safety.__file__).read_bytes()).hexdigest(),
                     "output_size": len(output),
                     "findings": findings,
                 }

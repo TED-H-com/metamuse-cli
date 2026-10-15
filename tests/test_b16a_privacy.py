@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -197,13 +198,17 @@ def assert_absent(markers, value):
 
 
 def test_packet_bundle_fixture_outbound_jobs_and_mcp(
-    fixture_ctx, project, monkeypatch, caplog, *, exact_count=True
+    fixture_ctx, project, monkeypatch, caplog, *, exact_count=True, separate_records=False
 ):
     ctx = fixture_ctx
     cases = [credential_shape(shape) for shape in SHAPES]
     original = "\n".join(case[0] for case in cases)
     markers = [case[1] for case in cases]
-    refs = [evidence(ctx, project, original), evidence(ctx, project, "Benign packet evidence.")]
+    refs = (
+        [evidence(ctx, project, text) for text, _, _ in cases]
+        if separate_records
+        else [evidence(ctx, project, original)]
+    ) + [evidence(ctx, project, "Benign packet evidence.")]
     packet_result = mcp.call_tool(
         ctx,
         "metamuse_packet_prepare",
@@ -300,6 +305,7 @@ def test_packet_bundle_fixture_outbound_jobs_and_mcp(
             "run",
             "--once",
         ],
+        env=os.environ.copy(),
         capture_output=True,
         text=True,
         timeout=30,
@@ -324,7 +330,7 @@ def test_packet_bundle_fixture_outbound_jobs_and_mcp(
         {"project_id": project, "query": "Benign packet evidence."},
     ).structured_content
     assert search["status"] == "ok" and len(search["data"]["results"]) == 1
-    assert search["data"]["results"][0]["ref"] == refs[1]
+    assert search["data"]["results"][0]["ref"] == refs[-1]
     assert_absent(markers, search)
     with ctx.store.connection() as conn:
         details = "\n".join(row[0] for row in conn.execute("SELECT detail FROM events"))

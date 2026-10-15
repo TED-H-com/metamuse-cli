@@ -11,6 +11,11 @@ RULES = (
     'curl ' + '-u "John Doe:{v}" https://example.invalid',
     'curl "-u" "alice:{v}" https://example.invalid',
     'curl -b " foo={v} " https://example.invalid',
+    'curl "--user" "alice:{v}" https://example.invalid',
+    'curl "--cookie" "foo={v}" https://example.invalid',
+    'sshpass "-p" "{v}" ssh host',
+    'sshpass -p"{v}" ssh host',
+    'mysql "-p{v}" db',
     'curl --cookie " foo={v} " https://example.invalid',
     'sshpass -p " {v} " ssh host',
     'mysql -p" {v} " db',
@@ -46,3 +51,11 @@ def test_r42_quoted_arguments_at_every_layer(rule, layer):
 def test_r42_exempt_call_stops_at_own_parenthesis(layer):
     text = context('token = os.getenv("TOKEN")\nprint("hello")', layer)
     assert redact_text(text) == (text, [])
+
+
+@pytest.mark.parametrize("special", [",", "}"])
+def test_r42_punctuation_inside_string_is_not_outer_structure(special):
+    marker = f"{'QUOTE'}_MARKER_STRING_SUFFIX"
+    text = json.dumps(json.dumps({"note": "password=first" + special + marker}))
+    result, findings = redact_text(text)
+    assert marker not in result and findings

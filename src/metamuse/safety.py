@@ -1796,9 +1796,24 @@ class _Syntax:
         self.quote_closings = _PositionIndex(text, "quotes", self.ends)
         self.separator_context = _PositionIndex(text, "separators", self.ends)
         self.quotes = _QuoteRanges()
+        self.escaped_closings = _PositionIndex(text)
+        escaped_quotes = {}
+        if depths is None:
+            for escaped in re.finditer(r"(?P<slashes>\\++)(?P<quote>[\"'])", text):
+                layer = len(escaped["slashes"]).bit_length()
+                if layer > 3:
+                    continue
+                channel = (escaped["quote"], layer)
+                opening = escaped_quotes.pop(channel, None)
+                if opening is None:
+                    escaped_quotes[channel] = escaped.start()
+                else:
+                    self.escaped_closings[escaped.start()] = opening + 1
         self.line_ends = array("I", (m.start() for m in re.finditer(r"[\r\n]", text)))
         pending = {}
         stack = array("I")
+        stack_context = array("i")
+        quote_context = -1
         for match in re.finditer(r"\\[\s\S]|[\"'()\[\]{},;]", text):
             char, pos = match[0], match.start()
             if char.startswith("\\"):
@@ -1822,18 +1837,23 @@ class _Syntax:
                             del pending[channel]
                     while stack and stack[-1] > opening:
                         begin = stack.pop()
+                        stack_context.pop()
                         self.ends[begin] = pos
+                quote_context = max((value[0] for value in pending.values()), default=-1)
             elif char in ",;":
-                if stack:
+                if stack and stack_context[-1] == quote_context:
                     self.separator_context[pos] = (text[stack[-1]], stack[-1])
             elif char in "([{":
                 stack.append(pos)
+                stack_context.append(quote_context)
             elif (
                 stack
                 and char == {"(": ")", "[": "]", "{": "}"}[text[stack[-1]]]
+                and stack_context[-1] == quote_context
                 and self.depth(pos) <= self.depth(stack[-1])
             ):
                 begin = stack.pop()
+                stack_context.pop()
                 self.ends[begin] = pos + 1
                 self.closings[pos] = begin
         for opening, _ in pending.values():
@@ -1904,7 +1924,7 @@ class _Syntax:
                 finish == len(text)
                 or text[finish].isspace()
                 or text[finish] in "\"',;}])"
-                or re.compile(r"\\+[nr]").match(text, finish)
+                or re.compile(r"\\+[nr\"']").match(text, finish)
             ):
                 return finish
         quoted_end = self.ends.get(start, len(text)) if text[start] in "\"'" else start
@@ -1919,16 +1939,20 @@ class _Syntax:
             if text[start] in "[{"
             else quoted_end
         )
-        chunk = re.compile(r"[^\s,;&\"'{}\[\]()]++")
+        chunk = re.compile(r"[^\s,;&\\\"'{}\[\]()]++")
         separator = re.compile(r"[^\S\r\n]*+" + _NAME + r"[^\S\r\n]*+=")
         while end < len(text):
             found = chunk.match(text, end)
             if found:
                 end = found.end()
+            if end < len(text) and text[end] in "\"'" and self.quote_closings.get(end, end) < start:
+                break  # An enclosing string closes even when its quote is decoded deeper.
             if end < len(text) and self.depth(end) > level:
                 end += 1
                 continue  # A deeper decoded delimiter is value data.
             if end >= len(text) or text[end].isspace():
+                break
+            if text[end] == "\\" and self.escaped_closings.get(end, end + 1) <= start:
                 break
             if text[end] in "\"'" and self.quote_closings.get(end, end) < start:
                 break
@@ -2547,7 +2571,7 @@ def _xml_spans(text, syntax):
 def _curl_spans(text, syntax):
     position = 0
     pattern = re.compile(
-        r"(?<![A-Za-z0-9_-])(?:(?P<long>--user|--cookie)(?:=|[^\S\r\n]++)|"
+        r"(?<![A-Za-z0-9_-])(?:(?P<long>--user|--cookie)(?:=|[^\S\r\n]++|(?=[\"']))|"
         r"(?P<short>-[ub])[^\S\r\n]*+)"
     )
     while match := pattern.search(text, position):
@@ -2685,7 +2709,7 @@ class _JsonFrames:
         self.length -= 1
 
 
-def _har_spans(text, syntax=None, *, _depth=0):
+def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0):
     """Lex JSON before decoding its string data; partial documents stop at error.
 
     Slots are allocated in source order and selected when an object is closed, so
@@ -2693,8 +2717,32 @@ def _har_spans(text, syntax=None, *, _depth=0):
     """
     if _depth > 3:
         return
+    # A whole escaped document has escaped structural quotes outside strings.
+    # Decode that JSON layer only; percent-escaped characters inside its values
+    # remain data for the lexer. This is not a resynchronization within a layer.
+    if re.match(r"^[\s{\[]*+\\+(?:\"|u0022)", text):
+        decoded, edits = _decode_view(text, json_escapes=True)
+        if edits:
+            yield from _original_spans(_har_spans(decoded, _depth=_depth + 1), edits)
+        return
     begin = len(text) - len(text.lstrip())
     if text[begin : begin + 1] not in {"{", "[", '"'}:
+        form = re.compile(r"(?:^|&)" + _NAME + r"=(?P<value>[^&\s]*+)")
+        if _form_depth < 3 and form.match(text) and not re.search(r"\s", text):
+            for field in form.finditer(text):
+                raw = field["value"]
+                view, edits = _decode_view(raw, form=True, ranges=[(0, len(raw))])
+                spans = _har_spans(view, _depth=_depth, _form_depth=_form_depth + 1)
+                if edits:
+                    spans = _original_spans(spans, edits)
+                for start, end, kind, replacement in spans:
+                    yield (
+                        field.start("value") + start,
+                        field.start("value") + end,
+                        kind,
+                        replacement,
+                    )
+            return
         view = text
         layers = []
         for _ in range(3):
@@ -2703,8 +2751,10 @@ def _har_spans(text, syntax=None, *, _depth=0):
                 break
             layers.append(edits)
             view = decoded
-            if view.lstrip().startswith(("{", "[", '"')):
-                spans = list(_har_spans(view, _depth=_depth))
+            if view.lstrip().startswith(("{", "[", '"')) or (
+                _form_depth < 3 and form.match(view) and not re.search(r"\s", view)
+            ):
+                spans = list(_har_spans(view, _depth=_depth, _form_depth=_form_depth + 1))
                 for edits in reversed(layers):
                     spans = list(_original_spans(spans, edits))
                 yield from spans
@@ -2873,8 +2923,9 @@ def _putty_spans(text, syntax):
 def _command_spans(text, syntax):
     pattern = re.compile(
         r"(?i)(?P<mysql>\b(?:mysql|mariadb|mysqldump)\b)|"
-        r"(?P<attached>\s-p(?=\S))|(?P<boundary>[\r\n;&|])|"
-        r"\b(?:IDENTIFIED\s++BY|WITH\s++PASSWORD|sshpass\s++-p)\s++"
+        r"(?P<attached>\s[\"']?-p(?=\S))|(?P<boundary>[\r\n;&|])|"
+        r"\b(?:IDENTIFIED\s++BY|WITH\s++PASSWORD)\s++|"
+        r"(?P<sshpass>\bsshpass\s++[\"']?-p)[^\S\r\n]*+"
     )
     position = 0
     mysql = False
@@ -2892,6 +2943,10 @@ def _command_spans(text, syntax):
         if match["attached"] and not mysql:
             continue
         start = match.end()
+        if syntax.quote_closings.get(start, start) < start:
+            start += 1
+            while start < len(text) and text[start].isspace():
+                start += 1
         end = syntax.value(text, start, operator_depth=syntax.depth(match.start()))
         position = max(match.end(), end)
         if redaction_sensitive_value("password", text[start:end]):

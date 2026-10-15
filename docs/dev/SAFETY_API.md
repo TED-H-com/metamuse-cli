@@ -443,3 +443,13 @@ one lazy signed numeric index; quote intervals, newline offsets, edit coordinate
 and JSON lexer nesting use compact numeric arrays, and decode depths use bytes.
 Decoded syntax is released before the original-view syntax is constructed. Each
 measurement uses a fresh parent and child; RUSAGE_CHILDREN reports that child only.
+
+Layered grammar details: a bracket or separator inside a quoted value cannot close
+an outer container or turn into a call-argument separator. An actual enclosing quote
+still closes that value even when the quote belongs to a deeper decoded layer.
+Raw replay recognizes the whole escaped closing quote, preserving whole-value
+exemptions inside JSON captures. Shell quoting of option names, including curl
+--user/--cookie, sshpass -p and attached mysql -p, retains the argument rule.
+A whole form field is decoded before lexing a HAR document it contains, including
+whole percent-encoded form bodies. The HAR lexer never decodes string data into
+structure or resumes after an error within that JSON layer.
