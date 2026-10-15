@@ -259,9 +259,8 @@ class Store:
             )
         self.paths = WorkspacePaths.resolve(paths.root)
         self.clock = clock
-        # CLI/MCP and an attached Executor share this Store across threads. Serialize
-        # short connection lifetimes so WAL/configuration and snapshot reads do not
-        # contend with our own writer; external waits stay outside Store contexts.
+        # Serialize connection lifetimes within this instance. The attached worker
+        # opens a sibling so its SQLite waits never hold the MCP tools' RLock.
         self._connections = threading.RLock()
         self._restore_in_progress = _restore_in_progress
         self.open_warnings: list[str] = []
@@ -270,6 +269,16 @@ class Store:
         self.paths.initialize()
         self.migrate(self._migrations)
         self._provision_workspace_keys()
+
+    def _sibling(self) -> Store:
+        """Independent connection lock, same workspace and validation settings."""
+        return Store(
+            self.paths,
+            clock=self.clock,
+            migrations=self._migrations,
+            schema_version=self.schema_version,
+            _restore_in_progress=self._restore_in_progress,
+        )
 
     def _open_database(self) -> sqlite3.Connection:
         # Check live files before SQLite can follow a link or mutate its sidecars.

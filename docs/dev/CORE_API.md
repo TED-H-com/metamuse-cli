@@ -302,6 +302,9 @@ The existing attached-worker status/inspect/doctor data exposes it together with
 retains its OS lock while retrying. Non-busy failure reports `failed` and only a fixed
 error code (unexpected exceptions use E_STORAGE), never exception text or paths.
 The MCP server keeps serving diagnostics even if its attached worker fails at startup.
+The start handoff waits at most 2 seconds for ready, then serves with `starting` if
+ownership has not committed. Ready is also signaled on the first short busy attempt,
+lock-busy or failure. Availability stays false until committed ownership.
 Doctor uses these fields when an attached-worker status provider is present; a separate
 CLI process observes current OS-lock availability, not another process's failure memory.
 
@@ -840,8 +843,14 @@ AppContext.worker_status is an optional process-owned callback installed by MCP 
 Shared wrappers replace worker availability fields with attached-worker truth there;
 CLI contexts use the existing Linux FLOCK observation. No feature sets this callback.
 
-The shared Store serializes short connection contexts with a per-instance threading
-RLock. MCP tool threads and its attached Executor use the same Store instance; this
-prevents their own WAL/configuration/writer contention. Network waits never hold that
-lock or a transaction. Cross-process ownership still uses existing maintenance/worker
-OS locks and SQLite; this introduces no scheduler, store or migration.
+Each Store serializes connection contexts with its own threading RLock. The attached
+worker constructs a sibling Store inside its thread, retaining the workspace paths,
+clock, migration map and schema version, with independent connection serialization.
+Its construction is an unclaimed retry too. MCP tools keep ctx.store: their WAL reads
+do not queue behind worker SQLite writer waits. Writers contend in SQLite, as across
+processes; the database, maintenance/worker locks and scheduler remain shared.
+Builtin operation handlers use the step Store. The lazy fixture Muse gateway uses
+that same worker Store. An explicitly injected fixture gateway retains its supplied
+Store and mutable fixture state; its database access is read-only. Credentials use
+the secret store, and the resolver does DNS; neither uses the workspace database.
+Network waits never hold a connection lock or transaction.

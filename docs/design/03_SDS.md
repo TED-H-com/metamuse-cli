@@ -120,11 +120,13 @@ native IDs為opaque字串，不自行解碼。可靠ID用(platform,scope,id)識�
 
 先驗輸入／scope→transaction查request_key→建立job/steps/event→commit→回accepted/job_id/worker_available。收到job並不等於開始。
 
-worker run、預設MCP附帶worker、CLI --run都搶相同OS lock。MCP --no-worker明示停用附帶executor；鎖被占用仍服務，回worker_available:false及next action，本次server不重試取得鎖。附帶worker只是同Executor的一個thread，沒有第二個scheduler或store。inspect附attached_worker狀態；CLI doctor由owner及Linux FLOCK觀測實際持鎖。同workspace只有一個owner；其他入口只排隊。舊heartbeat過期但OS lock仍被持有時不能直接接管；由操作者確認終止owned process及退出後才開新worker。不得殺不明browser程序。
+worker run、預設MCP附帶worker、CLI --run都搶相同OS lock。MCP --no-worker明示停用附帶executor；鎖被占用仍服務，回worker_available:false及next action，本次server不重試取得鎖。附帶worker只是同Executor的一個thread，沒有第二個scheduler或權威database。inspect附attached_worker狀態；CLI doctor由owner及Linux FLOCK觀測實際持鎖。同workspace只有一個owner；其他入口只排隊。舊heartbeat過期但OS lock仍被持有時不能直接接管；由操作者確認終止owned process及退出後才開新worker。不得殺不明browser程序。
 
 取得鎖後遞增epoch，短transaction claim queued step；外部動作前再驗epoch、job state、permit和target。epoch防舊callback寫回，但不能讓遠端服務獲得它不支援的fencing或exactly-once。
 
-共用Store instance以process內RLock序列化短connection生命週期，避免附worker與MCP thread的自身WAL／writer contention；跨process仍依SQLite及maintenance／worker OS lock。網路下載／模型等待不持有長transaction或connection lock。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
+附worker在自己的thread建立同paths／clock／migrations／schema version的sibling Store，
+有獨立RLock；MCP tools保留ctx.store，因此WAL read不排在worker的SQLite wait後。
+Store建立也走unclaimed retry。writer如跨process一般由SQLite仲裁，同一database及maintenance／worker OS lock不變。網路下載／模型等待不持有長transaction或connection lock。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
 
 未claim step時（startup epoch/recovery、heartbeat、atomic claim/cancel sweep、idle及
 safe-read已requeue後的等待維護）只對_StorageBusy重試。transaction先rollback，exponential
@@ -143,6 +145,7 @@ storage_busy_retries累計並飽和於2**31−1，既有attached status／inspec
 startup contention為starting且不可用，ownership commit後才running；非busy失敗為failed，
 worker_error_code只含固定code（unexpected exception為E_STORAGE），不含message或path。
 startup worker失敗亦保留MCP server供查診斷，不因worker失敗終止stdio服務。
+ready handoff最多2秒，未完成ownership則以starting開始服務；首次短busy、lock_busy或failure亦設ready。
 另一CLI doctor只觀察OS lock可用性，不讀另一process的失敗記憶。
 
 已claim的handler不套busy重試：none／safe_read保留既有失敗規則；external_submit未越過

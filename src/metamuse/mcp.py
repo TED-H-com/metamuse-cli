@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 SERVER_NAME = "metamuse"
 SERVER_VERSION = "0.1.0.dev0"
+_WORKER_START_HANDOFF_SECONDS = 2.0
 
 
 def _load_schema_resource(filename: str) -> dict[str, Any]:
@@ -272,6 +273,12 @@ class _AttachedWorker:
             executor._busy_observer = self.ready.set
             if self.stopping.is_set():
                 executor.request_stop()
+            # Bootstrap uses ctx.store only for configuration and the scoped retry
+            # helper. All worker connections use a sibling constructed here.
+            worker_store = executor._retry_unclaimed(self.ctx.store._sibling)
+            if worker_store is None:
+                return
+            executor.store = worker_store
             with executor:
                 self.state = "running"
                 self.ready.set()
@@ -327,9 +334,9 @@ async def _serve_stdio(
                     try:
                         if worker:
                             attached.thread.start()
-                            await anyio.to_thread.run_sync(attached.ready.wait)
-                            if attached.start_error is not None:
-                                raise attached.start_error
+                            await anyio.to_thread.run_sync(
+                                lambda: attached.ready.wait(_WORKER_START_HANDOFF_SECONDS)
+                            )
                         await server.run(read_stream, write_stream, init_options)
                     finally:
                         attached.stop()
