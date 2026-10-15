@@ -1551,7 +1551,6 @@ def _shell_reference(value):
     return False
 
 
-
 def _credential_value_exempt(key: str, value: Any, *, depths=None) -> bool:
     if value is None or isinstance(value, bool):
         return True
@@ -1596,7 +1595,6 @@ def _credential_value_exempt(key: str, value: Any, *, depths=None) -> bool:
     ):
         return True
     return False
-
 
 
 @dataclass(frozen=True, slots=True)
@@ -2548,9 +2546,6 @@ class _Syntax:
         return self.trim(text, start, limit) if trim else limit
 
 
-
-
-
 class _SpanIndex:
     """Compact spans; retain no Python tuple/int object per input match."""
 
@@ -2795,7 +2790,6 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
                     yield offset + inner_start, offset + inner_end, inner_kind, inner_replacement
 
 
-
 def _header_spans(text, syntax):
     pattern = re.compile(
         r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*(?P<sep>=|[:：＝])[^\S\r\n]*+"
@@ -2877,8 +2871,6 @@ def _header_spans(text, syntax):
         if authorized and syntax.private(text, match["key"], start, end):
             position = max(position, end)
             yield start, end, "cookie" if cookie else "authorization", _REDACTED
-
-
 
 
 class _EncodedPositions:
@@ -3006,7 +2998,6 @@ def _query_spans(text, syntax, encoded_positions):
             yield start, end, "url_token", _REDACTED
 
 
-
 def _userinfo_spans(text, syntax):
     scheme = re.compile(r"(?i)(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://|(?<![:/])//")
 
@@ -3101,8 +3092,6 @@ def _userinfo_spans(text, syntax):
         match = following
 
 
-
-
 def _cookie_spans(text, syntax):
     pair = re.compile(r"(?<![A-Za-z0-9_.%=/?:&#-])(?P<key>" + _NAME + r")=[^\S\r\n]*+")
     position = 0
@@ -3137,7 +3126,6 @@ def _cookie_spans(text, syntax):
             position = match.end()
 
 
-
 def _jar_spans(text, syntax):
     pattern = re.compile(
         r"(?m)(?<!\S)(?:#HttpOnly_)?[^\s]++\t(?:TRUE|FALSE)\t[^\t\r\n]*+\t(?:TRUE|FALSE)\t[0-9]++\t[^\t\r\n]++\t(?P<value>[^\r\n]*+)"
@@ -3145,7 +3133,6 @@ def _jar_spans(text, syntax):
     for match in pattern.finditer(text):
         if syntax.private(text, "cookie", *match.span("value")):
             yield *match.span("value"), "cookie", _REDACTED
-
 
 
 def _bearer_spans(text):
@@ -3220,7 +3207,6 @@ def _pem_spans(text, syntax):
         position = end
 
 
-
 def _markup_spans(text, syntax):
     """One bounded tag pass, with each quoted attribute/comment entered once."""
     if hasattr(syntax, "markup"):
@@ -3251,6 +3237,8 @@ def _markup_spans(text, syntax):
     while context_index < len(contexts):
         lower, upper = contexts[context_index]
         context_index += 1
+        if output.get(lower, 0) >= upper:
+            continue  # A private attribute already masks this complete context.
         position = lower
         while tag := tokens.search(text, position, upper):
             position = tag.end()
@@ -3353,16 +3341,13 @@ def _markup_spans(text, syntax):
     return syntax.markup
 
 
-
 def _xml_spans(text, syntax):
     yield from _markup_spans(text, syntax)
-
 
 
 def _html_spans(text, syntax):
     # The shared lexer covers both local-name bodies and name/value attributes.
     return iter(())
-
 
 
 def _curl_spans(text, syntax):
@@ -3416,7 +3401,6 @@ def _curl_spans(text, syntax):
             if not token and re.search(r"[;|&\r\n]", text[match.end() : end]):
                 curl = False
             yield begin, finish, "cookie" if key == "cookie" else "sensitive_field", _REDACTED
-
 
 
 def _path_spans(text):
@@ -3765,7 +3749,6 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
     )
 
 
-
 def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False, _percent_depth=0):
     # Recovery and wrapper views may overlap. Order spans with a linear numeric
     # index rather than sorting or assuming recovery visits them in source order.
@@ -3872,7 +3855,6 @@ def _putty_spans(text, syntax):
         position = max(end, match.end())
 
 
-
 def _command_spans(text, syntax):
     pattern = re.compile(
         r"(?i)(?P<mysql>\b(?:mysql|mariadb|mysqldump)\b)|"
@@ -3942,7 +3924,6 @@ def _command_spans(text, syntax):
             )
 
 
-
 def _view_spans(text, encoded_positions, syntax):
     return _merge_spans(
         [
@@ -3964,7 +3945,6 @@ def _view_spans(text, encoded_positions, syntax):
             _path_spans(text),
         ]
     )
-
 
 
 def _close_assignment_spans(text, spans, syntax):
@@ -4068,7 +4048,6 @@ def _form_ranges(text, depths=None):
 
     for start, end, _, _ in _merge_spans([bodies(), embedded_bodies(), quoted_bodies(), queries()]):
         yield start, end
-
 
 
 def _decoded_ranges(ranges, edits):
@@ -4278,7 +4257,6 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     return "".join(parts), [
         {"kind": kind, "count": count} for kind, count in sorted(counts.items())
     ]
-
 
 
 def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:

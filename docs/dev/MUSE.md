@@ -390,9 +390,10 @@ CPU growth of the iterated public call is checked at four doubling sizes for all
 review and new-rule families. Raw canonical sizes are checked before rendering;
 packet/bundle rendering and redaction precede BEGIN IMMEDIATE. Writes repeat only
 reference/snapshot checks. _save_send redacts the full remote detail (capped at 1 MiB)
-before its batch, then cuts to 512 characters. The settlement callback sanitizes
-only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes)
-inside the jobs transaction. Oversized legacy text refuses before redaction with
+before its batch, then cuts to 512 characters. Association sanitizes its locally bounded outbound view (48 KiB packet, 8 KiB
+question, two joining bytes) before the transaction. Settlement compares the complete
+stored outbound body with the frozen exchange, then reuses that view. No redaction
+or sanitize_document call runs inside the jobs transaction. Oversized legacy text refuses before redaction with
 fixed E_LIMIT_REACHED; this bound is measured and does not prove delivery.
 
 Auth list returns partial for corrupt entries: valid metadata in references, opaque
@@ -522,3 +523,17 @@ quoted defaults cannot jump over a proven enclosing JSON close. Raw special-sche
 backslash barriers exclude serialization backslashes and Unicode-escape data.
 Netscape jar fields remain recognizable after a surrounding context prefix and
 retain CR/LF line endings. These rules preserve the existing four-application bound.
+
+
+Round-7 extents use delimiter ownership D1–D11 in 02_SPEC and SAFETY_API.
+An unrelated quote, plural possessive or bracket never shortens a credential.
+Only the value's own quote, an immediately adjacent opener, or a proven JSON
+string supplies a closing bound, with the D2 follower test. Escapes, doubled
+quotes and shell quote idioms remain value data. Unquoted trailing punctuation
+is excluded before one shared, layer-true whole-value exemption decision.
+Shell reference defaults remain exempt; literal defaults are credentials.
+Markup comments and attributes are bounded contexts. Private blocks retain their
+final MAC/hash/END line, YAML indicators accept indentation digits and comments,
+and embedded forms continue through quotes and angle brackets. Short curl flags
+and SQL clauses retain their command/statement anchors. Per-scanner indexes keep
+terminator and exemption work linear; the public fixpoint call retains its bound.

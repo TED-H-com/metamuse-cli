@@ -405,13 +405,14 @@ one-call fixpoint bound and out-of-scope grammars are normative in
 redact_text already masks the entire output on instability, including for legacy
 callers that discard findings. Packets/bundles additionally refuse the finding.
 
-URL authority candidates end at their enclosing quote/bracket at the same or a shallower
+URL authority candidates end at an owned D1/D2 quote/bracket at the same or a shallower
 decoding layer, or the next same-layer or shallower scheme://. Each scheme is scanned independently; a root
 URL never consumes a later URL. Unenclosed punctuation remains userinfo data.
 
-Quote and bracket pairs are tracked at every decoding layer, including inside an
-outer string. Quoted command arguments may open at their operator layer or deeper,
-and end at the matching quote at that layer. Spaces inside remain value data.
+Quote and bracket ownership is evaluated independently at every decoding layer,
+including inside an outer string. Quoted arguments own their opening quote at
+its layer, and only a D2-valid matching closer can shorten them. Spaces inside
+remain value data.
 Exempt environment lookups end at their own closing bracket or parenthesis.
 
 HAR structure is read by an escape-aware JSON lexer at its JSON layer, before
@@ -429,7 +430,7 @@ that no longer matches current rules requires requesting reconciliation again.
 
 PuTTY private-key headers match after a non-identifier boundary at every layer,
 including inline labels and JSON/form captures. The mask extends through Private-MAC
-or, without that line, to its enclosing delimiter or end of input. Raw, JSON-escaped
+or Private-Hash; without either line, to its proven JSON string end or text end. Raw, JSON-escaped
 and percent-encoded line breaks share this behaviour. PEM and PGP begin markers
 have no line-start anchor; their existing matching-end/unterminated rule remains.
 
@@ -446,8 +447,8 @@ Decoded syntax is released before the original-view syntax is constructed. Each
 measurement uses a fresh parent and child; RUSAGE_CHILDREN reports that child only.
 
 Layered grammar details: a bracket or separator inside a quoted value cannot close
-an outer container or turn into a call-argument separator. An actual enclosing quote
-still closes that value even when the quote belongs to a deeper decoded layer.
+an outer container or turn into a call-argument separator. Only an owned, same-layer D2-valid closer
+can shorten that value; unrelated or deeper-layer quotes are data.
 Raw replay recognizes the whole escaped closing quote, preserving whole-value
 exemptions inside JSON captures. Shell quoting of option names, including curl
 --user/--cookie, sshpass -p and attached mysql -p, retains the argument rule.
@@ -463,18 +464,92 @@ are canonicalized before applying the same closed exemption list; their nested
 assignments remain independently inspected. Public-key block mirrors stay public.
 
 
-B16a structural rule: ambiguity may only lengthen a redaction. Single-line single,
-double and backtick quotes pair locally at the same decoding layer and never
-cross a line break at that layer. An apostrophe between alphanumerics is prose,
-not a delimiter. Triple quotes are one multiline token, recognized before single
-quotes; heredoc bodies and YAML block scalars retain their multiline extent.
-A fully parsed JSON layer proves exact string extents. Only a delimiter proved
-by these rules may shorten a credential value, URL authority or private-key block.
+B16a delimiter ownership (D1–D11): ambiguity may only lengthen a redaction.
 
-At a credential value's start, a single, double or backtick quote opens its own
-value if the same-layer, same-line matching quote follows. This local opener
-takes priority over an unrelated earlier quote. Attached command flags use the
-same rule; only a proven quoted flag's closing delimiter precedes its argument.
+D1. A construct owns its value's opening quote; a stack of openers immediately
+adjacent to its key, flag, header, scheme or //, with no intervening space; and a
+containing string proven by the JSON lexer. An owned closer must be at its
+opener's layer and on its line, except for a proven JSON string or a multiline
+triple-quote/heredoc token. The innermost owned opener closes first. Line-wide
+quote pairing, pending quotes and unowned brackets never shorten an extent.
+Contextual separators, including call-argument commas, require an owned or
+proven enclosure. Other quotes and brackets are value data.
+
+D2. A matching owned closer counts only when the run of closing quotes/brackets
+is followed by end of text, whitespace, comma, semicolon, ampersand, />,
+.!?: followed by whitespace/end, or a literal method call (`.identifier(`).
+Other punctuation and identifier characters do not validate a closer. A deeper form-plus space is value data; a newline proved by the JSON lexer retains its JSON line-boundary meaning. Accepted
+category `owned_raw_closer_with_follower`: a raw owned closer followed by this
+follower ends the value even if private-looking material follows. Source strings
+must escape an internal quote; D4 keeps those escaped spellings private. No
+other closer/follower category is accepted.
+
+D3. For a value without its own opening quote, leave out its longest trailing
+suffix consisting only of closing quotes/brackets and .,!?:;. This same extent
+is used for both masking and the exemption decision; letters are never trimmed.
+A complete placeholder owns its own closing delimiter. Set password=${PW}.
+therefore remains unchanged, as do exact [REDACTED] sentinels inside punctuation.
+
+D4. Own opening quotes include ', ", backtick, “/‘, $', and triple single/double
+quotes. Doubled quotes, backslash-escaped quotes, PowerShell backtick escapes,
+and the shell single-quote idioms are value data, never closing tokens. Curly
+quotes pair as “…” and ‘…’; an apostrophe between letters remains prose.
+An unmatched own quote extends to line end or the bound of its proven JSON
+string/multiline token. Triple quotes and heredocs retain their own closing token.
+
+D5. All scanners use the same whole-value exemption decision after D3, without
+its own quotes. Bracketed placeholders, fixed environment lookups, Optional,
+percent variables and braces require genuine matching delimiters at one layer.
+Mixed raw/encoded delimiters cannot complete an exemption. There is no repeated
+unquote of a raw slice. Only a complete serialized value may be canonicalized as
+one whole layer. URL userinfo and curl credentials use this decision too.
+Every exemption leaves its contents eligible for a bounded, single re-entry.
+
+D6. Inside a shell ${…}, the parameter name and operator are not an assignment
+or header key. Operators include :- := :? :+ - = ? + # ## % %% / // ^ ^^ , ,,
+and :offset. An operand begins a new token and belongs to its containing simple
+command. A whole expansion is exempt only when every operand is empty, a $NAME
+or nested ${…} reference, or a ?/:? message. A literal default is private.
+
+D7. Markup is scanned per tag. Attribute strings own their quote (including
+backtick); an unquoted attribute ends at whitespace, > or />. HTML-unescaped,
+ASCII-whitespace-stripped and case-folded name/type selectors determine private
+value/content attributes. Comments are independent contexts bounded by -->,
+including commented-out sensitive elements. A malformed sensitive start tag ends
+at its first > and still owns its private body. A malformed/unclosed tag never
+ends the rest of the scan: its next same-level < starts another tag. Quoted
+attribute contents are entered once as bounded sub-contexts.
+
+D8. PuTTY blocks run through the end of Private-MAC: or Private-Hash:. PEM/PGP
+blocks run through their matching END line. Quotes and brackets cannot shorten
+these blocks. A missing final line extends to text end or its proven JSON string.
+A sensitive YAML key owns deeper-indented following lines when its header has
+only an optional |/> block indicator, optional +/− chomping and indentation digit
+1–9 in either order, whitespace and an optional comment. This includes a bare
+key followed by a comment and an indented body. Malformed pasted indentation
+extends conservatively through the following indented run.
+
+D9. Embedded form bodies continue through quotes and angle brackets; whitespace,
+line breaks and owned D1/D2 closers bound them. Percent escapes and plus-space
+conversion retain their form layer. Every scanner, including markup, inspects
+the decoded body; unrelated prose after a question mark never gains form scope.
+
+D10. Short -u/-b flags require curl (optionally with a path) as the command word
+in the same simple command. Assignments and sudo/env/time/command/exec/nohup may
+precede it. Pipes, semicolons, &&, || and unescaped line ends reset that scope.
+Long --user/--cookie retain their independent rule. SQL IDENTIFIED BY and WITH
+PASSWORD require a CREATE/ALTER/GRANT/SET statement naming USER/ROLE/LOGIN before
+the clause; the next semicolon bounds the statement. Ordinary git/python flags
+and prose mentioning identification do not become credentials.
+
+D11. Every scanner performs constant amortized work per character. Terminator,
+fold, quote, block and exemption extents are indexed once or memoized. Exempt
+values are entered once as bounded sub-contexts. A scanner never restarts an
+unbounded forward search for each candidate. CPU growth uses the iterated public
+redactor, slope ≤1.20 and at most 12× from 16 to 128 KiB; fresh-process peak RSS
+is at most 1 GiB at the 20 MiB raw cap. No redaction or sanitize_document call
+may run while a store write transaction is held.
+
 
 Exemptions require a complete genuine closing delimiter at the same layer.
 Forced closure at an enclosing quote or end of input is not a match. A header sentinel followed by an unproven quote and a value suffix is not a whole-value exemption. Unclosed
@@ -510,8 +585,8 @@ and candidate recovery remain linear. Any sensitive repeated name marks every
 value in that object private, without overwriting an earlier sensitivity decision.
 
 Private-key block labels accept space, form plus and percent-encoded space at
-every supported layer. Quotes in PuTTY comments shorten the block only when
-proved to close an enclosing string; otherwise it extends through Private-MAC.
+every supported layer. Quotes in PuTTY comments never shorten the block; it
+extends through Private-MAC or Private-Hash, or its proven JSON/text bound.
 Quoted form-body discovery pairs quotes per decoding layer, and decoded-only
 whitespace remains form value data.
 
@@ -549,3 +624,27 @@ quoted defaults cannot jump over a proven enclosing JSON close. Raw special-sche
 backslash barriers exclude serialization backslashes and Unicode-escape data.
 Netscape jar fields remain recognizable after a surrounding context prefix and
 retain CR/LF line endings. These rules preserve the existing four-application bound.
+
+
+Scanner progress and indexed terminators (D11):
+
+| Scanner | Inner traversal / progress | Adversarial family |
+| --- | --- | --- |
+| assignments | indexed quote/call/placeholder extents; private values consumed, exempt values entered after the key | ownership_quotes, shell_defaults |
+| headers | compact continuation-group ends and monotone line cursor; exempt headers resume after the operator | folded_header, cookie_header_multiline |
+| query | monotone separators and layer-aware ends; exempt values resume after the operator | query_closer_runs |
+| userinfo | next scheme, whitespace and authority boundaries indexed once; exempt candidates resume at the next candidate | userinfo_closer_runs |
+| cookie chains / jars | each pair or line consumed once; private chain members share one extent | review_cookie_many_pairs, cookie_header_multiline |
+| markup / XML / HTML | tag ends indexed in fixed-size blocks; each comment/attribute sub-context entered once; a fully masked context is already complete | xml_unclosed_before_exempt, html_quoted_subtags, markup_nested_private, markup_comment |
+| curl | one command-boundary/flag cursor; exempt arguments resume after the flag | curl_exempt_reentry |
+| commands / SQL | one statement-token index, one forward argument cursor | command_exempt_reentry, sql_anchor_missing |
+| HAR | memoized escape-aware JSON tokens and numeric frame stack; nested values remain eligible | har_reentry, r6_har_swallowed_candidates |
+| private key blocks | next header/footer searched once per consumed block | putty_final_missing, r6_block_plus_spaces |
+| bare Bearer / prefixes / JWT | bounded anchored matches; consumed token never rescanned | bearer, long_sk_body, jwt |
+| paths | possessive bounded quoted/bare alternatives | path_unclosed_alt_quotes |
+| forms / decoded views | sparse origin spans, fixed decoding depth; every decoded body goes through all scanners | form_markup, encoded_key_long |
+
+`_xml_spans` delegates to the shared markup lexer; `_html_spans` does not run a
+second tag traversal. `_view_spans` merges ordered numeric spans, and output is
+built with one join per bounded fixpoint application. YAML indented runs and
+heredoc boundaries are pre-indexed in `_Syntax`.

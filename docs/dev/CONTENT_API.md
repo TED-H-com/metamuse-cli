@@ -405,3 +405,17 @@ quoted defaults cannot jump over a proven enclosing JSON close. Raw special-sche
 backslash barriers exclude serialization backslashes and Unicode-escape data.
 Netscape jar fields remain recognizable after a surrounding context prefix and
 retain CR/LF line endings. These rules preserve the existing four-application bound.
+
+
+Round-7 extents use delimiter ownership D1–D11 in 02_SPEC and SAFETY_API.
+An unrelated quote, plural possessive or bracket never shortens a credential.
+Only the value's own quote, an immediately adjacent opener, or a proven JSON
+string supplies a closing bound, with the D2 follower test. Escapes, doubled
+quotes and shell quote idioms remain value data. Unquoted trailing punctuation
+is excluded before one shared, layer-true whole-value exemption decision.
+Shell reference defaults remain exempt; literal defaults are credentials.
+Markup comments and attributes are bounded contexts. Private blocks retain their
+final MAC/hash/END line, YAML indicators accept indentation digits and comments,
+and embedded forms continue through quotes and angle brackets. Short curl flags
+and SQL clauses retain their command/statement anchors. Per-scanner indexes keep
+terminator and exemption work linear; the public fixpoint call retains its bound.
