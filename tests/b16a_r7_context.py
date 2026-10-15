@@ -115,9 +115,9 @@ def native_wrap(row, prefix, suffix, inside):
     return value
 
 
-def cases(*, full=False, seed=SEED):
+def cases(*, full=False, seed=SEED, pool=None):
     rng = random.Random(seed)
-    pool = list(rows())
+    pool = list(rows()) if pool is None else pool
     anchors = {}
     for row in pool:
         anchors.setdefault(row.family, row)
@@ -134,11 +134,11 @@ def cases(*, full=False, seed=SEED):
                 yield row, "random", inside, native_wrap(row, before, after, inside)
 
 
-def verify(*, full=False, seed=SEED, shard=0, shards=1):
+def verify(*, full=False, seed=SEED, shard=0, shards=1, pool=None):
     counts = Counter()
     failures = []
     started = time.monotonic()
-    for index, (row, ctx, inside, text) in enumerate(cases(full=full, seed=seed)):
+    for index, (row, ctx, inside, text) in enumerate(cases(full=full, seed=seed, pool=pool)):
         if index % shards != shard:
             continue
         out, found = redact_text(text)

@@ -551,11 +551,26 @@ Mandatory natural prose contexts, every privacy rule and the established 0.40%
 CPython refusal budget remain binding. This policy adjustment is not merge
 acceptance.
 
-Known implementation discrepancies, not contract exceptions: a literal
-backslash-newline or an escaped semicolon currently resets short-option scope,
-so a following credential can survive. SQL principal selection also considers
-USER/ROLE/LOGIN tokens after the clause. These remain defects for independent
-review; this policy adjustment does not approve or fix them.
+Curl boundary state advances once from the lexical anchor; preceding prose
+quotes never supply its argument delimiters. An odd backslash escapes the next
+separator, including LF/CRLF continuation. Separators inside an owned preceding
+quoted argument, a complete exempt argument or a shell parameter expansion do
+not reset scope. A real unquoted, unescaped separator still resets scope when
+encountered while advancing over a consumed credential. If the selected private
+extent spans it, both selected parts remain masked and the separator is retained
+as control syntax, so no credential tail is exposed and a subsequent application
+preserves the same scope reset. Per-class counts count masked spans, which can
+be two spans for that argument. Preceding argument scope
+also ends before a pipe after its close quote; this is not an addition to D2's
+credential-value followers. Long flags keep their independent scope.
+
+Curl source spans preserve shell backslash parity: percent/form views and exact
+proven JSON string contents are scanned at their own layers, then mapped back
+and merged with canonical spans. General repeated JSON unescaping must not erase
+a source-level escape before the boundary decision. Existing JSON lexing and
+sparse span maps are reused; syntax tables for these views are released before
+the next is constructed. SQL eligibility starts at the first principal token,
+never at an earlier clause, and ends at the statement's semicolon.
 
 
 D11. Every scanner performs constant amortized work per character. Terminator,

@@ -537,7 +537,10 @@ final MAC/hash/END line, YAML indicators accept indentation digits and comments,
 and embedded forms continue through quotes and angle brackets. Short curl flags
 use conservative lexical scope within a simple-command segment, including pasted
 prose; additional benign refusals are intentional. This does not parse shell
-command-word position. SQL clauses retain their statement anchors. See D10 in
-[SAFETY_API.md](SAFETY_API.md) for known escape/SQL implementation discrepancies.
+command-word position. Escaped continuations and separators in owned preceding
+arguments preserve curl scope; actual command separators release it, including
+after consumed private values. SQL principals must precede their clauses within
+the same statement. See D10 in [SAFETY_API.md](SAFETY_API.md) for source-layer
+escape preservation and the forward boundary state.
 Per-scanner indexes keep terminator and exemption work linear; the public fixpoint
 call retains its bound.

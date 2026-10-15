@@ -3350,6 +3350,114 @@ def _html_spans(text, syntax):
     return iter(())
 
 
+class _CurlScope:
+    """Forward-only separator ownership after a lexical curl/long-flag anchor.
+
+    This is local argument state, not quote pairing over surrounding prose. The
+    same cursor also visits consumed private values, so skipping a value cannot
+    hide a real command boundary or invent one at an escaped separator.
+    """
+
+    def __init__(self, text, syntax):
+        self.text, self.syntax = text, syntax
+        self.position = 0
+        self.curl = self.tracking = False
+        self.level = 0
+        self.quote = None
+        self.argument = True
+        self.option = False
+        self.parameter = 0
+        self.parameter_level = 0
+        self.closer_end = 0
+        self.closer_valid = False
+        self.protected_end = 0
+
+    def anchor(self, position, level, *, curl):
+        if not self.tracking:
+            self.position = position
+            self.level = level
+            self.quote = None
+            self.argument = not curl
+            self.option = False
+            self.parameter = 0
+            self.tracking = True
+        self.curl |= curl
+
+    def advance(self, end, *, stop_at_boundary=False):
+        text, syntax = self.text, self.syntax
+        while self.tracking and self.position < end:
+            pos = self.position
+            char, level = text[pos], syntax.depth(pos)
+            self.position += 1
+            if char == "\\" and pos + 1 < len(text) and syntax.depth(pos + 1) == level:
+                self.position += 1
+                if text[pos + 1 : pos + 3] == "\r\n":
+                    self.position += 1
+                continue
+            if self.quote is not None:
+                quote, quote_level = self.quote
+                if char == "`" and quote != "`" and text[pos + 1 : pos + 2] in {"'", '"'}:
+                    self.position += 1
+                    continue
+                if char == quote and level == quote_level:
+                    # The shell's two single-quote escape idioms and doubled
+                    # quotes are data. Do not close then reopen across them.
+                    idiom = next((x for x in ("'\"'\"'", "'\\''") if text.startswith(x, pos)), None)
+                    if idiom:
+                        self.position += len(idiom) - 1
+                        continue
+                    if text[pos + 1 : pos + 2] == quote:
+                        self.position += 1
+                        continue
+                    if pos >= self.closer_end:
+                        self.closer_end = pos + 1
+                        while (
+                            self.closer_end < len(text)
+                            and text[self.closer_end] in "'\"`”’)]}>"
+                            and syntax.depth(self.closer_end) == level
+                        ):
+                            self.closer_end += 1
+                        self.closer_valid = (
+                            syntax._follower(text, self.closer_end)
+                            or text[self.closer_end : self.closer_end + 1] == "|"
+                        )
+                    if self.closer_valid:
+                        self.quote = None
+                continue
+            if char == "$" and text[pos + 1 : pos + 2] == "{":
+                if not self.parameter:
+                    self.parameter_level = level
+                self.parameter += 1
+                self.position += 1
+                self.argument = True
+            elif self.parameter and level == self.parameter_level and char in "{}":
+                self.parameter += 1 if char == "{" else -1
+            elif char == "$" and self.argument and text[pos + 1 : pos + 2] == "'":
+                self.quote = ("'", syntax.depth(pos + 1))
+                self.position += 1
+                self.argument = self.option = False
+            elif char in "'\"`“‘" and (self.argument or self.option):
+                self.quote = ({"“": "”", "‘": "’"}.get(char, char), level)
+                self.argument = self.option = False
+            elif (
+                char in ";|&\r\n"
+                and level <= self.level
+                and not self.parameter
+                and pos >= self.protected_end
+            ):
+                self.curl = self.tracking = False
+                if stop_at_boundary:
+                    return pos
+            elif char.isspace() or char == "=":
+                self.argument, self.option = True, False
+            else:
+                if self.argument:
+                    self.option = char == "-"
+                self.argument = False
+        self.position = max(self.position, end)
+        return None
+
+
 def _curl_spans(text, syntax):
     pattern = re.compile(
         r"(?P<curl>(?<![A-Za-z0-9_])curl\b)|"
@@ -3357,17 +3465,23 @@ def _curl_spans(text, syntax):
         r"(?<![A-Za-z0-9_])(?:(?P<long>--user|--cookie)(?:=|[^\S\r\n]++|(?=[\"']))|(?P<short>-[ub])[^\S\r\n]*+)"
     )
     position = 0
-    curl = False
+    scope = _CurlScope(text, syntax)
     while match := pattern.search(text, position):
+        scope.advance(match.start())
         position = match.end()
         if match["curl"]:
-            curl = True
+            scope.anchor(
+                match.end(),
+                max(syntax.depth(match.start()), syntax.depth(match.end())),
+                curl=True,
+            )
             continue
         if match["boundary"]:
-            curl = False
+            scope.advance(match.end())
             continue
-        if match["short"] and not curl:
+        if match["short"] and not scope.curl:
             continue
+        scope.anchor(match.end(), syntax.depth(match.start()), curl=False)
         start = match.end()
         if (
             text[start : start + 1] in {'"', "'", "`"}
@@ -3397,10 +3511,103 @@ def _curl_spans(text, syntax):
         if not token:
             finish = syntax.trim(text, begin, finish)
         if syntax.private(text, key, begin, finish):
-            position = max(position, end)
-            if not token and re.search(r"[;|&\r\n]", text[match.end() : end]):
-                curl = False
-            yield begin, finish, "cookie" if key == "cookie" else "sensitive_field", _REDACTED
+            kind = "cookie" if key == "cookie" else "sensitive_field"
+            boundary = scope.advance(end, stop_at_boundary=not token)
+            if boundary is not None:
+                # Keep the separator so the next application retains the
+                # scope reset. Ambiguity may not reveal any of the selected
+                # value: mask its tail too, and still visit later anchors.
+                position = max(position, boundary)
+                if begin < min(finish, boundary):
+                    yield begin, min(finish, boundary), kind, _REDACTED
+                if max(begin, boundary + 1) < finish:
+                    yield max(begin, boundary + 1), finish, kind, _REDACTED
+            else:
+                position = max(position, end)
+                yield begin, finish, kind, _REDACTED
+        else:
+            # A complete exempt value is a bounded argument context. Its
+            # internal punctuation cannot reset the containing curl scope,
+            # but the regex still enters it to find nested private flags.
+            scope.protected_end = max(scope.protected_end, finish)
+
+
+def _curl_source_spans(text):
+    """Keep shell backslashes at their source layer, not a later JSON layer."""
+    original = _SpanIndex(_curl_json_spans(text))
+    view, layers = text, []
+    ranges = list(_form_ranges(text))
+    decoded, edits = _decode_view(view, form=True, ranges=ranges)
+    if edits:
+        view = decoded
+        ranges = _decoded_ranges(ranges, edits)
+        layers.append(edits)
+    for _ in range(3):
+        decoded, edits = _decode_view(view)
+        if not edits:
+            break
+        view = decoded
+        ranges = _decoded_ranges(ranges, edits)
+        layers.append(edits)
+    depths = _decoding_depths(len(text), layers) if layers else None
+    syntax = _Syntax(view, depths)
+    spans = _SpanIndex(_curl_spans(view, syntax))
+    del syntax, depths
+    if layers:
+        spans = _SpanIndex(_merge_spans([spans, _curl_json_spans(view)]))
+    for edits in reversed(layers):
+        spans = _SpanIndex(_original_spans(spans, edits))
+    yield from _merge_spans([original, spans])
+
+
+def _curl_json_spans(text):
+    """Scan proven JSON string contents without erasing shell escape parity.
+
+    General canonicalization deliberately reveals several JSON layers. Shell
+    backslashes instead belong to the string's own layer. Reuse the JSON
+    lexer's disjoint proven string ranges, unwrap each complete string, and
+    map only its curl spans back. At most three encoding layers are visited;
+    each child syntax object is released before the next one is constructed.
+    """
+    forms = iter(_form_ranges(text))
+    form = next(forms, None)
+    for start, end, _, _ in _har_spans(text, _quotes=True):
+        while form is not None and form[1] <= start:
+            form = next(forms, None)
+        view, layers = text[start:end], []
+        if form is not None and form[0] <= start < form[1]:
+            view, edits = _decode_view(view, form=True, ranges=[(0, len(view))])
+            if edits:
+                layers.append(edits)
+        for _ in range(4):
+            try:
+                value = json.loads(view)
+            except (ValueError, RecursionError):
+                value = None
+            if isinstance(value, str):
+                break
+            # Unwrap the lexer's proven encoded delimiters as whole layers,
+            # stopping as soon as the string itself is valid JSON.
+            decoded, edits = _decode_view(view, json_escapes=view.startswith("\\"))
+            if not edits:
+                break
+            view = decoded
+            layers.append(edits)
+        else:
+            value = None
+        if not isinstance(value, str) or not re.search(r"curl|--(?:user|cookie)", value):
+            continue
+        inner, edits = _decode_view(view[1:-1], json_escapes=True)
+        syntax = _Syntax(inner)
+        spans = _SpanIndex(_curl_spans(inner, syntax))
+        del syntax
+        if edits:
+            spans = _SpanIndex(_original_spans(spans, edits))
+        spans = _SpanIndex((a + 1, b + 1, k, r) for a, b, k, r in spans)
+        for edits in reversed(layers):
+            spans = _SpanIndex(_original_spans(spans, edits))
+        for a, b, kind, replacement in spans:
+            yield start + a, start + b, kind, replacement
 
 
 def _path_spans(text):
@@ -3866,19 +4073,19 @@ def _command_spans(text, syntax):
     # no principal. A lazy wildcard restarted at each CREATE is quadratic.
     sql_ranges = []
     begin = None
-    principal = False
+    principal = None
     for word in re.finditer(r"(?i)\b(?:CREATE|ALTER|GRANT|SET|USER|ROLE|LOGIN)\b|;", text):
         token = word[0].upper()
         if token == ";":
-            if begin is not None and principal:
-                sql_ranges.append((begin, word.start()))
-            begin, principal = None, False
+            if principal is not None:
+                sql_ranges.append((principal, word.start()))
+            begin, principal = None, None
         elif begin is None and token in {"CREATE", "ALTER", "GRANT", "SET"}:
             begin = word.start()
-        elif begin is not None and token in {"USER", "ROLE", "LOGIN"}:
-            principal = True
-    if begin is not None and principal:
-        sql_ranges.append((begin, len(text)))
+        elif begin is not None and principal is None and token in {"USER", "ROLE", "LOGIN"}:
+            principal = word.start()
+    if principal is not None:
+        sql_ranges.append((principal, len(text)))
     sql_ranges = iter(sql_ranges)
     sql_range = next(sql_ranges, None)
     position = 0
@@ -4242,6 +4449,11 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
             ]
         )
     )
+    # A shell escape's parity must also survive JSON-string decoding. Do not
+    # retain the original syntax tables while constructing a child string's.
+    del original_syntax
+    if any(word in source for source in (text, view) for word in ("curl", "--user", "--cookie")):
+        spans = _SpanIndex(_merge_spans([spans, _curl_source_spans(text)]))
     if not spans:
         return text, []
     parts = []
