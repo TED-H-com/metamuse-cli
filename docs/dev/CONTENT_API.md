@@ -293,3 +293,10 @@ A whole-value exemption applies to that outer value only. Assignment scanning
 continues after its key/operator to inspect nested assignments. Balanced shell
 placeholder extents use the precomputed delimiter index, avoiding repeated suffix
 parsing when defaults nest.
+
+Redaction memory budget: a fresh subprocess making one public redact_text call
+on 20 MiB of raw text must peak at no more than 1 GiB RSS. Syntax positions share
+one lazy signed numeric index; quote intervals, newline offsets, edit coordinates
+and JSON lexer nesting use compact numeric arrays, and decode depths use bytes.
+Decoded syntax is released before the original-view syntax is constructed. Each
+measurement uses a fresh parent and child; RUSAGE_CHILDREN reports that child only.

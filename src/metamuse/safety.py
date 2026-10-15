@@ -14,6 +14,7 @@ import socket
 import sqlite3
 import stat
 import unicodedata
+from array import array
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -1559,7 +1560,7 @@ def _decode_view(
         if json_escapes
         else r"(?:%[0-9a-fA-F]{2})++"
     )
-    edits = []
+    edits = _EditIndex()
     parts = []
     position = offset = 0
     ranges = iter(ranges or ())
@@ -1688,6 +1689,99 @@ def _decoding_depths(length, layers):
     return depths
 
 
+class _PositionIndex:
+    """One lazily allocated signed offset per character, shared by index views.
+
+    Positive entries are exclusive ends; negative entries identify the opening
+    delimiter of a close/separator. No Python int/dict is retained per position.
+    """
+
+    def __init__(self, text, mode="ends", parent=None):
+        self.text, self.mode = text, mode
+        self.parent = parent
+        self.data = array("i") if parent is None else None
+
+    def get(self, position, default=None):
+        data = self.parent.data if self.parent is not None else self.data
+        if not data or not 0 <= position < len(data):
+            return default
+        value = data[position]
+        if self.mode == "ends":
+            return value if value > 0 else default
+        allowed = {"closings": ")]}", "quotes": "\"'", "separators": ",;"}[self.mode]
+        if value < 0 and self.text[position] in allowed:
+            opening = -value - 1
+            return (self.text[opening], opening) if self.mode == "separators" else opening
+        return default
+
+    def __contains__(self, position):
+        return self.get(position) is not None
+
+    def __setitem__(self, position, value):
+        parent = self.parent if self.parent is not None else self
+        if not parent.data:
+            parent.data = array("i", [0]) * len(self.text)
+        if self.mode != "ends":
+            value = -(value[1] if self.mode == "separators" else value) - 1
+        parent.data[position] = value
+
+
+class _QuoteRanges:
+    """Opening-order intervals in two compact unsigned arrays."""
+
+    def __init__(self):
+        self.starts, self.ends = array("I"), array("I")
+
+    def append(self, pair):
+        self.starts.append(pair[0])
+        self.ends.append(pair[1])
+
+    def __len__(self):
+        return len(self.starts)
+
+    def __getitem__(self, index):
+        return self.starts[index], self.ends[index]
+
+    def __setitem__(self, index, pair):
+        self.starts[index], self.ends[index] = pair
+
+
+class _EditIndex:
+    """Sparse numeric edits; keep the coalescing tail mutable without rebuilding it."""
+
+    def __init__(self):
+        self.data = array("I")
+        self.last = None
+
+    def __len__(self):
+        return len(self.data) // 4 + int(self.last is not None)
+
+    def __getitem__(self, index):
+        if index < 0:
+            index += len(self)
+        if not 0 <= index < len(self):
+            raise IndexError(index)
+        if index == len(self) - 1:
+            return self.last
+        return _TextEdit(*self.data[index * 4 : index * 4 + 4])
+
+    def append(self, edit):
+        if self.last is not None:
+            old = self.last
+            self.data.extend((old.start, old.end, old.original_start, old.original_end))
+        self.last = edit
+
+    def __setitem__(self, index, edit):
+        if index < 0:
+            index += len(self)
+        if index == len(self) - 1:
+            self.last = edit
+        else:
+            self.data[index * 4 : index * 4 + 4] = array(
+                "I", (edit.start, edit.end, edit.original_start, edit.original_end)
+            )
+
+
 class _Syntax:
     """Compute quote and balanced-value terminators once, never from every key."""
 
@@ -1697,14 +1791,14 @@ class _Syntax:
         self.form = bool(
             "&" in text and re.fullmatch(_NAME + r"=[^&\s]*+(?:&" + _NAME + r"=[^&\s]*+)*+", text)
         )
-        self.ends = {}
-        self.closings = {}
-        self.quote_closings = {}
-        self.separator_context = {}
-        self.quotes = []
-        self.line_ends = [m.start() for m in re.finditer(r"[\r\n]", text)]
+        self.ends = _PositionIndex(text)
+        self.closings = _PositionIndex(text, "closings", self.ends)
+        self.quote_closings = _PositionIndex(text, "quotes", self.ends)
+        self.separator_context = _PositionIndex(text, "separators", self.ends)
+        self.quotes = _QuoteRanges()
+        self.line_ends = array("I", (m.start() for m in re.finditer(r"[\r\n]", text)))
         pending = {}
-        stack = []
+        stack = array("I")
         for match in re.finditer(r"\\[\s\S]|[\"'()\[\]{},;]", text):
             char, pos = match[0], match.start()
             if char.startswith("\\"):
@@ -1726,25 +1820,25 @@ class _Syntax:
                             self.ends[inner] = pos
                             self.quotes[inner_index] = (inner, pos)
                             del pending[channel]
-                    while stack and stack[-1][1] > opening:
-                        _, begin = stack.pop()
+                    while stack and stack[-1] > opening:
+                        begin = stack.pop()
                         self.ends[begin] = pos
             elif char in ",;":
                 if stack:
-                    self.separator_context[pos] = stack[-1]
+                    self.separator_context[pos] = (text[stack[-1]], stack[-1])
             elif char in "([{":
-                stack.append((char, pos))
+                stack.append(pos)
             elif (
                 stack
-                and char == {"(": ")", "[": "]", "{": "}"}[stack[-1][0]]
-                and self.depth(pos) <= self.depth(stack[-1][1])
+                and char == {"(": ")", "[": "]", "{": "}"}[text[stack[-1]]]
+                and self.depth(pos) <= self.depth(stack[-1])
             ):
-                _, begin = stack.pop()
+                begin = stack.pop()
                 self.ends[begin] = pos + 1
                 self.closings[pos] = begin
         for opening, _ in pending.values():
             self.ends[opening] = len(text)
-        for _, begin in stack:
+        for begin in stack:
             self.ends[begin] = len(text)
         triple = None
         for match in re.finditer(r"\\[\s\S]|" + '"' * 3 + "|" + "'" * 3, text):
@@ -1760,8 +1854,8 @@ class _Syntax:
             self.ends[triple[1]] = len(text)
         # Indented YAML containers/scalars end at the next dedent. Close every
         # pending block once, using the previous content end computed once/line.
-        self.yaml_ends = {}
-        self.yaml_scalars = {}
+        self.yaml_ends = _PositionIndex(text)
+        self.yaml_scalars = _PositionIndex(text)
         blocks = []
         content_end = 0
         header = re.compile(r"(?:[\"']?" + _NAME + r"[\"']?)\s*+:[^\S\r\n]*+(?:[|>][-+]?)?")
@@ -2510,6 +2604,87 @@ def _path_spans(text):
     yield from _merge_spans([matches(quoted, "path"), matches(bare, None)])
 
 
+class _JsonFrame:
+    def __init__(self, stack, index):
+        self.stack, self.index = stack, index
+
+    def __getitem__(self, key):
+        offset = self.index * 4
+        flags = self.stack.data[offset]
+        if key == "kind":
+            return "[" if flags & 1 else "{"
+        if key == "state":
+            return self.stack.states[(flags >> 1) & 7]
+        if key == "key":
+            return self.stack.keys[(flags >> 5) & 3]
+        if key == "private":
+            return bool(flags & 16)
+        if key == "start":
+            return self.stack.data[offset + 1]
+        column = 2 if key == "value" else 3
+        return self.stack.data[offset + column] - 1
+
+    def get(self, key, default=None):
+        result = self[key]
+        return default if key in {"value", "slot"} and result < 0 else result
+
+    def __setitem__(self, key, value):
+        offset = self.index * 4
+        if key == "state":
+            flags = self.stack.data[offset]
+            self.stack.data[offset] = (flags & ~14) | (self.stack.states.index(value) << 1)
+        elif key == "key":
+            flags = self.stack.data[offset]
+            index = self.stack.keys.index(value) if value in self.stack.keys else 0
+            self.stack.data[offset] = (flags & ~96) | (index << 5)
+        elif key == "private":
+            flags = self.stack.data[offset]
+            self.stack.data[offset] = (flags | 16) if value else (flags & ~16)
+        else:
+            self.stack.data[offset + (2 if key == "value" else 3)] = value + 1
+
+
+class _JsonFrames:
+    """Bounded numeric lexer state, including deeply nested benign JSON."""
+
+    states = (None, "first_key", "key", "colon", "value", "comma", "array_comma", "first_value")
+    keys = (None, "name", "value", "cookies")
+
+    def __init__(self):
+        self.data = array("I")
+        self.length = 0
+
+    def __len__(self):
+        return self.length
+
+    def __getitem__(self, index):
+        if index < 0:
+            index += self.length
+        if not 0 <= index < self.length:
+            raise IndexError(index)
+        return _JsonFrame(self, index)
+
+    def append(self, frame):
+        flags = int(frame["kind"] == "[") | (self.states.index(frame["state"]) << 1)
+        row = array(
+            "I",
+            (
+                flags,
+                frame["start"],
+                0,
+                (frame.get("slot") or 0) + 1 if frame.get("slot") is not None else 0,
+            ),
+        )
+        if len(self.data) == self.length * 4:
+            self.data.extend(row)
+        else:
+            self.data[self.length * 4 : self.length * 4 + 4] = row
+        self.length += 1
+
+    def pop(self):
+        self.length -= 1
+
+
 def _har_spans(text, syntax=None, *, _depth=0):
     """Lex JSON before decoding its string data; partial documents stop at error.
 
@@ -2544,7 +2719,7 @@ def _har_spans(text, syntax=None, *, _depth=0):
     whitespace = re.compile(r"\s*+")
     slots = []
     nested = []
-    frames = []
+    frames = _JsonFrames()
     position = begin
 
     def close_record(frame):
@@ -2593,7 +2768,10 @@ def _har_spans(text, syntax=None, *, _depth=0):
             elif kind != '"' or not raw.endswith('"'):
                 break
             else:
-                frame["key"] = json.loads(raw)
+                try:
+                    frame["key"] = json.loads(raw)
+                except ValueError:
+                    break
                 frame["state"] = "colon"
                 position = end
                 continue
@@ -2630,7 +2808,10 @@ def _har_spans(text, syntax=None, *, _depth=0):
         if frame:
             frame["state"] = "comma" if frame["kind"] == "{" else "array_comma"
             if frame.get("key") == "name" and kind == '"' and raw.endswith('"'):
-                name = json.loads(raw)
+                try:
+                    name = json.loads(raw)
+                except ValueError:
+                    break
                 frame["private"] = redaction_sensitive_key(name) or _credential_name(name) in {
                     "authorization",
                     "proxyauthorization",
@@ -2872,6 +3053,7 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
         spans = list(_original_spans(spans, edits))
     # Original quoted/structured values have their original quote terminators,
     # even when JSON unescaping reveals quotes inside the credential itself.
+    del syntax, depths
     original_syntax = _Syntax(text) if layers else None
     original_fields = _assignment_spans(text, original_syntax) if layers else ()
     original_headers = _header_spans(text, original_syntax) if layers else ()
