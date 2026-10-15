@@ -25,7 +25,6 @@ import math
 import re
 import threading
 import time
-import unicodedata
 import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping
@@ -62,6 +61,7 @@ from metamuse._muse_associate import (
     user_echo,
 )
 from metamuse._muse_codec import Header, ProtocolMismatch, json_depth, redact
+from metamuse._muse_components import compact, confidential_marker
 from metamuse._muse_http import (
     AUTH_RESPONSE_MAX_BYTES,
     SESSION_RESPONSE_MAX_BYTES,
@@ -80,6 +80,7 @@ from metamuse._muse_link import (
     SendUncertain,
 )
 from metamuse._muse_noise import NoiseParty, handshake_standard
+from metamuse._muse_redact import sensitive_key
 from metamuse._muse_trust import SelectedVM, StoreMuseTrust, protocol_stop, storage_stop
 from metamuse.models import CoreError, ErrorCode
 from metamuse.safety import CheckedURL, action_digest
@@ -1402,9 +1403,6 @@ class MuseTransport:
     def _session_payload(self, payload: dict[str, Any], auth: dict[str, Any]) -> dict[str, Any]:
         rows = payload.get("vms")
 
-        def compact(value):
-            return re.sub(r"[^a-z0-9]", "", unicodedata.normalize("NFKC", value).casefold())
-
         def identities(item):
             return [value for key, value in item.items() if compact(key) == "vmid"]
 
@@ -1434,46 +1432,42 @@ class MuseTransport:
                 isinstance(value, str) and compact(value) in {"false", "no", "0", "none"}
             )
 
-        def marker_value(value):
-            if not isinstance(value, str):
-                return False
-            folded = compact(value)
-            return "cvm" in folded or "confidential" in folded
-
-        # One bounded walk. Child identity-bearing objects replace the enclosing
-        # identity scope. A vms container starts a new scope, even if malformed.
+        # Preserve every enclosing identity scope. Credential strings are opaque,
+        # but objects below a credential key can still contain attestation hints.
         usable, marked = set(), set()
         outside_marker = False
         confidential = False
-        stack = [(payload, 0, None)]
+        stack = [(payload, 0, (), False)]
         while stack:
-            node, depth, anchor = stack.pop()
+            node, depth, scopes, opaque = stack.pop()
             if depth > _JSON_DEPTH:
                 raise protocol_stop()
             if isinstance(node, dict):
                 node_ids = usable_identities(node)
                 usable.update(node_ids)
                 if identities(node):
-                    anchor = node_ids
+                    scopes = (*scopes, (node is payload, node_ids))
                 for key, value in node.items():
-                    name = compact(key)
-                    marker = ("cvm" in name or "confidential" in name) and truthy(value)
-                    if marker or marker_value(value):
+                    sensitive = sensitive_key(key)
+                    marker = confidential_marker(key) and truthy(value)
+                    if marker or (
+                        isinstance(value, str) and not sensitive and confidential_marker(value)
+                    ):
                         confidential = True
-                        if node is payload or not anchor:
+                        if not scopes or scopes[-1][0]:
                             outside_marker = True
                         else:
-                            marked.update(anchor)
+                            marked.update(scopes[-1][1])
                     if isinstance(value, (dict, list)):
-                        stack.append((value, depth + 1, None if name == "vms" else anchor))
+                        stack.append((value, depth + 1, scopes, sensitive))
             elif isinstance(node, list):
-                stack.extend((child, depth + 1, anchor) for child in node)
-            elif marker_value(node):
+                stack.extend((child, depth + 1, scopes, opaque) for child in node)
+            elif isinstance(node, str) and not opaque and confidential_marker(node):
                 confidential = True
-                if not anchor:
+                if not scopes or scopes[-1][0]:
                     outside_marker = True
                 else:
-                    marked.update(anchor)
+                    marked.update(scopes[-1][1])
         if confidential:
             ids = tuple(sorted(usable if outside_marker else marked))
             self._trust.store.muse_freeze(
