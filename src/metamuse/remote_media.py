@@ -43,6 +43,7 @@ import yt-dlp. Offline local import does not call into this operation.
 
 from __future__ import annotations
 
+import codecs
 import contextvars
 import hashlib
 import io
@@ -388,11 +389,14 @@ def _wall_error() -> m.CoreError:
     return m.CoreError(m.ErrorCode.LIMIT_REACHED, "Job wall clock limit reached")
 
 
-def _dial_timeout(step: StepContext, read_timeout: float) -> Callable[[], float]:
+def _dial_timeout(
+    step: StepContext, read_timeout: float, *, guard: bool = True
+) -> Callable[[], float]:
     """Before every dial: pending cancel, wall clock, then the shorter timeout."""
 
     def remaining() -> float:
-        step.guard()
+        if guard:
+            step.guard()
         wall_limit = min(
             step.executor.limits.wall_clock_seconds,
             int(step.job.limits.get("wall_clock_seconds", 900)),
@@ -1380,6 +1384,7 @@ class _Net:
     timeout: float
     state: _State | None = None
     before_dial: Callable[[], float] | None = None
+    scan_deadline: Callable[[], float] | None = None
     cookies: tuple[Any, ...] = ()
     cookie_hosts: frozenset[str] = frozenset()
     secret_store: Any = None
@@ -1732,6 +1737,27 @@ def _unpack_dial(
     return int(status), dict(headers), bytes(payload), str(peer), ""
 
 
+@contextmanager
+def _scan_checks(net: _Net):
+    """Cheap deadline per block; durable cancellation guard at most every 250 ms."""
+    next_guard: float | None = None
+
+    def check() -> None:
+        nonlocal next_guard
+        if net.scan_deadline is not None:
+            net.scan_deadline()
+        now = time.monotonic()
+        if net.before_dial is not None and (next_guard is None or now >= next_guard):
+            net.before_dial()
+            next_guard = time.monotonic() + 0.250
+
+    try:
+        yield check
+    finally:
+        if net.before_dial is not None:
+            net.before_dial()
+
+
 def metamuse_request_handler_send(handler: Any, request: Any) -> Any:
     """Dial one checked request and follow redirects inside this handler."""
 
@@ -1801,10 +1827,18 @@ def _exchange(
             nxt = urljoin(checked.url, target)
             redirect = net.checker(nxt, purpose="redirect")
             redirect_url = redirect.url
-        if _challenge_marked(
-            status, response_headers, payload, reason, check_deadline=net.before_dial
-        ):
-            raise _challenge_error()
+        with _scan_checks(net) as check_scan:
+            if _challenge_marked(
+                status, response_headers, payload, reason, check_deadline=check_scan
+            ):
+                raise _challenge_error()
+            if (
+                _purpose.get() in ("subresource", "media")
+                and 200 <= status < 300
+                and _html_response(response_headers, payload, check_scan)
+                and _login_form(payload, checked.url, check_deadline=check_scan)
+            ):
+                raise _login_error()
         if redirect_url is not None:
             _stop_for_target(redirect_url)
         # Set-Cookie is not a credential we keep. The jar extension stays stripped.
@@ -2708,7 +2742,7 @@ def _store_subtitles(
                 continue
             try:
                 response = ydl.urlopen(track["url"])
-                payload = response.read().decode("utf-8")
+                raw_payload = response.read()
             except m.CoreError:
                 raise
             except Exception as exc:
@@ -2733,7 +2767,25 @@ def _store_subtitles(
                 if "subtitles" not in state.missing:
                     state.missing.append("subtitles")
                 continue
-            parsed = media_mod.parse_subtitles(payload, str(track["ext"]))
+            try:
+                payload = raw_payload.decode("utf-8")
+                parsed = media_mod.parse_subtitles(payload, str(track["ext"]))
+            except (UnicodeError, m.CoreError) as exc:
+                if isinstance(exc, m.CoreError) and exc.detail.code not in (
+                    m.ErrorCode.INPUT_INVALID,
+                    m.ErrorCode.UNSUPPORTED,
+                ):
+                    raise
+                parsed = media_mod.SubtitleFile(
+                    errors=[
+                        media_mod.CueError(
+                            0,
+                            "text",
+                            m.ErrorCode.INPUT_INVALID.value,
+                            "Subtitle file could not be parsed",
+                        )
+                    ]
+                )
             # Any malformed cue keeps the track incomplete. Valid cues are still stored.
             incomplete = bool(parsed.errors)
             if incomplete and "subtitles" not in state.missing:
@@ -2744,7 +2796,8 @@ def _store_subtitles(
                 continue
             language = str(track["language"])
             method = str(track["method"])
-            digest = _subtitle_sha(payload)
+            _track_identity(language, method)
+            digest = hashlib.sha256(raw_payload).hexdigest()
             native = f"{current['native_id']}:subtitle:{language}:{method}"
 
             def write(
@@ -3147,6 +3200,7 @@ def run_remote_media(step: StepContext) -> m.JobResult:
         timeout=float(timeout),
         state=state,
         before_dial=_dial_timeout(step, float(timeout)),
+        scan_deadline=_dial_timeout(step, float(timeout), guard=False),
         secret_store=step.executor.secret_store,
         provider=provider,
         account=account,
@@ -3353,7 +3407,31 @@ def _halt_rate(net: _Net, headers: dict[str, str]) -> None:
     raise _InputHalted()
 
 
-def _login_form(payload: bytes, url: str) -> bool:
+def _html_response(headers: dict[str, str], payload: bytes, check: Callable[[], object]) -> bool:
+    if any(
+        value.split(";", 1)[0].strip().lower() in ("text/html", "application/xhtml+xml")
+        for value in _header_values(headers, "content-type")
+    ):
+        return True
+    # Sniff a leading UTF-8 BOM and ASCII whitespace, then one HTML opening token.
+    start = 3 if payload.startswith(codecs.BOM_UTF8) else 0
+    while start < len(payload):
+        check()
+        block = payload[start : start + 32768]
+        stripped = block.lstrip(b" \t\r\n\f\v")
+        start += len(block) - len(stripped)
+        if stripped:
+            return (
+                payload[start : start + 14]
+                .lower()
+                .startswith((b"<!doctype html", b"<html", b"<form"))
+            )
+    return False
+
+
+def _login_form(
+    payload: bytes, url: str, *, check_deadline: Callable[[], object] | None = None
+) -> bool:
     class LoginForms(HTMLParser):
         def __init__(self) -> None:
             super().__init__()
@@ -3370,14 +3448,22 @@ def _login_form(payload: bytes, url: str) -> bool:
                 self.actions.append(values.get("action"))
 
     parser = LoginForms()
-    parser.feed(payload.decode("utf-8", "replace"))
+    decoder = codecs.getincrementaldecoder("utf-8")("replace")
+    for start in range(0, len(payload), 32768):
+        if check_deadline is not None:
+            check_deadline()
+        parser.feed(decoder.decode(payload[start : start + 32768]))
+    parser.feed(decoder.decode(b"", final=True))
+    parser.close()
     base = url
     if parser.bases:
         try:
             base = urljoin(url, parser.bases[0])
         except ValueError:
             pass  # An invalid first base uses the document URL; later bases do not count.
-    for action in parser.actions:
+    for index, action in enumerate(parser.actions):
+        if check_deadline is not None and index % 256 == 0:
+            check_deadline()
         try:
             # Missing/empty actions submit to the document URL, independent of base.
             if _login_target(urljoin(base, action) if action else url):
