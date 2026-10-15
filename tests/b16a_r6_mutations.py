@@ -644,6 +644,47 @@ adapt(
     "nested_form_prefix",
 )
 
+adapt(
+    "ending_drops_encoded_qmark",
+    within(
+        "_query_spans", "(not encoded or syntax.depth(boundary.start()) <= operator_depth)", "True"
+    ),
+)
+adapt(
+    "ending_readds_literal_qmark",
+    within(
+        "_query_spans", "(not encoded or syntax.depth(boundary.start()) <= operator_depth)", "False"
+    ),
+)
+new(
+    "r6_whole_url_question_layer_ignored",
+    within(
+        "_query_spans",
+        "(not encoded or syntax.depth(boundary.start()) <= operator_depth)",
+        "not encoded",
+    ),
+    selection="encoding_the_whole_url",
+)
+new(
+    "r6_quoted_assignment_overlap_ignored",
+    within(
+        "_assignment_spans",
+        "                closed_quote\n                and continuation",
+        "                False\n                and continuation",
+    ),
+    selection="quoted_argument_can_overlap",
+)
+new(
+    "r6_embedded_form_consumes_url_fragment",
+    within(
+        "_form_ranges",
+        "            if url is not None and url.start() <= form_field.start() < url.end():",
+        "            if False:",
+    ),
+    "tests/test_b16a_round4_form.py",
+    "fragment_never",
+)
+
 if __name__ == "__main__":
     from b16a_r6_mutation_run import main
 
