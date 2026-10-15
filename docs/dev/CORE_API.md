@@ -953,6 +953,15 @@ once. True pre-send refusal returns MuseNotSubmitted/session.start or
 FAILED_BEFORE_SEND/chat.stream. If handoff wins the boundary first, a later notification
 is an in-flight close and never replays the action; it cannot cancel already handed-off
 bytes. Invalidation callbacks take no transport lock.
+The curl pipe separates cancellation from handle cleanup: its connector thread caches an
+owned duplicate of the active socket without changing native flags or timeout settings
+(including nonblocking mode). Notifications shut that socket down without any
+concurrent curl API call or wait for the active operation. Native send/receive/cleanup are
+serialized; an active operation cleans up after unwinding, while idle cleanup may safely
+transfer threads. Cleanup is claimed once and releases the duplicate without sending a
+close frame. Descriptor reuse cannot redirect cancellation. Earlier accepted bytes keep
+in-flight uncertainty and are never replayed; connector-owned sockets remain outside the
+cancellation guarantee until connect returns.
 
 Canonical schema verification is cached per Store trust boundary; every boundary checks
 the actual schema signature for changed guards. Integrity/schema failures block with

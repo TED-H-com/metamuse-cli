@@ -91,6 +91,24 @@ There is no guard-validated proxy. `MuseTransport(proxy=...)` raises `E_SCOPE_RE
 
 HTTPS and WSS use `curl_cffi` 0.16.3, `impersonate="chrome"`, and the certifi CA bundle (`verify` is that path, and `CURLOPT_CAINFO` is the same path). `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, and `SSL_CERT_FILE` are not the trust store. Hostname verification stays on. `curl_options` are passed to the `Session` constructor, not to `Session.request`. Redirects are not followed: a 3xx is `E_SCOPE_REQUIRED` and the `Location` value is not copied into the error. Auth/mint bodies stop at 65536 decompressed bytes; session responses stop at 1 MiB.
 
+CurlSocket serializes native send, receive and cleanup. At construction, the connector
+thread duplicates curl's active socket descriptor and retains that duplicate solely for
+cancellation, without changing its native flags or timeout settings. In particular, curl's
+nonblocking mode and the adapter's finite idle-read deadline are preserved. Notifications
+never query curl for a descriptor. Close marks the pipe closed
+and shuts down this owned duplicate, interrupting receive/select or an in-progress send
+without waiting for the transport lock or calling curl concurrently. A send that has not
+entered the native backend is rejected; if cancellation races a call already entering it,
+the socket shutdown prevents a later handoff, while any bytes accepted earlier retain the
+usual uncertain/no-resend accounting. This follows [libcurl's handle ownership rule](https://curl.se/libcurl/c/threadsafe.html).
+
+The active operation performs native `terminate()` cleanup after unwinding; an idle handle
+can transfer sequentially to the closing thread. Cleanup is claimed once, closes the
+duplicate, and sends no WebSocket close frame. The duplicate pins the original socket
+identity, so reuse of curl's old descriptor number cannot interrupt an unrelated socket.
+No cancellation of a connector-owned socket is promised before connect returns. Synthetic
+adapters without a native descriptor can defer cleanup, but cannot claim native wakeup.
+
 An optional `clock() -> float` is the monotonic deadline. The default is `time.monotonic`.
 
 ## Connection
