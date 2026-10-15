@@ -32,6 +32,30 @@ VOID = frozenset(
 FIXTURE_HIDDEN_HTML = frozenset(
     "head meta title script style noscript template base link param area basefont".split()
 )
+# Locked Chromium's independently measured containment support. In particular,
+# table-cell skips contents; table-caption and other table/ruby internals do not.
+CV_SKIPS = frozenset(
+    "block inline-block flow-root flex inline-flex grid inline-grid list-item table-cell".split()
+)
+FIXTURE_CV_DISPLAYS = CV_SKIPS | frozenset(
+    "inline table inline-table table-row-group table-header-group table-footer-group "
+    "table-row table-caption ruby ruby-text contents none".split()
+)
+DEFAULT_DISPLAY = {
+    **dict.fromkeys(
+        "div p article section form ul ol li pre blockquote h1 h2 h3 h4 h5 h6 details summary fieldset header footer main nav aside figure figcaption address".split(),
+        "block",
+    ),
+    **dict.fromkeys("button input meter progress".split(), "inline-block"),
+    "table": "table",
+    "thead": "table-header-group",
+    "tbody": "table-row-group",
+    "tfoot": "table-footer-group",
+    "tr": "table-row",
+    "td": "table-cell",
+    "th": "table-cell",
+    "caption": "table-caption",
+}
 LEGACY_ENTITIES = frozenset(key for key in HTML_ENTITIES if not key.endswith(";"))
 
 
@@ -193,7 +217,10 @@ WALK = (
     r_node.composed=v_children.map(n_child=>v_ids.get(n_child));
     const v_closedDetails=v_el && r_node.ns===html && r_node.tag==='details' && !D.hasAttribute(n_node,'open');
     const n_summary=v_closedDetails?v_children.find(n_c=>D.nodeType(n_c)===1 && D.namespaceURI(n_c)===html && D.localName(n_c)==='summary'):null;
-    const v_hiddenContent=v_el && style(n_node,'content-visibility')==='hidden';
+    // Independently checked against child checkVisibility + client rects for
+    // each computed display; do not infer skipping from the authored CV alone.
+    const v_hiddenContent=v_el && style(n_node,'content-visibility')==='hidden' &&
+      ['block','inline-block','flow-root','flex','inline-flex','grid','inline-grid','list-item','table-cell'].includes(style(n_node,'display'));
     for(let v_j=v_children.length-1;v_j>=0;v_j--)v_stack.push([v_children[v_j],v_el?n_node:n_parent,v_blocked || v_hiddenContent || (v_closedDetails && v_children[v_j]!==n_summary)]);
   }
   globalThis.__metamuseNodes=v_raw;
@@ -408,6 +435,12 @@ class FixtureTree(HTMLParser):
         ):
             raise failure()
         style = attrs.get("style", "")
+        if css(style, "content-visibility") is not None and (
+            ns != HTML
+            or (css(style, "display") or DEFAULT_DISPLAY.get(tag, "inline"))
+            not in FIXTURE_CV_DISPLAYS
+        ):
+            raise failure()  # Fixture used display must have an independent oracle row.
         if css(style, "display") in {"inherit", "table-column", "table-column-group"}:
             raise failure()  # Requires computed/used display and child box suppression.
         if ns != HTML and css(style, "display") not in {None, "none"}:
@@ -684,7 +717,10 @@ class FixtureTree(HTMLParser):
                     (
                         child,
                         blocked
-                        or css(style, "content-visibility") == "hidden"
+                        or (
+                            css(style, "content-visibility") == "hidden"
+                            and (display or DEFAULT_DISPLAY.get(tag, "inline")) in CV_SKIPS
+                        )
                         or (tag == "details" and "open" not in attrs and child != summary),
                         visibility,
                     )
