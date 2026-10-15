@@ -1129,10 +1129,13 @@ remains 12 s for the adversarial Muse grammars. The bare-cookie AT-042 regressio
 is also an ordinary passing test. Focused measurements do not certify the full
 integrated application or replace exact-source hosted integration gates.
 
-`approval_failure` preserves the original error when a preview callback raises a
-CoreError or any other Exception. Unexpected exceptions are contained and log only
-`Approval preview callback failed (TYPE)`, without exception text or a traceback.
-No preview or operation side effect is produced by this fallback.
+`approval_failure` treats a callback's `E_UNSUPPORTED` as an inapplicable preview
+and preserves the original error. Other callback `CoreError` refusals propagate
+their fixed code, message and next action, including credential, stale-packet and
+scope refusals from an applicable preview. Unexpected exceptions preserve the
+original error and log only `Approval preview callback failed (TYPE)`, without
+exception text or a traceback. These refusal paths produce no preview or operation
+side effect.
 
 
 ### Retiring a transcript cue (B12 / FR-006 / AT-045)

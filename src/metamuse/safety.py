@@ -86,6 +86,8 @@ def approval_failure(ctx: AppContext, request: m.Model, error: m.CoreError) -> m
             try:
                 preview = approval_preview(ctx, operation, request.model_dump(mode="python"))
             except m.CoreError as refusal:
+                if refusal.detail.code == m.ErrorCode.UNSUPPORTED:
+                    return m.failure(error)
                 return m.failure(refusal)
             except Exception as exc:
                 ctx.logger.warning("Approval preview callback failed (%s)", type(exc).__name__)

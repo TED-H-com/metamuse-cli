@@ -344,8 +344,11 @@ display-redacted "Stored discussion title", outside the send/read body. Reconcil
 identifies a discussion by discussion_id and project; its request topic must equal
 the stored title or its current display-redacted form. approval.request and saved
 request files carry only that display-redacted title. If the display changed since
-saving, E_REFERENCE_INVALID asks to request reconciliation again. Approval failures
-propagate their real fixed code, message and next action.
+saving, E_REFERENCE_INVALID asks to request reconciliation again. Applicable approval
+failures propagate their real fixed code, message and next action. A preview callback's
+E_UNSUPPORTED means that the preview does not apply to this request and preserves
+the original error. Unexpected exceptions also preserve the original error and log
+only the fixed callback-failure line and exception class, without a preview.
 
 Muse sends exactly stored packet.rendered_text. Current rules changing an older
 packet cause E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in prepare,
