@@ -149,3 +149,49 @@ def test_r9_foreign_template_slot(tmp_path, monkeypatch, tag, foreign, request):
     assert job["coverage_status"] == "scope_satisfied"
 
 
+@pytest.mark.parametrize("driver", ["fixture", "chromium"])
+@pytest.mark.parametrize("kind", ["comment", "post", "comments-section", "img"])
+@browser_deadline
+def test_r9_unrendered_container_state(tmp_path, monkeypatch, driver, kind, request):
+    if kind == "img":
+        markup = _synthetic_post_html(post_text="BODY").replace(
+            ">BODY</div>", '>Lead<img style="display:contents" alt="UNPAINTED_ALT"></div>'
+        )
+    else:
+        markup = _synthetic_post_html(
+            comments=[{"id": "c1", "text": "REAL_C1_BODY"}], comments_exhausted=False
+        )
+        hidden = f'<article data-fb-role="{kind}" data-comment-id="ghost" data-post-id="wrong" style="visibility:hidden"><span style="visibility:visible"></span></article>'
+        if kind == "comment":
+            markup = markup.replace(
+                '<div data-fb-role="comment-body">', hidden + '<div data-fb-role="comment-body">'
+            )
+        else:
+            markup = markup.replace("<body>", "<body>" + hidden)
+    job, stored = run(tmp_path, monkeypatch, markup, driver)
+    assert job["error"] is None, job
+    assert not any(r["native_id"] == "ghost" for r in stored)
+    assert not any("UNPAINTED_ALT" in (r["text"] or "") for r in stored)
+    if kind == "comment":
+        assert [r["text"] for r in stored if r["kind"] == "comment"] == ["REAL_C1_BODY"]
+
+
+@browser_deadline
+def test_r9_slot_contents_hidden_composed_ancestor(tmp_path, monkeypatch):
+    markup = (
+        _synthetic_post_html(post_text="BODY", comments_exhausted=False)
+        .replace(
+            ">BODY</div>",
+            '>Lead<div id="host" style="content-visibility:auto;position:absolute;top:99999px"><span style="display:contents"> NEVER_PAINTED_SLOTTED</span><i style="display:contents" data-comments-exhausted="true"></i></div></div>',
+        )
+        .replace(
+            "</body>",
+            '<script>document.getElementById("host").attachShadow({mode:"open"}).innerHTML=\'<div style="display:none"><slot></slot></div>\';</script></body>',
+        )
+    )
+    job, stored = run(tmp_path, monkeypatch, markup, "chromium")
+    assert job["error"] is None, job
+    assert job["coverage_status"] == "partial"
+    assert "NEVER_PAINTED" not in stored[0]["text"]
+
+

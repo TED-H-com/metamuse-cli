@@ -3110,7 +3110,7 @@ class _DOMExtractor:
         self._current_comment: dict[str, Any] | None = None
         self._in_comment_body = 0
         self.expand_controls: list[ExpandControl] = []
-        self._stack: list[tuple[str, dict[str, str]]] = []
+        self._stack: list[tuple[int, int, dict[str, Any] | None]] = []
 
     def _barrier(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = {k.lower(): (v or "") for k, v in attrs}
@@ -3121,7 +3121,10 @@ class _DOMExtractor:
             attr_map.get("id") == "login_form" or attr_map.get("data-testid") == "royal_login_form"
         ):
             states.append("login_wall")
-        if attr_map.get("data-checkpoint") == "true" or attr_map.get("id", "").lower() == "checkpoint_form":
+        if (
+            attr_map.get("data-checkpoint") == "true"
+            or attr_map.get("id", "").lower() == "checkpoint_form"
+        ):
             states.append("checkpoint")
         # Match classification priority; later benign state cannot erase a stop.
         priority = {
@@ -3245,12 +3248,12 @@ class _DOMExtractor:
             "h3",
         }:
             self._block_boundary()
-        self._stack.append((tag.lower(), attr_map))
+        self._stack.append((self._in_post_body, self._in_comment_body, self._current_comment))
 
         role = attr_map.get("role", "").lower()
         fb_role = attr_map.get("data-fb-role", "").lower()
 
-        if fb_role == "post" or (role == "article" and "data-post-id" in attr_map):
+        if visibility and (fb_role == "post" or (role == "article" and "data-post-id" in attr_map)):
             if self.post_attrs is None:
                 self.post_attrs = dict(attr_map)
         if fb_role == "post-body" or attr_map.get("data-ad-preview") == "message":
@@ -3259,11 +3262,17 @@ class _DOMExtractor:
         elif self._in_post_body > 0:
             self._in_post_body += 1
 
-        if fb_role == "comments-section" or attr_map.get("data-comments-section") is not None:
+        if visibility and (
+            fb_role == "comments-section" or attr_map.get("data-comments-section") is not None
+        ):
             self.comments_section_present = True
 
-        if fb_role in ("comment", "reply") or (
-            role == "article" and ("data-comment-id" in attr_map or "data-comment-kind" in attr_map)
+        if visibility and (
+            fb_role in ("comment", "reply")
+            or (
+                role == "article"
+                and ("data-comment-id" in attr_map or "data-comment-kind" in attr_map)
+            )
         ):
             self.comments_section_present = True
             kind = (
@@ -3297,7 +3306,6 @@ class _DOMExtractor:
             self._in_comment_body += 1
         elif self._in_comment_body > 0:
             self._in_comment_body += 1
-
         expand_kind = attr_map.get("data-expand-kind", "").lower()
         if visibility and expand_kind in ("more_comments", "more_replies"):
             self.comments_section_present = True
@@ -3330,22 +3338,8 @@ class _DOMExtractor:
             "h3",
         }:
             self._block_boundary(nested_only=True)
-        if self._in_post_body > 0:
-            self._in_post_body -= 1
-        if self._in_comment_body > 0:
-            self._in_comment_body -= 1
         if self._stack:
-            popped_tag, popped_attrs = self._stack.pop()
-            fb_role = popped_attrs.get("data-fb-role", "").lower()
-            role = popped_attrs.get("role", "").lower()
-            if (
-                fb_role in ("comment", "reply")
-                or (
-                    role == "article"
-                    and ("data-comment-id" in popped_attrs or "data-comment-kind" in popped_attrs)
-                )
-            ) and popped_tag == tag.lower():
-                self._current_comment = None
+            self._in_post_body, self._in_comment_body, self._current_comment = self._stack.pop()
 
     def _block_boundary(self, *, nested_only: bool = False) -> None:
         if self._in_post_body > (1 if nested_only else 0):
