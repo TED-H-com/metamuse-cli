@@ -132,6 +132,21 @@ REVIEWER_CASES = {
 }
 ROUND9_CASES = {
     **{
+        name: [
+            "tests/test_facebook_r9_capture.py",
+            "-k",
+            "native_void_rendering or unmodelled_native_rendering",
+        ]
+        for name in (
+            "R9_NATIVE_VOID",
+            "R9_SVG_OPAQUE",
+            "R9_SVG_CHILDREN",
+            "R9_SVG_TSPAN",
+            "R9_FOREIGN_DISPLAY",
+            "R9_COLUMN_DISPLAY",
+        )
+    },
+    **{
         f"R9_DIRECT_{group}": ["tests/test_facebook_r9_capture.py", "-k", "no_direct"]
         for group in (
             "DOCUMENT",

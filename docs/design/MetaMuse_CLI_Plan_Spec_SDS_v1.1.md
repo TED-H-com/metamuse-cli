@@ -779,6 +779,18 @@ are refused. Executable scripts, event handlers, stylesheets, external styleshee
 links, refresh metadata and unsupported inline rendering declarations also refuse;
 fixtures do not simulate execution, resources or the external CSS cascade. Inert script payloads admit application/json, application/ld+json and text/plain; other non-empty script bodies refuse. Legacy executable-script and embed examples remain real Chromium regressions, with explicit fixture refusals.
 
+
+A vocabulary audit also checks native defaults and valid parent contexts, including
+all admitted tags and inline display/visibility values. `area` and `basefont` are
+non-rendered by default; standalone `source` and `track` remain eligible under the
+capture rule. Their display overrides refuse. SVG fixtures admit only svg/g
+containers, text/tspan text contexts and empty geometric leaves; defs, symbol and
+use refuse. A tspan outside text/tspan and any element child of a geometric leaf
+refuse. Foreign inline display values other than none, and HTML table-column or
+table-column-group display values, refuse because their used display or descendant
+box suppression requires layout. These frozen audit inputs remain in the parity
+corpus even when the admitted vocabulary is narrowed.
+
 The differential corpus includes committed HTML literals/files, runtime fixture
 inputs recorded by the suite, reviewer-provided markup and a seeded depth-five
 generator. Accepted inputs must agree with sandboxed Chromium on node kind, tag,
@@ -1867,6 +1879,18 @@ names (including noscript/template/slot), dialog, popover and declarative shadow
 are refused. Executable scripts, event handlers, stylesheets, external stylesheet
 links, refresh metadata and unsupported inline rendering declarations also refuse;
 fixtures do not simulate execution, resources or the external CSS cascade. Inert script payloads admit application/json, application/ld+json and text/plain; other non-empty script bodies refuse. Legacy executable-script and embed examples remain real Chromium regressions, with explicit fixture refusals.
+
+
+A vocabulary audit also checks native defaults and valid parent contexts, including
+all admitted tags and inline display/visibility values. `area` and `basefont` are
+non-rendered by default; standalone `source` and `track` remain eligible under the
+capture rule. Their display overrides refuse. SVG fixtures admit only svg/g
+containers, text/tspan text contexts and empty geometric leaves; defs, symbol and
+use refuse. A tspan outside text/tspan and any element child of a geometric leaf
+refuse. Foreign inline display values other than none, and HTML table-column or
+table-column-group display values, refuse because their used display or descendant
+box suppression requires layout. These frozen audit inputs remain in the parity
+corpus even when the admitted vocabulary is narrowed.
 
 The differential corpus includes committed HTML literals/files, runtime fixture
 inputs recorded by the suite, reviewer-provided markup and a seeded depth-five

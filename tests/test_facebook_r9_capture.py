@@ -419,3 +419,35 @@ def test_r9_fixture_refuses_unsupported_constructs(markup):
         capture.fixture_capture(markup)
     assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
     assert caught.value.detail.message == "Facebook structured capture could not be completed"
+
+
+@pytest.mark.parametrize(
+    "tag,rendered", [("area", False), ("basefont", False), ("source", True), ("track", True)]
+)
+def test_r9_fixture_native_void_rendering(tag, rendered):
+    nodes = capture.fixture_capture(f"<{tag}>")
+    assert next(n for n in nodes if n["tag"] == tag)["rendered"] is rendered
+
+
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<area style="display:block">',
+        '<basefont style="display:contents">',
+        '<div style="display:table-column">TEXT</div>',
+        '<span style="display:table-column-group">TEXT</span>',
+        "<svg><rect><text>TEXT</text></rect></svg>",
+        "<svg><text><g></g></text></svg>",
+        "<svg><tspan>TEXT</tspan></svg>",
+        "<svg><use><text>TEXT</text></use></svg>",
+        "<svg><defs></defs></svg>",
+        "<svg><symbol></symbol></svg>",
+        '<svg style="display:contents"><text>TEXT</text></svg>',
+        '<math style="display:contents"><mi>TEXT</mi></math>',
+    ],
+)
+def test_r9_fixture_refuses_unmodelled_native_rendering(markup):
+    with pytest.raises(m.CoreError) as caught:
+        capture.fixture_capture(markup)
+    assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
+    assert caught.value.detail.message == "Facebook structured capture could not be completed"
