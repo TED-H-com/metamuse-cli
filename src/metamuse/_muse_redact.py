@@ -2,9 +2,11 @@
 
 import json
 import re
+from functools import lru_cache, wraps
 from typing import Any
 from urllib.parse import unquote
 
+from metamuse._muse_components import compact, components
 from metamuse.safety import redact_text, redaction_sensitive_key
 
 _EXTRA_KEYS = frozenset(
@@ -49,37 +51,85 @@ _ENVELOPE = re.compile(r"(?i)\b(?:s0:|delegation\.|endorsement\.)[A-Za-z0-9_.~+/
 _NOTARY = re.compile(r"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_-]+\.){5}[A-Za-z0-9_-]+(?![A-Za-z0-9_.-])")
 
 
+_COUNTS = frozenset(
+    (
+        "max_tokens",
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "input_tokens",
+        "output_tokens",
+        "cached_tokens",
+        "reasoning_tokens",
+        "max_output_tokens",
+        "max_completion_tokens",
+        "cache_creation_input_tokens",
+        "cache_read_input_tokens",
+    )
+)
+_EXEMPT = frozenset(
+    compact(key)
+    for key in (
+        *_COUNTS,
+        "session_id",
+        "request_marker",
+        "x-request-id",
+        "client_request_id",
+        "vm_id",
+        "discussion_id",
+        "job_id",
+    )
+)
+_SINGLES = frozenset(("nonce", "token", "proof", "secret", "notary", "recovery", "psk", "passwd"))
+_PAIRS = (
+    ("noise", "key"),
+    ("attempt", "id"),
+    ("request", "id"),
+    ("rv", "key"),
+    ("wake", "body"),
+    ("access", "key"),
+)
+
+
+_COUNT_COMPACTS = frozenset(compact(count) for count in _COUNTS)
+
+
+def _short_key_cache(fn):
+    # Bound retained bytes as well as entry count. Large authenticated keys are
+    # scanned once and discarded, rather than accumulating across connections.
+    cached = lru_cache(maxsize=2048)(fn)
+
+    @wraps(fn)
+    def classify(key):
+        return cached(key) if len(key) <= 256 else fn(key)
+
+    return classify
+
+
+@_short_key_cache
+def public_key(key: str) -> bool:
+    folded = compact(key)
+    return folded in _EXEMPT or folded in {"usage" + count for count in _COUNT_COMPACTS}
+
+
+@_short_key_cache
 def sensitive_key(key: str) -> bool:
-    # Association metadata is public; remembered values remain independently scrubbed.
-    if key in {"session_id", "request_marker", "x-request-id", "client_request_id"}:
+    parts = components(key)
+    if public_key(key):
         return False
-    # Split acronym/camelCase boundaries before folding; words such as tokenizer
-    # and secretary are not token/secret components.
-    separated = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1_\2", key)
-    separated = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", separated)
-    components = re.findall(r"[a-z0-9]+", separated.casefold())
-    compact = "".join(components)
-    # Versioned aliases shipped in the previous grammar retain their meaning.
-    if components and re.fullmatch(r"v[0-9]+", components[-1]):
-        components.pop()
-    endings = {"".join(components[-1:]), "".join(components[-2:])}
-    families = {
-        "nonce",
-        "token",
-        "proof",
-        "secret",
-        "notary",
-        "noisekey",
-        "attemptid",
-        "requestid",
-        "recovery",
-        "rvkey",
-        "recoverykey",
-        "wakebody",
-    }
+    legacy = parts[:-2] if len(parts) >= 2 and parts[-2] == "v" and parts[-1].isdigit() else parts
+    singular = tuple(part[:-1] if part.endswith("s") else part for part in parts)
     return (
-        compact in _EXTRA_KEYS
-        or bool(endings & (families | _EXTRA_KEYS))
+        "".join(parts) in _EXTRA_KEYS
+        or any("".join(legacy[-n:]) in _EXTRA_KEYS for n in (1, 2, 3))
+        or any(
+            part in _SINGLES or raw in _SINGLES for raw, part in zip(parts, singular, strict=True)
+        )
+        or any(
+            first in parts
+            and any(part in (second, second + "s") for part in parts[parts.index(first) + 1 :])
+            for first, second in _PAIRS
+        )
         or redaction_sensitive_key(key)
     )
 
