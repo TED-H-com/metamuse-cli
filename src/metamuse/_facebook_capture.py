@@ -1,5 +1,7 @@
 """Read-only CDP capture and static fixture trees. No HTML visibility channel."""
 
+# ruff: noqa: E501
+
 from __future__ import annotations
 
 import json
@@ -8,6 +10,7 @@ from html.parser import HTMLParser
 from typing import Any
 
 from metamuse import models as m
+from metamuse._facebook_dom import ACCESSOR_TABLE, HELPERS
 
 # At most 8 MiB of text/attributes and 65,536 nodes, independent of job byte limits.
 MAX_NODES = 65_536
@@ -61,85 +64,97 @@ def encode(nodes: list[dict[str, Any]]) -> str:
 
 # This code executes only in a CDP isolated world. It neither creates nor clones
 # elements and performs no DOM writes. Closed roots are supplied by CDP handles.
-WALK = r"""() => {
-  if (document.contentType !== 'text/html') return {error:'document'};
-  const nodes=[], ids=new Map(), raw=[], pending=[document]; let bytes=0;
-  const utf8=new TextEncoder();
-  while(pending.length) {
-    const n=pending.pop(); if(ids.has(n))continue;
-    if(nodes.length>=65536) return {error:'bound'};
-    const kind=n.nodeType, tag=kind===1?n.localName.toLowerCase():'';
-    const attrs=kind===1?Array.from(n.attributes,a=>[a.name.toLowerCase(),a.value]):[];
-    const text=kind===3?n.data:'';
-    bytes+=utf8.encode(text).length;
-    for(const a of attrs) bytes+=utf8.encode(a[0]+a[1]).length;
-    if(bytes>8388608)return {error:'bound'};
-    ids.set(n,nodes.length);raw.push(n);
-    nodes.push({kind,tag,ns:n.namespaceURI||'',attrs:Object.fromEntries(attrs),text,rendered:false,children:[],composed:[]});
-    const children=Array.from(n.childNodes);
-    if(kind===1 && tag==='template')children.push(n.content);
-    const shadow=kind===1?(n.shadowRoot||globalThis.__metamuseClosed.get(n)):null;
-    if(shadow)children.push(shadow);
-    for(let i=children.length-1;i>=0;i--)pending.push(children[i]);
-  }
-  for(let i=0;i<raw.length;i++) {
-    const n=raw[i], children=Array.from(n.childNodes);
-    if(n.nodeType===1&&n.localName==='template')children.push(n.content);
-    const shadow=n.nodeType===1?(n.shadowRoot||globalThis.__metamuseClosed.get(n)):null;
-    if(shadow)children.push(shadow);
-    nodes[i].children=children.map(n=>ids.get(n));
-  }
-  function box(el) {
-    while(el && getComputedStyle(el).display==='contents') {
-      el=el.parentElement||el.getRootNode().host;
+WALK = (
+    "() => {"
+    + ACCESSOR_TABLE
+    + HELPERS
+    + r"""
+  if (D.contentType(document) !== 'text/html') return {error:'document'};
+  const v_nodes=[], v_ids=new Map(), v_raw=[], v_pending=[document]; let v_bytes=0;
+  const v_utf8=new TextEncoder();
+  function shadow(n_node) {return D.shadowRoot(n_node)||globalThis.__metamuseClosed.get(n_node);}
+  function allChildren(n_node) {
+    const v_children=children(n_node);
+    if(D.nodeType(n_node)===1) {
+      if(D.namespaceURI(n_node)===html && D.localName(n_node)==='template')v_children.push(D.content(n_node));
+      const n_shadow=shadow(n_node);if(n_shadow)v_children.push(n_shadow);
     }
-    return !!el && el.checkVisibility();
+    return v_children;
   }
-  const stack=[[document,null,false]], seen=new Set();
-  while(stack.length) {
-    const [n,parent,excluded]=stack.pop(); if(seen.has(n))continue;seen.add(n);
-    const i=ids.get(n);if(i===undefined)return {error:'tree'};
-    const rec=nodes[i], el=n.nodeType===1;
-    let blocked=excluded;
-    if(el && ['noscript','template','script','style','head'].includes(rec.tag))blocked=true;
-    if(el && n.getAttribute('hidden')?.toLowerCase()==='until-found')blocked=true;
-    if(el)rec.rendered=!blocked && getComputedStyle(n).visibility==='visible' && box(n);
-    if(n.nodeType===3) {
-      // Computed visibility inherits through the composed parent; display:contents
-      // has no box of its own and must be looked through.
-      const p=n.parentElement?.localName==='slot'?n.parentElement:parent;
-      const range=document.createRange();range.selectNode(n);
-      let ancestor=p;
-      while(ancestor && getComputedStyle(ancestor).display==='contents') {
-        ancestor=ancestor.parentElement||ancestor.getRootNode().host;
+  while(v_pending.length) {
+    const n_node=v_pending.pop(); if(v_ids.has(n_node))continue;
+    if(v_nodes.length>=65536) return {error:'bound'};
+    const v_kind=D.nodeType(n_node), v_tag=v_kind===1?D.localName(n_node).toLowerCase():'';
+    const v_attrs=[];
+    if(v_kind===1) {
+      const n_attrs=D.attributes(n_node);
+      for(let v_i=0;v_i<D.attrsLength(n_attrs);v_i++) {
+        const n_attr=D.attrsItem(n_attrs,v_i);
+        v_attrs.push([D.attrName(n_attr).toLowerCase(),D.attrValue(n_attr)]);
       }
-      const autoSkipped=ancestor && ancestor.checkVisibility() &&
-        !ancestor.checkVisibility({contentVisibilityAuto:true});
-      const textBox=range.getClientRects().length>0 || autoSkipped;
-      rec.rendered=!blocked && !!p && getComputedStyle(p).visibility==='visible' &&
-        box(p) && textBox;
     }
-    let children=Array.from(n.childNodes);
-    if(el) {
-      const shadow=n.shadowRoot||globalThis.__metamuseClosed.get(n);
-      if(shadow)children=Array.from(shadow.childNodes);
-      else if(rec.tag==='slot') {
-        const assigned=n.assignedNodes();if(assigned.length)children=Array.from(assigned);
-      }
-      else if(['template','noscript','iframe'].includes(rec.tag))children=[];
-    }
-    rec.composed=children.map(n=>ids.get(n));
-    const closedDetails=el && rec.tag==='details' && !n.hasAttribute('open');
-    const summary=closedDetails?children.find(c=>c.nodeType===1 && c.localName==='summary'):null;
-    const hiddenContent=el && getComputedStyle(n).contentVisibility==='hidden';
-    for(let j=children.length-1;j>=0;j--) {
-      const childBlocked=blocked || hiddenContent || (closedDetails && children[j]!==summary);
-      stack.push([children[j],el?n:parent,childBlocked]);
-    }
+    const v_text=v_kind===3?D.nodeValue(n_node):'';
+    v_bytes+=v_utf8.encode(v_text).length;
+    for(const v_a of v_attrs) v_bytes+=v_utf8.encode(v_a[0]+v_a[1]).length;
+    if(v_bytes>8388608)return {error:'bound'};
+    v_ids.set(n_node,v_nodes.length);v_raw.push(n_node);
+    v_nodes.push({kind:v_kind,tag:v_tag,ns:v_kind===1?D.namespaceURI(n_node):'',attrs:Object.fromEntries(v_attrs),text:v_text,rendered:false,children:[],composed:[]});
+    const v_children=allChildren(n_node);
+    for(let v_i=v_children.length-1;v_i>=0;v_i--)v_pending.push(v_children[v_i]);
   }
-  globalThis.__metamuseNodes=raw;
-  return {nodes};
+  for(let v_i=0;v_i<v_raw.length;v_i++)v_nodes[v_i].children=allChildren(v_raw[v_i]).map(n_child=>v_ids.get(n_child));
+  const v_replaced=new Set('img input textarea select video audio canvas iframe embed object br wbr meter progress frame frameset'.split(' '));
+  function noBox(n_node) {
+    const v_display=style(n_node,'display');
+    return v_display==='none' || (v_display==='contents' && v_replaced.has(D.localName(n_node)));
+  }
+  function box(n_node) {
+    while(n_node) {
+      if(D.nodeType(n_node)===1) {
+        if(noBox(n_node))return false;
+        if(style(n_node,'display')!=='contents')return D.checkVisibility(n_node);
+      }
+      n_node=parent(n_node);
+    }
+    return false;
+  }
+  const v_stack=[[document,null,false]], v_seen=new Set();
+  while(v_stack.length) {
+    const [n_node,n_parent,v_excluded]=v_stack.pop(); if(v_seen.has(n_node))continue;v_seen.add(n_node);
+    const v_i=v_ids.get(n_node);if(v_i===undefined)return {error:'tree'};
+    const r_node=v_nodes[v_i], v_el=D.nodeType(n_node)===1;
+    let v_blocked=v_excluded;
+    if(v_el && r_node.ns===html && ['noscript','template','script','style','head'].includes(r_node.tag))v_blocked=true;
+    if(v_el && (D.getAttribute(n_node,'hidden')?.toLowerCase()==='until-found'||noBox(n_node)))v_blocked=true;
+    if(v_el)r_node.rendered=!v_blocked && style(n_node,'visibility')==='visible' && box(n_node);
+    if(D.nodeType(n_node)===3) {
+      const n_p=n_parent;
+      const n_range=D.createRange(document);D.selectNode(n_range,n_node);
+      let n_ancestor=n_p;
+      while(n_ancestor && (D.nodeType(n_ancestor)!==1 || style(n_ancestor,'display')==='contents'))n_ancestor=parent(n_ancestor);
+      const v_autoSkipped=n_ancestor && box(n_ancestor) && !D.checkVisibility(n_ancestor,{contentVisibilityAuto:true});
+      const v_textBox=D.rectsLength(D.getClientRects(n_range))>0 || v_autoSkipped;
+      r_node.rendered=!v_blocked && !!n_p && style(n_p,'visibility')==='visible' && box(n_p) && v_textBox;
+    }
+    let v_children=children(n_node);
+    if(v_el) {
+      const n_shadow=shadow(n_node);
+      if(n_shadow)v_children=children(n_shadow);
+      else if(r_node.ns===html && r_node.tag==='slot') {
+        const v_assigned=D.assignedNodes(n_node);if(v_assigned.length)v_children=Array.from(v_assigned);
+      }
+      else if(r_node.ns===html && ['template','noscript','iframe'].includes(r_node.tag))v_children=[];
+    }
+    r_node.composed=v_children.map(n_child=>v_ids.get(n_child));
+    const v_closedDetails=v_el && r_node.ns===html && r_node.tag==='details' && !D.hasAttribute(n_node,'open');
+    const n_summary=v_closedDetails?v_children.find(n_c=>D.nodeType(n_c)===1 && D.namespaceURI(n_c)===html && D.localName(n_c)==='summary'):null;
+    const v_hiddenContent=v_el && style(n_node,'content-visibility')==='hidden';
+    for(let v_j=v_children.length-1;v_j>=0;v_j--)v_stack.push([v_children[v_j],v_el?n_node:n_parent,v_blocked || v_hiddenContent || (v_closedDetails && v_children[v_j]!==n_summary)]);
+  }
+  globalThis.__metamuseNodes=v_raw;
+  return {nodes:v_nodes};
 }"""
+)
 
 
 def capture(cdp: Any) -> tuple[list[dict[str, Any]], int, tuple[str, ...]]:
