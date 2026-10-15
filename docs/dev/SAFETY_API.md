@@ -264,5 +264,13 @@ recomputed digest. The displayed values are stored; defaults are 24 hours and on
 Default expiry is 24h; explicit expiry is timezone-aware and within 30 days. Default-expiry
 replay validates stored receipts through the core duplicate-key-rejecting decoder and
 never extends the original grant. Binding labels come from configuration only.
+CLI terminal review quotes every callback-summary line, then shows the recomputed
+operation, destination, provider/account, project and action digest in a separate
+approval binding before expiry, use count and confirmation. Terminal controls,
+Unicode formatting/directional controls and line separators are displayed as escapes;
+source text cannot erase the review or create an unquoted approval field. Human-mode
+results and diagnostics use the same terminal escaping. Stored text, action digests
+and machine-readable JSON data retain their original values. This display boundary
+does not grant authority or change the exact-action confirmation requirement.
 Changed request text or packet fails digest equality; preview data cannot mint permissions.
 The fixed registration seam and B12/B13 adoption obligations are in [CORE_API.md](CORE_API.md).
