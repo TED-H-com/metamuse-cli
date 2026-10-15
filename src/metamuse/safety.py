@@ -2481,8 +2481,8 @@ def _query_spans(text, syntax, encoded_positions):
                 continue
             end = boundary.start()
             break
-        position = max(position, end)
         if redaction_sensitive_value("token" if key.lower() in signed else key, text[start:end]):
+            position = max(position, end)
             yield start, end, "url_token", _REDACTED
 
 
@@ -2580,6 +2580,8 @@ def _cookie_spans(text, syntax):
             members += 1
         if members > 1 and (sensitive or generic):
             yield begin, end, "cookie", _REDACTED
+        elif not sensitive and not generic:
+            position = match.end()
 
 
 def _jar_spans(text):
@@ -2695,11 +2697,11 @@ def _xml_spans(text, syntax):
             index += 1
         end = ends[index].start() if index < len(ends) else len(text)
         cursors[key.lower()] = index + 1
-        position = ends[index].end() if index < len(ends) else end
         value = text[value_start:end]
         if value.startswith("<![CDATA[") and value.endswith("]]>"):
             value = value[9:-3]
         if redaction_sensitive_value(key.rsplit(":", 1)[-1], value):
+            position = ends[index].end() if index < len(ends) else end
             yield value_start, end, "sensitive_field", _REDACTED
 
 
@@ -2722,9 +2724,10 @@ def _curl_spans(text, syntax):
             while start < len(text) and text[start].isspace():
                 start += 1
         end = syntax.value(text, start, operator_depth=syntax.depth(match.start()))
-        position = max(end, match.end())
+        position = match.end()
         if (match["long"] or match["short"]) in {"-b", "--cookie"}:
             if redaction_sensitive_value("cookie", text[start:end]):
+                position = max(end, match.end())
                 quoted = text[start : start + 1] in {'"', "'", "`"}
                 yield (
                     start + int(quoted),
@@ -2735,6 +2738,7 @@ def _curl_spans(text, syntax):
             continue
         colon = text.find(":", start, end)
         if colon >= 0 and redaction_sensitive_value("password", text[colon + 1 : end]):
+            position = max(end, match.end())
             if text[start : start + 1] in "\"'`" and text[end - 1 : end] == text[start]:
                 end -= 1
             yield colon + 1, end, "sensitive_field", _REDACTED
@@ -3089,8 +3093,8 @@ def _command_spans(text, syntax):
             while start < len(text) and text[start].isspace():
                 start += 1
         end = syntax.value(text, start, operator_depth=syntax.depth(match.start()))
-        position = max(match.end(), end)
         if redaction_sensitive_value("password", text[start:end]):
+            position = max(match.end(), end)
             quoted = text[start : start + 1] in {'"', "'", "`"}
             yield (
                 start + int(quoted),

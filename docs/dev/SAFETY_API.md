@@ -481,3 +481,10 @@ placeholders and lookups are credentials. Fixed environment lookups have locally
 quoted arguments, so parentheses or brackets within an argument are data. Lookup
 and placeholder extents are indexed once; nested lookups never repeatedly copy
 or decode a suffix per assignment.
+
+Every scanner continues inside an exempt outer value. Assignment, header, XML,
+query, curl and SQL/sshpass/mysql passes advance only past the matched key or
+operator until masking a value. Cookie-chain discovery likewise revisits exempt
+single members. URL candidates always resume at the next candidate; HAR walks
+all string/container children; jar, prefix, JWT, block and path passes enumerate
+independent matches. Only a selected redaction permits skipping its consumed value.
