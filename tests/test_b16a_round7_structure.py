@@ -186,6 +186,16 @@ def test_r7_curl_exemption_decides_password_without_username(text):
 
 
 
+def test_r7_heredoc_header_never_swallows_form_markup():
+    from urllib.parse import quote_plus
+
+    text = (
+        "cat <<EOF\n# operator's note\n q=" + quote_plus("<password>" + V + "</password>") + "\nEOF"
+    )
+    assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
 def test_r7_unquoted_nested_tag_starts_independent_context():
     text = "<div q=<password>" + V + "</password>"
     assert V not in redact_text(text)[0], (text, redact_text(text))
@@ -313,6 +323,12 @@ def test_r7_private_block_owns_its_final_line(final):
         + final
         + " public"
     )
+    assert V not in redact_text(text)[0]
+
+
+
+def test_r7_form_body_continues_through_markup_quotes():
+    text = 'Log: body=<input+name="password"+value="' + V + '">'
     assert V not in redact_text(text)[0]
 
 

@@ -3958,6 +3958,10 @@ def _form_ranges(text, depths=None):
     encoded_form = re.compile(_NAME + r"(?:\+|\\{1,8}u002[bB])*+%(?:25){0,2}3[dD][^\s]*+")
 
     def bodies():
+        if re.fullmatch(
+            r"(?i)(?:curl|sshpass|mysql|mariadb|mysqldump|%3cinput|%3cmeta)[^\s]*+", text
+        ):
+            yield 0, len(text), "form", ""
         for line in re.finditer(r"[^\r\n]++", text):
             label = re.match(r"(?i)body:[^\S\r\n]*+", line[0])
             begin = label.end() if label else 0
@@ -3967,11 +3971,16 @@ def _form_ranges(text, depths=None):
     url_pattern = re.compile(r"(?i)(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://[^\s\"'<>]++")
 
     def embedded_bodies():
+        for captured in re.finditer(
+            r"(?i)(?<![A-Za-z0-9_%])(?:curl|sshpass|mysql|mariadb|mysqldump|%3cinput|%3cmeta)\+[^\s]++",
+            text,
+        ):
+            yield captured.start(), captured.end(), "form", ""
         # A captured form is independent of surrounding prose. A field inside
         # an actual URL belongs only to its bounded query, never its fragment.
         urls = iter(url_pattern.finditer(text))
         url = next(urls, None)
-        for form_field in re.finditer(r"(?<![A-Za-z0-9_%])" + _NAME + r"=[^\s\"'`<>]++", text):
+        for form_field in re.finditer(r"(?<![A-Za-z0-9_%])" + _NAME + r"=[^\s]++", text):
             while url is not None and url.end() <= form_field.start():
                 url = next(urls, None)
             if url is not None and url.start() <= form_field.start() < url.end():
@@ -4010,6 +4019,7 @@ def _form_ranges(text, depths=None):
 
     for start, end, _, _ in _merge_spans([bodies(), embedded_bodies(), quoted_bodies(), queries()]):
         yield start, end
+
 
 
 def _decoded_ranges(ranges, edits):
