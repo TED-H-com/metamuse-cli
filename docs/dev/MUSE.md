@@ -172,9 +172,17 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    Each call first rechecks durable currentness. A refused context closes and stops before
    any HTTPS request or WSS dial. An unaffected context whose socket was closed by a
    broadcast closes its old receive loop and reconnects through auth, session, freeze,
-   mint, wake and the full handshake in that same call. Only a newly registered loop
-   clears the invalidation flag. No standard enrollment-health or capability-registration
-   gate is added.
+   mint, wake and the full handshake in that same call. Immediately after freeze returns,
+   clear invalidation and register the listener, before mint, wake or opening a socket.
+   Registrations are de-duplicated per transport and label key. Any workspace-confidential
+   or own-label notification after registration forces a fresh connect in this call before
+   its first application frame, including a notification before loop publication or during
+   the final durable check. After publishing the loop and checking currentness, check
+   invalidation again. Allow at most three connects per call. Exhaustion returns the fixed
+   `E_NETWORK_TIMEOUT` / `safe_read`, `Muse connection failed`, with action
+   `Retry the connection. No gateway request frame was sent.` A mutation then reports
+   never-sent through `MuseNotSubmitted` or the `chat.stream` `failed_before_send` attempt.
+   No standard enrollment-health or capability-registration gate is added.
 
 Wake is an account-side power-state request, performed only inside a connection triggered
 by an already-granted Muse operation in live network mode. Offline mode and the separately

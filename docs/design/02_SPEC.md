@@ -276,7 +276,13 @@ propagation及inherited edge）commit後notify全部workspace live listeners，�
 立即close sockets。non-direct freeze沒有confidential write不broadcast；binding/generation
 change仍只notify自己的label。下一call先重查durable state；refusal在任何HTTPS/WSS前stop。
 若仍current但socket被broadcast關閉，同一call完成fresh auth/session/freeze/mint/wake/handshake
-後才開application frame；新loop註冊才清invalidation，不回假的E_STORAGE。mutation只consume一次。
+後才開application frame，不回假的E_STORAGE。freeze回來後立即清invalidation並註冊listener，
+在mint/wake/socket之前；同transport/key註冊deduplicate。註冊後任何workspace confidential
+或own-label notification（含publish前及final durable check期間）都在同一call先fresh connect；
+publish並assert_current後重查invalidation，每call最多3次connect。耗盡回固定retryable
+E_NETWORK_TIMEOUT/safe_read「Muse connection failed」，action「Retry the connection.
+No gateway request frame was sent.」；mutation經MuseNotSubmitted或chat.stream
+failed_before_send回never-sent。mutation只consume一次。
 in-flight socket關閉不replay：incomplete read回E_NETWORK_TIMEOUT；handoff後chat.stream保留
 uncertain/partial evidence，session.start回MuseStateUnknown/reconcile；protocol failure仍never。
 下一call只重連，不重送之前的mutation。

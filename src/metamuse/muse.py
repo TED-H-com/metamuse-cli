@@ -1647,6 +1647,17 @@ class MuseTransport:
             loop.link.close()
 
     def _connect(self) -> None:
+        for _ in range(3):
+            self._connect_once()
+            # A notification may precede publication of the loop, or arrive during
+            # its final durable check. Neither socket may carry an application frame.
+            if not self._trust_invalidated:
+                return
+            self._close_locked()
+        message, action = _PUBLIC_CODES[ErrorCode.NETWORK_TIMEOUT]
+        raise _error(ErrorCode.NETWORK_TIMEOUT, message, next_action=action)
+
+    def _connect_once(self) -> None:
         if self._loop is not None:
             try:
                 self._trust.assert_current(self._snapshot)
@@ -1667,6 +1678,10 @@ class MuseTransport:
         )
         selected = self._session_payload(session, auth)["selected"]
         snapshot = self._trust.freeze(auth, selected)
+        # The first freeze can notify this label itself. Subscribe after it, but
+        # before mint/wake/dial, and never erase a notification at publication.
+        self._trust_invalidated = False
+        self._trust.store.muse_watch(snapshot, self._invalidate_trust)
         if snapshot.confidential_required or selected.replacement:
             raise protocol_stop()
         if selected.vm_state in ("DISABLED", "DELETING", "ERROR"):
@@ -1746,8 +1761,6 @@ class MuseTransport:
             )
             self._connection_secrets = tuple(self._secrets._values)
             self._loop, self._snapshot = loop, snapshot
-            self._trust_invalidated = False
-            self._trust.store.muse_watch(snapshot, self._invalidate_trust)
             self._trust.assert_current(snapshot)
         except IncompleteBody:
             failure = (

@@ -716,12 +716,14 @@ class Store:
             raise _MuseNotificationFailure() from failure
 
     def muse_watch(self, snapshot: MuseTrustSnapshot, callback: Callable[[], None]) -> None:
-        """Weak socket invalidator; recheck currentness after registration."""
+        """One weak invalidator per callback/key; recheck after registration."""
         key = (str(self.paths.root), snapshot.provider, snapshot.account)
         with _MUSE_LISTENERS_LOCK:
             refs = _MUSE_LISTENERS.setdefault(key, [])
             refs[:] = [ref for ref in refs if ref() is not None]
-            refs.append(weakref.WeakMethod(callback))
+            candidate = weakref.WeakMethod(callback)
+            if candidate not in refs:
+                refs.append(candidate)
 
     @staticmethod
     def _muse_check_types(row):

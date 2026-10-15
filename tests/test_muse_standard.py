@@ -1158,13 +1158,14 @@ def test_r2_f8_each_new_connection_currentness_check_stops_next_effect(phase, mo
 
         monkeypatch.setattr(connector, "connect", fail_then_change)
     else:
-        original = store.muse_watch
+        original = store.muse_assert_current
 
-        def watch_then_change(*args):
-            original(*args)
-            _r2_external_session_change(store)
+        def final_check_then_change(snapshot):
+            if transport._loop is not None:
+                _r2_external_session_change(store)
+            return original(snapshot)
 
-        monkeypatch.setattr(store, "muse_watch", watch_then_change)
+        monkeypatch.setattr(store, "muse_assert_current", final_check_then_change)
     with pytest.raises(CoreError) as exc:
         transport.sessions_list()
     assert exc.value.detail.code == ErrorCode.STORAGE

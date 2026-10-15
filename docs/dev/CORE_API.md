@@ -914,7 +914,16 @@ write already committed. A non-direct freeze counts actual confidential SQL writ
 label's binding changes. A no-op freeze does not broadcast; selection-only changes
 notify their own label. On its next call an unaffected, invalidated transport first
 passes the durable recheck, then reconnects through the full bootstrap and handshake
-before any application frame. An affected context stops before HTTPS or WSS. An
+before any application frame. Immediately after freeze returns, the transport clears
+invalidation and registers `muse_watch`, before mint, wake or opening a socket. The
+registry de-duplicates each bound callback per workspace/label key. Any subsequent
+workspace-confidential or own-label notification forces a fresh connect in the same
+call before its first application frame; the transport rechecks invalidation after
+publishing the loop and the final durable assertion. At most three connects per call
+are allowed. Exhaustion returns E_NETWORK_TIMEOUT / safe_read, `Muse connection failed`,
+with action `Retry the connection. No gateway request frame was sent.` A mutation
+reports never-sent through `MuseNotSubmitted` or a chat.stream `failed_before_send`
+attempt. An affected context stops before HTTPS or WSS. An
 in-flight interruption retains normal read failure or mutation uncertainty handling;
 no notification replays a mutation. The documented human closure repair runs after
 stopping Muse connections, so it has no live listeners to notify.
