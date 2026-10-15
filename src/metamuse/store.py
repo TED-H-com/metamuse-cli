@@ -114,7 +114,7 @@ def _muse_storage_error(*, stale=False) -> m.CoreError:
     return m.CoreError(m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message])
 
 
-_MUSE_COMPONENT_SQL = """
+_MUSE_COMPONENT_CTE = """
 WITH RECURSIVE component(kind,identity) AS (
  SELECT 'owner', ?1
  UNION SELECT 'vm', ?2 WHERE ?2 IS NOT NULL AND ?2!=''
@@ -131,6 +131,10 @@ WITH RECURSIVE component(kind,identity) AS (
  UNION SELECT 'owner',o.viewer_hash FROM component r JOIN muse_trust_observations o ON
     r.kind='vm' AND o.vm_id=r.identity WHERE o.vm_id!=''
 )
+"""
+_MUSE_COMPONENT_SQL = (
+    _MUSE_COMPONENT_CTE
+    + """
 SELECT 1 FROM component r WHERE
  (r.kind='owner' AND (EXISTS(SELECT 1 FROM muse_trust_accounts a WHERE a.viewer_hash=r.identity
     AND a.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE
@@ -139,6 +143,7 @@ SELECT 1 FROM component r WHERE
     v.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE
     o.vm_id=r.identity AND o.confidential_required=1))) LIMIT 1
 """
+)
 
 
 _MUSE_ENVIRONMENT = {
@@ -205,9 +210,10 @@ def _muse_fixed_storage(exc):
             sqlite3.SQLITE_SCHEMA,
             sqlite3.SQLITE_CONSTRAINT,
         )
-        os_reason = {errno.ENOSPC: sqlite3.SQLITE_FULL, errno.EROFS: sqlite3.SQLITE_READONLY}.get(
-            getattr(cause, "errno", None)
-        )
+        os_reason = {
+            errno.ENOSPC: sqlite3.SQLITE_FULL,
+            errno.EROFS: sqlite3.SQLITE_READONLY,
+        }.get(getattr(cause, "errno", None))
         if os_reason is not None:
             code = os_reason
         if code in _MUSE_ENVIRONMENT:
@@ -793,7 +799,10 @@ class Store:
                 or not row["observed_at"]
             ):
                 raise _muse_storage_error()
-        return conn.execute(_MUSE_COMPONENT_SQL, (viewer_hash, vm_id)).fetchone() is not None
+        return (
+            conn.execute(_MUSE_COMPONENT_SQL, (viewer_hash, vm_id)).fetchone()
+            is not None
+        )
 
     @_muse_safe
     def muse_freeze(
@@ -1008,13 +1017,21 @@ class Store:
             self._muse_current(conn, snapshot, standard=True)
 
     @staticmethod
-    def _muse_close_bind(conn):
-        """Materialize the whole closure once; no per-row propagation inside a bind."""
+    def _muse_close_bind(conn, viewer_hash=None):
+        """Close only this bind component; no argument is explicit whole-store repair."""
         conn.execute(
             "CREATE TEMP TABLE muse_bind_required(kind, identity, "
             "PRIMARY KEY(kind, identity)) WITHOUT ROWID"
         )
-        conn.execute("INSERT INTO muse_bind_required SELECT * FROM muse_trust_confidential")
+        if viewer_hash is None:
+            conn.execute("INSERT INTO muse_bind_required SELECT * FROM muse_trust_confidential")
+        else:
+            conn.execute(
+                "INSERT INTO muse_bind_required "
+                + _MUSE_COMPONENT_CTE
+                + " SELECT kind,identity FROM component",
+                (viewer_hash, None),
+            )
         conn.execute(
             "UPDATE muse_trust_accounts SET confidential_required=1, "
             "generation=generation+1 WHERE confidential_required=0 AND viewer_hash IN "
@@ -1130,7 +1147,7 @@ class Store:
                     self._muse_observe(conn, viewer_hash, vm_ids, confidential=True, source=source)
                     if binding is not None:
                         self._muse_bind_label(conn, provider, account, viewer_hash, vm_ids, binding)
-                    self._muse_close_bind(conn)
+                    self._muse_close_bind(conn, viewer_hash)
                 self._muse_notify(provider, account, confidential=True)
         except m.CoreError as exc:
             fixed = _muse_fixed_storage(exc)

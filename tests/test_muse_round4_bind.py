@@ -55,9 +55,9 @@ def test_r4_1_one_closure_for_the_whole_hint_bind(ctx, monkeypatch):
     calls = []
     original = ctx.store._muse_close_bind
 
-    def close(conn):
+    def close(conn, *seeds):
         calls.append(True)
-        original(conn)
+        original(conn, *seeds)
 
     monkeypatch.setattr(ctx.store, "_muse_close_bind", close)
     transport, connector, _ids = hinted_transport(ctx.store, 100)
