@@ -85,6 +85,18 @@ def test_removal_previous_schema_upgrade_backup_and_guards(tmp_path):
         schema_version=previous,
         migrations={n: p for n, p in core.MIGRATIONS.items() if n <= previous},
     )
+    with old.connection() as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == previous
+        core._verify_schema(conn, previous, core.MIGRATIONS)
+        tables = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_schema WHERE type='table'")
+        }
+        assert {
+            "muse_trust_accounts",
+            "muse_trust_vms",
+            "muse_trust_observations",
+            "muse_trust_propagating",
+        } <= tables
     project = anchor(old)
     with old.transaction() as conn:
         conn.execute(

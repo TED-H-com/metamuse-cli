@@ -402,7 +402,7 @@ def test_r3_m_amended_005_fresh_upgrade_and_restore_remote_observations(tmp_path
     Store.restore(backup, restored_paths)
     restored = Store(restored_paths)
     with restored.connection() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 5
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == core.SCHEMA_VERSION
         assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert not conn.execute("PRAGMA foreign_key_check").fetchall()
         assert (
