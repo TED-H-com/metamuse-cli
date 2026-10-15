@@ -204,6 +204,24 @@ def _statements(script: str) -> Iterator[str]:
         raise ValueError("Incomplete migration statement")
 
 
+_BUSY_TIMEOUT_SECONDS = 30
+
+
+class _StorageBusy(m.CoreError):
+    """Internal lock contention marker; the public contract remains E_STORAGE/never."""
+
+    def __init__(self, sqlite_errorcode: int):
+        super().__init__(m.ErrorCode.STORAGE, "SQLite write lock is busy")
+        self.sqlite_errorcode = sqlite_errorcode  # retain extended codes, never SQL or values
+
+
+def _storage_error(exc: sqlite3.Error, message: str) -> m.CoreError:
+    code = getattr(exc, "sqlite_errorcode", None)
+    if isinstance(code, int) and code & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+        return _StorageBusy(code)
+    return m.CoreError(m.ErrorCode.STORAGE, message)
+
+
 class Store:
     def __init__(
         self,
@@ -251,7 +269,11 @@ class Store:
         # Check version before applying writable pragmas; older builds must not write newer DBs.
         if self.paths.database.exists():
             with closing(
-                sqlite3.connect(f"{self.paths.database.as_uri()}?mode=ro", uri=True)
+                sqlite3.connect(
+                    f"{self.paths.database.as_uri()}?mode=ro",
+                    uri=True,
+                    timeout=_BUSY_TIMEOUT_SECONDS,
+                )
             ) as probe:
                 _configure(probe, writable=False)
                 version = probe.execute("PRAGMA user_version").fetchone()[0]
@@ -260,7 +282,9 @@ class Store:
                     m.ErrorCode.PROTOCOL_MISMATCH, "Database schema is newer than this build"
                 )
         private_file(self.paths.database)
-        conn = sqlite3.connect(self.paths.database, timeout=5, isolation_level=None)
+        conn = sqlite3.connect(
+            self.paths.database, timeout=_BUSY_TIMEOUT_SECONDS, isolation_level=None
+        )
         try:
             _configure(conn)
             conn.create_function("metamuse_now", 0, lambda: self.clock())
@@ -272,8 +296,8 @@ class Store:
     def _open(self) -> sqlite3.Connection:
         try:
             return self._open_database()
-        except sqlite3.Error:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Cannot open workspace database") from None
+        except sqlite3.Error as exc:
+            raise _storage_error(exc, "Cannot open workspace database") from None
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -285,8 +309,8 @@ class Store:
                 if conn.execute("PRAGMA user_version").fetchone()[0] != self.schema_version:
                     raise m.CoreError(m.ErrorCode.PROTOCOL_MISMATCH, "Database requires migration")
                 yield conn
-            except sqlite3.Error:
-                raise m.CoreError(m.ErrorCode.STORAGE, "SQLite operation failed") from None
+            except sqlite3.Error as exc:
+                raise _storage_error(exc, "SQLite operation failed") from None
             finally:
                 conn.close()
 
@@ -1494,9 +1518,12 @@ def _configure(conn: sqlite3.Connection, *, writable: bool = True) -> None:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA recursive_triggers=ON")
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute(f"PRAGMA busy_timeout={int(_BUSY_TIMEOUT_SECONDS * 1000)}")
     if writable:
-        conn.execute("PRAGMA journal_mode=WAL")
+        # Changing journal mode can itself need a write lock. Existing WAL readers
+        # only inspect the mode; a failed transition is classified by _open as busy.
+        if conn.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
+            conn.execute("PRAGMA journal_mode=WAL")
     else:
         conn.execute("PRAGMA journal_mode")  # inspect only; never modify a newer schema
     conn.execute("PRAGMA synchronous=FULL")

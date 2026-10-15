@@ -88,6 +88,11 @@ accepted僅表示已commit job；沒有worker時必須queued+worker_available:fa
 
 job取消先持久化，在安全邊界停止。已發送Muse／發文只能回本地停止與remote cancel狀態；沒證據不可回remote confirmed。中止MCP等待不自動取消已接受job，需明確job_control。
 
+未claim step的worker遇暫時SQLite BUSY／LOCKED須保持存活，以有界jitter backoff重試並可stop；
+既有worker status顯示有界storage_busy_retries。已claim步驟仍遵循原failure／uncertainty規則，
+不自動重送external_submit。非busy的attached worker失敗顯示failed與固定worker_error_code，
+不暴露exception內容。一般CLI等待storage lock逾時仍回E_STORAGE；詳細timeout與停止界線見SDS。
+
 ## 6. Muse 對話契約
 
 只依賴最小session、send和history。主Agent提供問題和文案，MetaMuse不自動重規劃研究。Muse自然語言原文照存，不假定strict JSON或可註冊任意tools。

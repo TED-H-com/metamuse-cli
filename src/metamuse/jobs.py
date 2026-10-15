@@ -5,19 +5,22 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import random
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 from pydantic import ValidationError
 
 from metamuse import models as m
 from metamuse.config import load_config
-from metamuse.store import Store, TransactionWriter
+from metamuse.store import Store, TransactionWriter, _StorageBusy
+
+_T = TypeVar("_T")
 
 UncertainState = Literal["open_uncertain", "send_uncertain", "needs_reconcile"]
 UNCERTAIN = ("open_uncertain", "send_uncertain", "needs_reconcile")
@@ -395,6 +398,23 @@ class Executor:
         self._tokens: dict[ExternalActionToken, tuple] = {}
         self._zero_handoff: dict[str, NotSubmittedProof] = {}
         self._proofs: dict[NotSubmittedProof, tuple] = {}
+        self.storage_busy_retries = 0
+        self._busy_observer: Callable[[], None] = lambda: None
+
+    def _retry_unclaimed(self, action: Callable[[], _T]) -> _T | None:
+        """Only whole, rolled-back maintenance transactions; never a claimed handler."""
+        delay = 0.05
+        while not self._stop.is_set():
+            try:
+                return action()
+            except _StorageBusy:
+                self.storage_busy_retries = min(self.storage_busy_retries + 1, 2**31 - 1)
+                self._busy_observer()
+                # Bound before growing, including after arbitrarily many retries.
+                # Event.wait wakes immediately on stop; no database lock is held here.
+                self._stop.wait(random.uniform(delay / 2, delay))
+                delay = min(delay * 2, 2.0)
+        return None
 
     def __enter__(self) -> Executor:
         if self.handle is not None:
@@ -408,13 +428,7 @@ class Executor:
             raise m.CoreError(m.ErrorCode.JOB_BUSY, "Another executor owns this workspace") from exc
         self.nonce = f"{os.getpid()}:{m.new_id('owner')}"
         try:
-            with self.store.transaction() as conn:
-                conn.execute(
-                    "UPDATE worker_state SET worker_epoch=worker_epoch+1,owner_nonce=?,heartbeat=?",
-                    (self.nonce, self.store.clock()),
-                )
-                self.epoch = conn.execute("SELECT worker_epoch FROM worker_state").fetchone()[0]
-                self._recover(conn)
+            self.epoch = self._retry_unclaimed(self._start)
         except BaseException:
             fcntl.flock(self.handle, fcntl.LOCK_UN)
             self.handle.close()
@@ -422,18 +436,34 @@ class Executor:
             raise
         return self
 
+    def _start(self) -> int:
+        with self.store.transaction() as conn:
+            conn.execute(
+                "UPDATE worker_state SET worker_epoch=worker_epoch+1,owner_nonce=?,heartbeat=?",
+                (self.nonce, self.store.clock()),
+            )
+            epoch = conn.execute("SELECT worker_epoch FROM worker_state").fetchone()[0]
+            self._recover(conn)
+        return epoch
+
     def __exit__(self, *args: Any) -> None:
         self._tokens.clear()
         self._zero_handoff.clear()
         self._proofs.clear()
         if self.handle is not None:
             try:
-                with self.store.transaction() as conn:
-                    conn.execute(
-                        "UPDATE worker_state SET owner_nonce=NULL,heartbeat=NULL "
-                        "WHERE worker_epoch=? AND owner_nonce=?",
-                        (self.epoch, self.nonce),
-                    )
+                if self.epoch is not None:
+                    try:
+                        with self.store.transaction() as conn:
+                            conn.execute(
+                                "UPDATE worker_state SET owner_nonce=NULL,heartbeat=NULL "
+                                "WHERE worker_epoch=? AND owner_nonce=?",
+                                (self.epoch, self.nonce),
+                            )
+                    except _StorageBusy:
+                        # OS lock release is authoritative. Stale metadata cannot
+                        # claim availability and the next owner replaces it.
+                        pass
             finally:
                 fcntl.flock(self.handle, fcntl.LOCK_UN)
                 self.handle.close()
@@ -736,13 +766,19 @@ class Executor:
             )
 
     def _retry_wait(self, job_id: str, seconds: float) -> None:
-        while seconds > 0 and not self._stop.is_set():
+        def maintain() -> bool:
             with self.store.transaction() as conn:
                 self._heartbeat(conn)
                 job = self.store.get(m.Job, job_id, conn=conn)
                 if job.cancel_requested:
                     self._cancel(conn, job)
-                    return
+                    return True
+            return False
+
+        while seconds > 0 and not self._stop.is_set():
+            # The safe-read step is already requeued; no handler is active here.
+            if self._retry_unclaimed(maintain) is not False:
+                return
             interval = min(seconds, 0.25)
             self.sleep(interval)  # no database transaction; cap cancellation latency
             seconds -= interval
@@ -848,7 +884,7 @@ class Executor:
         return settled
 
     def run_once(self) -> bool:
-        claimed = self._claim()
+        claimed = self._retry_unclaimed(self._claim)
         if claimed is None:
             return False
         job, step = claimed
@@ -969,7 +1005,7 @@ class Executor:
             if once:
                 break
             if not did_work:
-                if self.unavailable_operations():
+                if self._retry_unclaimed(self.unavailable_operations):
                     import logging
 
                     logging.getLogger("metamuse").warning(

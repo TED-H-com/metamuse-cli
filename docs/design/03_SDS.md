@@ -73,6 +73,16 @@ handlers只做parse/render，domain結果不print。所有mutations有request_ke
 
 每workspace一個權威SQLite，JSONL/CSV只是進出格式。foreign_keys=ON、recursive_triggers=ON、local WAL、synchronous=FULL、有界busy_timeout；這不是硬體級絕對耐久性保證。不得多機直接共享live WAL DB。所有連線設定一致，外部等待不在transaction內。
 
+Connection timeout為30秒，busy_timeout=30000 ms，共用一個internal constant。MEASURE：
+suite load下90秒548次Store.transaction，p50 12.16 ms、p99 1781.87 ms、max 6903.15 ms；
+commit至context exit的max 6901.59 ms。30秒提供超過觀測stall的餘裕，不保證更長stall不發生。
+一般CLI同步等待每個SQLite operation，不印progress；逾時回固定E_STORAGE／exit 7。
+WAL reader不取得write lock；同Store的短connection仍受process內RLock序列化。
+每次writable open先讀journal mode，必要時才切WAL；切換也可能SQLITE_BUSY。
+Store按sqlite_errorcode的primary byte分類SQLITE_BUSY／SQLITE_LOCKED，保留extended code於
+internal _StorageBusy(CoreError)。public仍E_STORAGE／retry_class=never；其他SQLite錯誤
+（含corruption、I/O、缺code）不重試，不按message判斷，不輸出SQL／path／row內容。
+
 | Table | 主鍵／內容／約束 |
 |---|---|
 | projects | id、name、revision、created_at。 |
@@ -112,6 +122,22 @@ worker run、預設MCP附帶worker、CLI --run都搶相同OS lock。MCP --no-wor
 取得鎖後遞增epoch，短transaction claim queued step；外部動作前再驗epoch、job state、permit和target。epoch防舊callback寫回，但不能讓遠端服務獲得它不支援的fencing或exactly-once。
 
 共用Store instance以process內RLock序列化短connection生命週期，避免附worker與MCP thread的自身WAL／writer contention；跨process仍依SQLite及maintenance／worker OS lock。網路下載／模型等待不持有長transaction或connection lock。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
+
+未claim step時（startup epoch/recovery、heartbeat、atomic claim/cancel sweep、idle及
+safe-read已requeue後的等待維護）只對_StorageBusy重試。transaction先rollback，exponential
+backoff加jitter：25–50 ms起，倍增至1–2秒，每次wait最多2秒，stop喚醒且不再開始下一次。
+已進SQLite的lock wait仍可等待30秒才觀察stop。run_once與run共用此維護行為；worker持續持OS lock。
+storage_busy_retries累計並飽和於2**31−1，既有attached status／inspect／同context doctor可見。
+startup contention為starting且不可用，ownership commit後才running；非busy失敗為failed，
+worker_error_code只含固定code（unexpected exception為E_STORAGE），不含message或path。
+startup worker失敗亦保留MCP server供查診斷，不因worker失敗終止stdio服務。
+另一CLI doctor只觀察OS lock可用性，不讀另一process的失敗記憶。
+
+已claim的handler不套busy重試：none／safe_read保留既有失敗規則；external_submit未越過
+committed submitting boundary可failed/not_submitted，越過則uncertain，絕不自動重送。
+_fail／_finish_step等保存若busy則rollback；fallback寫入也busy時傳出錯誤，保留durable
+running/submitting供原有restart recovery，不捏造succeeded或failed_before_send。
+shutdown清owner metadata若busy可留stale metadata；釋放OS lock才是availability權威。
 
 ### 重啟恢復
 

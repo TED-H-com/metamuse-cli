@@ -270,6 +270,35 @@ it does not kill an uncooperative remote call. Results always retain coverage_st
 requested/observed scope, stop_reason and missing_fields; multi-step coverage uses the
 least confident status and preserves per-step results.
 
+SQLite contention is retried only while no step is claimed: epoch/recovery startup,
+heartbeat, atomic claim/cancel sweep, idle checks, and heartbeat/cancellation during
+an already requeued safe-read delay. `Executor.run_once()` uses the same maintenance
+retry path as `run()`. Only internal `_StorageBusy` errors qualify. Each failed
+transaction rolls back before a jittered exponential wait (initial range 25–50 ms,
+doubling to a 1–2 second range). Each backoff wait is at most 2 seconds and wakes on
+`request_stop()`; no further attempt begins after stop. An in-progress SQLite lock
+wait can still take up to its 30-second timeout before stop is observed.
+
+`storage_busy_retries` is a cumulative, saturating counter (maximum 2**31−1).
+The existing attached-worker status/inspect/doctor data exposes it together with
+`attached_worker` and nullable `worker_error_code`. Startup contention remains
+`starting` and unavailable until ownership metadata commits; an established worker
+retains its OS lock while retrying. Non-busy failure reports `failed` and only a fixed
+error code (unexpected exceptions use E_STORAGE), never exception text or paths.
+The MCP server keeps serving diagnostics even if its attached worker fails at startup.
+Doctor uses these fields when an attached-worker status provider is present; a separate
+CLI process observes current OS-lock availability, not another process's failure memory.
+
+Once a step is claimed, busy never wraps or replays the handler. `none`/`safe_read`
+retain their failure policies (E_STORAGE has public retry_class `never`); an external
+step before the committed submitting boundary can fail as not_submitted, while one
+past that boundary becomes uncertain. A busy failure while saving a result/error
+rolls back the transaction. If the fallback failure/uncertainty write is also busy,
+the error propagates and the durable running/submitting state remains for existing
+restart recovery; it cannot become a fabricated success or failed_before_send.
+Entered external work is never automatically resent. On shutdown a busy owner-metadata
+cleanup may leave stale metadata; OS-lock release remains authoritative for availability.
+
 ## Store and objects
 
 ```python
@@ -290,8 +319,26 @@ source = ctx.store.get(Source, "src_fixture")
 ```
 
 `connection()` gives a short read connection. `transaction()` uses BEGIN IMMEDIATE,
-commit/rollback and bounded 5-second busy timeout. All writable connections use foreign
-keys, recursive_triggers ON, WAL and synchronous FULL. Read-only schema probes inspect journal mode and never
+commit/rollback and a bounded 30-second busy timeout. `sqlite3.connect(timeout=30)`
+and `PRAGMA busy_timeout=30000` share one internal constant. A 90-second sample under
+suite load measured 548 transactions: p50 12.16 ms, p99 1781.87 ms, max 6903.15 ms;
+commit-to-context-exit max was 6901.59 ms. Thirty seconds gives margin above that
+observed stall; it is not a host-wide deadline or a guarantee against longer stalls.
+A CLI caller waits synchronously, without progress output, for each contended SQLite
+operation; exhaustion returns a sanitized E_STORAGE (exit 7). Foreground workers
+instead keep retrying unclaimed maintenance until stopped. WAL readers do not take
+the write lock, although one Store instance still serializes its short connection
+lifetimes with its process-local RLock.
+
+Store classifies SQLITE_BUSY and SQLITE_LOCKED by `sqlite_errorcode`'s primary byte,
+retaining the full extended code on internal `_StorageBusy(CoreError)`. Both it and
+other SQLite errors expose only E_STORAGE/never publicly; corruption, I/O errors,
+and missing codes do not qualify for busy retry. No SQL, paths or values enter error
+messages. Existing transaction constraint errors retain E_REFERENCE_INVALID.
+All writable connections use foreign keys, recursive_triggers ON, WAL and synchronous
+FULL. Writable opens inspect journal mode and change it only when needed; the WAL
+transition itself can return SQLITE_BUSY and uses the same classification. Read-only
+schema probes inspect journal mode and never
 change a newer DB. Both contexts close their connection and hold a shared maintenance
 lock. Pass `conn=conn` when already inside a transaction. Always use parameters for
 values and known table/column names for SQL. Do not retain a connection across download,

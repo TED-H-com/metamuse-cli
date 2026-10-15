@@ -226,7 +226,10 @@ class _AttachedWorker:
         self.stopping = threading.Event()
         self.state = "starting" if enabled else "disabled"
         self.thread = threading.Thread(target=self._run, name="metamuse-worker")
+        # Worker failure is diagnostic state, including during startup. Keep the
+        # stdio startup handoff empty so the server can still serve inspection.
         self.start_error: BaseException | None = None
+        self.error_code: m.ErrorCode | None = None
 
     def status(self) -> dict[str, Any]:
         available = (
@@ -239,11 +242,17 @@ class _AttachedWorker:
         return {
             "worker_available": available,
             "attached_worker": self.state,
+            "storage_busy_retries": self.executor.storage_busy_retries if self.executor else 0,
+            "worker_error_code": self.error_code.value if self.error_code else None,
             "worker_next_action": (
                 "Restart metamuse mcp without --no-worker or run metamuse worker run"
                 if not self.enabled
+                else "Waiting for SQLite writer; keep this MCP server open"
+                if self.state == "starting"
                 else "Keep this MCP server open; poll job_get for terminal state"
                 if available
+                else "Inspect worker_error_code and restart metamuse mcp or run metamuse worker run"
+                if self.state == "failed"
                 else "Restart metamuse mcp after the other owner exits, "
                 "or run metamuse worker run; "
                 "this server does not retry lock acquisition"
@@ -252,27 +261,31 @@ class _AttachedWorker:
 
     def _run(self) -> None:
         try:
-            with Executor(
+            executor = Executor(
                 self.ctx.store,
                 non_interactive=True,
                 muse_gateway=self.ctx.muse_gateway,
                 secret_store=self.ctx.secret_store,
                 muse_resolver=self.ctx.muse_resolver,
-            ) as executor:
-                self.executor = executor
+            )
+            self.executor = executor
+            executor._busy_observer = self.ready.set
+            if self.stopping.is_set():
+                executor.request_stop()
+            with executor:
                 self.state = "running"
                 self.ready.set()
                 if self.stopping.is_set():
                     executor.request_stop()
                 executor.run()
         except m.CoreError as exc:
-            if exc.detail.code == m.ErrorCode.JOB_BUSY:
+            if exc.detail.code == m.ErrorCode.JOB_BUSY and self.state == "starting":
                 self.state = "lock_busy"
             else:
-                self.start_error = exc
+                self.error_code = exc.detail.code
                 self.state = "failed"
-        except BaseException as exc:
-            self.start_error = exc
+        except BaseException:
+            self.error_code = m.ErrorCode.STORAGE
             self.state = "failed"
         finally:
             if self.state == "running":

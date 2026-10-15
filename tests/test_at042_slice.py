@@ -461,7 +461,13 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
                     assert {
                         k: v
                         for k, v in inspected["data"].items()
-                        if k not in ("attached_worker", "worker_next_action")
+                        if k
+                        not in (
+                            "attached_worker",
+                            "worker_next_action",
+                            "storage_busy_retries",
+                            "worker_error_code",
+                        )
                     } == journey.cli("doctor")["data"]
                     opened = (await call("muse_open", journey.open_request(project, "mcp-open")))[
                         "data"
