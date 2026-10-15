@@ -190,9 +190,18 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    Registrations are de-duplicated per transport and label key. Any workspace-confidential
    or own-label notification after registration forces a fresh connect in this call before
    its first application frame, including a notification before loop publication or during
-   the final durable check. After publishing the loop and checking currentness, check
-   invalidation again. Allow at most three connects per call. Exhaustion returns the fixed
-   `E_NETWORK_TIMEOUT` / `safe_read`, `Muse connection failed`, with action
+   the final durable check. Track the returned candidate from connector return through
+   Noise, including a blocked msg2 read, until loop promotion or actual failure cleanup.
+   Notification closes both the owned candidate and any published socket without taking
+   the transport lock. If notification precedes candidate registration, close the returned
+   link before handshake use; a socket still owned by `connect()` cannot be cancelled
+   before that method returns. Cleanup of an old attempt never closes a later candidate.
+   An expected invalidation close rechecks the captured snapshot before retrying: an
+   unaffected context uses the same bounded fresh connect, while a durable storage or
+   protocol refusal stops before any further HTTPS/WSS work. Real verification/storage
+   failures keep their classification. After publishing the loop and checking currentness,
+   check invalidation again. Allow at most three connects per call. Exhaustion returns
+   the fixed `E_NETWORK_TIMEOUT` / `safe_read`, `Muse connection failed`, with action
    `Retry the connection. No gateway request frame was sent.` A mutation then reports
    never-sent through `MuseNotSubmitted` or the `chat.stream` `failed_before_send` attempt.
    No standard enrollment-health or capability-registration gate is added.

@@ -893,6 +893,48 @@ def _exchange_for(
     return Exchange(session_id="", baseline_seq=0, sent_text=text, request_marker=marker)
 
 
+class _CandidateInvalidated(Exception):
+    """A notification closed an owned candidate before any application frame."""
+
+
+class _ConnectCandidate(OwnedLink):
+    """An owned handshake pipe whose expected invalidation is distinct from failure."""
+
+    def __init__(self, raw: Any) -> None:
+        super().__init__(raw)
+        self.invalidated = False
+
+    def invalidate(self) -> None:
+        self.invalidated = True
+        self.close()
+
+    def check(self) -> None:
+        if self.invalidated:
+            raise _CandidateInvalidated()
+
+    def _io(self, operation: Callable[..., Any], *args: Any) -> Any:
+        self.check()
+        try:
+            return operation(*args)
+        except CoreError as exc:
+            # Storage, verification and guard failures must never become retries.
+            if exc.detail.code == ErrorCode.NETWORK_TIMEOUT:
+                self.check()
+            raise
+        except Exception:
+            self.check()
+            raise
+
+    def send(self, data: bytes) -> None:
+        self._io(super().send, data)
+
+    def recv(self, timeout: float) -> bytes | None:
+        data = self._io(super().recv, timeout)
+        if not data:
+            self.check()
+        return data
+
+
 class MuseTransport:
     """One gateway connection. One receive loop. Serial unary calls.
 
@@ -943,6 +985,7 @@ class MuseTransport:
         self._connector = connector if connector is not None else CurlConnector()
         self._lock = threading.Lock()
         self._loop: ReceiveLoop | None = None
+        self._pending_link: _ConnectCandidate | None = None
         self._secrets = _Secrets()
         self._connection_secrets: tuple[str, ...] = ()
 
@@ -966,6 +1009,11 @@ class MuseTransport:
             self._lock.release()
 
     def _close_locked(self) -> None:
+        pending = self._pending_link
+        if pending is not None:
+            pending.close()
+            if self._pending_link is pending:
+                self._pending_link = None
         loop = self._loop
         self._loop = None
         self._connection_secrets = ()
@@ -1642,7 +1690,12 @@ class MuseTransport:
     def _invalidate_trust(self) -> None:
         self._trust_invalidated = True
         self._connection_secrets = ()
+        # Read pending first: promotion publishes the loop before clearing pending.
+        # Do not take the transport lock; freeze can notify in the calling thread.
+        pending = self._pending_link
         loop = self._loop
+        if pending is not None:
+            pending.invalidate()
         if loop is not None:
             loop.link.close()
 
@@ -1702,8 +1755,11 @@ class MuseTransport:
             deadline=deadline,
         )
         raw: Any = None
+        owned: _ConnectCandidate | None = None
         loop: ReceiveLoop | None = None
         failure: CoreError | None = None
+        invalidated = False
+        connected = False
         try:
             for attempt in range(_CONNECT_MAX_REDIALS + 1):
                 self._trust.assert_current(snapshot)
@@ -1724,6 +1780,11 @@ class MuseTransport:
                 except UpgradeFailure as exc:
                     upgrade = exc
                 if upgrade is None:
+                    owned = _ConnectCandidate(raw)
+                    self._pending_link = owned
+                    # A notification can precede ownership, even inside connect().
+                    if self._trust_invalidated:
+                        owned.invalidate()
                     if self._clock() >= deadline:
                         raise UpgradeFailure(503)
                     break
@@ -1746,8 +1807,10 @@ class MuseTransport:
                     raise UpgradeFailure(upgrade.status)
                 self._sleep(delay)
             self._verify_peer(checked, str(getattr(raw, "peer_address", "")))
+            assert owned is not None
+            # Preserve a real peer refusal even when notification already closed it.
+            owned.check()
             party = NoiseParty("initiator")
-            owned = OwnedLink(raw)
             loop = ReceiveLoop(owned, noise=party, clock=self._clock)
             loop.__enter__()
             handshake_standard(
@@ -1762,6 +1825,8 @@ class MuseTransport:
             self._connection_secrets = tuple(self._secrets._values)
             self._loop, self._snapshot = loop, snapshot
             self._trust.assert_current(snapshot)
+        except _CandidateInvalidated:
+            invalidated = True
         except IncompleteBody:
             failure = (
                 UpgradeFailure(503)
@@ -1783,9 +1848,24 @@ class MuseTransport:
                 next_action="Retry the connection; no application frame was sent",
             )
         else:
+            connected = True
+        finally:
+            try:
+                if not connected:
+                    if self._loop is loop:
+                        self._loop = None
+                    self._drop(loop, raw)
+            finally:
+                # Retain notification coverage until promotion or actual closure.
+                # Cleanup belongs to this attempt, never to a later candidate.
+                if owned is not None and self._pending_link is owned:
+                    self._pending_link = None
+        if connected:
             return
-        self._loop = None
-        self._drop(loop, raw)
+        if invalidated:
+            # Close-induced I/O failure must not skip the old snapshot's refusal.
+            self._trust.assert_current(snapshot)
+            return
         _raise_if(failure)
 
     def _drop(self, loop: ReceiveLoop | None, raw: Any) -> None:

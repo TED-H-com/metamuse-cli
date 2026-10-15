@@ -920,7 +920,14 @@ registry de-duplicates each bound callback per workspace/label key. Any subseque
 workspace-confidential or own-label notification forces a fresh connect in the same
 call before its first application frame; the transport rechecks invalidation after
 publishing the loop and the final durable assertion. At most three connects per call
-are allowed. Exhaustion returns E_NETWORK_TIMEOUT / safe_read, `Muse connection failed`,
+are allowed. The transport tracks an owned candidate from connector return through
+handshake to promotion or actual closure; notifications close it even during a blocked
+msg2 read. A notification before candidate registration closes the returned link before
+handshake use; connector-owned sockets cannot be cancelled before `connect()` returns. Callbacks
+take no transport lock, and cleanup only releases its own attempt. Expected candidate
+closure rechecks the old snapshot before fresh bootstrap; durable refusals and real
+verification/storage failures stop with their original classification and no new requests.
+Exhaustion returns E_NETWORK_TIMEOUT / safe_read, `Muse connection failed`,
 with action `Retry the connection. No gateway request frame was sent.` A mutation
 reports never-sent through `MuseNotSubmitted` or a chat.stream `failed_before_send`
 attempt. An affected context stops before HTTPS or WSS. An
