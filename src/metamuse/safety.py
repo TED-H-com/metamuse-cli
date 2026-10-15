@@ -15,6 +15,7 @@ import sqlite3
 import stat
 import unicodedata
 from array import array
+from bisect import bisect_left
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -2873,190 +2874,248 @@ class _JsonFrames:
         self.length -= 1
 
 
-def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0):
-    """Lex JSON before decoding its string data; partial documents stop at error.
+def _har_json_spans(text, *, _depth=0):
+    """Memoized strict JSON candidates, including candidates swallowed by an error.
 
-    Slots are allocated in source order and selected when an object is closed, so
-    value-before-name and scalar values require neither resynchronization nor sorting.
+    Lexical string ends are indexed once. Every container is parsed once, even
+    when a failed outer candidate initially treated its opening brace as data.
+    No parser resynchronizes *inside* a damaged object.
     """
-    if _depth > 3:
-        return
-    # A whole escaped document has escaped structural quotes outside strings.
-    # Decode that JSON layer only; percent-escaped characters inside its values
-    # remain data for the lexer. This is not a resynchronization within a layer.
-    if re.match(r"^[\s{\[]*+\\+(?:\"|u0022)", text):
-        decoded, edits = _decode_view(text, json_escapes=True)
-        if edits:
-            yield from _original_spans(_har_spans(decoded, _depth=_depth + 1), edits)
-        return
-    begin = re.match(r"[ \t\r\n]*+", text).end()
-    if text[begin : begin + 1] not in {"{", "[", '"'}:
-        form = re.compile(r"(?:^|&)" + _NAME + r"=(?P<value>[^&\s]*+)")
-        if _form_depth < 3 and form.match(text) and not re.search(r"\s", text):
-            for field in form.finditer(text):
-                raw = field["value"]
-                view, edits = _decode_view(raw, form=True, ranges=[(0, len(raw))])
-                spans = _har_spans(view, _depth=_depth, _form_depth=_form_depth + 1)
-                if edits:
-                    spans = _original_spans(spans, edits)
-                for start, end, kind, replacement in spans:
-                    yield (
-                        field.start("value") + start,
-                        field.start("value") + end,
-                        kind,
-                        replacement,
-                    )
-            return
-        view = text
-        layers = []
-        for _ in range(3):
-            decoded, edits = _decode_view(view)
-            if not edits:
-                break
-            layers.append(edits)
-            view = decoded
-            if view.lstrip().startswith(("{", "[", '"')) or (
-                _form_depth < 3 and form.match(view) and not re.search(r"\s", view)
-            ):
-                spans = list(_har_spans(view, _depth=_depth, _form_depth=_form_depth))
-                for edits in reversed(layers):
-                    spans = list(_original_spans(spans, edits))
-                yield from spans
-                return
-        return
-
-    tokens = re.compile(
-        r'"(?:\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])|[^"\\\x00-\x1f])*+(?:"|$)'
-        r"|[{}\[\]:,]|-?(?:0|[1-9][0-9]*+)(?:\.[0-9]++)?(?:[eE][+-]?[0-9]++)?"
-        r"|true|false|null"
-    )
+    quote_ends = _PositionIndex(text)
+    bad = array("I")
+    previous = None
+    for token in re.finditer(r'\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])|\\[\s\S]?|["\x00-\x1f]', text):
+        if token[0] == '"':
+            if previous is not None:
+                quote_ends[previous] = token.end()
+            previous = token.start()
+        elif (
+            token[0][0] != "\\"
+            or re.fullmatch(r'\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])', token[0]) is None
+        ):
+            bad.append(token.start())
+    scalar = re.compile(r"-?(?:0|[1-9][0-9]*+)(?:\.[0-9]++)?(?:[eE][+-]?[0-9]++)?|true|false|null")
     whitespace = re.compile(r"[ \t\r\n]*+")
-    slots = []
-    nested = []
+    memo = _PositionIndex(text)
+    slots, selected, nested = [], [], []
+    seen_strings = set()
     frames = _JsonFrames()
-    position = begin
+
+    def token_at(position):
+        char = text[position]
+        if char == '"':
+            end = quote_ends.get(position, len(text))
+            invalid = bisect_left(bad, position + 1)
+            if invalid < len(bad) and bad[invalid] < end:
+                return None
+            return char, end
+        if char in "{}[]:,":
+            return char, position + 1
+        match = scalar.match(text, position)
+        return (char, match.end()) if match else None
 
     def close_record(frame):
         if frame.get("private"):
             slot = frame.get("value")
-            if slot is not None:
-                slots[slot][4] = True
+            while slot is not None:
+                selected[slot] = True
+                slot = slots[slot][4]
 
     def register(frame, kind, start, end):
         key = frame.get("key")
         if key not in {"value", "cookies"}:
             return None
         quoted = kind == '"'
-        stop = end - int(quoted and text[end - 1 : end] == '"')
-        first = start + int(quoted)
-        # HAR scalars are private even for numeric session values / boolean literals.
-        opaque = text[first:stop] in {_REDACTED, "REDACTED", ""}
+        first, stop = start + int(quoted), end - int(quoted and text[end - 1 : end] == '"')
+        opaque = stop - first <= len(_REDACTED) and text[first:stop] in {_REDACTED, "REDACTED", ""}
         slot = len(slots)
+        previous = frame.get("value") if key == "value" and not opaque else None
         slots.append(
             [
                 first,
                 stop,
                 "cookie" if key == "cookies" else "sensitive_field",
                 _REDACTED if quoted else '"' + _REDACTED + '"',
-                key == "cookies" and not opaque and text[start:end] != "[]",
+                previous,
             ]
         )
+        selected.append(key == "cookies" and not opaque and text[start:end] != "[]")
         if key == "value" and not opaque:
             frame["value"] = slot
         return slot
 
-    while position < len(text):
-        position = whitespace.match(text, position).end()
-        if position == len(text):
-            break
-        token = tokens.match(text, position)
-        if token is None:
-            break  # Never search for a later plausible object after an error.
-        raw, start, end = token[0], position, token.end()
-        kind = raw[0]
-        frame = frames[-1] if frames else None
-        state = frame["state"] if frame else "value"
-        if state in {"key", "first_key"}:
-            if kind == "}" and state == "first_key":
-                pass
-            elif kind != '"' or not raw.endswith('"'):
-                break
-            else:
-                try:
-                    frame["key"] = json.loads(raw)
-                except ValueError:
-                    break
-                frame["state"] = "colon"
-                position = end
-                continue
-        elif state == "colon":
-            if kind != ":":
-                break
-            frame["state"] = "value"
-            position = end
+    def string_data(start, end):
+        if start in seen_strings or _depth >= 3 or end - start <= 2:
+            return
+        seen_strings.add(start)
+        # Only actual JSON escapes reveal a new JSON layer. Percent encodings
+        # inside this string remain data until this layer has been consumed.
+        raw = text[start + 1 : end - 1]
+        if "\\" not in raw:
+            return
+        inner, edits = _decode_view(raw, json_escapes=True)
+        if edits:
+            spans = _original_spans(_har_spans(inner, _depth=_depth + 1), edits)
+            nested.extend((a + start + 1, b + start + 1, k, r) for a, b, k, r in spans)
+
+    candidates = re.finditer(r"[\[{]", text)
+    covered = 0
+    for candidate in candidates:
+        root = candidate.start()
+        if root < covered or (memo.data and memo.data[root] != 0):
             continue
-        elif state in {"comma", "array_comma"}:
-            if kind == ",":
-                frame["state"] = "key" if frame["kind"] == "{" else "value"
+        position = root
+        while position < len(text):
+            position = whitespace.match(text, position).end()
+            if position == len(text):
+                break
+            token = token_at(position)
+            if token is None:
+                break
+            kind, end = token
+            start = position
+            frame = frames[-1] if frames else None
+            state = frame["state"] if frame else "value"
+            if state in {"key", "first_key"}:
+                if kind == "}" and state == "first_key":
+                    pass
+                elif kind != '"' or text[end - 1 : end] != '"':
+                    break
+                else:
+                    frame["key"] = json.loads(text[start:end]) if end - start <= 128 else None
+                    frame["state"] = "colon"
+                    position = end
+                    continue
+            elif state == "colon":
+                if kind != ":":
+                    break
+                frame["state"] = "value"
                 position = end
                 continue
-            if kind != ("}" if frame["kind"] == "{" else "]"):
+            elif state in {"comma", "array_comma"}:
+                if kind == ",":
+                    frame["state"] = "key" if frame["kind"] == "{" else "value"
+                    position = end
+                    continue
+                if kind != ("}" if frame["kind"] == "{" else "]"):
+                    break
+            if kind in "}]":
+                if (
+                    frame is None
+                    or kind != ("}" if frame["kind"] == "{" else "]")
+                    or state not in {"comma", "array_comma", "first_key", "first_value"}
+                ):
+                    break
+                close_record(frame)
+                memo[frame["start"]] = end
+                frames.pop()
+                if frame.get("slot") is not None:
+                    slot = slots[frame["slot"]]
+                    slot[1] = end
+                    if end - frame["start"] == 2 and text[frame["start"] : end] == "[]":
+                        selected[frame["slot"]] = False
+                position = end
+                if not frames:
+                    covered = end
+                    break
+                continue
+            if state not in {"value", "first_value"} or kind in ":,":
                 break
-        if kind in "}]":
-            if frame is None or kind != ("}" if frame["kind"] == "{" else "]"):
-                break
-            if state not in {"comma", "array_comma", "first_key", "first_value"}:
-                break
+            slot = register(frame, kind, start, end) if frame else None
+            if frame:
+                frame["state"] = "comma" if frame["kind"] == "{" else "array_comma"
+                if (
+                    frame.get("key") == "name"
+                    and kind == '"'
+                    and text[end - 1 : end] == '"'
+                    and end - start <= 128
+                ):
+                    frame["private"] = frame.get("private", False) or redaction_sensitive_key(
+                        json.loads(text[start:end])
+                    )
+            if kind in "{[":
+                cached = memo.data[start] if memo.data else 0
+                if cached:
+                    # A previously failed container cannot be reparsed from its
+                    # parent. A successful one already contributed its slots.
+                    if cached < 0:
+                        break
+                    position = cached
+                    if slot is not None:
+                        slots[slot][1] = cached
+                    continue
+                frames.append(
+                    {
+                        "kind": kind,
+                        "state": "first_key" if kind == "{" else "first_value",
+                        "start": start,
+                        "slot": slot,
+                    }
+                )
+            elif kind == '"':
+                if text[end - 1 : end] != '"' or end - start == 1:
+                    position = end
+                    break
+                string_data(start, end)
+            position = end
+        # Retain partial records before their own first error. Mark every
+        # outstanding container failed, so late failures remain linear.
+        for frame in frames:
             close_record(frame)
-            frames.pop()
+            memo[frame["start"]] = max(1, position)
+            memo.data[frame["start"]] = -max(1, position)
             if frame.get("slot") is not None:
-                slot = slots[frame["slot"]]
-                slot[1] = end
-                if text[frame["start"] : end] == "[]":
-                    slot[4] = False
-            position = end
-            continue
-        if state not in {"value", "first_value"} or kind in ":,":
-            break
-        slot = register(frame, kind, start, end) if frame else None
-        if frame:
-            frame["state"] = "comma" if frame["kind"] == "{" else "array_comma"
-            if frame.get("key") == "name" and kind == '"' and raw.endswith('"'):
-                try:
-                    name = json.loads(raw)
-                except ValueError:
-                    break
-                frame["private"] = redaction_sensitive_key(name) or _credential_name(name) in {
-                    "authorization",
-                    "proxyauthorization",
-                    "cookie",
-                    "setcookie",
-                }
-        if kind in "{[":
-            frames.append(
-                {
-                    "kind": kind,
-                    "state": "first_key" if kind == "{" else "first_value",
-                    "start": start,
-                    "slot": slot,
-                }
-            )
-        elif kind == '"':
-            if not raw.endswith('"') or len(raw) == 1:
-                position = end
-                break
-            inner, edits = _decode_view(raw[1:-1], json_escapes=True)
-            if inner.lstrip().startswith(("{", "[", '"')) and edits:
-                spans = _original_spans(_har_spans(inner, _depth=_depth + 1), edits)
-                nested.extend((a + start + 1, b + start + 1, k, r) for a, b, k, r in spans)
-        position = end
-    for frame in frames:
-        close_record(frame)
-        if frame.get("slot") is not None:
-            slots[frame["slot"]][1] = len(text)
+                slots[frame["slot"]][1] = len(text)
+        frames.length = 0
     yield from _merge_spans(
-        [((a, b, k, r) for a, b, k, r, selected in slots if selected), iter(nested)]
+        [((a, b, k, r) for (a, b, k, r, _), use in zip(slots, selected) if use), iter(nested)]
     )
+
+
+def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0):
+    """Find JSON-layer HAR records at every offset, without decoded structure."""
+    if _depth > 3:
+        return
+    # Decode wrappers first only when structure itself is escaped. The lexer
+    # below never interprets escaped characters inside a value as structure.
+    if re.match(r'^[\s{\[]*+\\+(?:"|u0022)', text):
+        decoded, edits = _decode_view(text, json_escapes=True)
+        if edits:
+            yield from _original_spans(_har_spans(decoded, _depth=_depth + 1), edits)
+        return
+    if '"' in text and ("name" in text or "cookies" in text or "\\" in text):
+        yield from _har_json_spans(text, _depth=_depth)
+    # A whole JSON string is itself a wrapper, including prose around its HAR.
+    stripped = text.strip()
+    if stripped.startswith('"'):
+        try:
+            value = json.loads(stripped)
+        except (ValueError, RecursionError):
+            value = None
+        if isinstance(value, str) and _depth < 3:
+            inner, edits = _decode_view(stripped[1:-1], json_escapes=True)
+            offset = len(text) - len(text.lstrip()) + 1
+            spans = _har_spans(inner, _depth=_depth + 1)
+            if edits:
+                spans = _original_spans(spans, edits)
+            for a, b, k, r in spans:
+                yield a + offset, b + offset, k, r
+    form = re.compile(r"(?:^|&)" + _NAME + r"=(?P<value>[^&\s]*+)")
+    if _form_depth < 3 and form.match(text) and not re.search(r"\s", text):
+        for field in form.finditer(text):
+            raw = field["value"]
+            view, edits = _decode_view(raw, form=True, ranges=[(0, len(raw))])
+            spans = _har_spans(view, _depth=_depth, _form_depth=_form_depth + 1)
+            if edits:
+                spans = _original_spans(spans, edits)
+            for a, b, k, r in spans:
+                yield field.start("value") + a, field.start("value") + b, k, r
+    elif '"' not in text and "%" in text:
+        view, edits = _decode_view(text)
+        if edits:
+            yield from _original_spans(
+                _har_spans(view, _depth=_depth + 1, _form_depth=_form_depth), edits
+            )
 
 
 def _putty_spans(text, syntax):

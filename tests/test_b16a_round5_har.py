@@ -51,9 +51,9 @@ def test_r43_truncated_har_stops_at_first_error():
     text = json.dumps({"headers": [{"name": "Authorization", "value": marker}]})
     result, findings = redact_text(text[:-4])
     assert marker[:10] not in result and findings
-    # Corrupt syntax is never skipped to guess that a later object is HAR.
+    # Round 6: independent candidates after a damaged prefix are still scanned.
     broken = 'broken [{"name":"sid","value":"' + marker + '"}]'
-    assert redact_text(broken) == (broken, [])
+    assert marker not in redact_text(broken)[0]
 
 
 @pytest.mark.parametrize(
@@ -76,14 +76,14 @@ def test_r43_form_wrapped_har_and_no_resynchronization():
     result, findings = redact_text(text)
     assert marker not in result and findings
     broken = '{"broken":oops,"next":{"name":"sid","value":"' + marker + '"}}'
-    assert redact_text(broken) == (broken, [])
+    assert marker not in redact_text(broken)[0]
 
 
 @pytest.mark.parametrize("prefix", ["\u00a0", '{"broken":\u00a0'])
 def test_r43_non_json_whitespace_stops_lexer(prefix):
     marker = f"{'HAR'}_MARKER_AFTER_INVALID_WHITESPACE"
     text = prefix + json.dumps({"cookies": [{"name": "theme", "value": marker}]})
-    assert redact_text(text) == (text, [])
+    assert marker not in redact_text(text)[0]
 
 
 @pytest.mark.parametrize("earlier", ["https://example.invalid/?q=%22x", '5" screen'])

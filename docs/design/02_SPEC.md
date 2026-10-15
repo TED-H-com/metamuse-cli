@@ -420,7 +420,7 @@ Exempt environment lookups end at their own closing bracket or parenthesis.
 HAR structure is read by an escape-aware JSON lexer at its JSON layer, before
 percent or JSON escapes inside its string values become data in canonical views.
 Complete documents and whole JSON-string layers share the lexer. Partial documents
-stop at the first syntax error, without guessed resynchronization. Name/value order
+stop at the first syntax error within each candidate; independent later candidates remain eligible. Name/value order
 is immaterial; sensitive HAR scalars, including numbers and boolean/null literals,
 are redacted whole, as are cookies arrays.
 
@@ -496,3 +496,10 @@ passes. A raw backslash ends a special-scheme authority even when a permissive
 decoded view would treat its escape as data. Accepted benign cost: an unenclosed
 scheme://host:port,user@host contains WHATWG userinfo, as does a literal backslash
 in a non-special scheme's userinfo; both are redacted by design.
+
+HAR JSON containers are candidates at every offset and decoded layer, including
+prose, fences, log prefixes and packet headers. A strict lexer evaluates completed
+objects before an error; an independent candidate swallowed as string content is
+not lost. Lexical ends and container outcomes are memoized once, so late failures
+and candidate recovery remain linear. Any sensitive repeated name marks every
+value in that object private, without overwriting an earlier sensitivity decision.
