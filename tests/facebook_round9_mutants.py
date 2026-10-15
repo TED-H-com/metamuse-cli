@@ -89,7 +89,7 @@ def apply(monkeypatch, name):
                 monkeypatch,
                 cap.FixtureTree,
                 "handle_starttag",
-                [('if css(style, "display") in {"inherit", "revert"}:', "if False:")],
+                [('if css(style, "display") == "inherit":', "if False:")],
                 module=cap,
             )
         elif construct == "metadata":

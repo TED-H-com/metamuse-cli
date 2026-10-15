@@ -84,7 +84,7 @@ def test_r9_fixture_refuses_unmodelled_layout_and_integration(markup):
     "markup",
     [
         '<div style="display:contents"><img style="display:inherit"></div>',
-        '<span hidden style="display:revert">TEXT</span>',
+        '<div style="display:contents"><input style="display:inherit"></div>',
     ],
 )
 def test_r9_fixture_refuses_unresolved_display_globals(markup):

@@ -956,7 +956,7 @@ ambiguous legacy character references in start tags are refused. Exact named
 references ending in semicolons retain the HTML5 decoding; text is never decoded
 a second time. These lexical refusals cover differences in the standard-library
 parser rather than claiming it is a full HTML5 tokenizer.
-Metadata display overrides are refused rather than approximated. Display inheritance and UA reversion (`inherit` / `revert`) also refuse; their resolved value is not the inline token. Implicit HTML,
+Metadata display overrides are refused rather than approximated. Display inheritance (`inherit`) also refuses; its resolved value is not the inline token. The tested `revert` and `revert-layer` behavior remains supported. Implicit HTML,
 head and body nodes are materialised before bounds checking, so the document
 scaffold is charged exactly like Chromium; misplaced explicit wrappers refuse.
 
