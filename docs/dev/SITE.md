@@ -57,6 +57,33 @@ current CLI, so it has no expected-partial exit declaration. The other current
 scenes likewise declare none. A stored partial state alone does not establish
 that the command exits 5.
 
+Captures first write PNGs and transcripts into a temporary directory under the
+demo's `tmp/`, outside `site/images`. Pixel comparisons, sizes and hashes use
+those staged files. Any failure before publication, including `SystemExit`, an
+exception or `KeyboardInterrupt`, removes staging and leaves the existing
+`site/images` file names and bytes untouched. Publication starts only after all
+scenes, including the hero, succeed and the capture processes stop.
+
+`_commit_outputs` copies the new frame set into a temporary sibling of
+`site/images`, verifies every copied PNG and transcript SHA-256 against its
+record, and then writes the new manifest and README there. It renames the old
+directory to a unique `.images-backup-*` sibling, then renames the complete new
+directory to `images`. This replaces the entire set, including obsolete frames.
+A caught failure between renames restores the backup; if restoration also fails,
+the error names the retained backup for manual recovery. No mixed directory or
+manifest pointing at missing frames is published. After successful publication,
+the old backup is deleted; a cleanup failure is reported with the new complete
+set still in place.
+
+The two renames are individually atomic, but their pair is not: readers can
+briefly see `images` absent. An uncatchable interruption (such as SIGKILL or power
+loss) in that gap can leave `images` absent, the complete old set in
+`.images-backup-*`, and the prepared new set in `.images-stage-*`. Restore the
+backup to `images` before retrying. After the second rename, interruption can
+leave the complete new `images` and an old backup. Uncatchable interruption can
+also leave demo staging behind. There is no filesystem durability guarantee
+across power loss (no fsync), and captures must run with a single writer.
+
 Showcase frames use 98 columns and at most 40 content rows. The dedicated hero
 uses 60 columns and an 18-row packet preview. Commands retain shell variables
 set visibly in earlier frames and take no more than two terminal rows. The

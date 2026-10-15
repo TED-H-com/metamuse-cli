@@ -18,6 +18,7 @@ import shlex
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import unicodedata
 from dataclasses import dataclass
@@ -635,7 +636,7 @@ def _window_box(title: str, env: dict) -> dict[str, int]:
     }
 
 
-def _capture_scene(scene: Scene, display: str) -> dict:
+def _capture_scene(scene: Scene, display: str, staged: Path) -> dict:
     from PIL import Image, ImageChops, ImageGrab
 
     for command in scene.commands:
@@ -702,13 +703,13 @@ def _capture_scene(scene: Scene, display: str) -> dict:
         crop_height = padding_y + (content_rows + 1) * cell_height
         crop = {**box, "height": crop_height}
         cropped = window.crop((0, 0, width, crop_height))
-        png = OUT / f"{scene.stem}.png"
+        png = staged / f"{scene.stem}.png"
         cropped.save(png, optimize=True, compress_level=9)
         with Image.open(png) as decoded:
             identical = decoded.convert("RGB").tobytes() == cropped.tobytes()
         if not identical:
             raise SystemExit("PNG optimization changed decoded pixels")
-        (OUT / f"{scene.stem}.txt").write_text(text)
+        (staged / f"{scene.stem}.txt").write_text(text)
         record = {
             "png": png.name,
             "transcript": f"{scene.stem}.txt",
@@ -724,7 +725,7 @@ def _capture_scene(scene: Scene, display: str) -> dict:
             "crop_rect": crop,
             "bytes": png.stat().st_size,
             "sha256": sha256_file(png),
-            "transcript_sha256": sha256_file(OUT / f"{scene.stem}.txt"),
+            "transcript_sha256": sha256_file(staged / f"{scene.stem}.txt"),
             "lossless_verified": identical,
             "decoded_rgb_sha256": hashlib.sha256(cropped.tobytes()).hexdigest(),
         }
@@ -765,7 +766,7 @@ def _versions() -> dict[str, str]:
     }
 
 
-def _write_readme(records: list[dict]) -> None:
+def _write_readme(records: list[dict], destination: Path) -> None:
     parts = [
         """# Terminal captures
 
@@ -823,28 +824,56 @@ Skill export demonstrates installation output, not full AT-027 missing-backend
 acceptance. MCP shows discovery, local collection, attached-worker polling and one search,
 not every host/tool pairing. Fixture replies are progress, not completed research.
 """)
-    (OUT / "README.md").write_text("".join(parts))
+    (destination / "README.md").write_text("".join(parts))
 
 
-def main() -> None:
-    if not (REPO / ".venv/bin/metamuse").is_file():
-        raise SystemExit("sync the project first")
-    _prepare_demo()
-    OUT.mkdir(parents=True, exist_ok=True)
-    xvfb, display = _start_xvfb()
-    records = []
-    try:
-        for scene in (*SCENES, HERO):
-            records.append(_capture_scene(scene, display))
-    finally:
-        _stop(xvfb)
-    # Delete obsolete frame names only after every new capture succeeds.
-    keep = {record[key] for record in records for key in ("png", "transcript")}
-    for path in (*OUT.glob("*.png"), *OUT.glob("*.txt")):
-        if path.name not in keep:
-            path.unlink()
+def _commit_outputs(staged: Path, records: list[dict], manifest: dict) -> None:
+    """Prepare a complete, verified directory on OUT's filesystem, then publish it."""
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".images-stage-", dir=OUT.parent) as directory:
+        prepared = Path(directory)
+        for record in records:
+            for file_key, hash_key in (("png", "sha256"), ("transcript", "transcript_sha256")):
+                name = record[file_key]
+                target = prepared / name
+                shutil.copy2(staged / name, target)
+                if sha256_file(target) != record[hash_key]:
+                    raise RuntimeError(f"capture output hash mismatch: {name}")
+        # Verify the actual replacement files before creating its manifest.
+        (prepared / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, ensure_ascii=False) + "\n"
+        )
+        _write_readme(records, prepared)
+
+        backup = Path(tempfile.mkdtemp(prefix=".images-backup-", dir=OUT.parent))
+        backup.rmdir()
+        try:
+            if OUT.exists():
+                OUT.rename(backup)
+            prepared.rename(OUT)
+        except BaseException as error:
+            try:
+                if backup.exists() and not OUT.exists():
+                    backup.rename(OUT)
+            except BaseException as rollback_error:
+                raise RuntimeError(
+                    f"capture output commit and rollback failed; previous set in {backup.name}"
+                ) from rollback_error
+            raise RuntimeError(
+                "capture output commit failed; output directory was not mixed"
+            ) from error
+        if backup.exists():
+            try:
+                shutil.rmtree(backup)
+            except BaseException as error:
+                raise RuntimeError(
+                    f"capture output committed; backup cleanup failed: {backup.name}"
+                ) from error
+
+
+def _manifest(records: list[dict], display: str) -> dict:
     captured = datetime.now().astimezone()
-    manifest = {
+    return {
         "source_commit": _run(["git", "rev-parse", "HEAD"], cwd=REPO),
         "source_tree": _run(["git", "rev-parse", "HEAD^{tree}"], cwd=REPO),
         "capture_script_sha256": sha256_file(Path(__file__)),
@@ -901,8 +930,22 @@ def main() -> None:
         ),
         "images": records,
     }
-    (OUT / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
-    _write_readme(records)
+
+
+def main() -> None:
+    if not (REPO / ".venv/bin/metamuse").is_file():
+        raise SystemExit("sync the project first")
+    _prepare_demo()
+    with tempfile.TemporaryDirectory(prefix="capture-site-", dir=DEMO / "tmp") as directory:
+        staged = Path(directory)
+        xvfb, display = _start_xvfb()
+        records = []
+        try:
+            for scene in (*SCENES, HERO):
+                records.append(_capture_scene(scene, display, staged))
+        finally:
+            _stop(xvfb)
+        _commit_outputs(staged, records, _manifest(records, display))
     print(f"Wrote {len(records)} real frames.")
 
 
