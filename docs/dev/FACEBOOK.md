@@ -306,16 +306,70 @@ After a Facebook post identity is bound, a main-frame navigation to an unknown n
 
 Facebook rendered text includes inline image alt text (including emoji) and follows the structured capture/rendering contract below. JSON text remains unchanged.
 
-CI uses Ubuntu 24.04, syncs the Facebook extra alongside the existing development
-requirements, and installs Chromium through the locked Playwright package. The
+CI uses Ubuntu 24.04 and locked development, remote and Facebook dependencies. Each
+test job installs ffmpeg/ffprobe and Chromium through the locked Playwright package. The
 hosted runner enables unprivileged user namespaces with the AppArmor sysctl before
 testing. All workflow actions use full commit SHAs. METAMUSE_REQUIRE_BROWSER_TESTS=1
 converts skipped Facebook/browser tests into failures; locally an absent Chromium
 or unavailable sandbox still has an explicit skip reason. The suite includes
 sandboxed launch verification and sandboxed WebSocketStream/_apiPassThrough tests;
 other loopback integration fixtures use a labelled operator exception. No browser
-test is excluded from hosted CI. Test scratch is a unique disk directory cleaned
-on exit. A hosted Actions result requires the orchestrator to publish this branch.
+test is excluded from hosted CI. Test scratch is a unique RUNNER_TEMP disk directory
+cleaned on exit. A hosted Actions result requires the orchestrator to publish this branch.
+
+The previous single `check` job ran Facebook, Muse, media and every other test
+sequentially before the corpus and fresh-wheel checks. CI now collects the **entire
+normal pytest suite in each of five jobs**, then selects core, muse, media, facebook
+or privacy by the collected file path. Unknown files go to core; nested tests and
+pytest's normal file patterns are retained. Selection preserves conftest ordering.
+All Facebook modules share one job and one captured-input append stream, with
+`test_r9_fixture_differential_corpus` last and its default seeded corpus unchanged.
+Remote-media tests of the yt-dlp Facebook extractor do not call DOM fixture capture
+and belong to media. New tests that capture Facebook inputs must belong to the
+Facebook cohort too. See the small classifier in `scripts/ci_cohorts.py`.
+
+Every job retains its 30-minute deadline. The matrix permits five concurrent jobs
+and does not cancel peers on failure. `--maxfail=1` prints the first real traceback;
+a failing cohort is incomplete and needs a cause fix on new source, never an unchanged
+retry for green. A 30-second faulthandler dump is diagnostic only. Successful jobs
+run every selected node, preserving existing assertions, strict xfails and browser
+skip refusal. No per-test deadline or production limit changes.
+
+The required `check` depends on both the entire matrix and `static-wheel`. It runs
+even after upstream failure, checks every job result, and verifies five manifests:
+same source SHA, identical sorted full node IDs and SHA-256, nonempty disjoint
+selected sets whose union equals the full collection, and completed runtime nodes
+with pytest exit zero. Collection-only evidence cannot satisfy this gate. Missing,
+failed or cancelled jobs cannot make `check` green. Static validation, schema drift,
+corpus validation and the unchanged fresh-wheel CLI/MCP/packaged-Skill smoke run in
+`static-wheel`. The generated fifteen-tool contract remains authoritative.
+
+Manifests contain node IDs and execution metadata, without captured fixture bodies.
+An always-upload step retains manifests and diagnostic logs for seven days under
+SHA/cohort-specific artifact names, including failures. Official upload/download
+actions are pinned to full commits, as are checkout and uv setup. Parallel execution
+uses more simultaneous runners and repeats dependency installation and collection;
+it does not prove that any particular cohort will finish under its deadline. Hosted
+completion and skip/xfail log inspection on the exact candidate SHA remain required.
+Collection audits and old partial runs do not establish full acceptance or LIVE.
+
+For a local **collection-only** audit (no test bodies), after an offline locked sync:
+
+```bash
+# Choose a disk directory outside the checkout for manifests and logs.
+unset LD_LIBRARY_PATH
+export PATH="$HOME/.local/bin:$PATH"
+source_sha="$(git rev-parse HEAD)"
+pytest-disktmp uv run --locked python scripts/ci_cohorts.py run \
+  --cohort facebook --source-sha "$source_sha" \
+  --manifest "$HOME/agent-work/tmp/facebook-collection.json" -- --collect-only -q
+```
+
+Repeat for all five cohorts and independently compare their selected sets to normal
+unfiltered `pytest --collect-only` node IDs. Hashes use sorted node IDs serialized as
+ASCII JSON with compact separators, then UTF-8 SHA-256. Full-suite flags that deselect
+nodes (such as `-k` or `-m`) are refused by the cohort helper rather than silently
+shrinking coverage. Normal pytest diagnostic flags and `--basetemp` are supported.
 
 Structural JSON scripts require both data-fb-post-payload and application/json MIME
 type. Every other script is excluded from body text, even if it carries that marker.

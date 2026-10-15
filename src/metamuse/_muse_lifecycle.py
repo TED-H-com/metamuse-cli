@@ -12,7 +12,15 @@ from datetime import datetime
 from metamuse import models as m
 from metamuse._muse_adapters import BoundMuseCredentials, MuseURLGuard, resolve_all
 from metamuse.config import load_config
-from metamuse.jobs import OPERATIONS, UNCERTAIN, StepSpec, register_operation, submit_job
+from metamuse.jobs import (
+    OPERATIONS,
+    TERMINAL,
+    UNCERTAIN,
+    StepSpec,
+    register_operation,
+    submit_job,
+    worker_available,
+)
 from metamuse.muse import (
     MUSE_ORIGIN,
     Association,
@@ -32,6 +40,7 @@ from metamuse.safety import (
     action_digest,
     external_action_verifier,
     operator_command,
+    redact_display,
     redact_text,
     register_approval_preview,
     verify_permit,
@@ -172,6 +181,10 @@ def _prepared(route, target, body, marker, node):
 
 def prepare_open(ctx, request: m.MuseOpenRequest):
     """Operator preview helper: full stable target/payload digest for an access grant."""
+    receipt = _receipt(ctx, "muse.open", request)
+    if receipt is not None:
+        return _receipt_payload(ctx, receipt)
+    _check_question(request.topic)
     binding, backend = _binding(ctx)
     identity = _identity("dsc", request.project_id, request.request_key)
     target = _target(request.project_id, binding, backend, "muse.open", intent=identity)
@@ -182,19 +195,37 @@ def prepare_open(ctx, request: m.MuseOpenRequest):
     )
 
 
+def _check_question(question: str) -> None:
+    if any(record["kind"] != "local_path" for record in redact_text(question)[1]):
+        _error(
+            m.ErrorCode.INPUT_INVALID,
+            "Muse text contains credential values",
+            "Remove credentials from the topic or question; prepare a new send or session request",
+        )
+
+
 def prepare_send(ctx, request: m.MuseSendRequest):
+    # Receipt lookup precedes the detector, including in the preview preparation path.
+    receipt = _receipt(ctx, "muse.send", request)
+    if receipt is not None:
+        return _receipt_payload(ctx, receipt)
+    _check_question(request.question)
     discussion = ctx.store.get(m.Discussion, request.discussion_id)
     binding, backend = _binding(ctx, discussion)
     packet = ctx.store.get(m.Packet, request.packet_id)
     if packet.project_id != discussion.project_id:
         _error(m.ErrorCode.REFERENCE_INVALID, "Packet is outside this discussion project")
-    if packet.stale:
-        _error(m.ErrorCode.REFERENCE_INVALID, "Packet is stale; prepare a new packet")
+    if packet.stale or redact_text(packet.rendered_text)[0] != packet.rendered_text:
+        _error(
+            m.ErrorCode.REFERENCE_INVALID,
+            "Packet is stale; prepare a new packet",
+            "Prepare a new packet and send request with a new exact share grant",
+        )
     if not discussion.remote_session:
         _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Session mapping requires reconciliation")
     for value, cap in (
-        (request.question, ctx.limits.question_max_utf8_bytes),
-        (packet.rendered_text, ctx.limits.packet_max_utf8_bytes),
+        (request.question, min(8192, ctx.limits.question_max_utf8_bytes)),
+        (packet.rendered_text, min(49152, ctx.limits.packet_max_utf8_bytes)),
     ):
         if len(value.encode("utf-8")) > cap:
             _error(m.ErrorCode.LIMIT_REACHED, "Muse text exceeds its UTF-8 limit")
@@ -209,10 +240,11 @@ def prepare_send(ctx, request: m.MuseSendRequest):
         session=discussion.remote_session,
         packet=packet.id,
     )
-    # No generated question or persona. A documented separator joins the two exact host texts.
+    packet_text = packet.rendered_text
+    # The checked host question and redacted packet are the only send text inputs.
     body = {
         "session_id": discussion.remote_session,
-        "text": request.question + "\n\n" + packet.rendered_text,
+        "text": request.question + "\n\n" + packet_text,
         "node_id": discussion.project_id,
     }
     prepared = _prepared("chat.stream", target, body, "send-" + identity[4:], discussion.project_id)
@@ -221,10 +253,27 @@ def prepare_send(ctx, request: m.MuseSendRequest):
             "payload": {
                 **prepared.payload,
                 "question": request.question,
-                "packet_text": packet.rendered_text,
+                "packet_text": packet_text,
             }
         }
     )
+
+
+def _reconciliation_topic_matches(discussion, request):
+    return request.topic in {discussion.topic, redact_display(discussion.topic)}
+
+
+def _check_reconciliation_topic(discussion, request):
+    if discussion.project_id != request.project_id or not _reconciliation_topic_matches(
+        discussion, request
+    ):
+        raise m.CoreError(
+            m.ErrorCode.REFERENCE_INVALID,
+            "Reconciliation must name the original discussion",
+            next_action=(
+                "Request reconciliation again using the discussion ID and current display title"
+            ),
+        )
 
 
 def _approval_preview(ctx, request):
@@ -232,13 +281,15 @@ def _approval_preview(ctx, request):
     topic = question = None
     packet = None
     if isinstance(request, m.MuseOpenRequest) and request.discussion_id is None:
-        ctx.store.get(m.Project, request.project_id)
         prepared = prepare_open(ctx, request)
+        _check_question(request.topic)
+        ctx.store.get(m.Project, request.project_id)
         target, payload = prepared.target, prepared.payload
         topic = request.topic
         operation = "muse.open"
     elif isinstance(request, m.MuseSendRequest):
         prepared = prepare_send(ctx, request)
+        _check_question(request.question)
         target, payload = prepared.target, prepared.payload
         packet = ctx.store.get(m.Packet, request.packet_id)
         topic = ctx.store.get(m.Discussion, request.discussion_id).topic
@@ -246,9 +297,9 @@ def _approval_preview(ctx, request):
         operation = "muse.send"
     else:
         if isinstance(request, m.MuseOpenRequest):
+            _receipt(ctx, "muse.open", request)
             discussion = ctx.store.get(m.Discussion, request.discussion_id)
-            if discussion.project_id != request.project_id or discussion.topic != request.topic:
-                _error(m.ErrorCode.REFERENCE_INVALID, "Reconciliation must name the discussion")
+            _check_reconciliation_topic(discussion, request)
         else:
             if not request.refresh:
                 _error(m.ErrorCode.INPUT_INVALID, "Local history needs no permit")
@@ -258,11 +309,16 @@ def _approval_preview(ctx, request):
         target, payload = read_action(discussion, sessions=discussion.remote_session is None)
         topic = discussion.topic
         operation = "muse.open" if isinstance(request, m.MuseOpenRequest) else "muse.read"
+    stored_topic = not (isinstance(request, m.MuseOpenRequest) and request.discussion_id is None)
     digest = action_digest(target, payload)
     request_file = str(ctx.paths.root / ("approval-" + digest + ".json"))
     # Redact raw fields before JSON encoding can hide nested credential syntax.
     safe_request = {
-        key: redact_text(value)[0] if isinstance(value, str) else value
+        key: value
+        if key == "question" or (key == "topic" and not stored_topic)
+        else redact_display(value)
+        if isinstance(value, str)
+        else value
         for key, value in request.model_dump(mode="json").items()
     }
     safe_request.pop("access_grant_id", None)
@@ -283,11 +339,7 @@ def _approval_preview(ctx, request):
         if target.get("session_id")
         else "List sessions to reconcile the original creation intent"
     )
-    safe_topic = (
-        (safe_request["topic"] if "topic" in safe_request else redact_text(topic)[0])
-        if topic is not None
-        else None
-    )
+    safe_topic = redact_display(topic) if stored_topic and topic is not None else topic
     safe_question = safe_request.get("question") if question is not None else None
     details = [
         "Would: " + summary,
@@ -297,11 +349,9 @@ def _approval_preview(ctx, request):
         "Action digest: " + digest,
     ]
     if safe_topic is not None:
-        details.append("Topic: " + safe_topic)
+        details.append(("Stored discussion title: " if stored_topic else "Topic: ") + safe_topic)
     if safe_question is not None:
-        details.append(
-            "Question (exact text, with credential-like values redacted): " + safe_question
-        )
+        details.append("Question (exact text): " + safe_question)
     if packet is not None:
         details.extend(
             [
@@ -419,6 +469,26 @@ def _wire(payload):
     }
     if any(payload.payload.get(key) != value for key, value in expected.items()):
         _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared wire bytes differ from verified payload")
+    if payload.route == "session.start":
+        _check_question(payload.body["title"])
+        if len(payload.body["title"].encode("utf-8")) > 8192:
+            _error(m.ErrorCode.LIMIT_REACHED, "Muse text exceeds its UTF-8 limit")
+    if payload.route == "chat.stream":
+        question = payload.payload.get("question")
+        packet_text = payload.payload.get("packet_text")
+        if not isinstance(question, str) or not isinstance(packet_text, str):
+            _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared send text inputs are unavailable")
+        _check_question(question)
+        if len(question.encode("utf-8")) > 8192 or len(packet_text.encode("utf-8")) > 49152:
+            _error(m.ErrorCode.LIMIT_REACHED, "Muse text exceeds its UTF-8 limit")
+        if redact_text(packet_text)[0] != packet_text:
+            _error(
+                m.ErrorCode.REFERENCE_INVALID,
+                "Packet is stale; prepare a new packet",
+                "Prepare a new packet and send request with a new exact share grant",
+            )
+        if payload.body.get("text") != question + "\n\n" + packet_text:
+            _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared send body differs from checked inputs")
     return prepare_muse_request(
         payload.route,
         marker=payload.marker,
@@ -453,12 +523,35 @@ def _share_target(permit, digest):
         )
 
 
-def _replay(ctx, operation, request):
+def _receipt(ctx, operation, request):
     with ctx.store.connection() as conn:
         row = conn.execute(
             "SELECT * FROM jobs WHERE operation=? AND request_key=?",
             (operation, request.request_key),
         ).fetchone()
+        if row is None and operation == "muse.open" and request.discussion_id is not None:
+            row = conn.execute(
+                "SELECT * FROM jobs WHERE operation IN ('muse.history','muse.sessions') "
+                "AND request_key=? ORDER BY rowid LIMIT 1",
+                (request.request_key,),
+            ).fetchone()
+            if row is not None:
+                job = ctx.store.decode(m.Job, row)
+                discussion = ctx.store.get(m.Discussion, request.discussion_id, conn=conn)
+                if (
+                    job.project_id != request.project_id
+                    or discussion.project_id != request.project_id
+                    or not _reconciliation_topic_matches(discussion, request)
+                    or job.payload.get("discussion_id") != request.discussion_id
+                    or job.payload.get("exchange_id") is not None
+                    or job.payload.get("permit_id") != request.access_grant_id
+                ):
+                    _error(m.ErrorCode.IDEMPOTENCY_CONFLICT, "Request key has a different payload")
+                step = conn.execute(
+                    "SELECT target FROM job_steps WHERE job_id=? ORDER BY sequence LIMIT 1",
+                    (job.id,),
+                ).fetchone()
+                return job, json.loads(step[0]), discussion.id
         if row is None:
             return None
         job = ctx.store.decode(m.Job, row)
@@ -473,24 +566,67 @@ def _replay(ctx, operation, request):
             if operation == "muse.open"
             else ctx.store.get(m.Exchange, target["intent_id"], conn=conn).discussion_id
         )
-    result = submit_job(
-        ctx.store,
-        operation,
-        request.request_key,
-        job.payload,
-        project_id=job.project_id,
-        steps=[StepSpec(target=target)],
-    )
-    if result.data is not None:
-        result.data.update(
-            {
-                "discussion_id": discussion_id,
-                "exchange_id": target.get("intent_id") if operation == "muse.send" else None,
-                "backend": target["backend"],
-                "mock": target["backend"] == "fixture",
-            }
+    return job, target, discussion_id
+
+
+def _receipt_payload(ctx, receipt):
+    job, target, _ = receipt
+    if job.operation == "muse.open":
+        return ctx.store.get(m.Discussion, target["intent_id"]).open_payload
+    return ctx.store.get(m.Exchange, target["intent_id"]).outbound_payload
+
+
+def _replay(ctx, operation, request):
+    receipt = _receipt(ctx, operation, request)
+    if receipt is None:
+        return None
+    job, target, discussion_id = receipt
+    if job.state == "awaiting_user" or (job.error and job.error.get("retry_class") == "reconcile"):
+        detail = (
+            m.ErrorDetail.model_validate(job.error)
+            if job.error
+            else m.CoreError(m.ErrorCode.JOB_BUSY, "Job is awaiting user action").detail
         )
-    return result
+        return m.Envelope(
+            status="error",
+            error=detail.model_copy(
+                update={
+                    "next_action": f"Inspect job {job.id} with job_get; "
+                    + (detail.next_action or "resolve its pending action")
+                }
+            ),
+        )
+    if job.operation in {"muse.history", "muse.sessions"}:
+        return m.Envelope(
+            status="accepted"
+            if job.state not in TERMINAL
+            else "partial"
+            if job.state == "partial"
+            else "ok",
+            data={
+                "job_id": job.id,
+                "state": job.state,
+                "worker_available": worker_available(ctx.store),
+                "job": job.model_dump(mode="json"),
+            },
+        )
+    return m.Envelope(
+        status="accepted"
+        if job.state not in TERMINAL
+        else "partial"
+        if job.state == "partial"
+        else "ok",
+        data={
+            "job_id": job.id,
+            "state": job.state,
+            "worker_available": worker_available(ctx.store),
+            "job": job.model_dump(mode="json"),
+            "discussion_id": discussion_id,
+            "exchange_id": target["intent_id"] if operation == "muse.send" else None,
+            "backend": target["backend"],
+            "mock": target["backend"] == "fixture",
+        },
+    )
 
 
 def _assert_available(conn, discussion_id, *, exclude=None):
@@ -533,13 +669,13 @@ def _assert_open_available(db, discussion):
 
 def open_muse_discussion(ctx, request):
     register_operations()
+    replay = _replay(ctx, "muse.open", request)
+    if replay is not None:
+        return replay
     if request.discussion_id is not None:
         discussion = ctx.store.get(m.Discussion, request.discussion_id)
         _binding(ctx, discussion)
-        if discussion.project_id != request.project_id or discussion.topic != request.topic:
-            _error(
-                m.ErrorCode.REFERENCE_INVALID, "Reconciliation must name the original discussion"
-            )
+        _check_reconciliation_topic(discussion, request)
         return _queue_read(
             ctx,
             discussion,
@@ -547,9 +683,7 @@ def open_muse_discussion(ctx, request):
             sessions=discussion.remote_session is None,
             request_key=request.request_key,
         )
-    replay = _replay(ctx, "muse.open", request)
-    if replay is not None:
-        return replay
+    _check_question(request.topic)
     prepared = prepare_open(ctx, request)
     binding, backend = _binding(ctx)
     discussion = m.Discussion(
@@ -615,6 +749,7 @@ def submit_muse_exchange(ctx, request):
     replay = _replay(ctx, "muse.send", request)
     if replay is not None:
         return replay
+    _check_question(request.question)
     prepared = prepare_send(ctx, request)
     discussion = ctx.store.get(m.Discussion, request.discussion_id)
     packet = ctx.store.get(m.Packet, request.packet_id)
@@ -748,13 +883,61 @@ def _exchange_view(store, discussion, exchange, conn=None):
             earlier = unresolved(db)
     else:
         earlier = unresolved(conn)
+    outbound_text = exchange.outbound_payload.body["text"]
+    if len(outbound_text.encode("utf-8")) > 49152 + 8192 + 2:
+        _error(
+            m.ErrorCode.LIMIT_REACHED,
+            "Stored Muse text exceeds the local verification budget",
+            "Reconcile the original submission with bounded evidence; do not resend",
+        )
     return Exchange(
         discussion.remote_session,
         exchange.baseline.get("seq", 0),
-        sanitize_document(exchange.outbound_payload.body["text"]),
+        sanitize_document(outbound_text),
         exchange.request_marker,
         exchange.submitted_at_ms,
         earlier,
+    )
+
+
+def _refuse_frozen(step, discussion, exchange, saved, refusal):
+    """Before a token or gateway exists: no external submission was possible."""
+    proof = m.MuseProof(
+        kind="not_submitted",
+        step_id=step.step.id,
+        outbound_digest=exchange.outbound_digest
+        if exchange
+        else hashlib.sha256(m.canonical_json(saved.body)).hexdigest(),
+    )
+
+    def save(writer):
+        if exchange is not None:
+            writer.execute(
+                "UPDATE exchanges SET state='closed',outcome='abandoned',bytes_handed_off=0,"
+                "attempt_verdict='undecided',attempt_error_code=?,delivery_proof=? WHERE id=?",
+                (
+                    refusal.detail.code.value,
+                    m.canonical_json(proof.model_dump(mode="json")).decode(),
+                    exchange.id,
+                ),
+            )
+        else:
+            writer.execute(
+                "UPDATE discussions SET open_attempt_state='failed_before_send',"
+                "open_bytes_handed_off=0,open_verdict='undecided',open_error_code=?,"
+                "open_delivery_proof=? WHERE id=?",
+                (
+                    refusal.detail.code.value,
+                    m.canonical_json(proof.model_dump(mode="json")).decode(),
+                    discussion.id,
+                ),
+            )
+
+    step.commit_checkpoint({"not_submitted": True}, write_batch=save)
+    _error(
+        refusal.detail.code,
+        refusal.detail.message,
+        refusal.detail.next_action,
     )
 
 
@@ -776,7 +959,10 @@ def _mutate(step):
         or (exchange is not None and exchange.state != "prepared")
     ):
         _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Original attempt is not prepared")
-    wire = _wire(saved)
+    try:
+        wire = _wire(saved)
+    except m.CoreError as refusal:
+        _refuse_frozen(step, discussion, exchange, saved, refusal)
     use = _use(
         discussion,
         step.job.operation,
@@ -962,6 +1148,8 @@ def _save_send(step, discussion, exchange, result, failure):
         else None
     )
 
+    safe_detail = redact_display(attempt.evidence.detail)[:512]
+
     def save(writer):
         current = writer.get(m.Exchange, exchange.id)
         state = (
@@ -984,7 +1172,7 @@ def _save_send(step, discussion, exchange, result, failure):
                 attempt.stream_id,
                 int(attempt.bytes_handed_off),
                 attempt.evidence.verdict,
-                redact_text(attempt.evidence.detail)[0][:512],
+                safe_detail,
                 attempt.error_code,
                 m.canonical_json(proof.model_dump(mode="json")).decode() if proof else None,
                 exchange.id,
@@ -1391,6 +1579,7 @@ def _associate(step, discussion, exchange):
                 or proof.outbound_digest != current.outbound_digest
                 or current.outbound_payload is None
                 or current.outbound_payload.target != target
+                or current.outbound_payload.body != exchange.outbound_payload.body
             ):
                 _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Original delivery proof changed")
             if proof.kind == "ack":
@@ -1400,10 +1589,7 @@ def _associate(step, discussion, exchange):
                 observed = step.store.get(m.MuseObservation, proof.observation_id, conn=conn)
                 if (
                     observed.discussion_id != discussion.id
-                    or user_echo(
-                        _exchange_view(step.store, discussion, current, conn), [observed.raw_event]
-                    )
-                    is None
+                    or user_echo(view, [observed.raw_event]) is None
                 ):
                     _error(
                         m.ErrorCode.EXTERNAL_STATE_UNKNOWN,

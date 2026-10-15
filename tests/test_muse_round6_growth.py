@@ -13,11 +13,9 @@ FAMILIES = ["k:", "k=>", "a=1;", "k:v|", ";p=1", "authorization:"]
 
 def measure(call, family, wrapped, entry):
     rows = []
-    core_quadratic = family == "k=>" and entry != "owned"
-    sizes = (4096, 8192, 16384, 32768) if core_quadratic else (131072, 262144, 524288, 1048576)
-    # Fixed batch sizes keep the fastest grammar above 20 ms without changing
-    # the amount of work per byte between sizes. Bound known core quadratic CPU.
-    repeats = 1 if core_quadratic else 4 if family == "authorization:" else 2
+    sizes = (131072, 262144, 524288, 1048576)
+    # Fixed batches keep the work per byte unchanged between sizes.
+    repeats = 4 if family == "authorization:" else 2
     for size in sizes:
         value = (family * (size // len(family) + 1))[:size]
         if wrapped:
@@ -37,20 +35,7 @@ def assert_linear(rows, *, label):
 @pytest.mark.parametrize(
     "family,wrapped,entry",
     [
-        pytest.param(
-            family,
-            wrapped,
-            entry,
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason=(
-                    "B16a core change request: safety.redact_text cookie regex "
-                    "is quadratic for k=> runs"
-                ),
-            )
-            if family == "k=>" and entry != "owned"
-            else (),
-        )
+        pytest.param(family, wrapped, entry)
         for entry in ("owned", "text", "body")
         for wrapped in (False, True)
         for family in FAMILIES

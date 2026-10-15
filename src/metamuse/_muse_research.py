@@ -56,6 +56,12 @@ def prepare_research(ctx, request, *, packet_id, rounds, max_reads, expires_at, 
     if prepared.target["backend"] != ctx.policy.muse.backend:
         safety._grant_error("Research backend differs from current configuration")
     packet = _packet(ctx.store, conn, packet_id, request.project_id)
+    if safety.redact_text(packet.rendered_text)[0] != packet.rendered_text:
+        raise m.CoreError(
+            m.ErrorCode.REFERENCE_INVALID,
+            "Packet is stale; prepare a new packet",
+            next_action="Prepare a new packet before reviewing or sending it",
+        )
     scope = safety.ResearchScope(
         discussion_id=prepared.target["intent_id"],
         topic=request.topic,

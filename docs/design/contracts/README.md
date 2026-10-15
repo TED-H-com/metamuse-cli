@@ -36,6 +36,31 @@ packaged Skill into that directory and is not a sixteenth MCP tool. The fifteen 
 contracts are unchanged. Installation is documented in
 [SKILL.md](../../dev/SKILL.md).
 
+B16a human CLI auth contracts (shared Envelope, no new MCP tool):
+
+- `auth list`: no arguments; `data.references` contains valid objects with
+  `provider`/`account` (nullable non-secret labels), `auth_ref` (opaque auth ID),
+  `created_at` (timezone-aware timestamp), `storage_kind="private_file"` and
+  `config_bound` (boolean for the current Muse config). No secret values or paths.
+- `auth revoke --auth-ref REF`: `data` contains `auth_ref`, `revoked=true`,
+  `config_bound` and nullable `next_action`. A remaining binding requires import and
+  rebind. Symlinks are unlinked without following their target; FIFO/directory
+  entries receive fixed manual cleanup guidance. Resolving after revocation returns
+  fixed `E_AUTH_REQUIRED` with an empty cause/context chain.
+- Both commands require human interaction; `--non-interactive` returns
+  `E_SCOPE_REQUIRED` before storage access. Unsafe directories return fixed
+  `E_AUTH_REQUIRED`; corrupt records produce the partial listing below. Missing storage lists zero refs; revoke requires an existing ref.
+
+Muse's unchanged input schemas enforce topic/question credential checks after read-only
+receipt replay and before previews/persistence. Only credential-class values return
+fixed `E_INPUT_INVALID`; accepted prose/paths stay exact in preview and wire.
+
+B16a auth-list partial contract: `status=partial`, `data.references` contains valid
+metadata; `data.unavailable` contains only opaque `auth_ref`, a fixed `reason`, and
+a working revoke `next_action` (including `--workspace` when supplied), or fixed
+manual cleanup guidance for non-revocable entries. `data.next_action` names the
+applicable cleanup actions. Corrupt values/content and directory paths are never returned.
+Strict backend SecretStore.list/resolve failures retain fixed detached E_AUTH_REQUIRED.
 B13 backend data uses existing open JSON result/provenance fields, documented in
 [Facebook collection](../../dev/FACEBOOK.md): step data includes browser_sandbox,
 requested_locator and resolved_permalink; Source.use_basis includes both locators.

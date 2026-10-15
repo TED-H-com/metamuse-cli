@@ -163,6 +163,7 @@ def test_one_cli_approval_two_mcp_questions_restart_citations_export(tmp_path):
         observed_records = []
         exchanges = []
         async with entry.server() as session:
+            await entry.wait_worker_ready(session)
             opened = (
                 await entry.call(
                     session,
@@ -227,6 +228,7 @@ def test_one_cli_approval_two_mcp_questions_restart_citations_export(tmp_path):
                     },
                 )
         async with entry.server() as session:
+            await entry.wait_worker_ready(session)
             refreshed = (
                 await entry.call(
                     session,

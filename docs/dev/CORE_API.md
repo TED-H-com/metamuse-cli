@@ -315,6 +315,15 @@ The MCP server keeps serving diagnostics even if its attached worker fails at st
 The start handoff waits at most 2 seconds for ready, then serves with `starting` if
 ownership has not committed. Ready is also signaled on the first short busy attempt,
 lock-busy or failure. Availability stays false until committed ownership.
+The integration journey explicitly polls inspect before its initial flow and restart
+flow, using the remaining time in its existing 600-second shared test deadline.
+Only `starting` with `worker_available:false` is transitional; it still requires
+`running` with `worker_available:true` before proceeding. Failed, disabled,
+lock-busy, stopped or inconsistent states fail immediately with the full inspect
+state; deadline diagnostics retain the last full state. This wait is opt-in at
+those journey prerequisites, not part of the generic MCP server context: tests of
+disabled workers, lock ownership and queued acceptance continue to observe those
+states directly. It does not change production readiness or promise background work.
 Doctor uses these fields when an attached-worker status provider is present; a separate
 CLI process observes current OS-lock availability, not another process's failure memory.
 
@@ -1015,6 +1024,15 @@ once. True pre-send refusal returns MuseNotSubmitted/session.start or
 FAILED_BEFORE_SEND/chat.stream. If handoff wins the boundary first, a later notification
 is an in-flight close and never replays the action; it cannot cancel already handed-off
 bytes. Invalidation callbacks take no transport lock.
+The curl pipe separates cancellation from handle cleanup: its connector thread caches an
+owned duplicate of the active socket without changing native flags or timeout settings
+(including nonblocking mode). Notifications shut that socket down without any
+concurrent curl API call or wait for the active operation. Native send/receive/cleanup are
+serialized; an active operation cleans up after unwinding, while idle cleanup may safely
+transfer threads. Cleanup is claimed once and releases the duplicate without sending a
+close frame. Descriptor reuse cannot redirect cancellation. Earlier accepted bytes keep
+in-flight uncertainty and are never replayed; connector-owned sockets remain outside the
+cancellation guarantee until connect returns.
 
 Canonical schema verification is cached per Store trust boundary; every boundary checks
 the actual schema signature for changed guards. Integrity/schema failures block with
@@ -1102,10 +1120,14 @@ compositions). Known raw and twice-decoded percent-coordinate spans are unioned,
 merged, and rendered with one join; bodies are never truncated before redaction.
 CPU doubling tests cover k:, k=>, a=1;, k:v|, ;p=1 and authorization:, raw and in
 JSON string wrappers, 128 KiB–1 MiB, for owned scanning and public text/body paths.
-Owned scanning passes. On this main, core safety.redact_text is still quadratic
-for k=> and ordinary ampersand pairs. Strict xfails name B16a and fail on XPASS;
-no safety.py change is included. The 1 MiB CPU ceiling is 12 s, allowing ample
-margin above the passing sub-second measurements, while rejecting minute-long work.
+The B16a integration carries the linear core scanner and converts the five
+inherited core-growth xfails into ordinary tests, at the standard 128 KiB, 256 KiB,
+512 KiB and 1 MiB sizes. Each size retains three CPU samples and two calls per
+sample (the existing authorization family retains four calls). The slope limit
+remains 1.25, the endpoint ratio limit remains 12, and the 1 MiB CPU ceiling
+remains 12 s for the adversarial Muse grammars. The bare-cookie AT-042 regression
+is also an ordinary passing test. Focused measurements do not certify the full
+integrated application or replace exact-source hosted integration gates.
 
 `approval_failure` preserves the original error when a preview callback raises a
 CoreError or any other Exception. Unexpected exceptions are contained and log only

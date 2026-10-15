@@ -51,6 +51,14 @@ The transport does not mint a core token and does not reserve a permit. B10 owns
 
 Question text is at most 8192 UTF-8 bytes. Packet text is at most 49152 UTF-8 bytes. Both caps are checked on the prepared payload and on the JSON body before `consume`. The marker matches `^[A-Za-z0-9._~-]{1,128}$` and is the caller's for both create and send. The transport does not generate one after authorization.
 
+B16a checks new topics/questions with the shared name-and-syntax classifier and closed
+exemptions in [SPEC §FR-019](../design/02_SPEC.md). Every finding except `local_path`
+refuses with fixed `E_INPUT_INVALID` before a preview. Prose that merely mentions names
+without assignment syntax stays benign; `Password: required`, `Secret: the meeting moved`,
+`Session: Opening keynote` and `Authorization: Basic or Bearer?` are refused by design.
+Accepted topic/question bytes remain exact. Stored titles are display-only and are
+never credential-checked during send/read/reconciliation.
+
 ## Prepared request
 
 ```python
@@ -90,6 +98,24 @@ Transport purpose names stay `auth.check`, `session`, `hatch.token`, `hatch.wake
 There is no guard-validated proxy. `MuseTransport(proxy=...)` raises `E_SCOPE_REQUIRED`. The adapter always sets `CURLOPT_PROXY` to an empty string.
 
 HTTPS and WSS use `curl_cffi` 0.16.3, `impersonate="chrome"`, and the certifi CA bundle (`verify` is that path, and `CURLOPT_CAINFO` is the same path). `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, and `SSL_CERT_FILE` are not the trust store. Hostname verification stays on. `curl_options` are passed to the `Session` constructor, not to `Session.request`. Redirects are not followed: a 3xx is `E_SCOPE_REQUIRED` and the `Location` value is not copied into the error. Auth/mint bodies stop at 65536 decompressed bytes; session responses stop at 1 MiB.
+
+CurlSocket serializes native send, receive and cleanup. At construction, the connector
+thread duplicates curl's active socket descriptor and retains that duplicate solely for
+cancellation, without changing its native flags or timeout settings. In particular, curl's
+nonblocking mode and the adapter's finite idle-read deadline are preserved. Notifications
+never query curl for a descriptor. Close marks the pipe closed
+and shuts down this owned duplicate, interrupting receive/select or an in-progress send
+without waiting for the transport lock or calling curl concurrently. A send that has not
+entered the native backend is rejected; if cancellation races a call already entering it,
+the socket shutdown prevents a later handoff, while any bytes accepted earlier retain the
+usual uncertain/no-resend accounting. This follows [libcurl's handle ownership rule](https://curl.se/libcurl/c/threadsafe.html).
+
+The active operation performs native `terminate()` cleanup after unwinding; an idle handle
+can transfer sequentially to the closing thread. Cleanup is claimed once, closes the
+duplicate, and sends no WebSocket close frame. The duplicate pins the original socket
+identity, so reuse of curl's old descriptor number cannot interrupt an unrelated socket.
+No cancellation of a connector-owned socket is promised before connect returns. Synthetic
+adapters without a native descriptor can defer cleanup, but cannot claim native wakeup.
 
 An optional `clock() -> float` is the monotonic deadline. The default is `time.monotonic`.
 
@@ -365,8 +391,8 @@ the old grant. Repeat without a grant to get a fresh review. Stale packets retur
 E_REFERENCE_INVALID and require a new packet. Provider/account come only
 from the binding, and the verified body/headers/verb/path/marker/node cannot be
 substituted. Reservation and expiry/revocation checks occur again at the step boundary.
-Credential-like request text is redacted for review; use the original human-owned
-request file to approve its original digest, never substitute the redacted copy.
+Credential topics/questions are refused before review. Accepted text is displayed exactly;
+save the preview request without edits to approve the same bytes.
 
 A live send requires a successful authorized history job for its baseline; use the
 mapped discussion's open reconciliation request with an access approval first. A new
@@ -386,6 +412,9 @@ it returns stored data and an accepted `refresh_job_id`, `state`, `worker_availa
 The approval envelope previews the exact read scope. A refresh
 fetches one bounded history page from the original session; absence is not proof of
 non-delivery or full history coverage. Raw observations are retained before association.
+Association computes the sanitized outbound view before the write transaction.
+Settlement verifies the stored outbound body is unchanged and reuses that view;
+no redaction runs while the write lock is held.
 Echo comparison applies the same deterministic `sanitize_document` redaction to the
 prepared outbound text and stored observations. The wire still carries the exact host
 question and packet; redaction collisions remain subject to the ambiguity rule.
@@ -424,6 +453,8 @@ Use exact `permit approve` for a verbatim action. For a few host-authored questi
 with one fixed packet, the human may instead approve one bounded research scope.
 This candidate is not a main/LIVE acceptance claim. The existing CLI/MCP requests,
 worker and durable discussion/exchange/results remain the same.
+Credential-bearing new topics/questions are refused by the shared Muse checks. A legacy
+packet that fails the current preview redaction check needs a new packet before approval.
 
 1. Import permitted sources (`add --file PATH --kind text --project PROJECT
    --request-key import --run`, or the existing MCP collect). Search, select exact
@@ -606,6 +637,191 @@ original step. It does not require a newly created echo proof, increase attempts
 again. The same verifier still validates immutable observations for stored user-echo
 proofs. This checkpoint boundary is exercised by the real subprocess worker tests.
 
+B16a submit/prepare order is a read-only exact-payload receipt replay, the credential
+check on new text, then preview/grant checks, persistence and work. Exact replay keeps
+its original result after a rule upgrade. The worker checks session.start topics,
+questions, packet fixpoints and body equality again before any token or gateway.
+Frozen refusals prove not_submitted, close sends as abandoned and retain the refusal's
+own next action. No refused send quarantines a discussion as unknown delivery.
+
+Stored discussion titles are never re-checked as new outbound text. Previews show a
+display-redacted "Stored discussion title", outside the send/read body. Reconciliation
+identifies a discussion by discussion_id and project; its request topic must equal
+the stored title or its current display-redacted form. approval.request and saved
+request files carry only that display-redacted title. If the display changed since
+saving, E_REFERENCE_INVALID asks to request reconciliation again. Approval failures
+propagate their real fixed code, message and next action.
+
+Muse sends exactly stored packet.rendered_text. Current rules changing an older
+packet cause E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in prepare,
+preview, submit and wire, without a preview or rewriting stored bytes. Send guidance
+is "Prepare a new packet and send request with a new exact share grant". The body is
+the accepted original question, two newlines and that packet. Private original
+exports retain original_private and their documented original bytes.
+
+Redaction uses bounded possessive name grammars, forward scans and precomputed
+quote/container/tag terminators. Scans advance past consumed values; a fixed number
+of ordered interval streams merge and each pass builds output with one join.
+Original-offset maps are sparse/coalesced; changed canonical views additionally use
+one byte of decoding depth per character. The four-application bound is constant.
+CPU growth of the iterated public call is checked at four doubling sizes for all
+review and new-rule families. Raw canonical sizes are checked before rendering;
+packet/bundle rendering and redaction precede BEGIN IMMEDIATE. Writes repeat only
+reference/snapshot checks. _save_send redacts the full remote detail (capped at 1 MiB)
+before its batch, then cuts to 512 characters. Association sanitizes its locally bounded outbound view (48 KiB packet, 8 KiB
+question, two joining bytes) before the transaction. Settlement compares the complete
+stored outbound body with the frozen exchange, then reuses that view. No redaction
+or sanitize_document call runs inside the jobs transaction. Oversized legacy text refuses before redaction with
+fixed E_LIMIT_REACHED; this bound is measured and does not prove delivery.
+
+Auth list returns partial for corrupt entries: valid metadata in references, opaque
+refs and fixed reasons in unavailable. It suggests working revoke commands for
+regular records/symlinks, and a fixed manual instruction for FIFO/directory/unowned
+entries. When --workspace was given, revoke suggestions retain it, shell quoted.
+Revoke unlinks a symlink via dir_fd without opening its target; other non-regular
+entries require manual cleanup. List/revoke read existing config for config_bound
+without opening or initializing a workspace/Store. Noninteractive auth/permit
+commands refuse before opening anything; scripted human permit approval needs no
+TTY. Auth values and resolved secret-target paths never appear; explicitly supplied
+workspace paths remain in the requested operator command. Revoked bindings ask to
+import and rebind.
+
+The complete classifier and closed exemptions, decoded-layer rule, scoped form-plus
+decoding, one-call fixpoint/instability contract, cookie contexts, placeholders,
+new key suffixes/syntaxes and explicit out-of-scope formats are specified in
+[SPEC FR-019](../design/02_SPEC.md) and [SAFETY_API](SAFETY_API.md). Every finding
+except local_path refuses new Muse text. Accepted topic/question bytes remain exact;
+credentials never enter a new approval preview. Unstable nonrefusable details use
+one complete mask. This is OFFLINE/FIXTURE/INTEGRATION/MEASURE evidence, not LIVE.
+
+Reconciliation preparation and receipt replay use one topic-identity predicate:
+the stored title or its current display-redacted form, together with discussion ID
+and project. Replaying the human-approved request, before or after settlement, and
+re-previewing an existing job retain the original job identity. A saved display title
+that no longer matches current rules requires requesting reconciliation again.
+
+Layered grammar details: a bracket or separator inside a quoted value cannot close
+an outer container or turn into a call-argument separator. An actual enclosing quote
+still closes that value even when the quote belongs to a deeper decoded layer.
+Raw replay recognizes the whole escaped closing quote, preserving whole-value
+exemptions inside JSON captures. Shell quoting of option names, including curl
+--user/--cookie, sshpass -p and attached mysql -p, retains the argument rule.
+A whole form field is decoded before lexing a HAR document it contains, including
+whole percent-encoded form bodies. The HAR lexer never decodes string data into
+structure. A failed container stops at its first error; independently indexed later containers remain eligible, even after prose or a damaged outer candidate.
+
+Known form boundaries are carried through decoded layers, including encoded newlines.
+An encoded nested form prefix gets its own operator layer within its parent field;
+its plus signs decode only at that layer or shallower. The scan never grants form
+semantics to unrelated prose after a question mark. Whole escaped quoted placeholders
+are canonicalized before applying the same closed exemption list; their nested
+assignments remain independently inspected. Public-key block mirrors stay public.
+
+B16a structural rule: ambiguity may only lengthen a redaction. Single-line single,
+double and backtick quotes pair locally at the same decoding layer and never
+cross a line break at that layer. An apostrophe between alphanumerics is prose,
+not a delimiter. Triple quotes are one multiline token, recognized before single
+quotes; heredoc bodies and YAML block scalars retain their multiline extent.
+A fully parsed JSON layer proves exact string extents. Only a delimiter proved
+by these rules may shorten a credential value, URL authority or private-key block.
+
+At a credential value's start, a single, double or backtick quote opens its own
+value if the same-layer, same-line matching quote follows. This local opener
+takes priority over an unrelated earlier quote. Attached command flags use the
+same rule; only a proven quoted flag's closing delimiter precedes its argument.
+
+Exemptions require a complete genuine closing delimiter at the same layer.
+Forced closure at an enclosing quote or end of input is not a match. Unclosed
+placeholders and lookups are credentials. Fixed environment lookups have locally
+quoted arguments, so parentheses or brackets within an argument are data. Lookup
+and placeholder extents are indexed once; nested lookups never repeatedly copy
+or decode a suffix per assignment.
+
+Every scanner continues inside an exempt outer value. Assignment, header, XML,
+query, curl and SQL/sshpass/mysql passes advance only past the matched key or
+operator until masking a value. Cookie-chain discovery likewise revisits exempt
+single members. URL candidates always resume at the next candidate; HAR walks
+all string/container children; jar, prefix, JWT, block and path passes enumerate
+independent matches. Only a selected redaction permits skipping its consumed value.
+
+Protocol-relative // authorities are URL candidates, independent of preceding
+URLs. A scheme or // exposed at a deeper layer inside a password remains value
+data. A root candidate with no userinfo operator before a deeper scheme still
+yields to that independently scanned URL. One monotone successor cursor per
+bounded layer prevents rescanning. Markdown autolinks end at their proven > in both authority and query
+passes. A raw backslash ends a special-scheme authority even when a permissive
+decoded view would treat its escape as data. Accepted benign cost: an unenclosed
+scheme://host:port,user@host contains WHATWG userinfo, as does a literal backslash
+in a non-special scheme's userinfo; both are redacted by design.
+
+HAR JSON containers are candidates at every offset and decoded layer, including
+prose, fences, log prefixes and packet headers. A strict lexer evaluates completed
+objects before an error; an independent candidate swallowed as string content is
+not lost. Lexical ends and container outcomes are memoized once, so late failures
+and candidate recovery remain linear. Any sensitive repeated name marks every
+value in that object private, without overwriting an earlier sensitivity decision.
+
+Private-key block labels accept space, form plus and percent-encoded space at
+every supported layer. Quotes in PuTTY comments shorten the block only when
+proved to close an enclosing string; otherwise it extends through Private-MAC.
+Quoted form-body discovery pairs quotes per decoding layer, and decoded-only
+whitespace remains form value data.
+
+
+B16a context assurance: natural and seeded malformed contexts surround in-scope
+rows both inside and outside raw, JSON (one/two), percent and form layers.
+Representations stay within the supported decoding budgets: a row already using
+three percent layers retains its context in raw/JSON form instead of receiving a
+fourth percent/form wrapper. Count these representation adjustments; no natural
+context is excluded. Whole-input peeling preserves percent escapes inside URL
+password data.
+The property checks marker fragments as well as whole values, and checks the
+one-call fixpoint. Natural-context benign mirrors must remain unchanged;
+malformed random-context benign changes are measured, since ambiguous structure
+may lengthen a mask. The installed CPython corpus retains a 0.40% refusal budget.
+HTML/XML elements make value/content private when the same element has a sensitive
+name; type=password makes value private. Attribute order and quoting do not
+change that rule. Benign username/description elements remain unchanged.
+
+
+Grammar-proven HTML/XML attribute strings may contain line breaks; their local
+matching quote is indexed separately from prose quote pairing. Attribute name/type
+classification resolves HTML character references. Oversized (over 1,024-character)
+name/type selectors fail closed before decoding. Exempt attribute values remain
+searchable for independent nested elements. A malformed unquoted nested tag starts
+an independent candidate instead of causing a repeated suffix walk.
+
+A shell-parameter placeholder must have a complete balanced closing brace and a
+parameter header (identifier/positional/special parameter, optionally followed by
+its parameter operator). Random prose before the brace cannot turn an incomplete
+credential into a valid placeholder. Fixed lookup and complete double-brace extents
+are indexed once; exemption checks do not copy an enclosing suffix per assignment.
+Exact JSON string boundaries stay mapped through form/percent/JSON decoding;
+quoted defaults cannot jump over a proven enclosing JSON close. Raw special-scheme
+backslash barriers exclude serialization backslashes and Unicode-escape data.
+Netscape jar fields remain recognizable after a surrounding context prefix and
+retain CR/LF line endings. These rules preserve the existing four-application bound.
+
+
+Round-7 extents use delimiter ownership D1–D11 in 02_SPEC and SAFETY_API.
+An unrelated quote, plural possessive or bracket never shortens a credential.
+Only the value's own quote, an immediately adjacent opener, or a proven JSON
+string supplies a closing bound, with the D2 follower test. Escapes, doubled
+quotes and shell quote idioms remain value data. Unquoted trailing punctuation
+is excluded before one shared, layer-true whole-value exemption decision.
+Shell reference defaults remain exempt; literal defaults are credentials.
+Markup comments and attributes are bounded contexts. Private blocks retain their
+final MAC/hash/END line, YAML indicators accept indentation digits and comments,
+and embedded forms continue through quotes and angle brackets. Short curl flags
+use conservative lexical scope within a simple-command segment, including pasted
+prose; additional benign refusals are intentional. This does not parse shell
+command-word position. Escaped continuations and separators in owned preceding
+arguments preserve curl scope; actual command separators release it, including
+after consumed private values. SQL principals must precede their clauses within
+the same statement. See D10 in [SAFETY_API.md](SAFETY_API.md) for source-layer
+escape preservation and the forward boundary state.
+Per-scanner indexes keep terminator and exemption work linear; the public fixpoint
+call retains its bound.
 Remote trust uses one fixed upstream (MUSE_ORIGIN/HATCH_WSS_BASE). Provider and account are local connection labels; neither partitions owner or VM expectations. The shared trust-domain lock serializes all labels.
 
 HTTP 200 with missing, malformed or drifted credential/context fields is interface drift: E_PROTOCOL_MISMATCH / never. Explicit `ok: false` and HTTP 401/403 remain E_AUTH_REQUIRED. A twice-stale notary after one remint is E_RESOURCE_UNAVAILABLE with a retry-later action (MUSE_SPIKE §9.1 supports one remint then stop; unavailable/retry-later is an inference, with no evidence that session refresh repairs it).
@@ -727,10 +943,14 @@ compositions). Known raw and twice-decoded percent-coordinate spans are unioned,
 merged, and rendered with one join; bodies are never truncated before redaction.
 CPU doubling tests cover k:, k=>, a=1;, k:v|, ;p=1 and authorization:, raw and in
 JSON string wrappers, 128 KiB–1 MiB, for owned scanning and public text/body paths.
-Owned scanning passes. On this main, core safety.redact_text is still quadratic
-for k=> and ordinary ampersand pairs. Strict xfails name B16a and fail on XPASS;
-no safety.py change is included. The 1 MiB CPU ceiling is 12 s, allowing ample
-margin above the passing sub-second measurements, while rejecting minute-long work.
+The B16a integration carries the linear core scanner and converts the five
+inherited core-growth xfails into ordinary tests, at the standard 128 KiB, 256 KiB,
+512 KiB and 1 MiB sizes. Each size retains three CPU samples and two calls per
+sample (the existing authorization family retains four calls). The slope limit
+remains 1.25, the endpoint ratio limit remains 12, and the 1 MiB CPU ceiling
+remains 12 s for the adversarial Muse grammars. The bare-cookie AT-042 regression
+is also an ordinary passing test. Focused measurements do not certify the full
+integrated application or replace exact-source hosted integration gates.
 
 MEASURE (2026-10-14, shared host, warmed schema): an exactly 1 MiB authenticated
 session containing 52,420 ids bound in 0.741 s CPU / 0.762 s elapsed; bulk trust
@@ -744,3 +964,8 @@ MEASURE: shipped marker predicate, seeded random base64url, 4,000 trials per len
 32 chars 3/4000 (0.075%); 256 4/4000 (0.100%); 1024 24/4000 (0.600%);
 4096 102/4000 (2.550%). These synthetic rates are not predictions for real session
 fields. Credential values are opaque to marker matching.
+
+Before-frame session.start failures preserve the original fixed error code,
+message, next action, retry class and retry delay when wrapped as MuseNotSubmitted.
+SQLite BUSY/LOCKED therefore retains safe_read advice; this is affirmative
+not-submitted accounting and never permits automatic replay of an uncertain send.

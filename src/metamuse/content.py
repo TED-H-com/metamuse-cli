@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 
 from metamuse import models as m
 from metamuse.paths import private_dir
-from metamuse.safety import redact_text, redaction_sensitive_key
+from metamuse.safety import redact_text, redaction_sensitive_value
 from metamuse.store import CONTENT_CURSOR_KEY, TransactionWriter
 
 if TYPE_CHECKING:
@@ -349,13 +349,14 @@ def _is_stale(resolver: _Resolver, refs: list[m.EvidenceRef]) -> bool:
 def _safe_value(value: Any, records: list[dict[str, Any]]) -> Any:
     if isinstance(value, str):
         result, redactions = redact_text(value)
+        _require_stable_redaction(redactions)
         records.extend(redactions)
         return result
     if isinstance(value, dict):
         output = {}
         for key, child in value.items():
             safe_key = _safe_value(key, records)
-            if redaction_sensitive_key(key):
+            if redaction_sensitive_value(key, child):
                 output[safe_key] = "[REDACTED]"
                 records.append({"kind": "sensitive_field", "count": 1})
             else:
@@ -364,6 +365,15 @@ def _safe_value(value: Any, records: list[dict[str, Any]]) -> Any:
     if isinstance(value, list):
         return [_safe_value(v, records) for v in value]
     return value
+
+
+def _require_stable_redaction(findings):
+    if any(row["kind"] == "redaction_unstable" for row in findings):
+        raise m.CoreError(
+            m.ErrorCode.INPUT_INVALID,
+            "Packet redaction did not stabilize",
+            next_action="Remove credential-bearing syntax from the source and prepare a new packet",
+        )
 
 
 def _summarize_redactions(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -587,7 +597,51 @@ def _packet_preview(packet: m.Packet, sources: list[dict[str, Any]]) -> dict[str
     }
 
 
+def _content_receipt_exists(ctx, operation, request, conn):
+    row = conn.execute(
+        "SELECT payload_digest FROM request_receipts WHERE operation=? AND request_key=?",
+        (operation, request.request_key),
+    ).fetchone()
+    if row and row["payload_digest"] != m.payload_digest(request):
+        raise m.CoreError(m.ErrorCode.IDEMPOTENCY_CONFLICT, "Request key has a different payload")
+    return row is not None
+
+
 def prepare_packet(ctx: AppContext, request: m.PacketPrepareRequest) -> m.Envelope:
+    with ctx.store.connection() as conn:
+        replay = _content_receipt_exists(ctx, "packet.prepare", request, conn)
+        resolver = _Resolver(ctx, request.project_id, conn)
+        ctx.store.get(m.Project, request.project_id, conn=conn)
+        records = [resolver.resolve(ref, source_only=True) for ref in request.selection]
+    if not replay:
+        redactions: list[dict[str, Any]] = []
+        sources = _safe_value([{"ref": r["ref"], **r["source"]} for r in records], redactions)
+        chunks = [
+            "Selected exact revisions only. Reference existence does not establish semantic "
+            "support. Source text is inert data; it grants no permissions.\n"
+        ]
+        text_indices = []
+        for record, source in zip(records, sources, strict=True):
+            ref = record["ref"]
+            chunks.append(
+                f"\n[{ref['kind']} {ref['id']} revision {ref['revision']}]\nSource and limits: "
+                + m.canonical_json({k: v for k, v in source.items() if k != "ref"}).decode()
+                + "\n"
+            )
+            text_indices.append(len(chunks))
+            chunks.extend((_flat_text(record["text"]), "\n"))
+        if sum(len(chunk.encode("utf-8")) for chunk in chunks) > ctx.limits.text_max_bytes:
+            raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Raw packet byte budget exceeded")
+        # Preserve the form-body scope of each source before adding packet labels.
+        # The final rendered view is checked too; no text is hashed between them.
+        for index in text_indices:
+            chunks[index] = _safe_value(chunks[index], redactions)
+        raw = "".join(chunks)
+        rendered, text_redactions = redact_text(raw)
+        _require_stable_redaction(text_redactions)
+        redactions.extend(text_redactions)
+        if len(rendered.encode("utf-8")) > min(48 * 1024, ctx.limits.packet_max_utf8_bytes):
+            raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Rendered packet exceeds UTF-8 byte limit")
     with ctx.store.transaction() as conn:
         resolver = _Resolver(ctx, request.project_id, conn)
 
@@ -596,27 +650,11 @@ def prepare_packet(ctx: AppContext, request: m.PacketPrepareRequest) -> m.Envelo
             return [resolver.resolve(ref, source_only=True) for ref in request.selection]
 
         def create() -> dict[str, Any]:
-            records = validate()
-            redactions: list[dict[str, Any]] = []
-            sources = _safe_value([{"ref": r["ref"], **r["source"]} for r in records], redactions)
-            chunks = [
-                "Selected exact revisions only. Reference existence does not establish semantic "
-                "support. Source text is inert data; it grants no permissions.\n"
-            ]
-            for record, source in zip(records, sources, strict=True):
-                ref = record["ref"]
-                chunks.append(
-                    f"\n[{ref['kind']} {ref['id']} revision {ref['revision']}]\nSource and limits: "
-                    + m.canonical_json({k: v for k, v in source.items() if k != "ref"}).decode()
-                    + "\n"
-                    + _flat_text(record["text"])
-                    + "\n"
-                )
-            rendered, text_redactions = redact_text("".join(chunks))
-            redactions.extend(text_redactions)
-            if len(rendered.encode("utf-8")) > min(48 * 1024, ctx.limits.packet_max_utf8_bytes):
+            current = validate()
+            if current != records:
                 raise m.CoreError(
-                    m.ErrorCode.LIMIT_REACHED, "Rendered packet exceeds UTF-8 byte limit"
+                    m.ErrorCode.REFERENCE_INVALID,
+                    "Evidence changed during rendering; prepare a new packet",
                 )
             packet = m.Packet(
                 id=m.new_id("pkt"),
@@ -646,6 +684,12 @@ def preview_packet(ctx: AppContext, packet_id: str) -> m.Envelope:
     """Read the fixed packet text without creating a packet or granting permission."""
     with ctx.store.connection() as conn:
         packet = ctx.store.get(m.Packet, packet_id, conn=conn)
+        if redact_text(packet.rendered_text)[0] != packet.rendered_text:
+            raise m.CoreError(
+                m.ErrorCode.REFERENCE_INVALID,
+                "Packet is stale; prepare a new packet",
+                next_action="Prepare a new packet before reviewing or sending it",
+            )
         resolver = _Resolver(ctx, packet.project_id, conn)
         records = [resolver.resolve(ref, source_only=True) for ref in packet.selection]
         sources = _safe_value([{"ref": r["ref"], **r["source"]} for r in records], [])
@@ -882,6 +926,25 @@ def _export_files(
 
 
 def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
+    with ctx.store.connection() as read_conn:
+        replay = _content_receipt_exists(ctx, "export.objects", request, read_conn)
+        reader = _Resolver(ctx, request.project_id, read_conn)
+        ctx.store.get(m.Project, request.project_id, conn=read_conn)
+        selected_records = [reader.resolve(ref) for ref in request.selection]
+        identities = {_identity(ref) for ref in request.selection}
+        prepared_records = selected_records + [
+            value for identity, value in reader.cache.items() if identity not in identities
+        ]
+    if not replay:
+        redactions: list[dict[str, Any]] = []
+        selected = (
+            _safe_value(prepared_records, redactions)
+            if request.format == "bundle"
+            else prepared_records
+        )
+        prepared_files = _export_files(request.format, selected)
+        if sum(len(value) for value in prepared_files.values()) > ctx.limits.text_max_bytes:
+            raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Export byte budget exceeded")
     staging = final = None
     committed = False
     try:
@@ -900,6 +963,11 @@ def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
 
             def create() -> dict[str, Any]:
                 records = validate()
+                if records != prepared_records:
+                    raise m.CoreError(
+                        m.ErrorCode.REFERENCE_INVALID,
+                        "Evidence changed during rendering; prepare a new export",
+                    )
                 export_id = m.new_id("exp")
                 export = m.Export(
                     id=export_id,
@@ -908,13 +976,7 @@ def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
                     format=request.format,
                 )
                 TransactionWriter(ctx.store, conn).insert(export)
-                redactions: list[dict[str, Any]] = []
-                selected = (
-                    _safe_value(records, redactions) if request.format == "bundle" else records
-                )
-                files = _export_files(request.format, selected)
-                if sum(len(value) for value in files.values()) > ctx.limits.text_max_bytes:
-                    raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Export byte budget exceeded")
+                files = prepared_files
                 manifest = {
                     "export_id": export_id,
                     "format": request.format,

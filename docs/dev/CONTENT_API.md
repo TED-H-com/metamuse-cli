@@ -71,15 +71,27 @@ and key, creating a new packet. Replay validates current project/reference/asset
 and recomputes staleness without changing selection, text or digest. Already superseded
 selections start stale. Timestamps use the Store connection's `metamuse_now()` clock.
 
-Automatic redaction is a guard, not a guarantee of privacy, anonymity, legal compliance
-or safe sharing. It covers URL query/fragment and encoded token/signed parameters,
-JSON secret strings, Authorization schemes, inline/folded cookie/session strings,
-sk-style keys and plausible absolute POSIX/Windows paths. ASCII-scoped credential names
-avoid treating CJK key/value prose as cookies; bare CJK slash expressions remain intact.
-Quoted values retain their delimiters, preserving embedded JSON syntax. Structured bundle
-metadata also redacts recognized sensitive keys and hyphen/underscore variants.
-Host/operator review and the independent grant/send verifier remain necessary for any
-actual external share.
+Automatic redaction is a guard, not a privacy, anonymity or legality guarantee.
+The [SPEC classifier](../design/02_SPEC.md) binds the name-and-syntax rules and every
+closed exemption. Sensitive structured fields are redacted whole for strings, numbers,
+arrays and objects. JSON strings, including embedded/incomplete/escaped documents,
+headers, cookie chains/jars, flags, XML, URL credentials, known token prefixes, JWTs,
+private-key blocks and paths use the same shared detector. CJK prose and slash
+expressions remain unchanged. Quoted JSON keeps its delimiters; container/numeric
+JSON uses a quoted sentinel. Findings contain only category and count.
+
+The shared redactor performs at most four applications: three changing passes and
+one confirming pass. A fourth changing pass adds `redaction_unstable` and masks the
+entire output. Packets and bundles refuse it with fixed E_INPUT_INVALID before hashing or writing any state.
+Raw canonical size checks precede rendering; packet/bundle redaction runs outside the
+write transaction, whose snapshot validation remains database-only. Sparse decoding
+maps up to three percent and JSON-escape layers to original value spans and literal
+plus is whitespace only within an actual URL query or complete form-body region.
+Forward scans and interval closure prevent suffix rescanning and newly exposed values. Output uses one join. Current-rule changes to an
+older packet refuse Muse prepare/preview/submit/wire with E_REFERENCE_INVALID, without
+rewriting stored text or issuing an approval preview. Original exports remain
+original_private. Original local search continues exposing selected source snippets;
+it does not search packets.
 
 ## Host drafts and preview
 
@@ -221,3 +233,196 @@ remain available even when Python warnings are suppressed. Legacy manifests with
 database checksums are refused. SQL conflict clauses (including OR IGNORE/DO NOTHING)
 and rowid writes are forbidden; deduplicate with SELECT/request receipt checks and plain
 INSERT in a short transaction. Schema and immutable bindings are core-owned.
+
+Sensitive YAML keys also cover the complete indented container or block scalar,
+through its dedent. Whitespace around assignment separators includes non-ASCII
+spaces and split lines. A Kubernetes `valueFrom`/`secretKeyRef` object under a
+sensitive key is refused by design; it is outside the closed environment-reference
+exemptions. Quoted JSON-style keys can introduce raw-newline scalar values even in
+an incomplete document.
+
+Human `packet preview` refuses text rendered by older rules with the fixed
+`E_REFERENCE_INVALID` stale-packet error before exposing it. URL userinfo stops at
+the WHATWG authority boundary (`/`, `?`, `#`, whitespace, and backslash for special
+schemes); deeper encoded delimiters remain inside the mapped password span. Scheme scanning has a forward anchor and accepts custom
+schemes of any length.
+
+Flags whose names are `authorization`, `proxy-authorization`, `cookie` or
+`set-cookie` use the complete quoted value, or the complete remaining line when
+unquoted, so schemes and cookie-chain members cannot fall outside the mask.
+
+Plain YAML string values extend through the line (excluding a YAML comment);
+TOML triple-quoted strings extend through their closing triple quote. Annotated
+assignment defaults retain the type annotation and redact the actual value.
+Sensitive XML elements may have quoted attributes; their content is redacted
+whole, while a self-closing element has an empty value. Existing secure-cookie
+and cloud-header name prefixes use the same three-layer decoding in structured
+records as in text.
+
+For every input without `redaction_unstable`,
+`redact_text(redact_text(x)[0])[0] == redact_text(x)[0]`. Packet source text is
+redacted with its original form-body scope before labels are joined. Structured
+sensitive values are replaced whole regardless of type; HAR name/value objects and
+cookies, CDATA/namespaced XML, flags, subscript keys and private-key formats follow
+[SPEC FR-019](../design/02_SPEC.md). The layer rule treats deeper decoded delimiters
+as value data, and original spans are never discarded for containing percent escapes.
+
+URL authority candidates end at their enclosing quote/bracket at the same or a shallower
+decoding layer, or the next same-layer or shallower scheme://. Each scheme is scanned independently; a root
+URL never consumes a later URL. Unenclosed punctuation remains userinfo data.
+
+Quote and bracket pairs are tracked at every decoding layer, including inside an
+outer string. Quoted command arguments may open at their operator layer or deeper,
+and end at the matching quote at that layer. Spaces inside remain value data.
+Exempt environment lookups end at their own closing bracket or parenthesis.
+
+HAR structure is read by an escape-aware JSON lexer at its JSON layer, before
+percent or JSON escapes inside its string values become data in canonical views.
+Complete documents and whole JSON-string layers share the lexer. Partial documents
+stop at the first syntax error within each candidate; independent later candidates remain eligible. Name/value order
+is immaterial; sensitive HAR scalars, including numbers and boolean/null literals,
+are redacted whole, as are cookies arrays.
+
+PuTTY private-key headers match after a non-identifier boundary at every layer,
+including inline labels and JSON/form captures. The mask extends through Private-MAC
+or, without that line, to its enclosing delimiter or end of input. Raw, JSON-escaped
+and percent-encoded line breaks share this behaviour. PEM and PGP begin markers
+have no line-start anchor; their existing matching-end/unterminated rule remains.
+
+A whole-value exemption applies to that outer value only. Assignment scanning
+continues after its key/operator to inspect nested assignments. Balanced shell
+placeholder extents use the precomputed delimiter index, avoiding repeated suffix
+parsing when defaults nest.
+
+Redaction memory budget: a fresh subprocess making one public redact_text call
+on 20 MiB of raw text must peak at no more than 1 GiB RSS. Syntax positions share
+one lazy signed numeric index; quote intervals, newline offsets, edit coordinates
+JSON lexer nesting, and retained mask spans use compact numeric arrays; decode depths use bytes.
+Decoded syntax is released before the original-view syntax is constructed. Each
+measurement uses a fresh parent and child; RUSAGE_CHILDREN reports that child only.
+
+Layered grammar details: a bracket or separator inside a quoted value cannot close
+an outer container or turn into a call-argument separator. An actual enclosing quote
+still closes that value even when the quote belongs to a deeper decoded layer.
+Raw replay recognizes the whole escaped closing quote, preserving whole-value
+exemptions inside JSON captures. Shell quoting of option names, including curl
+--user/--cookie, sshpass -p and attached mysql -p, retains the argument rule.
+A whole form field is decoded before lexing a HAR document it contains, including
+whole percent-encoded form bodies. The HAR lexer never decodes string data into
+structure. A failed container stops at its first error; independently indexed later containers remain eligible, even after prose or a damaged outer candidate.
+
+Known form boundaries are carried through decoded layers, including encoded newlines.
+An encoded nested form prefix gets its own operator layer within its parent field;
+its plus signs decode only at that layer or shallower. The scan never grants form
+semantics to unrelated prose after a question mark. Whole escaped quoted placeholders
+are canonicalized before applying the same closed exemption list; their nested
+assignments remain independently inspected. Public-key block mirrors stay public.
+
+Triple-quoted strings, heredoc/YAML multiline bodies and backticks are ordinary
+credential-bearing contexts. Their benign content remains byte-for-byte intact.
+
+B16a structural rule: ambiguity may only lengthen a redaction. Single-line single,
+double and backtick quotes pair locally at the same decoding layer and never
+cross a line break at that layer. An apostrophe between alphanumerics is prose,
+not a delimiter. Triple quotes are one multiline token, recognized before single
+quotes; heredoc bodies and YAML block scalars retain their multiline extent.
+A fully parsed JSON layer proves exact string extents. Only a delimiter proved
+by these rules may shorten a credential value, URL authority or private-key block.
+
+At a credential value's start, a single, double or backtick quote opens its own
+value if the same-layer, same-line matching quote follows. This local opener
+takes priority over an unrelated earlier quote. Attached command flags use the
+same rule; only a proven quoted flag's closing delimiter precedes its argument.
+
+Exemptions require a complete genuine closing delimiter at the same layer.
+Forced closure at an enclosing quote or end of input is not a match. Unclosed
+placeholders and lookups are credentials. Fixed environment lookups have locally
+quoted arguments, so parentheses or brackets within an argument are data. Lookup
+and placeholder extents are indexed once; nested lookups never repeatedly copy
+or decode a suffix per assignment.
+
+Every scanner continues inside an exempt outer value. Assignment, header, XML,
+query, curl and SQL/sshpass/mysql passes advance only past the matched key or
+operator until masking a value. Cookie-chain discovery likewise revisits exempt
+single members. URL candidates always resume at the next candidate; HAR walks
+all string/container children; jar, prefix, JWT, block and path passes enumerate
+independent matches. Only a selected redaction permits skipping its consumed value.
+
+Protocol-relative // authorities are URL candidates, independent of preceding
+URLs. A scheme or // exposed at a deeper layer inside a password remains value
+data. A root candidate with no userinfo operator before a deeper scheme still
+yields to that independently scanned URL. One monotone successor cursor per
+bounded layer prevents rescanning. Markdown autolinks end at their proven > in both authority and query
+passes. A raw backslash ends a special-scheme authority even when a permissive
+decoded view would treat its escape as data. Accepted benign cost: an unenclosed
+scheme://host:port,user@host contains WHATWG userinfo, as does a literal backslash
+in a non-special scheme's userinfo; both are redacted by design.
+
+HAR JSON containers are candidates at every offset and decoded layer, including
+prose, fences, log prefixes and packet headers. A strict lexer evaluates completed
+objects before an error; an independent candidate swallowed as string content is
+not lost. Lexical ends and container outcomes are memoized once, so late failures
+and candidate recovery remain linear. Any sensitive repeated name marks every
+value in that object private, without overwriting an earlier sensitivity decision.
+
+Private-key block labels accept space, form plus and percent-encoded space at
+every supported layer. Quotes in PuTTY comments shorten the block only when
+proved to close an enclosing string; otherwise it extends through Private-MAC.
+Quoted form-body discovery pairs quotes per decoding layer, and decoded-only
+whitespace remains form value data.
+
+
+B16a context assurance: natural and seeded malformed contexts surround in-scope
+rows both inside and outside raw, JSON (one/two), percent and form layers.
+Representations stay within the supported decoding budgets: a row already using
+three percent layers retains its context in raw/JSON form instead of receiving a
+fourth percent/form wrapper. Count these representation adjustments; no natural
+context is excluded. Whole-input peeling preserves percent escapes inside URL
+password data.
+The property checks marker fragments as well as whole values, and checks the
+one-call fixpoint. Natural-context benign mirrors must remain unchanged;
+malformed random-context benign changes are measured, since ambiguous structure
+may lengthen a mask. The installed CPython corpus retains a 0.40% refusal budget.
+HTML/XML elements make value/content private when the same element has a sensitive
+name; type=password makes value private. Attribute order and quoting do not
+change that rule. Benign username/description elements remain unchanged.
+
+
+Grammar-proven HTML/XML attribute strings may contain line breaks; their local
+matching quote is indexed separately from prose quote pairing. Attribute name/type
+classification resolves HTML character references. Oversized (over 1,024-character)
+name/type selectors fail closed before decoding. Exempt attribute values remain
+searchable for independent nested elements. A malformed unquoted nested tag starts
+an independent candidate instead of causing a repeated suffix walk.
+
+A shell-parameter placeholder must have a complete balanced closing brace and a
+parameter header (identifier/positional/special parameter, optionally followed by
+its parameter operator). Random prose before the brace cannot turn an incomplete
+credential into a valid placeholder. Fixed lookup and complete double-brace extents
+are indexed once; exemption checks do not copy an enclosing suffix per assignment.
+Exact JSON string boundaries stay mapped through form/percent/JSON decoding;
+quoted defaults cannot jump over a proven enclosing JSON close. Raw special-scheme
+backslash barriers exclude serialization backslashes and Unicode-escape data.
+Netscape jar fields remain recognizable after a surrounding context prefix and
+retain CR/LF line endings. These rules preserve the existing four-application bound.
+
+
+Round-7 extents use delimiter ownership D1–D11 in 02_SPEC and SAFETY_API.
+An unrelated quote, plural possessive or bracket never shortens a credential.
+Only the value's own quote, an immediately adjacent opener, or a proven JSON
+string supplies a closing bound, with the D2 follower test. Escapes, doubled
+quotes and shell quote idioms remain value data. Unquoted trailing punctuation
+is excluded before one shared, layer-true whole-value exemption decision.
+Shell reference defaults remain exempt; literal defaults are credentials.
+Markup comments and attributes are bounded contexts. Private blocks retain their
+final MAC/hash/END line, YAML indicators accept indentation digits and comments,
+and embedded forms continue through quotes and angle brackets. Short curl flags
+use conservative lexical scope within a simple-command segment, including pasted
+prose; additional benign refusals are intentional. This does not parse shell
+command-word position. Escaped continuations and separators in owned preceding
+arguments preserve curl scope; actual command separators release it, including
+after consumed private values. SQL principals must precede their clauses within
+the same statement. See D10 in [SAFETY_API.md](SAFETY_API.md) for source-layer
+escape preservation and the forward boundary state.
+Per-scanner indexes keep terminator and exemption work linear; the public fixpoint
+call retains its bound.

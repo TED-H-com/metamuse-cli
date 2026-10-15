@@ -102,7 +102,8 @@ def test_operator_confirmation_expiry_replay_and_secret_redaction(tmp_path):
         code=3,
     )
     assert expired["error"]["code"] == "E_SCOPE_DENIED"
-    private_topic = "Cookie: hatch_sess=" + "SYNTHETIC_JOURNEY_SECRET"
+    marker = f"{project}_MARKER_SYNTHETIC_ONLY"
+    private_topic = f"Cookie: hatch_sess={marker}"
     safe = entry.cli(
         "muse",
         "open",
@@ -112,10 +113,10 @@ def test_operator_confirmation_expiry_replay_and_secret_redaction(tmp_path):
         private_topic,
         "--request-key",
         "private-preview",
-        code=3,
-    )["approval"]
-    assert "[REDACTED]" in safe["topic"] and "[REDACTED]" in safe["request"]["topic"]
-    assert safe["action_digest"] != preview["action_digest"]
+        code=2,
+    )
+    assert safe["approval"] is None and safe["error"]["code"] == "E_INPUT_INVALID"
+    assert marker not in json.dumps(safe)
     assert entry.cli("jobs", "list", "--project", project)["data"]["jobs"] == []
     entry.hygiene()
 

@@ -3,6 +3,7 @@
 import copy
 import hashlib
 import json
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -397,9 +398,19 @@ def cli(ctx, *arguments, expected_exit=0):
 async def mcp_calls(ctx, calls, errlog):
     executable = Path(sys.executable).with_name("metamuse")
     params = StdioServerParameters(
+        env={
+            "PYTHONDONTWRITEBYTECODE": "1",
+            **(
+                {"B16A_IMPORT_EVIDENCE": os.environ["B16A_IMPORT_EVIDENCE"]}
+                if "B16A_IMPORT_EVIDENCE" in os.environ
+                else {}
+            ),
+            "PYTHONPATH": os.environ.get(
+                "PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src")
+            ),
+        },
         command=str(executable),
         args=["--workspace", str(ctx.paths.root), "--non-interactive", "mcp"],
-        env={"PYTHONDONTWRITEBYTECODE": "1"},
     )
     envelopes = []
     with errlog.open("w+") as log:
@@ -565,9 +576,5 @@ def bare_cookie_bundle(ctx, project):
     return ctx.paths.root / exported.artifact
 
 
-@pytest.mark.xfail(
-    strict=True, reason="B16a: shared redact_text leaves a bare Muse session-cookie pair"
-)
 def test_b16a_bare_muse_cookie_must_not_leak_into_redacted_bundle(bare_cookie_bundle):
-    # Setup is outside the xfail test, so an unrelated export error cannot mask the leak.
     assert all(SECRET.encode() not in path.read_bytes() for path in bare_cookie_bundle.iterdir())

@@ -40,11 +40,20 @@ class Entrypoints:
         self.server_number = 0
         self.deadline = time.monotonic() + 600
         self.last_job = None
+        self.last_worker = None
         self._mcp_command = "metamuse mcp"
 
     def deadline_error(self, command):
         detail = json.dumps(self.last_job, ensure_ascii=False)
-        return AssertionError("Test deadline exceeded: " + command + "; last job: " + detail)
+        worker = json.dumps(self.last_worker, ensure_ascii=False)
+        return AssertionError(
+            "Test deadline exceeded: "
+            + command
+            + "; last job: "
+            + detail
+            + "; last worker: "
+            + worker
+        )
 
     def remaining(self, command):
         remaining = self.deadline - time.monotonic()
@@ -152,7 +161,11 @@ class Entrypoints:
         params = StdioServerParameters(
             command=str(self.command),
             args=["--workspace", str(self.workspace), "--non-interactive", "mcp", *extra],
-            env={**(env or {}), "PYTHONDONTWRITEBYTECODE": "1"},
+            env={
+                "PYTHONDONTWRITEBYTECODE": "1",
+                **({"PYTHONPATH": os.environ["PYTHONPATH"]} if "PYTHONPATH" in os.environ else {}),
+                **(env or {}),
+            },
         )
         with (
             log.open("w+") as errlog,
@@ -185,6 +198,23 @@ class Entrypoints:
             {"tool": "metamuse_" + tool, "request": request, "envelope": envelope}
         )
         return envelope
+
+    async def wait_worker_ready(self, session):
+        """Require running before journey work, allowing only the startup handoff.
+
+        Do not put this in server(): lock/disabled-worker callers must observe
+        their unavailable state. Startup consumes the same absolute test deadline.
+        """
+        with self.waiting("MCP attached worker readiness"):
+            while True:
+                worker = (await self.call(session, "inspect", {}))["data"]
+                self.last_worker = worker
+                if worker["attached_worker"] == "running" and worker["worker_available"] is True:
+                    return worker
+                assert (
+                    worker["attached_worker"] == "starting" and worker["worker_available"] is False
+                ), "Attached worker did not become ready: " + json.dumps(worker, ensure_ascii=False)
+                await anyio.sleep(0.05)
 
     async def terminal(self, session, job_id):
         self.last_job = {"job": {"id": job_id, "state": "not_yet_observed"}, "steps": []}
@@ -299,7 +329,7 @@ def test_mcp_only_journey_followup_restart_and_export(tmp_path):
         observations = []
         job_snapshots = {}
         async with entry.server() as session:
-            inspected = (await entry.call(session, "inspect", {}))["data"]
+            inspected = await entry.wait_worker_ready(session)
             assert (
                 inspected["worker_available"] is True and inspected["attached_worker"] == "running"
             )
@@ -451,6 +481,7 @@ def test_mcp_only_journey_followup_restart_and_export(tmp_path):
                 for exchange in exchanges
             ]
         async with entry.server() as session:
+            await entry.wait_worker_ready(session)
             for exchange, prior in zip(exchanges, before_restart, strict=True):
                 restored = (await entry.call(session, "muse_read", {"exchange_id": exchange}))[
                     "data"

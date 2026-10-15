@@ -443,9 +443,14 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
 
     async def mcp_half():
         params = StdioServerParameters(
+            env={
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PYTHONPATH": os.environ.get(
+                    "PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src")
+                ),
+            },
             command=str(journey.command),
             args=["--workspace", str(journey.workspace), "--non-interactive", "mcp", "--no-worker"],
-            env={"PYTHONDONTWRITEBYTECODE": "1"},
         )
         log = tmp_path / "mcp-stderr.log"
         with log.open("w+") as errlog:

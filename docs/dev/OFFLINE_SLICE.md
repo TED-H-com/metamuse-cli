@@ -50,7 +50,8 @@ retry the unchanged MCP request with share_grant_id or access_grant_id. Model co
 cannot choose provider/account or mint a grant. Changed request plus the old digest
 is refused; a changed question with the old permit receives E_SCOPE_DENIED without a
 preview. Repeat without the grant to obtain a fresh review.
-Preview credential-like text is redacted; its digest still binds original bytes.
+Credential topics/questions are refused before preview creation. Accepted text is shown
+exactly as sent, including benign paths; its digest binds those original bytes.
 
 ## Follow-up, restart and exported evidence
 
@@ -94,12 +95,8 @@ strip or alter labels and rebuild consistent hashes and manifest bytes; verifica
 still returns the fixed E_RESOURCE_UNAVAILABLE export error. CLI and MCP receipt
 replay use the same verifier.
 
-Known limitation: shared redaction currently misses a bare Muse session-cookie pair
-(`hatch_sess=` followed by synthetic marker text). Such text can leak into a bundle
-whose policy is `redacted`. The strict xfail in `tests/test_at042_review_fixes.py` pins
-that leak; B16a owns the shared redaction fix and must remove the xfail when it passes.
-The journey tests a Cookie-header form, so its passing privacy check does not prove
-that the bare form is safe. Review input before sharing any generated bundle.
+B16a covers bare session-cookie pairs and mixed cookie chains. The AT-042 bare-cookie
+bundle regression is a normal passing test; private exports retain `original_private`.
 
 Worker process tests cover default execution, held-lock refusal, --no-worker,
 SIGTERM/SIGINT safe drainage and SIGKILL recovery at a durable fixture send checkpoint.
@@ -107,3 +104,59 @@ Recovery requires authorized reads and never repeats the external send. This is
 INTEGRATION/OFFLINE/FIXTURE evidence only. AT-043/LIVE remains blocked pending a
 separate authorized environment. B16 still owns broader fault matrices, performance,
 30-run p95/RSS, scaling and capacity measurement; this journey claims no MEASURE.
+
+B16a submit/prepare order is a read-only exact-payload receipt replay, the credential
+check on new text, then preview/grant checks, persistence and work. Exact replay keeps
+its original result after a rule upgrade. The worker checks session.start topics,
+questions, packet fixpoints and body equality again before any token or gateway.
+Frozen refusals prove not_submitted, close sends as abandoned and retain the refusal's
+own next action. No refused send quarantines a discussion as unknown delivery.
+
+Stored discussion titles are never re-checked as new outbound text. Previews show a
+display-redacted "Stored discussion title", outside the send/read body. Reconciliation
+identifies a discussion by discussion_id and project; its request topic must equal
+the stored title or its current display-redacted form. approval.request and saved
+request files carry only that display-redacted title. If the display changed since
+saving, E_REFERENCE_INVALID asks to request reconciliation again. Approval failures
+propagate their real fixed code, message and next action.
+
+Muse sends exactly stored packet.rendered_text. Current rules changing an older
+packet cause E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in prepare,
+preview, submit and wire, without a preview or rewriting stored bytes. Send guidance
+is "Prepare a new packet and send request with a new exact share grant". The body is
+the accepted original question, two newlines and that packet. Private original
+exports retain original_private and their documented original bytes.
+
+Redaction uses bounded possessive name grammars, forward scans and precomputed
+quote/container/tag terminators. Scans advance past consumed values; a fixed number
+of ordered interval streams merge and each pass builds output with one join.
+Original-offset maps are sparse/coalesced; changed canonical views additionally use
+one byte of decoding depth per character. The four-application bound is constant.
+CPU growth of the iterated public call is checked at four doubling sizes for all
+review and new-rule families. Raw canonical sizes are checked before rendering;
+packet/bundle rendering and redaction precede BEGIN IMMEDIATE. Writes repeat only
+reference/snapshot checks. _save_send redacts the full remote detail (capped at 1 MiB)
+before its batch, then cuts to 512 characters. The settlement callback sanitizes
+only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes)
+inside the jobs transaction. Oversized legacy text refuses before redaction with
+fixed E_LIMIT_REACHED; this bound is measured and does not prove delivery.
+
+Auth list returns partial for corrupt entries: valid metadata in references, opaque
+refs and fixed reasons in unavailable. It suggests working revoke commands for
+regular records/symlinks, and a fixed manual instruction for FIFO/directory/unowned
+entries. When --workspace was given, revoke suggestions retain it, shell quoted.
+Revoke unlinks a symlink via dir_fd without opening its target; other non-regular
+entries require manual cleanup. List/revoke read existing config for config_bound
+without opening or initializing a workspace/Store. Noninteractive auth/permit
+commands refuse before opening anything; scripted human permit approval needs no
+TTY. Auth values and resolved secret-target paths never appear; explicitly supplied
+workspace paths remain in the requested operator command. Revoked bindings ask to
+import and rebind.
+
+The complete classifier and closed exemptions, decoded-layer rule, scoped form-plus
+decoding, one-call fixpoint/instability contract, cookie contexts, placeholders,
+new key suffixes/syntaxes and explicit out-of-scope formats are specified in
+[SPEC FR-019](../design/02_SPEC.md) and [SAFETY_API](SAFETY_API.md). Every finding
+except local_path refuses new Muse text. Accepted topic/question bytes remain exact;
+credentials never enter a new approval preview. Unstable nonrefusable details use
+one complete mask. This is OFFLINE/FIXTURE/INTEGRATION/MEASURE evidence, not LIVE.

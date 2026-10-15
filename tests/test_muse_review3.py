@@ -308,7 +308,7 @@ def test_zero_handoff_races_do_not_wedge_worker(fixture_ctx, project, monkeypatc
 
 @pytest.mark.parametrize("mode", ["normal", "send_timeout"])
 @pytest.mark.parametrize(
-    "question", ["Compare with /docs/plan.md please", "Mail me at alice@example.com"]
+    "question", ["Mail me at alice@example.com", "Compare with /docs/plan.md please"]
 )
 def test_markerless_echo_uses_the_same_redaction_as_outbound_text(
     fixture_ctx, project, mode, question
@@ -320,7 +320,7 @@ def test_markerless_echo_uses_the_same_redaction_as_outbound_text(
     identity = queue_send(ctx, project, did, packet(ctx, project), "send", question)
     run(ctx)
     exchange = ctx.store.get(m.Exchange, identity)
-    # The host's exact text is retained for the wire; only association uses normalization.
+    # An accepted question is retained exactly for the wire; association uses normalization.
     assert exchange.outbound_payload.body["text"].startswith(question + "\n\n")
     if mode == "send_timeout":
         assert ctx.store.get(m.JobStep, exchange.submission_step_id).state == "send_uncertain"

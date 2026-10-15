@@ -29,7 +29,11 @@ def _metamuse_command(
     workspace: Path, *, extra_env: dict[str, str] | None = None
 ) -> StdioServerParameters:
     script = Path(sys.executable).with_name("metamuse")
-    env = {"PYTHONUNBUFFERED": "1", "PYTHONDONTWRITEBYTECODE": "1"}
+    env = {
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": os.environ.get("PYTHONPATH", str(ROOT / "src")),
+    }
     if extra_env:
         env.update(extra_env)
     if script.is_file():
@@ -311,7 +315,13 @@ def test_mcp_domain_error_scope_required_noninteractive(
     assert env["error"]["code"] == "E_SCOPE_REQUIRED"
     assert env["error"]["retry_class"] == "user_action"
     assert isinstance(env["error"]["next_action"], str)
-    assert env["error"]["next_action"] == m.DEFAULT_NEXT_ACTIONS[m.ErrorCode.SCOPE_REQUIRED]
+    # The registered preview checks actual policy. Its specific refusal now
+    # propagates instead of being replaced by generic interactive/permit guidance.
+    assert env["error"]["message"] == "Muse is disabled"
+    assert env["error"]["next_action"] == (
+        "Enable Muse explicitly; configure a binding or select the fixture backend"
+    )
+    assert env["approval"] is None
 
 
 def test_mcp_package_data_only_and_annotations_match_contract() -> None:
