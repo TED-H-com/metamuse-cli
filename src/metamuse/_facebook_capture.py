@@ -390,6 +390,8 @@ class FixtureTree(HTMLParser):
         ):
             raise failure()
         style = attrs.get("style", "")
+        if css(style, "display") in {"inherit", "revert"}:
+            raise failure()  # Requires resolved parent/UA display, not the inline token.
         if (
             ns == HTML
             and tag in {"meta", "base", "link", "param", "source", "track"}
