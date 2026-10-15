@@ -32,7 +32,10 @@ INTERNAL = [
 ]
 
 
-@pytest.mark.parametrize("name", ENV + RETRY + DAMAGE + INTERNAL + ["ENOSPC", "EROFS"])
+@pytest.mark.parametrize(
+    "name",
+    ENV + RETRY + DAMAGE + INTERNAL + ["ENOSPC", "EROFS", "EACCES", "EPERM", "EIO", "ENOENT"],
+)
 @pytest.mark.parametrize("path", ["freeze", "transport", "hint", "rv", "label_busy"])
 def test_r5_7_fixed_storage_classes(ctx, monkeypatch, name, path):
     original = ctx.store.transaction
@@ -43,7 +46,7 @@ def test_r5_7_fixed_storage_classes(ctx, monkeypatch, name, path):
         if failing["on"]:
             if name == "python":
                 raise TypeError("private SQL sentinel")
-            if name in {"ENOSPC", "EROFS"}:
+            if name in {"ENOSPC", "EROFS", "EACCES", "EPERM", "EIO", "ENOENT"}:
                 raise OSError(getattr(errno, name), "private SQL sentinel")
             error = sqlite3.OperationalError("private SQL sentinel")
             error.sqlite_errorcode = getattr(sqlite3, "SQLITE_" + name)
@@ -86,7 +89,7 @@ def test_r5_7_fixed_storage_classes(ctx, monkeypatch, name, path):
         assert "Retry" in detail.next_action
     elif name in DAMAGE:
         assert "verified backup" in detail.next_action
-    elif name in ENV + ["ENOSPC", "EROFS"]:
+    elif name in ENV + ["ENOSPC", "EROFS", "EACCES", "EPERM", "EIO", "ENOENT"]:
         assert detail.retry_class == "user_action"
         assert any(word in detail.next_action for word in ["permissions", "writable", "disk"])
         assert "restore" not in detail.next_action.lower()

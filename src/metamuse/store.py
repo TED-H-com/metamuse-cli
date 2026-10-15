@@ -213,6 +213,10 @@ def _muse_fixed_storage(exc):
         os_reason = {
             errno.ENOSPC: sqlite3.SQLITE_FULL,
             errno.EROFS: sqlite3.SQLITE_READONLY,
+            errno.EACCES: sqlite3.SQLITE_CANTOPEN,
+            errno.EPERM: sqlite3.SQLITE_PERM,
+            errno.EIO: sqlite3.SQLITE_IOERR,
+            errno.ENOENT: sqlite3.SQLITE_CANTOPEN,
         }.get(getattr(cause, "errno", None))
         if os_reason is not None:
             code = os_reason
