@@ -255,6 +255,18 @@ def prepare_send(ctx, request: m.MuseSendRequest):
     )
 
 
+def _check_reconciliation_topic(discussion, request):
+    if discussion.project_id != request.project_id or request.topic not in {
+        discussion.topic,
+        redact_display(discussion.topic),
+    }:
+        raise m.CoreError(
+            m.ErrorCode.REFERENCE_INVALID,
+            "Reconciliation must name the original discussion",
+            next_action="Request reconciliation again using the discussion ID and current display title",
+        )
+
+
 def _approval_preview(ctx, request):
     """Use the exact prepare path, without domain writes, network calls or grants."""
     topic = question = None
@@ -278,8 +290,7 @@ def _approval_preview(ctx, request):
         if isinstance(request, m.MuseOpenRequest):
             _receipt(ctx, "muse.open", request)
             discussion = ctx.store.get(m.Discussion, request.discussion_id)
-            if discussion.project_id != request.project_id or discussion.topic != request.topic:
-                _error(m.ErrorCode.REFERENCE_INVALID, "Reconciliation must name the discussion")
+            _check_reconciliation_topic(discussion, request)
         else:
             if not request.refresh:
                 _error(m.ErrorCode.INPUT_INVALID, "Local history needs no permit")
@@ -651,10 +662,7 @@ def open_muse_discussion(ctx, request):
     if request.discussion_id is not None:
         discussion = ctx.store.get(m.Discussion, request.discussion_id)
         _binding(ctx, discussion)
-        if discussion.project_id != request.project_id or discussion.topic != request.topic:
-            _error(
-                m.ErrorCode.REFERENCE_INVALID, "Reconciliation must name the original discussion"
-            )
+        _check_reconciliation_topic(discussion, request)
         return _queue_read(
             ctx,
             discussion,
