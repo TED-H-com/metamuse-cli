@@ -1160,3 +1160,8 @@ This measured table-cell result differs from a blanket exclusion of internal tab
 boxes. Fixture content-visibility is accepted only for independently proved display
 values; unmodelled/unsupported display values refuse with the fixed capture error.
 Auto-skipped content remains eligible.
+
+A trusted click moves the pointer to the quad first, then resolves and checks
+the hit node through its composed ancestors, and immediately sends mousePressed
+and mouseReleased. Hover-revealed overlays therefore fail the hit check without
+receiving a click; the observed data remains with expansion_failed/partial.

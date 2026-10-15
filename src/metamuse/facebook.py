@@ -2681,6 +2681,7 @@ class _PlaywrightSession:
             cdp.send("DOM.scrollIntoViewIfNeeded", {"backendNodeId": backend})
             quad = cdp.send("DOM.getContentQuads", {"backendNodeId": backend})["quads"][0]
             x, y = sum(quad[::2]) / 4, sum(quad[1::2]) / 4
+            cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
             hit = cdp.send(
                 "DOM.getNodeForLocation",
                 {"x": int(x), "y": int(y), "includeUserAgentShadowDOM": True},
@@ -2703,7 +2704,6 @@ class _PlaywrightSession:
             )
             if same.get("result", {}).get("value") is not True:
                 raise capture.failure()
-            cdp.send("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
             cdp.send(
                 "Input.dispatchMouseEvent",
                 {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1},
