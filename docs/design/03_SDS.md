@@ -810,7 +810,7 @@ Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetwo
 Facebook navigation failures use only the main-document request/redirect chain and its uncompleted CONNECT authorities. Refusals of WebSockets, workers, subresources or already-responded document authorities do not choose that error. Resolver capacity/timeouts use E_NETWORK_TIMEOUT with DNS-oriented advice, never a permit/policy denial.
 
 
-Only a fetch/XHR synchronously initiated by the trusted expansion click can classify an expansion response failure. Background and proxy-aborted responses are ignored. Such a failure imports observed data with expansion_failed and partial coverage; document auth/access/barrier outcomes remain distinct. Asynchronous endpoints without click provenance are treated conservatively as progress uncertainty, not guessed failure attribution.
+Only a fetch/XHR synchronously initiated by the trusted expansion click can classify an expansion response failure. Attribution uses browser-produced CDP main-frame request type, user-gesture and synchronous initiator-stack metadata; async-parent stacks are excluded. No main-world DOM binding, selector, event-target or dataset lookup participates. Background and proxy-aborted responses are ignored. Such a failure imports observed data with expansion_failed and partial coverage; document auth/access/barrier outcomes remain distinct. Asynchronous endpoints without click provenance are treated conservatively as progress uncertainty, not guessed failure attribution.
 
 
 Facebook navigation barriers, page shapes and identity adoption apply only to the main frame. All network subframe document requests are aborted with blocked_subframe without setting navigation_error. A share identity is adopted only from the main frame.
@@ -842,6 +842,27 @@ clones no document and writes no attributes, so capture cannot invoke custom-ele
 constructors, attribute reactions or mutation observers. CDP discovers closed shadow
 roots and resolves their handles into that world. The same isolated world is scoped
 to the current navigation/frame. Iframe documents are not post evidence.
+
+Every evaluated DOM function captures its complete accessor table before touching
+the tree. WebIDL getters come from prototype descriptors and methods from their
+prototypes, invoked with captured `Reflect.apply`; Window global methods use their
+own descriptors. This defeats form/document named-property clobbering even across
+isolated worlds. The table covers Document, Node, Element, Text, Attr, template,
+slot, shadow-root, Range, DOM collections and computed-style access. HTML template
+content and slot assignment are used only in the XHTML namespace.
+
+`test_r9_no_direct_dom_members` tokenises the narrow observation JavaScript dialect
+(including strings/comments), checks postfix chains and rejects direct, indexed or
+optional member access on platform handles or DOM-valued accessor results. DOM
+handles use `n_*`; aliases cannot become plain-data locals. The permitted `v_*`
+collections/primitives and `r_node` records are built by the walker itself, and
+record fields have an explicit allowlist. Unknown receivers are rejected. Negative
+alias/chain tests enforce that boundary. `test_r9_evaluated_function_inventory`
+uses Python ASTs to enumerate every evaluation payload: only the checked walker,
+hit test and blank-page popup probe may access DOM objects. The remaining payloads
+only store/resolve isolated-world handles, close paused workers or evaluate zero.
+The clobbering corpus derives its names from this table and the global-method
+table, with six element patterns in barrier and painted-comment contexts.
 
 The observation is a flat structured node list: kind, namespace, tag, ordinary
 attributes, text, light-tree children, composed-tree children and a rendered boolean.
@@ -880,6 +901,11 @@ comments-section or comment identity. Extractor stack frames restore exactly the
 state opened at entry. `display:contents` suppresses replaced elements and controls:
 img, input, textarea, select, video, audio, canvas, iframe, embed, object, br, wbr,
 meter, progress, frame and frameset. Look-through never climbs out of these nodes.
+
+The locked Chromium build computes `display:block` for `frame` and `frameset`
+even with authored `display:contents`; the Appendix B differential checks record
+this exception. They are refused by fixtures. The other listed replaced/form
+elements are unrendered with computed `display:contents`.
 
 One `capture.controls` traversal assigns rendered controls in composed order to
 both the extractor queue and the CDP identity map. IDs use `data-expand-id` or

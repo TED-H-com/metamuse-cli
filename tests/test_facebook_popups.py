@@ -112,21 +112,20 @@ def test_r7_iframe_only_popup_control_failure(tmp_path, monkeypatch):
         verify = facebook._verify_popup_control
 
         def iframe_escape(browser, context, page):
-            page.evaluate("""() => {
-              const create = document.createElement.bind(document);
-              document.createElement = (...args) => {
-                const node = create(...args);
-                if (args[0] === 'iframe') {
-                  const append = document.body.append.bind(document.body);
-                  document.body.append = (...nodes) => {
-                    append(...nodes);
-                    node.contentWindow.open = () => node.contentWindow;
-                  };
-                }
-                return node;
-              };
-            }""")
-            return verify(browser, context, page)
+            # Same isolated-world blank probe: top-level native open is refused,
+            # while only the iframe branch is made to return a live Window.
+            from metamuse import _facebook_dom
+
+            source = _facebook_dom.POPUP_CHECK
+            with monkeypatch.context() as patch:
+                patch.setattr(
+                    _facebook_dom,
+                    "POPUP_CHECK",
+                    source.replace(
+                        "const n_window=apply(v_open,n_fresh,['']);", "const n_window=n_fresh;"
+                    ),
+                )
+                return verify(browser, context, page)
 
         monkeypatch.setattr(facebook, "_verify_popup_control", iframe_escape)
         job = finish(ctx, submit(ctx, project, permit))

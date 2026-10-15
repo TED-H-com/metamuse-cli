@@ -4,6 +4,11 @@
 ACCESSORS = {
     "contentType": ("Document", "contentType", True),
     "createRange": ("Document", "createRange", False),
+    "createElement": ("Document", "createElement", False),
+    "body": ("Document", "body", True),
+    "appendChild": ("Node", "appendChild", False),
+    "removeChild": ("Node", "removeChild", False),
+    "frameWindow": ("HTMLIFrameElement", "contentWindow", True),
     "nodeType": ("Node", "nodeType", True),
     "nodeValue": ("Node", "nodeValue", True),
     "childNodes": ("Node", "childNodes", True),
@@ -34,6 +39,9 @@ ACCESSORS = {
     "css": ("CSSStyleDeclaration", "getPropertyValue", False),
 }
 
+# Window's [Global] methods have own descriptors rather than prototype methods.
+GLOBAL_METHODS = {"computedStyle": "getComputedStyle", "v_open": "open", "v_close": "close"}
+
 # Capture functions before examining any document or node. Reflect.apply avoids
 # a named platform property lookup even on HTMLFormElement/HTMLDocument.
 ACCESSOR_TABLE = (
@@ -48,7 +56,12 @@ ACCESSOR_TABLE = (
         + "; return (n, ...args) => apply(f, n, args);})()"
         for name, (proto, member, getter) in ACCESSORS.items()
     )
-    + "\n}); const computedStyle = globalThis.getComputedStyle;\n"
+    + "\n});\n"
+    + "\n".join(
+        f"const {name}=Object.getOwnPropertyDescriptor(globalThis,'{member}').value;"
+        for name, member in GLOBAL_METHODS.items()
+    )
+    + "\n"
 )
 
 HELPERS = r"""
@@ -81,5 +94,25 @@ HIT_TEST = (
     v_seen.add(n_node);n_node=parent(n_node);
   }
   return false;
+}"""
+)
+
+
+# The startup probe runs before page scripts, navigation, proxy opening or DNS.
+# Window's [Global] methods are own properties, not prototype members; capture
+# these descriptors alongside the WebIDL prototype accessors above.
+POPUP_CHECK = (
+    "() => {"
+    + ACCESSOR_TABLE
+    + r"""
+  const n_direct=apply(v_open,globalThis,['']);
+  if(n_direct)apply(v_close,n_direct,[]);
+  const n_frame=D.createElement(document,'iframe'), n_body=D.body(document);
+  D.appendChild(n_body,n_frame);
+  const n_fresh=D.frameWindow(n_frame);
+  const n_window=apply(v_open,n_fresh,['']);
+  if(n_window)apply(v_close,n_window,[]);
+  D.removeChild(n_body,n_frame);
+  return n_direct===null && n_window===null;
 }"""
 )
