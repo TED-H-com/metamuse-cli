@@ -242,7 +242,10 @@ submitted approval command still replays its original permit and mutable use sta
 `permit approve` recomputes the preview through the same preparation code and displays it
 on stderr, including the effective absolute UTC expires_at, remaining duration and
 max_uses before confirmation. These are the stored values (defaults: 24 hours and one
-use); replay displays the original expiry. It requires typed `yes` at a terminal or equality with `--exact-digest` in a
+use); replay displays the original expiry. Every callback-summary line is quoted;
+recomputed operation/destination/account/project/digest fields appear separately before
+confirmation. Terminal controls and Unicode formatting/line-separator characters are
+escaped for display, preserving original stored text and JSON data. It requires typed `yes` at a terminal or equality with `--exact-digest` in a
 non-TTY operator CLI. `--non-interactive` refuses this command even with an exact digest.
 Provider/account cannot be supplied in model text or flags. Every approval has an expiry:
 default 24 hours, or explicit timezone-aware `--expires-at` within 30 days. Exact action
