@@ -1,10 +1,18 @@
 """Context-property regressions and coverage assertions for the seeded subset."""
 
 from collections import Counter
+from urllib.parse import quote
 
-from b16a_r6_context import LAYERS, NATURAL, cases, generate_rows, verify
+from b16a_r6_context import LAYERS, NATURAL, cases, generate_rows, unwrapped, verify
 
 from metamuse.safety import redact_text
+
+
+def test_r6_context_unwrap_preserves_url_password_encoding():
+    marker = f"{'CONTEXT'}_MARKER_LAYER_683291"
+    url = "https://user:" + quote("a//" + marker, safe="") + "@example.invalid/p"
+    assert unwrapped(url) == url
+    assert unwrapped(quote(url, safe="")) == url
 
 
 def test_r6_context_subset_covers_every_context_and_representation():

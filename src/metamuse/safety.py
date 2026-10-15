@@ -2712,7 +2712,17 @@ def _userinfo_spans(text, syntax):
             ):
                 yield pos
 
+    def candidate_boundaries(level):
+        # Once userinfo has an operator, a deeper scheme is password data.
+        # Each bounded layer has one monotone cursor; never restart per URL.
+        return (
+            candidate.start()
+            for candidate in scheme.finditer(text)
+            if syntax.depth(candidate.end() - 1) <= level
+        )
+
     ends = {}
+    successors = {}
     raw_ends = Positions(end for _, end in syntax.barriers)
     ats = Positions(m.start() for m in re.finditer("@", text))
     candidates = iter(scheme.finditer(text))
@@ -2732,6 +2742,12 @@ def _userinfo_spans(text, syntax):
         key = (level, special)
         if key not in ends:
             ends[key] = Positions(boundaries(level, special))
+        if level not in successors:
+            successors[level] = Positions(candidate_boundaries(level))
+        next_boundary = successors[level].first(position)
+        if following is not None and text.find(":", position, following.start()) < 0:
+            # A root URL cannot claim an independent encoded URL's operator.
+            next_boundary = min(next_boundary, following.start())
         end = ends[key].first(position)
         if special:
             end = min(end, raw_ends.first(position))
@@ -2742,11 +2758,11 @@ def _userinfo_spans(text, syntax):
             >= match.start()
         ):
             end = ends[key].first(end + 1)
-        end = min(end, following.start() if following else len(text))
+        end = min(end, next_boundary)
         # Only a '<' immediately introducing the URL proves an autolink.
         if text[match.start() - 1 : match.start()] != "<":
             while end < len(text) and text[end] == ">":
-                end = min(ends[key].first(end + 1), following.start() if following else len(text))
+                end = min(ends[key].first(end + 1), next_boundary)
         first_at = ats.first(position)
         if first_at < end:
             colon = text.find(":", position, first_at)

@@ -463,7 +463,10 @@ all string/container children; jar, prefix, JWT, block and path passes enumerate
 independent matches. Only a selected redaction permits skipping its consumed value.
 
 Protocol-relative // authorities are URL candidates, independent of preceding
-URLs. Markdown autolinks end at their proven > in both authority and query
+URLs. A scheme or // exposed at a deeper layer inside a password remains value
+data. A root candidate with no userinfo operator before a deeper scheme still
+yields to that independently scanned URL. One monotone successor cursor per
+bounded layer prevents rescanning. Markdown autolinks end at their proven > in both authority and query
 passes. A raw backslash ends a special-scheme authority even when a permissive
 decoded view would treat its escape as data. Accepted benign cost: an unenclosed
 scheme://host:port,user@host contains WHATWG userinfo, as does a literal backslash

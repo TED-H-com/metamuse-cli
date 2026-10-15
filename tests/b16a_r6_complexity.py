@@ -1,5 +1,7 @@
 """Round-6 exemption, recovery, local pairing and HTML growth families."""
 
+from urllib.parse import quote
+
 from b16a_r4_complexity import complexity_criterion as prior_criterion
 from b16a_r5_complexity import build as prior_build
 from b16a_r5_complexity import families as prior_families
@@ -26,6 +28,10 @@ NEW = {
     "block_plus_spaces": "-----BE" + "GIN+PRIVATE+KEY-----\na\n",
     "json_exempt_quoted_punctuation": 'token=os.getenv("TOKEN_)") ',
     "triple_quotes": '"""\npassword=a\n"""\n',
+    "encoded_candidate_layers": quote(
+        "https://user:" + quote("a//b", safe="") + "@example.invalid/p", safe=""
+    )
+    + " ",
 }
 
 

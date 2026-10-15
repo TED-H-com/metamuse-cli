@@ -3,6 +3,7 @@
 import argparse
 import json
 import random
+import re
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -103,6 +104,10 @@ def rows():
     for header in ["Cookie", "Authorization"]:
         for delimiter in ['"', "'", "`"]:
             yield Row("review_extension", header + ": [REDACTED]" + delimiter + marker, (marker,))
+    for separator in ["//", "https://", "//inside.invalid/"]:
+        password = "a+" + separator + marker
+        text = "https://user:" + quote(password, safe="") + "@example.invalid/path"
+        yield Row("review_extension", text, (marker,))
     for key in ["password", "token", "cookie", "authorization"]:
         yield Row("review_extension", '--password "' + key + '": ' + marker, (marker,))
     for text in [
@@ -161,7 +166,7 @@ def unwrapped(text):
             text = unquote_plus(text[2:])
         elif text.startswith(("blob=", "body=")):
             text = unquote_plus(text.split("=", 1)[1])
-        elif "%" in text and not any(c.isspace() for c in text):
+        elif "%" in text and re.fullmatch(r"(?:[A-Za-z0-9_.~-]|%[0-9a-fA-F]{2})++", text):
             text = unquote(text)
         else:
             break

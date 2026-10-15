@@ -391,3 +391,17 @@ def test_r6_header_mask_prefix_does_not_prove_a_close(header, quote, layers):
     output, findings = redact_text(text)
     assert MARKER not in output and findings
     assert redact_text(output)[0] == output
+
+
+@pytest.mark.parametrize("separator", ["//", "https://", "//inside.invalid/"])
+@pytest.mark.parametrize("percent_layers", [0, 1, 2])
+@pytest.mark.parametrize("json_layers", [0, 1, 2])
+def test_r6_encoded_candidate_inside_userinfo_is_value_data(separator, percent_layers, json_layers):
+    password = "a+" + separator + MARKER
+    text = "https://user:" + quote(password, safe="") + "@example.invalid/path"
+    for _ in range(percent_layers):
+        text = quote(text, safe="")
+    output, findings = redact_text(encoded(text, json_layers))
+    assert findings and MARKER not in output
+    assert not any(MARKER[i : i + 6] in output for i in range(len(MARKER) - 5))
+    assert redact_text(output)[0] == output

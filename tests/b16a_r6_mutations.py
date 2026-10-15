@@ -726,6 +726,20 @@ new(
     selection="mask_prefix_does_not_prove",
 )
 
+new(
+    "r6_deeper_url_candidate_ends_authority",
+    within(
+        "_userinfo_spans",
+        "        end = min(end, next_boundary)",
+        "        end = min(end, following.start() if following else len(text))",
+    ),
+    selection="encoded_candidate_inside_userinfo",
+)
+adapt(
+    "next_scheme_not_authority_boundary",
+    within("_userinfo_spans", "end = min(end, next_boundary)", "end = end"),
+)
+
 if __name__ == "__main__":
     from b16a_r6_mutation_run import main
 

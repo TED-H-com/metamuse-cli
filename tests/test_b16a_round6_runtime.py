@@ -1,6 +1,7 @@
 """Round-6 shapes through shared app/CLI/MCP packet and send paths."""
 
 import json
+from urllib.parse import quote
 
 import pytest
 from test_muse_lifecycle import fixture_ctx as fixture_ctx  # noqa: F401
@@ -21,6 +22,9 @@ def surface_cases():
         + marker
         + "' https://example.invalid",
         "relative_url": f"https://example.invalid,//alice:{marker}@example.invalid/p",
+        "encoded_candidate_in_userinfo": "https://user:"
+        + quote("a+//" + marker, safe="")
+        + "@example.invalid/p",
         "har_prefix": "HAR capture: "
         + json.dumps({"cookies": [{"name": "theme", "value": marker}]}),
         "har_repeated": json.dumps({"params": []})

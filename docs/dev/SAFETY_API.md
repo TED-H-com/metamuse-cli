@@ -405,7 +405,7 @@ redact_text already masks the entire output on instability, including for legacy
 callers that discard findings. Packets/bundles additionally refuse the finding.
 
 URL authority candidates end at their enclosing quote/bracket at the same or a shallower
-decoding layer, or the next scheme://. Each scheme is scanned independently; a root
+decoding layer, or the next same-layer or shallower scheme://. Each scheme is scanned independently; a root
 URL never consumes a later URL. Unenclosed punctuation remains userinfo data.
 
 Quote and bracket pairs are tracked at every decoding layer, including inside an
@@ -492,7 +492,10 @@ all string/container children; jar, prefix, JWT, block and path passes enumerate
 independent matches. Only a selected redaction permits skipping its consumed value. A bounded quoted argument that is itself a sensitive key followed by an assignment operator is revisited: its overlapping assignment value begins beyond the argument.
 
 Protocol-relative // authorities are URL candidates, independent of preceding
-URLs. Markdown autolinks end at their proven > in both authority and query
+URLs. A scheme or // exposed at a deeper layer inside a password remains value
+data. A root candidate with no userinfo operator before a deeper scheme still
+yields to that independently scanned URL. One monotone successor cursor per
+bounded layer prevents rescanning. Markdown autolinks end at their proven > in both authority and query
 passes. A raw backslash ends a special-scheme authority even when a permissive
 decoded view would treat its escape as data. Accepted benign cost: an unenclosed
 scheme://host:port,user@host contains WHATWG userinfo, as does a literal backslash
