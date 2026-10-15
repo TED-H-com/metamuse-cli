@@ -15,7 +15,7 @@ from typing import Any
 import pytest
 from browser_deadline import browser_deadline
 
-from metamuse import _browser_egress, app, config, facebook, jobs, safety
+from metamuse import _browser_egress, app, config, facebook, jobs, remote_media, safety
 from metamuse import models as m
 
 _REAL_SOCKET_CONNECT = socket.socket.connect
@@ -465,10 +465,20 @@ def test_loopback_and_private_urls_refused_on_production_path_before_job_exists(
         assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
 
 
-def test_narrow_dispatch_routes_only_facebook_post_and_comment_requests(tmp_path: Path):
+def test_narrow_dispatch_routes_only_facebook_post_and_comment_requests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
     """Round 2 Point 3: media-only resources and non-Facebook URLs are not claimed by Facebook."""
     url = "https://www.facebook.com/synth.lab/posts/pfbid0101synth"
     ctx, proj_id, permit_id, _, _ = _setup_fb_env(tmp_path, url=url)
+    remote_requests = []
+    original_remote = remote_media.submit_remote_media
+
+    def remote(ctx, request):
+        remote_requests.append(request.resources)
+        return original_remote(ctx, request)
+
+    monkeypatch.setattr(remote_media, "submit_remote_media", remote)
 
     # Media-only resources on a Facebook URL belong to B12 and are not claimed by facebook_post
     for media_resources in (
@@ -496,7 +506,20 @@ def test_narrow_dispatch_routes_only_facebook_post_and_comment_requests(tmp_path
         assert not facebook.is_facebook_post_request(req)
         res = app.submit_collect(ctx, req.model_dump(mode="json"))
         assert res.status == "error"
-        assert res.error.code == m.ErrorCode.UNSUPPORTED
+        if "post" in media_resources:
+            assert res.error.code == m.ErrorCode.UNSUPPORTED
+        else:
+            # B12 now owns this route. Its unconfigured approval table refuses
+            # before a job exists; a Facebook permit cannot configure B12.
+            assert res.error.code == m.ErrorCode.SCOPE_REQUIRED
+            assert remote_requests[-1] == media_resources
+
+    assert remote_requests == [
+        ["media_metadata"],
+        ["subtitles"],
+        ["media_file"],
+        ["media_metadata", "media_file"],
+    ]
 
     # Non-Facebook URLs with post/comments stay on main's E_UNSUPPORTED path
     for other_url in (
@@ -523,6 +546,9 @@ def test_narrow_dispatch_routes_only_facebook_post_and_comment_requests(tmp_path
         res_other = app.submit_collect(ctx, req_other.model_dump(mode="json"))
         assert res_other.status == "error"
         assert res_other.error.code == m.ErrorCode.UNSUPPORTED
+
+    with ctx.store.connection() as conn:
+        assert conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
 
 
 def test_pre_job_refusals_leave_no_job_in_store(tmp_path: Path):

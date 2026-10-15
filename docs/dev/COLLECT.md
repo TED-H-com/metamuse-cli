@@ -318,8 +318,9 @@ An empty approvals list disables this backend. No request or grant chooses the a
    on CLI, `access_grant_id` on MCP). This returns `accepted`; use `--run`,
    `worker run`, or MCP's attached worker to execute the job.
 
-Exactly one `collect.remote` preview callback dispatches `CollectRequest` through
-the fixed route table in `collect.py`. B13 will extend the route selector and table.
+Exactly one `collect.remote` preview callback dispatches remote-media `CollectRequest`
+through the fixed route table in `collect.py`. Facebook post collection uses the
+human `metamuse permit create` command; it has no approval-preview route here.
 Preview, submission and the step boundary call the same `prepare_remote_media`.
 The B08 action digest binds the canonical URL bytes, project, configured provider/account,
 resources, extractor keys, requested limits, reviewed workspace caps and the entire configured approval table.

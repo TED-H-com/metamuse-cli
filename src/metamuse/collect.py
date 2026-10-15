@@ -3,8 +3,8 @@
 Accepted file bytes are pinned by size and SHA-256. A later run that sees different
 bytes records E_DATA_STALE for that input and still commits the other inputs.
 URL inputs that request only media metadata, subtitles, or a media file are
-handled by collect.remote_media. Any other URL shape, including posts and
-comments, stays unsupported until B13.
+handled by collect.remote_media. Approved Facebook post/comment requests use
+collect.facebook_post; other URL/resource shapes stay unsupported.
 
 The same reliable id twice in one batch is applied in order. Identical text writes
 nothing new; different text appends a revision. A disagreeing kind, a self-parent,
@@ -97,7 +97,7 @@ def capability_status(ctx: Any) -> dict[str, dict[str, str]]:
     own ``collect.remote`` permit at submit. This row is not that permit.
     """
 
-    from metamuse import remote_media
+    from metamuse import facebook, remote_media
     from metamuse.config import load_config
 
     remote_environment = "ready" if remote_media.dependency_available() else "missing_dependency"
@@ -106,8 +106,6 @@ def capability_status(ctx: Any) -> dict[str, dict[str, str]]:
         workspace = load_config(ctx.store.paths.root)
         if workspace.app.network_mode != "offline" and workspace.remote_media.approvals:
             permission = "granted_scope"
-    from metamuse import facebook
-
     return {
         "metamuse_collect": {
             "verification": "fixture_passed",
@@ -133,7 +131,7 @@ def _remote_media_request(request: m.CollectRequest) -> bool:
     )
 
 
-# B13 adds its fixed route here and in _remote_route; the entrypoint has one callback.
+# Facebook approval uses the human permit-create command; this preview is B12-only.
 _REMOTE_APPROVAL_ROUTES = {remote_media.OPERATION: remote_media.preview_remote_media}
 
 
@@ -149,12 +147,12 @@ def _remote_approval_preview(ctx: Any, request: m.CollectRequest) -> m.ApprovalP
 
 
 def register_operations(registry: dict[jobs.Operation] | None = None) -> None:
+    from metamuse import facebook
+
     safety.register_approval_preview(
         "collect.remote", _remote_approval_preview, request_model=m.CollectRequest
     )
     remote_media.register_operations(registry)
-    from metamuse import facebook
-
     target = jobs.OPERATIONS if registry is None else registry
     if OPERATION not in target:
         jobs.register_operation(
