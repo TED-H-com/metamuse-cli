@@ -472,3 +472,71 @@ def test_r8_closed_root_created_during_capture_is_partial(tmp_path, monkeypatch,
         assert job["error"] is None, job
         assert job["coverage_status"] == "partial"
         assert "capture_changed_during_observation" in job["missing_fields"]
+
+
+@pytest.mark.parametrize(
+    "wrapper,rendered",
+    [
+        ('<div aria-hidden="true">MARKER</div>', True),
+        ('<div hidden style="display:block">MARKER</div>', True),
+        ("<div hidden>MARKER</div>", False),
+        ('<div style="display:none">MARKER</div>', False),
+        ('<div style="content-visibility:hidden">MARKER</div>', False),
+        ('<div style="content-visibility:auto;position:absolute;top:99999px">MARKER</div>', True),
+        ("<details><summary>Summary</summary>MARKER</details>", False),
+        ("<noscript>MARKER</noscript>", False),
+        ("<template>MARKER</template>", False),
+        ('<div hidden="until-found">MARKER</div>', False),
+        ('<span style="display:contents">MARKER</span>', True),
+        (
+            '<div style="visibility:hidden"><span style="visibility:visible">MARKER</span></div>',
+            True,
+        ),
+    ],
+    ids=[
+        "aria",
+        "hidden-override",
+        "hidden",
+        "display-none",
+        "cv-hidden",
+        "auto",
+        "details",
+        "noscript",
+        "template",
+        "until-found",
+        "contents",
+        "visible-child",
+    ],
+)
+@browser_deadline
+def test_r8_completeness_requires_rendering(tmp_path, monkeypatch, wrapper, rendered, request):
+    marker = '<i data-comments-exhausted="true"></i>'
+    markup = _synthetic_post_html(comments_exhausted=False).replace(
+        "</body>", wrapper.replace("MARKER", marker) + "</body>"
+    )
+    outcomes = []
+    for driver in ["fixture", "chromium"]:
+        job, stored = run(tmp_path / driver, monkeypatch, markup, driver)
+        assert job["error"] is None, job
+        assert job["coverage_status"] == ("scope_satisfied" if rendered else "partial"), job
+        outcomes.append(
+            (
+                job["state"],
+                job["coverage_status"],
+                job["missing_fields"],
+                [(r["native_id"], r["text"]) for r in stored],
+            )
+        )
+    assert outcomes[0] == outcomes[1]
+
+
+@pytest.mark.parametrize("assigned", [False, True])
+@browser_deadline
+def test_r8_shadow_completeness_requires_composition(tmp_path, monkeypatch, assigned, request):
+    slot = "chosen" if assigned else "other"
+    content = f'''<div id="host"><i slot="chosen" data-comments-exhausted="true"></i></div>
+    <script>document.getElementById('host').attachShadow({{mode:'closed'}}).innerHTML='<slot name="{slot}"></slot>';</script>'''
+    markup = _synthetic_post_html(comments_exhausted=False).replace("</body>", content + "</body>")
+    job, _ = run(tmp_path, monkeypatch, markup, "chromium")
+    assert job["error"] is None, job
+    assert job["coverage_status"] == ("scope_satisfied" if assigned else "partial"), job

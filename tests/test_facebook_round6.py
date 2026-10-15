@@ -64,7 +64,7 @@ def test_r6_barrier_markers_ignore_visibility(tmp_path, monkeypatch, marker, pos
         assert job["coverage_status"] != "scope_satisfied"
 
 
-@pytest.mark.parametrize("hidden", ["hidden", 'aria-hidden="true"', 'style="display:none"'])
+@pytest.mark.parametrize("hidden", ["hidden", 'style="display:none"'])
 def test_r6_hidden_exhaustion_never_satisfies_scope(tmp_path, monkeypatch, hidden):
     markup = _synthetic_post_html(comments_exhausted=False).replace('data-comment-count="0"', "")
     markup = markup.replace(
