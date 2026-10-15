@@ -881,3 +881,9 @@ parser-inserted-element class. The comparator retains head/body/none container
 identity and has negative tests for tag, namespace, attributes, text, rendering,
 order and container. Fixture-only raw UTF-8 prechecks remain 8 MiB; all parity
 inputs are below that bound.
+
+All Python consumers of captured tag names use capture.html_tag: only XHTML-
+namespace nodes have HTML form/script/void/block semantics. Foreign nodes remain
+generic containers. test_r10_namespace_tag_table derives its SVG and MathML rows
+from the extractor's HTML_TAGS table; broad attribute stop markers still apply
+regardless of namespace or rendering.
