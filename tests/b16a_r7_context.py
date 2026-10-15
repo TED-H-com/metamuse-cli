@@ -126,12 +126,12 @@ def cases(*, full=False, seed=SEED):
         contexts = NATURAL if full else [NATURAL[index % len(NATURAL)]]
         for j, (name, template) in enumerate(contexts):
             before, after = template.split("{x}")
-            inside = (index + j) % 2 == 0
-            yield row, name, inside, native_wrap(row, before, after, inside)
+            for inside in (False, True) if full else ((index + j) % 2 == 0,):
+                yield row, name, inside, native_wrap(row, before, after, inside)
         for j in range(8 if full else 1):
             before, after = random_context(rng), random_context(rng)
-            inside = (index + j) % 2 == 0
-            yield row, "random", inside, native_wrap(row, before, after, inside)
+            for inside in (False, True) if full else ((index + j) % 2 == 0,):
+                yield row, "random", inside, native_wrap(row, before, after, inside)
 
 
 def verify(*, full=False, seed=SEED, shard=0, shards=1):

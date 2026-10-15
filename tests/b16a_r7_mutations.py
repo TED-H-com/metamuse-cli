@@ -820,6 +820,18 @@ adapt(
 for name in ("mut_r6_04c_scanner_curl_skip_exempt", "mut_r6_04d_scanner_command_skip_exempt"):
     adapt(name, base.MUTANTS[name][1], tests=STRUCT, selection="flag_scanners_enter_exempt")
 
+new(
+    "r7_context_alternates_full_placements",
+    rewrite_all(
+        "cases",
+        "(False, True) if full else ((index + j) % 2 == 0,)",
+        "((index + j) % 2 == 0,)",
+    ),
+    tests=CTX,
+    selection="full_context_product",
+    file="b16a_r7_context.py",
+)
+
 if __name__ == "__main__":
     from b16a_r6_mutation_run import main
 

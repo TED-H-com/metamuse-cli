@@ -1,6 +1,7 @@
 """Pin complete families and representations, rather than corpus prefixes."""
 
 from collections import Counter
+from itertools import islice
 
 from b16a_r7_context import NATURAL, cases, rows, verify
 
@@ -29,3 +30,12 @@ def test_r7_context_subset_full_family_and_representation_coverage():
     result = verify()
     assert not result["failures"], result
     assert result["counts"].get("leaks", 0) == result["counts"].get("nonfixpoint", 0) == 0, result
+
+
+def test_r7_full_context_product_has_both_placements_per_context():
+    selected = list(islice(cases(full=True), (len(NATURAL) + 8) * 2))
+    assert len({r for r, *_ in selected}) == 1
+    for name, _ in NATURAL:
+        assert {inside for _, c, inside, _ in selected if c == name} == {False, True}
+    assert sum(c == "random" for _, c, *_ in selected) == 16
+    assert len(selected) == 102
