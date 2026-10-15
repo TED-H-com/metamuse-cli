@@ -1,10 +1,10 @@
 """Unrelated trust components do not pay for a workspace-wide closure."""
 
 import os
-import statistics
 import time
 
 import pytest
+from cpu_growth import sample_cpu
 from test_muse_round5_identity import attempt
 from test_muse_standard import assignment, response
 
@@ -13,7 +13,6 @@ from metamuse.models import CoreError, canonical_json
 
 
 def cycle(store, label="unrelated"):
-    start = time.process_time()
     snap = store.muse_freeze(
         provider="other",
         account=label,
@@ -25,12 +24,19 @@ def cycle(store, label="unrelated"):
     handed = []
     store.muse_standard_handoff(snap, lambda: handed.append(True))
     assert handed and not snap.confidential_required
-    return time.process_time() - start
 
 
 def test_r5_4_unrelated_cycle_is_component_bounded(ctx):
     cycle(ctx.store)  # warm once-per-Store schema verification
-    baseline = statistics.median(cycle(ctx.store) for _ in range(3))
+
+    def sample(stage):
+        # Fixed batches lift the baseline above 20 ms; minima reject transient
+        # CPU noise without allowing unrelated components to increase the cost.
+        samples = [sample_cpu(lambda: cycle(ctx.store), repeats=4) for _ in range(5)]
+        print(f"r5-cost-samples stage={stage} batch=4 samples={samples}", flush=True)
+        return min(samples)
+
+    baseline = sample("baseline")
     results = []
     for number in range(1, 5):
         prefix = chr(96 + number)
@@ -54,7 +60,7 @@ def test_r5_4_unrelated_cycle_is_component_bounded(ctx):
         )
         assert not connector.urls
         if number in (1, 2, 4):
-            spent = statistics.median(cycle(ctx.store) for _ in range(3))
+            spent = sample(number)
             results.append(spent)
             print(
                 f"unrelated binds={number} baseline={baseline:.6f} cpu={spent:.6f} "
@@ -73,4 +79,5 @@ def test_r5_4_unrelated_cycle_is_component_bounded(ctx):
             print(f"same-owner maximum cpu={time.process_time() - start:.6f}")
     assert max(results) / baseline <= 3
     # No increasing workspace-sized term; allow CPU measurement noise.
+    print(f"r5-cost-trend ratio={results[-1] / max(results[:2]):.6f}", flush=True)
     assert results[-1] <= 1.5 * max(results[:2])
