@@ -98,8 +98,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
         with:
-          python-version: "3.12"
-      - run: uv sync --locked --python 3.12 --group dev --extra remote --extra facebook
+          python-version: "3.12.13"
+      - run: uv sync --locked --python 3.12.13 --group dev --extra remote --extra facebook
+      - name: Verify managed Python runtime
+        run: uv run --locked python -c 'import sys; print(sys.version); print(sys.base_prefix); assert sys.version_info[:3] == (3, 12, 13)'
       - name: Download every cohort manifest and log for this source
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
