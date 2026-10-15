@@ -1626,10 +1626,33 @@ def _original_spans(spans, edits):
         yield original_start, original_end, kind, replacement
 
 
+def _decoding_depths(length, layers):
+    """One byte per decoded character; only allocate when a view changed.
+
+    The edit maps remain sparse. Each edit contributes a layer to its output,
+    including a form '+' or JSON escape, rather than erasing its provenance.
+    """
+    if not layers:
+        return None
+    depths = bytearray(length)
+    for edits in layers:
+        parts = []
+        position = 0
+        for edit in edits:
+            parts.append(depths[position : edit.original_start])
+            prior = depths[edit.original_start : edit.original_end]
+            parts.append(bytes([max(prior, default=0) + 1]) * (edit.end - edit.start))
+            position = edit.original_end
+        parts.append(depths[position:])
+        depths = bytearray().join(parts)
+    return depths
+
+
 class _Syntax:
     """Compute quote and balanced-value terminators once, never from every key."""
 
-    def __init__(self, text):
+    def __init__(self, text, depths=None):
+        self.depths = depths
         self.ends = {}
         self.closings = {}
         self.quotes = []
@@ -1713,10 +1736,16 @@ class _Syntax:
         for _, colon in blocks:
             self.yaml_ends[colon] = content_end
 
-    def value(self, text, start, *, list_separators=False):
+    def depth(self, position):
+        return (
+            self.depths[position] if self.depths is not None and position < len(self.depths) else 0
+        )
+
+    def value(self, text, start, *, list_separators=False, operator_depth=None):
         if start >= len(text):
             return start
-        if text[start] in "\"'":
+        level = self.depth(start) if operator_depth is None else operator_depth
+        if text[start] in "\"'" and self.depth(start) <= level:
             return self.ends.get(start, len(text))
         if text[start] == "<":
             close = text.find(">", start + 1)
@@ -1734,6 +1763,9 @@ class _Syntax:
             found = chunk.match(text, end)
             if found:
                 end = found.end()
+            if end < len(text) and self.depth(end) > level:
+                end += 1
+                continue  # A deeper decoded delimiter is value data.
             if end >= len(text) or text[end].isspace() or text[end] in "\"'":
                 break
             if text[end] in ",;&":
@@ -1789,6 +1821,17 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
         if skip_paths and _credential_name(key) == "localpath":
             continue
         start = match.end()
+        operator_depth = (
+            syntax.depth(match.start("sep")) if match["sep"] else syntax.depth(match.start())
+        )
+        if match["sep"]:
+            start = match.end("sep")
+            while (
+                start < len(text)
+                and text[start].isspace()
+                and syntax.depth(start) <= operator_depth
+            ):
+                start += 1
         annotation = False
         if match["sep"] == ":" and not match["q"]:
             equals = text.find("=", start, min(len(text), start + 256))
@@ -1828,9 +1871,13 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             if yaml_end is not None
             else max(start, scalar_end)
             if scalar_end is not None
-            else syntax.value(text, start)
+            else syntax.value(text, start, operator_depth=operator_depth)
         )
-        quoted = yaml_end is None and text[start : start + 1] in {'"', "'"}
+        quoted = (
+            yaml_end is None
+            and text[start : start + 1] in {'"', "'"}
+            and syntax.depth(start) <= operator_depth
+        )
         if (
             match["flag"]
             and not quoted
@@ -2332,7 +2379,7 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
         if not changed:
             break
     encoded = _EncodedPositions(text, layers, form=form)
-    syntax = _Syntax(view)
+    syntax = _Syntax(view, _decoding_depths(len(text), layers))
     spans = list(
         _merge_spans(
             [
@@ -2347,17 +2394,7 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
     # Original quoted/structured values have their original quote terminators,
     # even when JSON unescaping reveals quotes inside the credential itself.
     original_syntax = _Syntax(text) if layers else None
-    original_fields = (
-        (
-            span
-            for span in _assignment_spans(text, original_syntax)
-            if span[2] == "sensitive_field"
-            or (span[0] > 0 and text[span[0] - 1] in "\"'")
-            or ("+" in text[span[0] : span[1]] and "%" not in text[span[0] : span[1]])
-        )
-        if layers
-        else ()
-    )
+    original_fields = _assignment_spans(text, original_syntax) if layers else ()
     spans = list(_merge_spans([spans, original_fields]))
     if not spans:
         return text, []

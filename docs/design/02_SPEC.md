@@ -385,3 +385,8 @@ Sensitive XML elements may have quoted attributes; their content is redacted
 whole, while a self-closing element has an empty value. Existing secure-cookie
 and cloud-header name prefixes use the same three-layer decoding in structured
 records as in text.
+
+Decoded-view terminators end a value only at the operator's decoding layer or a
+shallower layer. Deeper percent, JSON-escape and form-plus characters are value
+data. Original assignment spans are retained even when they contain percent escapes;
+the mask is the union of original and decoded spans.
