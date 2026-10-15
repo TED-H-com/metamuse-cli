@@ -347,10 +347,14 @@ call API endpoints. Each derived request is checked against the bound approval
 entries before any dial. The fixture extractor and FacebookIE watch, video and
 story URL tests prove that the first page request's bytes on the wire equal the
 display. This does not promise that every extractor's first derived request equals
-its input URL.
+its input URL. In particular, pinned FacebookIE replaces `://m.facebook.com/`
+everywhere in the URL, including query values. This is the extractor deriving its
+own request URL from the reviewed input. The guarantee covers the extractor input
+and the bytes of each host-checked hop, not the extractor's derivation. Every
+derived hop is checked against the bound approval entries before any dial.
 The stored job request and `original_url` provenance retain the operator's original
 URL. Canonically equivalent spellings therefore approve the same extractor input.
-Only `m.facebook.com` maps to `www.facebook.com`, matching pinned FacebookIE;
+Only the host `m.facebook.com` maps to `www.facebook.com` during preparation;
 the preview and host approval check use `www`, so an `m`-only approval is refused.
 Python's IDNA2003 codec maps hosts. Hosts containing the IDNA2008 deviation
 characters `ß` or `ς` are refused, as are ZWJ/ZWNJ and trailing dots after IDNA
