@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 from browser_deadline import browser_deadline
-from facebook_parity import as_document, literal_corpus, normalise, seeded_corpus
+from facebook_parity import as_document, class_corpus, literal_corpus, normalise, seeded_corpus
 from test_facebook import _synthetic_post_html
 from test_facebook_review import URL, browser_fixture
 from test_facebook_round5 import POST_PATH
@@ -24,7 +24,12 @@ def test_r9_fixture_differential_corpus(tmp_path, monkeypatch):
         .read_text()
         .splitlines()
     }
-    inputs = sorted(literal_corpus() | set(seeded_corpus()) | recorded)
+    seed_size = int(os.environ.get("METAMUSE_FACEBOOK_PARITY_SIZE", "160"))
+    inputs = sorted(
+        literal_corpus() | set(seeded_corpus(seed_size)) | set(class_corpus()) | recorded
+    )
+    raw_overbound = sum(len(markup.encode()) > capture.MAX_TEXT_BYTES for markup in inputs)
+    inputs = [markup for markup in inputs if len(markup.encode()) <= capture.MAX_TEXT_BYTES]
     accepted = refused = 0
     mismatches = []
     with browser_fixture(
@@ -40,12 +45,25 @@ def test_r9_fixture_differential_corpus(tmp_path, monkeypatch):
         session = driver.open_session(state, guard, timeout_ms=300000, max_bytes=100000000)
         try:
             session.goto_post(URL)
+            # These rules are checked even for constructs outside the fixture
+            # subset (e.g. iframe, select, declarative shadow DOM).
+            for markup in class_corpus():
+                session._page.set_content(as_document(markup), wait_until="domcontentloaded")
+                _, nodes, _ = session._capture()
+                if "shadowrootmode=" not in markup:
+                    elements = [n for n in nodes if n["attrs"].get("data-expand-kind")]
+                    # Locked Chromium ignores display:contents on frameset/frame
+                    # and computes block. They remain outside the fixture subset.
+                    expected = elements and elements[0]["tag"] in {"frame", "frameset"}
+                    assert len(elements) == 1 and elements[0]["rendered"] == expected, markup
+                else:
+                    rendered = "".join(n["text"] for n in nodes if n["rendered"])
+                    assert ("SLOTTED" in rendered) == ("display:none" not in markup), markup
             for markup in inputs:
-                if len(markup.encode()) > capture.MAX_TEXT_BYTES:
-                    continue
                 try:
                     fixture = capture.fixture_capture(markup)
                 except m.CoreError as exc:
+                    assert exc.detail.code == m.ErrorCode.SELECTOR_DRIFT
                     assert (
                         exc.detail.message == "Facebook structured capture could not be completed"
                     )
@@ -60,10 +78,28 @@ def test_r9_fixture_differential_corpus(tmp_path, monkeypatch):
                 accepted += 1
         finally:
             session.close()
-    print(
-        json.dumps(
-            dict(inputs=len(inputs), accepted=accepted, refused=refused, mismatches=len(mismatches))
-        )
+    result = dict(
+        inputs=len(inputs),
+        accepted=accepted,
+        refused=refused,
+        mismatches=len(mismatches),
+        raw_overbound_excluded=raw_overbound,
     )
+    print(json.dumps(result))
+    if os.environ.get("METAMUSE_FACEBOOK_PARITY_REPORT"):
+        samples = []
+        for markup, fixture, browser in mismatches[:10]:
+            delta = next(
+                (
+                    (a, b)
+                    for a, b in zip(fixture["nodes"], browser["nodes"], strict=False)
+                    if a != b
+                ),
+                None,
+            )
+            samples.append({"markup": markup[:2048], "first_difference": delta})
+        Path(os.environ["METAMUSE_FACEBOOK_PARITY_REPORT"]).write_text(
+            json.dumps(dict(result, mismatch_samples=samples)) + "\n"
+        )
     assert not mismatches, mismatches
     assert accepted > 40

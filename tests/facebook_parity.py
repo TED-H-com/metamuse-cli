@@ -1,3 +1,4 @@
+# ruff: noqa: E501
 """Differential normalisation and a deterministic, deliberately hostile corpus."""
 
 import ast
@@ -11,10 +12,14 @@ def normalise(nodes):
     # Ignore document/fragment/doctype/comment nodes and empty HTML scaffolding,
     # which Chromium inserts for fragments. Preserve evidence nodes, their light
     # parents, namespace, attributes, text, rendering and both traversal orders.
-    kept = {i: ordinal for ordinal, i in enumerate(
-        i for i, n in enumerate(nodes) if n["kind"] in {1, 3}
-        and not (n["tag"] in {"html", "head", "body"} and not n["attrs"])
-    )}
+    kept = {
+        i: ordinal
+        for ordinal, i in enumerate(
+            i
+            for i, n in enumerate(nodes)
+            if n["kind"] in {1, 3} and not (n["tag"] in {"html", "head", "body"} and not n["attrs"])
+        )
+    }
     parents = {child: i for i, node in enumerate(nodes) for child in node["children"]}
     records = []
     for i in kept:
@@ -22,7 +27,17 @@ def normalise(nodes):
         parent = parents.get(i)
         while parent is not None and parent not in kept:
             parent = parents.get(parent)
-        records.append((node["kind"], node["tag"], node["ns"], sorted(node["attrs"].items()), node["text"], node["rendered"], kept.get(parent)))
+        records.append(
+            (
+                node["kind"],
+                node["tag"],
+                node["ns"],
+                sorted(node["attrs"].items()),
+                node["text"],
+                node["rendered"],
+                kept.get(parent),
+            )
+        )
     pending, composed = [0], []
     while pending:
         i = pending.pop()
@@ -78,7 +93,9 @@ def seeded_corpus(size=160):
     result = []
     for _ in range(size):
         tags = [rng.choice(vocabulary) for _ in range(rng.randrange(1, 6))]
-        markup = "".join(f"<{tag}{rng.choice(attrs)}>" for tag in tags) + "TEXT"
+        markup = "".join(f"<{tag}{rng.choice(attrs)}>" for tag in tags) + rng.choice(
+            ["TEXT", " ", "\n", ""]
+        )
         markup += "".join(
             f"</{tag}>" for tag in reversed(tags) if tag not in {"input", "img", "meta", "col"}
         )
@@ -88,9 +105,32 @@ def seeded_corpus(size=160):
     return result
 
 
+def class_corpus():
+    """Every Appendix B element and the slot/contents ancestor combinations."""
+    from metamuse import _facebook_capture as capture
+
+    result = []
+    for tag in sorted(capture.CONTENTS_NONE):
+        end = "" if tag in capture.VOID else f"FALLBACK</{tag}>"
+        markup = f'<{tag} style="display:contents" data-expand-kind="more_comments">{end}'
+        if tag == "frame":
+            markup = "<html><head></head><frameset>" + markup + "</frameset></html>"
+        elif tag == "frameset":
+            markup = "<html><head></head>" + markup + "</html>"
+        result.append(markup)
+    for mode in ("open", "closed"):
+        for display in ("none", "contents", "block"):
+            result.append(
+                '<div><span style="display:contents">SLOTTED</span>'
+                f'<template shadowrootmode="{mode}"><div style="display:{display}">'
+                "<slot></slot></div></template></div>"
+            )
+    return result
+
+
 def as_document(markup):
     # Fixture fragments use the HTML5 body-fragment context. Full documents
     # retain their explicit document/head/body context.
     if re.search(r"<(?:!doctype|html|head|body)(?:\s|>)", markup, re.I):
         return markup
-    return "<!DOCTYPE html><html><head></head><body>" + markup + "</body></html>"
+    return "<html><head></head><body>" + markup + "</body></html>"

@@ -944,6 +944,14 @@ order. Normalisation removes document/fragment/doctype/comment records and empty
 html/head/body scaffolding; it preserves evidence nodes and their parent/order.
 Unsupported inputs are counted as refusals. The default Chromium audit has an
 independent 90-second deadline; the job/browser budgets remain 300 seconds.
+Potentially rendered whitespace-only text nodes are refused: their boxes depend
+on layout and whitespace collapse. Mixed text keeps its source whitespace. MathML
+text-integration-point element children, paragraph-implying block starts and
+foreign-content foster parenting also refuse. HTML5 `</br>` creates a `br` node.
+Metadata display overrides are refused rather than approximated. Implicit HTML,
+head and body nodes are materialised before bounds checking, so the document
+scaffold is charged exactly like Chromium; misplaced explicit wrappers refuse.
+
 The fixture-only raw UTF-8 markup precheck is 8 MiB; every parity input is below it.
 
 Capture permits at most 65,536 nodes and 8 MiB of UTF-8 text plus attribute names and
