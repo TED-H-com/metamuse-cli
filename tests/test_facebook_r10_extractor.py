@@ -1,6 +1,11 @@
 """HTML tag semantics and isolation of unrendered identity containers."""
 
+# ruff: noqa: E501
+
+import ast
+import inspect
 import json
+import re
 from pathlib import Path
 
 from browser_deadline import browser_deadline
@@ -22,25 +27,17 @@ def extracted(nodes):
 @browser_deadline
 def test_r10_namespace_tag_table(tmp_path, monkeypatch):
     # The production table is the vocabulary; no hand-picked foreign subset.
-    tags = getattr(
-        facebook._DOMExtractor,
-        "HTML_TAGS",
-        capture.VOID
-        | {
-            "form",
-            "script",
-            "div",
-            "p",
-            "section",
-            "article",
-            "li",
-            "blockquote",
-            "pre",
-            "h1",
-            "h2",
-            "h3",
-        },
-    )
+    tags = getattr(facebook._DOMExtractor, "HTML_TAGS", None)
+    if tags is None:
+        # Historical baseline only: derive its vocabulary from its own AST,
+        # rather than importing a table absent from that older implementation.
+        tags = capture.VOID | {
+            n.value
+            for n in ast.walk(ast.parse(inspect.getsource(facebook._DOMExtractor)))
+            if isinstance(n, ast.Constant)
+            and isinstance(n.value, str)
+            and re.fullmatch(r"[a-z][a-z0-9]*", n.value)
+        }
     with capture_session(monkeypatch) as session:
         for ns in (capture.SVG, capture.MATH):
             for tag in sorted(tags):
@@ -112,3 +109,26 @@ def test_r10_unrendered_comments_section_is_not_identity():
         '<section data-fb-role="comments-section" style="visibility:hidden"><b style="visibility:visible"></b></section>'
     )
     assert not e.comments_section_present
+
+
+def test_r10_unrendered_identity_isolates_image_alt():
+    markup = _synthetic_post_html(post_text="BODY").replace(
+        ">BODY</div>",
+        '>BODY<article data-fb-role="post" style="visibility:hidden">'
+        '<div data-fb-role="post-body"><img style="visibility:visible" alt="ORPHAN_ALT">'
+        "</div></article></div>",
+    )
+    parsed = parse(markup)
+    assert "ORPHAN_ALT" not in parsed.text
+    assert "unattributed_rendered_text" in parsed.missing_fields
+
+
+def test_r10_unrendered_identity_cannot_insert_block_boundary():
+    markup = _synthetic_post_html(post_text="BODY").replace(
+        ">BODY</div>", '>BODY<article data-fb-role="post" style="visibility:hidden">'
+        '<div data-fb-role="post-body"><div style="visibility:visible">ORPHAN</div>'
+        '</div></article>TAIL</div>'
+    )
+    parsed = parse(markup)
+    assert parsed.text == "BODYTAIL"
+    assert "unattributed_rendered_text" in parsed.missing_fields
