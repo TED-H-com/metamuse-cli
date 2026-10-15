@@ -116,18 +116,14 @@ def apply(monkeypatch, name):
 
         monkeypatch.setattr(facebook._PlaywrightSession, "close", unchecked)
     elif name == "RM7":
+        injected = """let v_blocked=v_excluded || (v_el && (()=>{
+        const n_attrs=D.attributes(n_node);
+        for(let v_i=0;v_i<D.attrsLength(n_attrs);v_i++)
+          if(D.attrName(D.attrsItem(n_attrs,v_i))==='DATA-METAMUSE-DISPLAY-NONE')return true;
+        return false;})());"""
+        assert "let v_blocked=v_excluded;" in capture.WALK
         monkeypatch.setattr(
-            capture,
-            "WALK",
-            capture.WALK.replace(
-                "let blocked=excluded;",
-                (
-                    "let blocked=excluded || "
-                    "(el && Array.from(n.attributes).some(a=>"
-                    "a.name.toLowerCase()==='data-metamuse-display-none' && "
-                    "!a.name.startsWith('data-metamuse-')));"
-                ),
-            ),
+            capture, "WALK", capture.WALK.replace("let v_blocked=v_excluded;", injected)
         )
     elif name == "RM8":
 
@@ -184,10 +180,10 @@ def apply(monkeypatch, name):
             capture,
             "WALK",
             capture.WALK.replace(
-                "const nodes=[],",
+                "const v_nodes=[],",
                 (
                     "document.querySelector('x-count')?."
-                    "setAttribute('data-capture-test','1');const nodes=[],"
+                    "setAttribute('data-capture-test','1');const v_nodes=[],"
                 ),
             ),
         )
@@ -196,16 +192,15 @@ def apply(monkeypatch, name):
             capture,
             "WALK",
             capture.WALK.replace(
-                "el.checkVisibility();", "el.checkVisibility({contentVisibilityAuto:true});"
+                "return D.checkVisibility(n_node);",
+                "return D.checkVisibility(n_node,{contentVisibilityAuto:true});",
             ),
         )
     elif name == "R8_CONTENTS":
         monkeypatch.setattr(
             capture,
             "WALK",
-            capture.WALK.replace(
-                "while(el && getComputedStyle(el).display==='contents')", "while(false)"
-            ),
+            capture.WALK.replace("if(style(n_node,'display')!=='contents')", "if(true)"),
         )
     elif name == "R8_CLOSED":
         rewrite(
@@ -217,7 +212,13 @@ def apply(monkeypatch, name):
         )
     elif name == "R8_NOSCRIPT":
         monkeypatch.setattr(capture.FixtureTree, "CDATA_CONTENT_ELEMENTS", ("script", "style"))
-        rewrite(monkeypatch, capture.FixtureTree, "finish", [('"noscript",', "")], module=capture)
+        rewrite(
+            monkeypatch,
+            capture.FixtureTree,
+            "finish",
+            [('"noscript",', ""), ('{"template", "noscript"}', '{"template"}')],
+            module=capture,
+        )
     elif name == "R8_VOID":
         monkeypatch.setattr(capture, "VOID", capture.VOID - {"bgsound"})
     elif name == "R8_COPY":

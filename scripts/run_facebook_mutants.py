@@ -1,4 +1,4 @@
-"""Run the independent B13 review mutants and round-6/7 removals, one pytest at a time."""
+"""Run historical, reviewer and round-9 B13 faults in memory, one pytest at a time."""
 
 import argparse
 import json
@@ -79,6 +79,145 @@ ROUND8_CASES = {
 }
 CASES.update(ROUND8_CASES)
 
+REVIEWER_CASES = {
+    "REV_M1_MAIN_PROP": ["tests/test_facebook_r8_capture.py", "-k", "cannot_be_forged and walker"],
+    "REV_M1B_MAIN_CONTENT_TYPE": [
+        "tests/test_facebook_r9_capture.py",
+        "-k",
+        "reviewer_clobbering_rows and Object",
+    ],
+    "REV_M2_CLOSED_ROOT": [
+        "tests/test_facebook_r8_capture.py",
+        "-k",
+        "shadow_rendering and closed",
+    ],
+    "REV_M2B_SECOND_CLOSED_ROOT": ["tests/test_facebook_r9_survivors.py", "-k", "two_closed_roots"],
+    "REV_M3_CV_HIDDEN": ["tests/test_facebook_r8_capture.py", "-k", "table_parity and cv-hidden"],
+    "REV_M4_CONTENTS_LOOKTHROUGH": [
+        "tests/test_facebook_r8_capture.py",
+        "-k",
+        "table_parity and contents",
+    ],
+    "REV_M5_BARRIER_SKIP": [
+        "tests/test_facebook_r8_capture.py",
+        "-k",
+        "barriers_in_every_tree and template",
+    ],
+    "REV_M6_NODE_BOUND_OFF_BY_ONE": [
+        "tests/test_facebook_r9_survivors.py",
+        "-k",
+        "exact_node_bounds",
+    ],
+    "REV_M7_CAPTURE_ERR_CODE": [
+        "tests/test_facebook_r9_capture.py",
+        "-k",
+        "fixture_capture_preserves",
+    ],
+    "REV_M8_CLICK_HIT_TEST": [
+        "tests/test_facebook_r9_capture.py",
+        "-k",
+        "click_identity and overlay",
+    ],
+    "REV_M9_DEADLINE_RESET": ["tests/test_facebook_r9_survivors.py", "-k", "single_deadline"],
+    "REV_M10_CUTOFF_FILTER": [
+        "tests/test_facebook_r8_cutoff.py",
+        "-k",
+        "fatal_cutoff and cutoff-first and E_REFERENCE_INVALID",
+    ],
+    "REV_M10B_CUTOFF_SELECTOR_DRIFT": [
+        "tests/test_facebook_r9_survivors.py",
+        "-k",
+        "every_core and E_SELECTOR_DRIFT",
+    ],
+}
+ROUND9_CASES = {
+    **{
+        f"R9_DIRECT_{group}": ["tests/test_facebook_r9_capture.py", "-k", "no_direct"]
+        for group in (
+            "DOCUMENT",
+            "NODE",
+            "ELEMENT",
+            "ATTRIBUTE",
+            "TEMPLATE",
+            "SLOT",
+            "RANGE",
+            "STYLE",
+            "COLLECTION",
+            "SHADOW",
+            "IFRAME",
+            "TEXT",
+            "WINDOW",
+            "ATTRS_COLLECTION",
+            "RECTS_COLLECTION",
+        )
+    },
+    "R9_NAMESPACE": ["tests/test_facebook_r9_capture.py", "-k", "foreign_template_slot"],
+    "R9_REWRAP": ["tests/test_facebook_r9_capture.py", "-k", "fixture_capture_preserves"],
+    **{
+        f"R9_ACCEPT_{construct}": [
+            "tests/test_facebook_r9_capture.py",
+            "-k",
+            "fixture_refuses_unsupported",
+        ]
+        for construct in (
+            "XMP",
+            "IFRAME",
+            "NOEMBED",
+            "NOFRAMES",
+            "PLAINTEXT",
+            "TEXTAREA",
+            "TITLE",
+            "DIALOG",
+            "POPOVER",
+            "FOREIGN",
+            "UNBALANCED",
+            "DSD",
+            "P",
+            "TABLE",
+            "SCRIPT",
+            "STYLE",
+            "SELECT",
+            "OPTION",
+            "OPTGROUP",
+            "FRAMESET",
+            "FRAME",
+            "EMBED",
+        )
+    },
+    "R9_COMPOSED_PARENT": ["tests/test_facebook_r9_capture.py", "-k", "click_identity and slotted"],
+    "R9_ACCEPT_METADATA": ["tests/test_facebook_r9_capture.py", "-k", "metadata_display_override"],
+    "R9_ACCEPT_WHITESPACE": ["tests/test_facebook_r9_capture.py", "-k", "unmodelled_layout"],
+    "R9_ACCEPT_INTEGRATION": ["tests/test_facebook_r9_capture.py", "-k", "unmodelled_layout"],
+    "R9_IMG_LOOKTHROUGH": [
+        "tests/test_facebook_r9_capture.py",
+        "-k",
+        "unrendered_container_state and img",
+    ],
+    "R9_HIDDEN_STATE": [
+        "tests/test_facebook_r9_capture.py",
+        "-k",
+        "unrendered_container_state and post",
+    ],
+    "R9_CONTROL_KEY": ["tests/test_facebook_r9_capture.py", "-k", "click_identity and missing"],
+    "R9_DUPLICATE_LAST": [
+        "tests/test_facebook_r9_capture.py",
+        "-k",
+        "click_identity and duplicate",
+    ],
+    "R9_CONTAINS": [
+        "tests/test_facebook_r9_capture.py",
+        "-k",
+        "click_identity and (own-shadow or slotted)",
+    ],
+    "R9_REVALIDATE": [
+        "tests/test_facebook_r9_capture.py",
+        "-k",
+        "click_identity and hidden-before-capture",
+    ],
+}
+CASES.update(REVIEWER_CASES)
+CASES.update(ROUND9_CASES)
+
 OPTIONAL_CASES = {
     "G1_WATCH": [
         "tests/test_facebook.py::test_playwright_egress_proxy_byte_budget_stops_oversized_response"
@@ -102,9 +241,13 @@ def main():
             "UV_OFFLINE=1",
             "METAMUSE_REQUIRE_BROWSER_TESTS=1",
             "PYTHONPATH=tests",
-            "PYTEST_PLUGINS=facebook_mutants,facebook_round7_mutants,facebook_round8_mutants",
+            "PYTEST_PLUGINS=facebook_mutants,facebook_round7_mutants,facebook_round8_mutants,facebook_reviewer8_mutants,facebook_round9_mutants",
             (
-                f"METAMUSE_FACEBOOK_ROUND8_MUTANT={name}"
+                f"METAMUSE_FACEBOOK_ROUND9_MUTANT={name}"
+                if name in ROUND9_CASES
+                else f"METAMUSE_REVIEWER_R8_MUTANT={name}"
+                if name in REVIEWER_CASES
+                else f"METAMUSE_FACEBOOK_ROUND8_MUTANT={name}"
                 if name in ROUND8_CASES
                 else f"METAMUSE_FACEBOOK_ROUND7_MUTANT={name}"
                 if name.startswith(("NM", "R7"))

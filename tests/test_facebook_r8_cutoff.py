@@ -27,16 +27,7 @@ def session_for(guard):
 
 @pytest.mark.parametrize(
     "code",
-    [
-        "E_SCOPE_DENIED",
-        "E_AUTH_REQUIRED",
-        "E_CHECKPOINT_REQUIRED",
-        "E_RATE_LIMITED",
-        "E_REFERENCE_INVALID",
-        "E_UNSUPPORTED",
-        "E_DATA_STALE",
-        "E_PROTOCOL_MISMATCH",
-    ],
+    [code.value for code in m.ErrorCode if code != m.ErrorCode.LIMIT_REACHED],
 )
 @pytest.mark.parametrize("order", ["none", "cutoff-first", "fatal-first"])
 def test_r8_fatal_cutoff_outcome_matches_control(tmp_path, code, order):
@@ -72,7 +63,7 @@ def test_r8_fatal_cutoff_outcome_matches_control(tmp_path, code, order):
     assert job["error"]["next_action"] == "Synthetic action"
     assert job["state"] == (
         "awaiting_user"
-        if code in {"E_SCOPE_DENIED", "E_AUTH_REQUIRED", "E_CHECKPOINT_REQUIRED", "E_DATA_STALE"}
+        if m.CoreError(m.ErrorCode(code), "Synthetic").detail.retry_class == "user_action"
         else "failed"
     )
     assert rows(ctx) == []
