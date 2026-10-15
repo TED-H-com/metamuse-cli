@@ -83,7 +83,7 @@ def rows():
         if row.category is None:
             yield Row("own:" + row.shape, row.text, row.markers, row.benign)
     for row in reviewer_matrix():
-        if row.category is None and row.shape.endswith(":raw"):
+        if row.category is None:
             yield Row("matrix:" + row.shape, row.text, row.markers)
     marker = f"{'CONTEXT'}_PRIVATE_MARKER_684329"
     for key in ["password", "token", "cookie", "authorization"]:
@@ -180,8 +180,8 @@ def cases(count, *, seed=SEED, natural=True, randomize=True):
     pool = list(rows())
     anchors = {}
     for row in pool:
-        anchors.setdefault(row.family.split(":")[0], row)
-    pool = list(anchors.values()) + pool
+        anchors.setdefault(row.family, row)
+    pool = [row for row in anchors.values() for _ in range(2)] + pool
     for index in range(count):
         row = pool[index % len(pool)] if index < len(pool) else rng.choice(pool)
         row = Row(row.family, unwrapped(row.text), row.markers, row.benign, row.category)
@@ -225,7 +225,7 @@ def verify(count, *, seed=SEED, natural=True, randomize=True):
             counts["representation_limited:percent_budget"] += 1
         counts["context:" + ctx] += 1
         counts["layer:" + layer] += 1
-        counts["family:" + row.family.split(":")[0]] += 1
+        counts["family:" + row.family] += 1
         if row.category:
             counts["accepted:" + row.category] += 1
         elif row.benign:

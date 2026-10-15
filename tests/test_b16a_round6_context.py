@@ -3,7 +3,7 @@
 from collections import Counter
 from urllib.parse import quote
 
-from b16a_r6_context import LAYERS, NATURAL, cases, generate_rows, unwrapped, verify
+from b16a_r6_context import LAYERS, NATURAL, cases, generate_rows, rows, unwrapped, verify
 
 from metamuse.safety import redact_text
 
@@ -39,15 +39,10 @@ def test_r6_context_subset_covers_every_context_and_representation():
     assert {c[1] for c in selected} == {name for name, _ in NATURAL} | {"random"}
     assert {c[2] for c in selected} == set(LAYERS)
     assert {c[3] for c in selected} == {True, False}
-    assert {c[0].family.split(":")[0] for c in selected} == {
-        "review",
-        "own",
-        "matrix",
-        "review_extension",
-        "unclosed",
-        "html",
-        "benign",
-    }
+    expected = {row.family for row in rows()}
+    assert len(expected) >= 380
+    for kind in ("N", "R"):
+        assert {c[0].family for c in selected if (c[1] != "random") == (kind == "N")} == expected
     result = verify(3000)
     assert result["counts"].get("leaks", 0) == 0, result
     assert result["counts"].get("nonfixpoint", 0) == 0, result
