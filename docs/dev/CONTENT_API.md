@@ -266,3 +266,12 @@ application reports `redaction_unstable`; packet/bundle rendering refuses with t
 fixed "Packet redaction did not stabilize" E_INPUT_INVALID before hashing or writes.
 Muse text refuses the finding; nonrefusable displays and error details mask the whole
 value. There is no separate packet iteration bound.
+
+Unquoted assignment values end at whitespace, contextual list separators, or a
+closing enclosing string. A raw quote, ] or } inside the value is data. URL userinfo
+uses the WHATWG authority: the first /, ?, #, whitespace, or a backslash for special
+schemes ends it. Passwords run from the first userinfo colon to the last @ in that
+authority; raw authority terminators cannot occur in a URL password. Query values
+end at &, #, whitespace, a same-layer encoded ?, or the URL's enclosing quote/bracket.
+Namespaced XML elements use their local name and mask CDATA whole. Quoted subscript
+keys, single-dash flags and quoted type annotations with defaults are supported.
