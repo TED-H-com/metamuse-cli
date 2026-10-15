@@ -1960,6 +1960,8 @@ class _Syntax:
         quoted_end = self.quoted_end(text, start) or (
             self.ends.get(start, len(text)) if text[start] in "\"'`" else start
         )
+        if self.quoted_end(text, start) is not None:
+            return quoted_end
         if quoted_end > start and (
             quoted_end == len(text) or text[quoted_end].isspace() or text[quoted_end] in ",;&)]}"
         ):
@@ -1971,13 +1973,17 @@ class _Syntax:
             if text[start] in "[{"
             else quoted_end
         )
-        chunk = re.compile(r"[^\s,;&\\\"'{}\[\]()]++")
+        chunk = re.compile(r"[^\s,;&\\\"'`{}\[\]()]++")
         separator = re.compile(r"[^\S\r\n]*+" + _NAME + r"[^\S\r\n]*+=")
         while end < len(text):
             found = chunk.match(text, end)
             if found:
                 end = found.end()
-            if end < len(text) and text[end] in "\"'" and self.quote_closings.get(end, end) < start:
+            if (
+                end < len(text)
+                and text[end] in "\"'`"
+                and self.quote_closings.get(end, end) < start
+            ):
                 break  # An enclosing string closes even when its quote is decoded deeper.
             if end < len(text) and self.depth(end) > level:
                 end += 1
@@ -1986,7 +1992,7 @@ class _Syntax:
                 break
             if text[end] == "\\" and self.escaped_closings.get(end, end + 1) <= start:
                 break
-            if text[end] in "\"'" and self.quote_closings.get(end, end) < start:
+            if text[end] in "\"'`" and self.quote_closings.get(end, end) < start:
                 break
             if text[end] in ",;&":
                 context = self.separator_context.get(end)
@@ -2166,11 +2172,13 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
         )
         if (
             not match["q"]
-            and text[match.start() - 1 : match.start()] in {'"', "'"}
+            and text[match.start() - 1 : match.start()] in {'"', "'", "`"}
             and text[start : start + 1] == text[match.start() - 1 : match.start()]
         ):
             end = start  # Empty value in a string such as prompt='Password: '.
-        quoted = yaml_end is None and text[start : start + 1] in {'"', "'"} and start in syntax.ends
+        quoted = (
+            yaml_end is None and text[start : start + 1] in {'"', "'", "`"} and start in syntax.ends
+        )
         # Balanced shell placeholders have a precomputed whole-value extent.
         # Do not copy/reparse every enclosing suffix in deeply nested defaults.
         inner_start = start + int(quoted)
@@ -2296,9 +2304,11 @@ def _header_spans(text, syntax):
             end = boundary.start() if boundary else limit
         if text.startswith(_REDACTED, start) and text[
             start + len(_REDACTED) : start + len(_REDACTED) + 1
-        ] in {'"', "'"}:
+        ] in {'"', "'", "`"}:
             end = start + len(_REDACTED)
-        position = max(end, match.end())
+        opening_end = syntax.quoted_end(text, start)
+        if opening_end is not None:
+            end = opening_end
         value = text[start:end].strip()
         cookie = name not in {"authorization", "proxyauthorization"}
         authorized = cookie or value.lower() not in {
@@ -2311,6 +2321,7 @@ def _header_spans(text, syntax):
             "aws4-hmac-sha256",
         }
         if authorized and redaction_sensitive_value(match["key"], value):
+            position = max(end, match.end())
             yield start, end, "cookie" if cookie else "authorization", _REDACTED
 
 
@@ -2601,7 +2612,7 @@ def _xml_spans(text, syntax):
             continue
         value_start = match.end()
         while value_start < len(text) and text[value_start] != ">":
-            if text[value_start] in {'"', "'"}:
+            if text[value_start] in {'"', "'", "`"}:
                 value_start = syntax.ends.get(value_start, len(text))
             else:
                 value_start += 1
@@ -2638,7 +2649,10 @@ def _curl_spans(text, syntax):
     )
     while match := pattern.search(text, position):
         start = match.end()
-        if syntax.quote_closings.get(start, start) < match.start():
+        if (
+            syntax.quote_closings.get(start, start) < match.start()
+            and text[start + 1 : start + 2].isspace()
+        ):
             start += 1  # A quoted flag ends before its separate argument.
             if start >= len(text) or not text[start].isspace():
                 position = start
@@ -2649,7 +2663,7 @@ def _curl_spans(text, syntax):
         position = max(end, match.end())
         if (match["long"] or match["short"]) in {"-b", "--cookie"}:
             if redaction_sensitive_value("cookie", text[start:end]):
-                quoted = text[start : start + 1] in {'"', "'"}
+                quoted = text[start : start + 1] in {'"', "'", "`"}
                 yield (
                     start + int(quoted),
                     end - int(quoted and text[end - 1 : end] == text[start]),
@@ -2659,7 +2673,7 @@ def _curl_spans(text, syntax):
             continue
         colon = text.find(":", start, end)
         if colon >= 0 and redaction_sensitive_value("password", text[colon + 1 : end]):
-            if text[start : start + 1] in "\"'" and text[end - 1 : end] == text[start]:
+            if text[start : start + 1] in "\"'`" and text[end - 1 : end] == text[start]:
                 end -= 1
             yield colon + 1, end, "sensitive_field", _REDACTED
 
@@ -3005,14 +3019,17 @@ def _command_spans(text, syntax):
         if match["attached"] and not mysql:
             continue
         start = match.end()
-        if syntax.quote_closings.get(start, start) < start:
+        if (
+            syntax.quote_closings.get(start, start) < start
+            and text[start + 1 : start + 2].isspace()
+        ):
             start += 1
             while start < len(text) and text[start].isspace():
                 start += 1
         end = syntax.value(text, start, operator_depth=syntax.depth(match.start()))
         position = max(match.end(), end)
         if redaction_sensitive_value("password", text[start:end]):
-            quoted = text[start : start + 1] in {'"', "'"}
+            quoted = text[start : start + 1] in {'"', "'", "`"}
             yield (
                 start + int(quoted),
                 end - int(quoted and text[end - 1 : end] == text[start]),

@@ -469,3 +469,8 @@ not a delimiter. Triple quotes are one multiline token, recognized before single
 quotes; heredoc bodies and YAML block scalars retain their multiline extent.
 A fully parsed JSON layer proves exact string extents. Only a delimiter proved
 by these rules may shorten a credential value, URL authority or private-key block.
+
+At a credential value's start, a single, double or backtick quote opens its own
+value if the same-layer, same-line matching quote follows. This local opener
+takes priority over an unrelated earlier quote. Attached command flags use the
+same rule; only a proven quoted flag's closing delimiter precedes its argument.
