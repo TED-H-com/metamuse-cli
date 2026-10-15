@@ -55,7 +55,7 @@ MUST 必須；SHOULD 應；MAY 可選。數字是工程預設或驗收目標，�
 | Source | platform、native scope/id、原始／正規化 URL、collection_method、取得時間、使用依據引用。 |
 | ItemObservation | project/source、kind(post/comment/reply)、native ID、parent、原文、原始與解析時間、revision、完整性與缺值。 |
 | Asset | SHA-256、MIME、實際 bytes、時長、私有路徑引用、所有來源關係；相同bytes不抹掉不同來源。 |
-| TranscriptSegment | asset、revision、start/end毫秒、語言、原文、provided/auto/asr/manual、校對狀態。 |
+| TranscriptSegment | asset、revision、start/end毫秒、語言、原文、provided/auto/asr/manual、校對狀態；removed預設false。移除是revision≥2且text空字串的追加修正，同transaction標記派生stale；目前搜尋與解析不回已移除cue，明示舊文字版本仍可解析為stale。 |
 | Packet | 固定來源revision／字幕區間、實際送出文本、redactions、來源方式、範圍、digest。 |
 | Discussion/Exchange | project、remote session、question、packet版本、提交意圖／狀態、cursor、raw messages與關聯狀態。 |
 | Draft | 完整文字、revision、platform variants、facts／assets、明示偏好、digest。 |
@@ -461,3 +461,14 @@ slash, after HTML entities, one percent-decoding, JavaScript \u005f/\x5f undersc
 escapes and NFKC folding. Split JavaScript string literals are not detected.
 Cookie domains require at least two labels and cannot normalize to IP literals;
 multi-label public suffix detection needs a public-suffix list.
+
+B12 canonical provenance stores only reviewable display URLs on bound approved
+hosts, preferring webpage_url, then extract URL, then reviewed input; canonical_basis
+records the winner. Refused/signed candidates never persist. Subtitle language/method
+and upstream identities are bounded patterns; text is bounded and redacted.
+A 2xx subtitle/media HTML or BOM/whitespace-sniffed HTML login form stops with
+E_AUTH_REQUIRED before later dials or resource rows; page classification stays with
+the extractor. Every body block checks the cheap deadline; durable scan guards are
+paced at 250 ms plus first/last. Changed subtitle bytes retire omitted cue indexes
+atomically, including changed zero-valid-cue replacements. Failed fetches and listing
+omissions do not imply removal. See COLLECT.md for bounds and measured costs.

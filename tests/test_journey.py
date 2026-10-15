@@ -14,6 +14,8 @@ import anyio
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
+from metamuse import store as core
+
 SECRET = "SYNTHETIC_JOURNEY_SECRET"
 COOKIE = "hatch_sess=" + SECRET
 CORPUS = Path(__file__).parent / "fixtures/corpus/import/comments_tree.jsonl"
@@ -87,7 +89,7 @@ class Entrypoints:
         return envelope
 
     def configure(self):
-        assert self.cli("init")["data"]["schema_version"] == 5
+        assert self.cli("init")["data"]["schema_version"] == core.SCHEMA_VERSION
         path = self.workspace / "metamuse.toml"
         path.write_text(
             path.read_text()

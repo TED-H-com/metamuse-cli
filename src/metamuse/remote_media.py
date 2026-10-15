@@ -2790,10 +2790,8 @@ def _store_subtitles(
             incomplete = bool(parsed.errors)
             if incomplete and "subtitles" not in state.missing:
                 state.missing.append("subtitles")
-            if not parsed.cues:
-                if "subtitles" not in state.missing:
-                    state.missing.append("subtitles")
-                continue
+            if not parsed.cues and "subtitles" not in state.missing:
+                state.missing.append("subtitles")
             language = str(track["language"])
             method = str(track["method"])
             _track_identity(language, method)
@@ -2824,7 +2822,7 @@ def _store_subtitles(
                 )
 
             _commit_cues(step, state, write)
-            stored += 1
+            stored += bool(parsed.cues)
     finally:
         _purpose.reset(token)
     if current.get("subtitles_truncated") and "subtitles" not in state.missing:
@@ -2849,7 +2847,7 @@ def _write_subtitle_track(
     incomplete: bool,
     now: str,
 ) -> None:
-    """Store one track. A new file hash appends a revision; an incomplete file never shortcuts."""
+    """Store one track; changed bytes append cues and retire omitted cue indexes atomically."""
 
     found = writer.execute(
         "SELECT id, use_basis, json_extract(use_basis, '$.complete') AS complete, "
@@ -2857,7 +2855,9 @@ def _write_subtitle_track(
         "WHERE project_id=? AND platform=? AND native_scope=? AND native_id=?",
         (project, current["platform"], current["scope"], native),
     ).fetchone()
-    if found is not None and found["complete"] and found["sha"] == digest:
+    if found is not None and found["sha"] == digest:
+        return
+    if found is None and not cues:
         return
     changed = found is not None and found["sha"] != digest
     if found is None:
@@ -2871,6 +2871,8 @@ def _write_subtitle_track(
             (source_id, project),
         ).fetchone()
         held = 0 if peak is None or peak["revision"] is None else int(peak["revision"])
+        previous_basis = json.loads(found["use_basis"]) if found["use_basis"] else {}
+        held = max(held, int(previous_basis.get("revision", 0)))
         revision = held + 1 if changed else max(held, 1)
     prior: list[dict[str, Any]] = []
     if found is not None and found["use_basis"]:
@@ -2881,6 +2883,7 @@ def _write_subtitle_track(
     if found is None or changed:
         revisions = [*prior, {"revision": revision, "file_sha256": digest}]
     basis = {
+        "revision": revision,
         "file_sha256": digest,
         "language": language,
         "role": "subtitles",
@@ -2936,6 +2939,36 @@ def _write_subtitle_track(
                 overlap=cue.overlap,
             )
         )
+    if changed:
+        current_indexes = {cue.cue_index for cue in cues}
+        previous = writer.execute(
+            "SELECT ts.* FROM transcript_segments ts WHERE source_id=? AND project_id=? "
+            "AND revision=(SELECT max(revision) FROM transcript_segments latest "
+            "WHERE latest.id=ts.id)",
+            (source_id, project),
+        ).fetchall()
+        for old in previous:
+            if old["cue_index"] in current_indexes or old["removed"]:
+                continue
+            writer.insert(
+                m.TranscriptSegment(
+                    id=old["id"],
+                    project_id=project,
+                    asset_id=old["asset_id"],
+                    item_id=item_id,
+                    source_id=source_id,
+                    revision=revision,
+                    cue_index=old["cue_index"],
+                    start_ms=old["start_ms"],
+                    end_ms=old["end_ms"],
+                    text="",
+                    removed=True,
+                    language=language,
+                    method=method,
+                    review="unreviewed",
+                    overlap=bool(old["overlap"]),
+                )
+            )
 
 
 def _commit_cues(

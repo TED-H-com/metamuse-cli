@@ -1,4 +1,4 @@
-# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 5)
+# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 6)
 
 B02–B04 owns `app.py`, `cli.py`, `models.py`, `store.py`, `jobs.py`, migration SQL and
 generated schemas. Other tasks must build against these APIs without editing them.
@@ -1098,3 +1098,26 @@ margin above the passing sub-second measurements, while rejecting minute-long wo
 CoreError or any other Exception. Unexpected exceptions are contained and log only
 `Approval preview callback failed (TYPE)`, without exception text or a traceback.
 No preview or operation side effect is produced by this fallback.
+
+
+### Retiring a transcript cue (B12 / FR-006 / AT-045)
+
+Migration `006_transcript_removal.sql` upgrades schema 5 to 6 after the Muse
+trust migration `005_muse_trust.sql`, preserving its tables and guards.
+
+TranscriptSegment.removed defaults to false. A producer retires an observed cue
+by appending the same id/project at a later revision with removed=true, text="",
+and its prior timing, language and method. Use the same transaction as replacement
+cues and the new source observation. Store.insert refuses missing prior rows,
+out-of-order/removal-at-1, text-bearing removals or double removals with
+E_REFERENCE_INVALID; its existing revision>1 rule marks citing packets/drafts
+stale in that transaction. Never UPDATE or REPLACE historical segments.
+A reappearance appends a normal text-bearing row with the same ID.
+
+Schema migration adds a checked default-0 removed column without rebuilding the
+table or changing append-only triggers/indexes. Search/current listings exclude
+latest removals. Evidence resolution, packet prepare and exports refuse a removal
+revision with E_REFERENCE_INVALID and the last text-bearing revision number, with
+no text; explicit older text-bearing refs still resolve stale=true. Raw Store.get
+remains an internal revision reader so producers/audits can inspect removals.
+A listing omission alone is not a removal (B18).

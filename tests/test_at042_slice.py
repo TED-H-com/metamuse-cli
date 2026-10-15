@@ -15,6 +15,7 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from metamuse import models as m
+from metamuse import store as core
 
 CORPUS = Path(__file__).parent / "fixtures/corpus/import/comments_tree.jsonl"
 SECRET = "SYNTHETIC_SLICE_SECRET"
@@ -256,7 +257,7 @@ class Journey:
 
 def test_at042_cli_and_mcp_stdio_journey(tmp_path):
     journey = Journey(tmp_path)
-    assert journey.cli("init")["data"]["schema_version"] == 5
+    assert journey.cli("init")["data"]["schema_version"] == core.SCHEMA_VERSION
     config = journey.workspace / "metamuse.toml"
     config.write_text(
         config.read_text()

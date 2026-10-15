@@ -230,6 +230,17 @@ class _Resolver:
                     m.ErrorCode.REFERENCE_INVALID, "Transcript is missing or ambiguous"
                 )
             revision = store.get(m.TranscriptSegment, ref.id, revision=ref.revision, conn=conn)
+            if revision.removed:
+                last_text = conn.execute(
+                    "SELECT max(revision) FROM transcript_segments WHERE id=? AND project_id=? "
+                    "AND revision<? AND removed=0",
+                    (ref.id, self.project_id, ref.revision),
+                ).fetchone()[0]
+                raise m.CoreError(
+                    m.ErrorCode.REFERENCE_INVALID,
+                    "A later source revision removed the cue; "
+                    f"last text-bearing revision: {last_text}",
+                )
             if revision.asset_id is not None:
                 self.asset(revision.asset_id, ref)
             latest = conn.execute(
@@ -471,7 +482,10 @@ def _search_rows(
     rows = conn.execute(
         "SELECT ts.* ,ts.rowid FROM transcript_segments ts WHERE "
         + _transcript_scope_sql()
-        + " AND ts.rowid<=? AND instr(ts.text,?)>0 AND ts.revision=(SELECT max(t2.revision) "
+        + " AND ts.removed=0 AND NOT EXISTS (SELECT 1 FROM transcript_segments latest "
+        "WHERE latest.id=ts.id AND latest.removed=1 AND latest.revision="
+        "(SELECT max(revision) FROM transcript_segments WHERE id=ts.id)) "
+        "AND ts.rowid<=? AND instr(ts.text,?)>0 AND ts.revision=(SELECT max(t2.revision) "
         "FROM transcript_segments t2 WHERE t2.id=ts.id AND t2.rowid<=?) ORDER BY ts.id,ts.revision",
         (project, wm["transcript_watermark"], query, wm["transcript_watermark"]),
     ).fetchall()

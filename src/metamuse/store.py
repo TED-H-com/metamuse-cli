@@ -30,7 +30,7 @@ from metamuse import models as m
 from metamuse.config import load_config
 from metamuse.paths import WorkspacePaths, private_dir, private_file
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 DATA = Path(__file__).parent / "data"
 MIGRATIONS = {
     1: DATA / "migrations" / "001_initial.sql",
@@ -38,6 +38,7 @@ MIGRATIONS = {
     3: DATA / "migrations" / "003_muse_lifecycle.sql",
     4: DATA / "migrations" / "004_muse_evidence.sql",
     5: DATA / "migrations" / "005_muse_trust.sql",
+    6: DATA / "migrations" / "006_transcript_removal.sql",
 }
 CONTENT_CURSOR_KEY = "content.cursor"
 
@@ -346,6 +347,7 @@ JSON_FIELDS = {
     "raw_event",
 }
 BOOL_FIELDS = {
+    "removed",
     "cancel_requested",
     "complete",
     "stale",
@@ -1372,6 +1374,23 @@ class Store:
             # Derived text is owned by project_id. The asset must already be
             # visible there; shared bytes are not themselves the owner.
             self.require_project_asset(record.project_id, record.asset_id, conn=conn)
+        if isinstance(record, m.TranscriptSegment) and record.removed:
+            prior = conn.execute(
+                "SELECT revision,removed FROM transcript_segments WHERE id=? AND project_id=? "
+                "ORDER BY revision DESC LIMIT 1",
+                (record.id, record.project_id),
+            ).fetchone()
+            if (
+                record.text != ""
+                or record.revision < 2
+                or prior is None
+                or prior["removed"]
+                or prior["revision"] >= record.revision
+            ):
+                raise m.CoreError(
+                    m.ErrorCode.REFERENCE_INVALID,
+                    "Transcript removal requires an earlier text-bearing revision",
+                )
         columns = list(data)
         values = [
             m.canonical_json(data[c]).decode()
