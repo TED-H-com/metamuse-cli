@@ -80,6 +80,20 @@ def test_r9_fixture_refuses_unmodelled_layout_and_integration(markup):
     assert caught.value.detail.message == "Facebook structured capture could not be completed"
 
 
+@pytest.mark.parametrize(
+    "markup",
+    [
+        '<div style="display:contents"><img style="display:inherit"></div>',
+        '<span hidden style="display:revert">TEXT</span>',
+    ],
+)
+def test_r9_fixture_refuses_unresolved_display_globals(markup):
+    with pytest.raises(m.CoreError) as caught:
+        capture.fixture_capture(markup)
+    assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
+    assert caught.value.detail.message == "Facebook structured capture could not be completed"
+
+
 # The table is the single vocabulary for both the corpus and the source rule.
 def test_r9_no_direct_dom_members():
     from facebook_dom_rule import check

@@ -84,6 +84,14 @@ def apply(monkeypatch, name):
                 [('or "popover" in attrs', "")],
                 module=cap,
             )
+        elif construct == "global_display":
+            rewrite(
+                monkeypatch,
+                cap.FixtureTree,
+                "handle_starttag",
+                [('if css(style, "display") in {"inherit", "revert"}:', "if False:")],
+                module=cap,
+            )
         elif construct == "metadata":
             rewrite(
                 monkeypatch,

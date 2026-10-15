@@ -186,6 +186,11 @@ ROUND9_CASES = {
     },
     "R9_COMPOSED_PARENT": ["tests/test_facebook_r9_capture.py", "-k", "click_identity and slotted"],
     "R9_ACCEPT_METADATA": ["tests/test_facebook_r9_capture.py", "-k", "metadata_display_override"],
+    "R9_ACCEPT_GLOBAL_DISPLAY": [
+        "tests/test_facebook_r9_capture.py",
+        "-k",
+        "unresolved_display_globals",
+    ],
     "R9_ACCEPT_WHITESPACE": ["tests/test_facebook_r9_capture.py", "-k", "unmodelled_layout"],
     "R9_ACCEPT_INTEGRATION": ["tests/test_facebook_r9_capture.py", "-k", "unmodelled_layout"],
     **{
