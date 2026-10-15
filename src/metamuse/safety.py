@@ -2543,10 +2543,6 @@ def _header_spans(text, syntax):
         while folded := fold.match(text, end, limit):
             boundary = boundary_after(folded.end())
             end = boundary.start() if boundary else limit
-        if text.startswith(_REDACTED, start) and text[
-            start + len(_REDACTED) : start + len(_REDACTED) + 1
-        ] in {'"', "'", "`"}:
-            end = start + len(_REDACTED)
         opening_end = syntax.quoted_end(text, start)
         if opening_end is not None:
             end = opening_end

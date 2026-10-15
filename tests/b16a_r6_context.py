@@ -100,6 +100,9 @@ def rows():
         '<password comment="ordinary\ntext">{v}</password>',
     ]:
         yield Row("review_extension", shape.replace("{v}", marker), (marker,))
+    for header in ["Cookie", "Authorization"]:
+        for delimiter in ['"', "'", "`"]:
+            yield Row("review_extension", header + ": [REDACTED]" + delimiter + marker, (marker,))
     for key in ["password", "token", "cookie", "authorization"]:
         yield Row("review_extension", '--password "' + key + '": ' + marker, (marker,))
     for text in [

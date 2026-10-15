@@ -716,6 +716,16 @@ adapt(
     "percent_har_is_independent",
 )
 
+new(
+    "r6_mask_prefix_quote_is_unproven_close",
+    within(
+        "_header_spans",
+        "        opening_end = syntax.quoted_end(text, start)",
+        '        if text.startswith(_REDACTED, start) and text[\n            start + len(_REDACTED) : start + len(_REDACTED) + 1\n        ] in {\'"\', "\'", "`"}:\n            end = start + len(_REDACTED)\n        opening_end = syntax.quoted_end(text, start)',
+    ),
+    selection="mask_prefix_does_not_prove",
+)
+
 if __name__ == "__main__":
     from b16a_r6_mutation_run import main
 

@@ -15,6 +15,7 @@ def surface_cases():
     marker = f"{'R6SURFACE'}_MARKER_SYNTHETIC_643829"
     for name, text in {
         "unclosed_json": json.dumps({"password": "${" + marker}),
+        "header_partial_mask": 'Cookie: [REDACTED]"' + marker,
         "apostrophe_curl": "Here's what I ran: curl "
         + "-u 'alice:my pass "
         + marker

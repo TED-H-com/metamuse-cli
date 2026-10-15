@@ -381,3 +381,13 @@ def test_r6_percent_har_is_independent_of_unrelated_json_candidate():
     )
     spans = list(_har_candidates(text, _depth=3))
     assert any(MARKER in text[start:end] for start, end, *_ in spans)
+
+
+@pytest.mark.parametrize("header", ["Cookie", "Set-Cookie", "Authorization", "Proxy-Authorization"])
+@pytest.mark.parametrize("quote", ['"', "'", "`"])
+@pytest.mark.parametrize("layers", [0, 1, 2])
+def test_r6_header_mask_prefix_does_not_prove_a_close(header, quote, layers):
+    text = encoded(header + ": [REDACTED]" + quote + MARKER, layers)
+    output, findings = redact_text(text)
+    assert MARKER not in output and findings
+    assert redact_text(output)[0] == output

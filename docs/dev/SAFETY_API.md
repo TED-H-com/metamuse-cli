@@ -476,7 +476,7 @@ takes priority over an unrelated earlier quote. Attached command flags use the
 same rule; only a proven quoted flag's closing delimiter precedes its argument.
 
 Exemptions require a complete genuine closing delimiter at the same layer.
-Forced closure at an enclosing quote or end of input is not a match. Unclosed
+Forced closure at an enclosing quote or end of input is not a match. A header sentinel followed by an unproven quote and a value suffix is not a whole-value exemption. Unclosed
 placeholders and lookups are credentials. Fixed environment lookups have locally
 quoted arguments, so parentheses or brackets within an argument are data. Lookup
 and placeholder extents are indexed once; nested lookups never repeatedly copy
