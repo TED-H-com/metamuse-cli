@@ -596,12 +596,14 @@ class BrowserEgressProxy:
             raise error from None
 
     def _check_target_bounded(self, parsed: ParsedProxyRequest) -> safety.CheckedURL:
+        preflight = True
         try:
             self.egress.check_url_without_dns(parsed.check_url, parsed.purpose)
             if parsed.is_navigation and not parsed.is_connect:
                 barrier = self.egress._classify_navigation_barrier(parsed.check_url)
                 if barrier is not None:
                     raise barrier
+            preflight = False
             return self._check_bounded(
                 lambda: self.egress.check_proxy_target(
                     parsed.check_url,
@@ -617,6 +619,8 @@ class BrowserEgressProxy:
                 error,
                 is_connect=parsed.is_connect,
                 is_navigation=parsed.is_navigation,
+                purpose=parsed.purpose,
+                record_decision=preflight,
             )
             raise
 

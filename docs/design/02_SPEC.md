@@ -638,9 +638,10 @@ refused with fixed `E_SELECTOR_DRIFT`; real Chromium composes them. Static rende
 parity cases compare state, records and coverage in both drivers.
 
 Capture permits at most 65,536 nodes and 8 MiB of UTF-8 text plus attribute names and
-values, independently of the job's normally smaller byte budget. These are explicit
-structural bounds in addition to the existing observation/job byte limit; flat
-records add overhead beyond equivalent HTML. Bounds, unsupported non-HTML main MIME
+values, independently of the operator-selected `limits.max_bytes`. The existing
+HTML/observation and proxy-byte budget remains binding; these additional structural
+bounds also cover a tiny script that creates a large DOM. Flat records add overhead
+beyond equivalent HTML, and their serialized bytes count against the same job budget. Bounds, unsupported non-HTML main MIME
 types (XHTML/XML/SVG), and capture failures refuse with fixed Facebook-specific
 `E_SELECTOR_DRIFT`, without page text or `E_STORAGE`. Inaccessible closed roots add
 `closed_shadow_capture_unavailable` and force partial coverage. Subtree insertions or shadow-root attachments observed
@@ -725,8 +726,9 @@ cutoff. This permits completed observations to reach barrier classification befo
 the budget decision while preserving destination checks. For unpinned URLs, all
 DNS-free syntax, scheme, credential, hostname/IP-literal and port checks run before
 the latch; port validation therefore precedes DNS. Allowlisted navigation paths are
-then classified, so an allowlisted login URL retains its login barrier. Only the
-remaining DNS-requiring allow path is interruptible by the latch. Its wait remains bounded. The watcher uses the pinned Playwright
+then classified, so an allowlisted login URL retains its login barrier. DNS-free
+proxy refusals enter the same audit counters exactly once as later policy refusals.
+Only the remaining DNS-requiring allow path is interruptible by the latch. Its wait remains bounded. The watcher uses the pinned Playwright
 implementation loop, as does the existing async WebSocket close adapter. Tests
 bound hangs at an independent 90-second subprocess deadline, with 300-second read
 and job budgets.
