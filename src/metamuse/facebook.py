@@ -2088,6 +2088,7 @@ class _PlaywrightSession:
         self._document_status = 200
         self._status_error: m.CoreError | None = None
         self._closing_targets: set[str] = set()
+        self._closing = False
 
         def _on_route(route: Any) -> None:
             req = route.request
@@ -2120,6 +2121,10 @@ class _PlaywrightSession:
         self._context.add_init_script(WEBSOCKET_BLOCK_SCRIPT)
 
         def _on_response(response: Any) -> None:
+            from playwright._impl._errors import TargetClosedError
+
+            if self._closing:
+                return
             req = response.request
             main_navigation = req.is_navigation_request() and req.frame == self._page.main_frame
             if main_navigation:
@@ -2164,6 +2169,14 @@ class _PlaywrightSession:
             except m.CoreError as exc:
                 if main_navigation:
                     self._peer_error = _keep_stop(self._peer_error, exc)
+            except TargetClosedError:
+                # server_addr() yields to Playwright's loop: owned shutdown or
+                # the target's closed event can race its reply. A live target
+                # losing its channel is still a guard failure, not a peer pass.
+                if not self._closing and not (
+                    self._browser.is_connected() and self._page.is_closed()
+                ):
+                    self._guard_failed()
 
         def _on_frame_navigated(frame: Any) -> None:
             # Chromium's internal error document is the result of our refusal,
@@ -2201,6 +2214,7 @@ class _PlaywrightSession:
         self._page.on("download", self._on_download)
         self._context.route("**/*", _on_route)
         self._context.route_web_socket("**/*", _on_web_socket)
+        self._response_callback = _on_response
         self._page.on("response", _on_response)
         self._page.on("framenavigated", _on_frame_navigated)
         # Playwright WebSocket routes do not cover worker sockets in the pinned build.
@@ -2329,6 +2343,7 @@ class _PlaywrightSession:
                 or self._egress.byte_limit_exceeded
                 or (self._proxy is not None and self._proxy.byte_limit_exceeded)
             ):
+                self._stop_response_callbacks()
                 try:
                     await self._page._impl_obj.close()
                 except Exception:
@@ -2340,6 +2355,13 @@ class _PlaywrightSession:
                         self._guard_failed()
                 return
             await asyncio.sleep(0.05)
+
+    def _stop_response_callbacks(self) -> None:
+        # No callback tasks are spawned: detach queued delivery and let any
+        # in-flight synchronous peer lookup finish via the expected-close path.
+        if not self._closing:
+            self._closing = True
+            self._page.remove_listener("response", self._response_callback)
 
     def _note_popup_attempt(self) -> None:
         self.popups_blocked += 1
@@ -2746,6 +2768,7 @@ class _PlaywrightSession:
         )
 
     def close(self) -> None:
+        self._stop_response_callbacks()
         # Verify before tearing down CDP, even if cutoff already closed the page.
         fatal = None
         try:

@@ -1718,6 +1718,9 @@ def test_chromium_launch_args_and_sandbox_pinned(tmp_path: Path, monkeypatch: py
         def on(self, event: str, handler: Any) -> None:
             del event, handler
 
+        def remove_listener(self, event: str, handler: Any) -> None:
+            del event, handler
+
         def evaluate(self, script: str) -> bool:
             return True
 
