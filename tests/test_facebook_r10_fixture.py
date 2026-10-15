@@ -43,6 +43,14 @@ def test_r10_normalise_detects_every_dimension(dimension):
     assert normalise(original) != normalise(changed), dimension
 
 
+def test_r10_normalise_keeps_foreign_scaffold_names():
+    nodes = capture.fixture_capture("<div></div>")
+    node = next(n for n in nodes if n["tag"] == "div")
+    for tag in ("html", "head", "body"):
+        node.update(tag=tag, ns=capture.SVG)
+        assert any(row[1:3] == (tag, capture.SVG) for row in normalise(nodes)["nodes"])
+
+
 INSERTION_REFUSALS = [
     "<html><body><span>A</span></body></html>",
     '<head></head><meta name="x"><div>BODY</div>',

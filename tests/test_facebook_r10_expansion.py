@@ -29,6 +29,19 @@ def test_r10_no_debugger_or_expansion_network_authority():
             if isinstance(n, ast.Constant) and isinstance(n.value, str)
         ]
         assert not any("Debugger." in s or "setAsyncCallStackDepth" in s for s in strings)
+    from types import CodeType
+
+    pending = [
+        f.__code__ for f in vars(facebook._PlaywrightSession).values() if hasattr(f, "__code__")
+    ]
+    runtime_strings = []
+    while pending:
+        for value in pending.pop().co_consts:
+            if isinstance(value, CodeType):
+                pending.append(value)
+            elif isinstance(value, str):
+                runtime_strings.append(value)
+    assert not any("Debugger." in s or "setAsyncCallStackDepth" in s for s in runtime_strings)
     source = inspect.getsource(facebook._PlaywrightSession)
     for removed in (
         "_note_expansion_request",
@@ -99,6 +112,7 @@ def test_r10_failed_request_without_dom_progress(tmp_path, monkeypatch, request_
     assert job["coverage_status"] == "partial"
     assert "expansion_failed" not in job["missing_fields"]
     assert "expansion_progress_timeout" in job["missing_fields"]
+    assert job["observed_scope"]["steps"][0]["comments_empty"] is False
     assert len(stored) == 2 and stored[-1]["text"] == "INITIAL"
     assert any(p == "/api/fail" for p, _ in hits)
 

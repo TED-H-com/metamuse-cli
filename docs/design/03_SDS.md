@@ -815,9 +815,11 @@ node or changed identified content within the read deadline. Requests, response
 statuses, counts and disappearing controls are neither progress nor failure evidence.
 The page defines request meaning, and delegated listeners and async scheduling
 cannot establish reliable request ownership; GraphQL errors may also use HTTP 200.
-No owned CDP session enables the Debugger domain or async stack depth; the AST
-source-constant audit test_r10_no_debugger_or_expansion_network_authority enforces
-this across the session and capture modules. Network.enable remains for socket guards.
+No owned CDP session enables the Debugger domain or async stack depth. The AST
+source-constant audit test_r10_no_debugger_or_expansion_network_authority rejects
+Debugger commands across the session and capture modules and checks compiled
+session constants too, so a runtime wrapper cannot evade the audit.
+Network.enable remains for socket guards.
 
 A click that cannot be performed records expansion_failed: identity revalidation,
 scroll, usable-quad retrieval, hit lookup, node resolution, composed hit check or

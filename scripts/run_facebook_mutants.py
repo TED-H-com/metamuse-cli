@@ -1,7 +1,8 @@
-"""Run historical, reviewer and round-9 B13 faults in memory, one pytest at a time."""
+"""Run historical, reviewer and round-10 B13 faults in memory, one pytest at a time."""
 
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -113,11 +114,7 @@ REVIEWER_CASES = {
         "-k",
         "fixture_capture_preserves",
     ],
-    "REV_M8_CLICK_HIT_TEST": [
-        "tests/test_facebook_r9_capture.py",
-        "-k",
-        "click_identity and overlay",
-    ],
+    "REV_M8_CLICK_HIT_TEST": ["tests/test_facebook_r10_click.py", "-k", "mousemove"],
     "REV_M9_DEADLINE_RESET": ["tests/test_facebook_r9_survivors.py", "-k", "single_deadline"],
     "REV_M10_CUTOFF_FILTER": [
         "tests/test_facebook_r8_cutoff.py",
@@ -248,6 +245,79 @@ ROUND9_CASES = {
 CASES.update(REVIEWER_CASES)
 CASES.update(ROUND9_CASES)
 
+# Only removed request-attribution paths are obsolete. Their replacements
+# prove the newly specified DOM-only behavior, rather than keeping dead faults.
+OBSOLETE = {
+    "M8": "Expansion HTTP/XHR attribution removed by round-10 design change",
+    "REV9_M9_EXPANSION_NO_USER_GESTURE": "Request provenance removed",
+    "REV9_M10_OMIT_SKIP_ALL_PAUSES": "Debugger domain removed",
+    "ROUND9_REQUEST_GUARD_256": "Request-attribution volume guard removed",
+}
+CASES.pop("M8")
+REVIEWER_CASES["REV_M1B_MAIN_CONTENT_TYPE"] = [
+    "tests/test_facebook_r9_capture.py",
+    "-k",
+    "reviewer_clobbering_rows",
+]
+REVIEWER_CASES["REV_M5_BARRIER_SKIP"] = [
+    "tests/test_facebook_r8_capture.py",
+    "-k",
+    "barriers_in_every_tree",
+]
+CASES.update(REVIEWER_CASES)
+REVIEWER9_CASES = {
+    "REV9_M1_ACCESSOR_DIRECT_CALL": ["tests/test_facebook_r9_capture.py", "-k", "no_direct"],
+    "REV9_M2_OMIT_CLOSED_ROOTS": ["tests/test_facebook_r9_survivors.py", "-k", "two_closed_roots"],
+    "REV9_M3_FOREIGN_NOSCRIPT_IFRAME": ["tests/test_facebook_r10_survivors.py"],
+    "REV9_M4_PARITY_DROP_ATTRS_TEXT": ["tests/test_facebook_r10_fixture.py", "-k", "normalise"],
+    "REV9_M5_FIXTURE_ACCEPT_OUTSIDE_SUBSET": [
+        "tests/test_facebook_r10_fixture.py",
+        "-k",
+        "insertion_modes",
+    ],
+    "REV9_M6_NOBOX_BUTTON_FIELDSET_LEGEND_SVG": ["tests/test_facebook_r10_survivors.py"],
+    "REV9_M7_UNRENDERED_CONTAINER_POLLUTION": [
+        "tests/test_facebook_r10_extractor.py",
+        "-k",
+        "comments_section",
+    ],
+    "REV9_M8_CLICK_STALE_OR_SKIP_HIT_TEST": ["tests/test_facebook_r10_click.py", "-k", "mousemove"],
+    "REV9_M11_REPLACED_HOST_SKIP_SHADOW": [
+        "tests/test_facebook_r8_capture.py",
+        "-k",
+        "shadow_rendering",
+    ],
+}
+ROUND10_CASES = {
+    "R10_DEBUGGER": ["tests/test_facebook_r10_expansion.py", "-k", "no_debugger"],
+    "R10_STATUS_FAILURE": [
+        "tests/test_facebook_r10_expansion.py",
+        "-k",
+        "without_dom_progress and fetch",
+    ],
+    "R10_STATUS_PROGRESS": [
+        "tests/test_facebook_r10_expansion.py",
+        "-k",
+        "without_dom_progress and fetch",
+    ],
+    "R10_FLOOD_GUARD": ["tests/test_facebook_r10_expansion.py", "-k", "collateral and flood"],
+    "R10_NAMESPACE": ["tests/test_facebook_r10_extractor.py", "-k", "namespace"],
+    "R10_NORMALISE_CONTAINER": ["tests/test_facebook_r10_fixture.py", "-k", "normalise"],
+    "R10_SCRIPT_ESCAPE": ["tests/test_facebook_r10_fixture.py", "-k", "insertion_modes"],
+    "R10_AFTER_HEAD": ["tests/test_facebook_r10_fixture.py", "-k", "insertion_modes"],
+    "R10_WALK_SLOT_MAP": ["tests/test_facebook_r10_composed.py", "-k", "closed_slot_rendering"],
+    "R10_HIT_SLOT_MAP": [
+        "tests/test_facebook_r10_composed.py",
+        "-k",
+        "closed_slot_click and closed",
+    ],
+    "R10_CV_INLINE": ["tests/test_facebook_r10_composed.py", "-k", "content_visibility"],
+    "R10_UNRENDERED_OUTER": ["tests/test_facebook_r10_extractor.py", "-k", "isolates"],
+    "R10_MOVE_AFTER_HIT": ["tests/test_facebook_r10_click.py"],
+}
+CASES.update(REVIEWER9_CASES)
+CASES.update(ROUND10_CASES)
+
 OPTIONAL_CASES = {
     "G1_WATCH": [
         "tests/test_facebook.py::test_playwright_egress_proxy_byte_budget_stops_oversized_response"
@@ -264,6 +334,10 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     result_path = args.output / "results.json"
     results = json.loads(result_path.read_text()) if result_path.exists() else {}
+    (args.output / "obsolete.json").write_text(json.dumps(OBSOLETE, indent=2) + "\n")
+    env = dict(os.environ)
+    env.pop("LD_LIBRARY_PATH", None)
+    env["PATH"] = str(Path.home() / ".local/bin") + ":" + env.get("PATH", "")
     for name in args.only or CASES:
         command = [
             "pytest-disktmp",
@@ -271,9 +345,13 @@ def main():
             "UV_OFFLINE=1",
             "METAMUSE_REQUIRE_BROWSER_TESTS=1",
             "PYTHONPATH=tests",
-            "PYTEST_PLUGINS=facebook_mutants,facebook_round7_mutants,facebook_round8_mutants,facebook_reviewer8_mutants,facebook_round9_mutants",
+            "PYTEST_PLUGINS=facebook_mutants,facebook_round7_mutants,facebook_round8_mutants,facebook_reviewer8_mutants,facebook_round9_mutants,facebook_reviewer9_mutants,facebook_round10_mutants",
             (
-                f"METAMUSE_FACEBOOK_ROUND9_MUTANT={name}"
+                f"METAMUSE_FACEBOOK_ROUND10_MUTANT={name}"
+                if name in ROUND10_CASES
+                else f"METAMUSE_REVIEWER_R9_MUTANT={name}"
+                if name in REVIEWER9_CASES
+                else f"METAMUSE_FACEBOOK_ROUND9_MUTANT={name}"
                 if name in ROUND9_CASES
                 else f"METAMUSE_REVIEWER_R8_MUTANT={name}"
                 if name in REVIEWER_CASES
@@ -291,8 +369,17 @@ def main():
             "no:cacheprovider",
             *ALL_CASES[name],
         ]
+        command = [
+            "bash",
+            "-c",
+            'unset LD_LIBRARY_PATH; export PATH="$HOME/.local/bin:$PATH"; exec "$@"',
+            "b13-mutant",
+            *command,
+        ]
         with (args.output / f"{name}.log").open("w") as log:
-            result = subprocess.run(command, stdout=log, stderr=subprocess.STDOUT, check=False)
+            result = subprocess.run(
+                command, stdout=log, stderr=subprocess.STDOUT, check=False, env=env
+            )
         output = (args.output / f"{name}.log").read_text()
         failures = [line for line in output.splitlines() if line.startswith("FAILED ")]
         killed = result.returncode == 1 and bool(failures)

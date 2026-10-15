@@ -125,9 +125,10 @@ def test_r10_unrendered_identity_isolates_image_alt():
 
 def test_r10_unrendered_identity_cannot_insert_block_boundary():
     markup = _synthetic_post_html(post_text="BODY").replace(
-        ">BODY</div>", '>BODY<article data-fb-role="post" style="visibility:hidden">'
+        ">BODY</div>",
+        '>BODY<article data-fb-role="post" style="visibility:hidden">'
         '<div data-fb-role="post-body"><div style="visibility:visible">ORPHAN</div>'
-        '</div></article>TAIL</div>'
+        "</div></article>TAIL</div>",
     )
     parsed = parse(markup)
     assert parsed.text == "BODYTAIL"

@@ -97,8 +97,8 @@ def apply_reviewer_mutant(monkeypatch, name: str) -> None:
         walk = (
             capture.WALK.replace("function box(n_node) {", helper)
             .replace(
-                "const v_hiddenContent=v_el && style(n_node,'content-visibility')==='hidden';",
-                "const v_hiddenContent=false;",
+                "style(n_node,'content-visibility')==='hidden' &&",
+                "false &&",
             )
             .replace(
                 "return D.checkVisibility(n_node);",
@@ -114,7 +114,7 @@ def apply_reviewer_mutant(monkeypatch, name: str) -> None:
             monkeypatch,
             capture.FixtureTree,
             "finish",
-            [('or css(style, "content-visibility") == "hidden"', "or False")],
+            [('css(style, "content-visibility") == "hidden"', "False")],
             module=capture,
         )
     elif name == "REV_M4_CONTENTS_LOOKTHROUGH":

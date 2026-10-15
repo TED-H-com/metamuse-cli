@@ -75,7 +75,12 @@ def normalise(nodes):
         for ordinal, i in enumerate(
             i
             for i, n in enumerate(nodes)
-            if n["kind"] in {1, 3} and not (n["tag"] in {"html", "head", "body"} and not n["attrs"])
+            if n["kind"] in {1, 3}
+            and not (
+                n["ns"] == "http://www.w3.org/1999/xhtml"
+                and n["tag"] in {"html", "head", "body"}
+                and not n["attrs"]
+            )
         )
     }
     parents = {child: i for i, node in enumerate(nodes) for child in node["children"]}
@@ -257,8 +262,9 @@ def as_document(markup):
 
 
 def captured_parse(session, markup):
-    from metamuse import facebook
     from test_facebook_review import URL
+
+    from metamuse import facebook
 
     session._page.set_content(as_document(markup), wait_until="load")
     session._network_cdp.send("DOM.getDocument", {"depth": -1, "pierce": True})

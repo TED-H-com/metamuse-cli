@@ -209,6 +209,7 @@ def test_r8_barriers_in_every_tree(tmp_path, monkeypatch):
     import pytest
     from facebook_parity import capture_session, captured_parse
     from test_facebook_round5 import parse
+
     from metamuse import models as m
 
     with capture_session(monkeypatch) as session:

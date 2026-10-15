@@ -68,9 +68,13 @@ def apply(monkeypatch, name):
             "handle_starttag",
             [
                 (
+                    'if tag in {"html", "head", "body"}:',
+                    'if tag in {"html", "head", "body"} and parent["kind"] != 11:',
+                ),
+                (
                     '(parent["kind"] != 9 and parent["tag"] != "html")',
                     'parent["tag"] not in {"", "html"}',
-                )
+                ),
             ],
             module=cap,
         )
