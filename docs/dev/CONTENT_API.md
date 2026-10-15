@@ -282,3 +282,9 @@ Complete documents and whole JSON-string layers share the lexer. Partial documen
 stop at the first syntax error, without guessed resynchronization. Name/value order
 is immaterial; sensitive HAR scalars, including numbers and boolean/null literals,
 are redacted whole, as are cookies arrays.
+
+PuTTY private-key headers match after a non-identifier boundary at every layer,
+including inline labels and JSON/form captures. The mask extends through Private-MAC
+or, without that line, to its enclosing delimiter or end of input. Raw, JSON-escaped
+and percent-encoded line breaks share this behaviour. PEM and PGP begin markers
+have no line-start anchor; their existing matching-end/unterminated rule remains.

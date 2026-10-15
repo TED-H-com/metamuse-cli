@@ -2654,21 +2654,42 @@ def _har_spans(text, syntax=None, *, _depth=0):
     )
 
 
+def _putty_spans(text, syntax):
+    headers = re.compile(r"(?i)(?<![A-Za-z0-9_])PuTTY-User-Key-File-[0-9]++:")
+    mac = re.compile(r"(?im)(?<![A-Za-z0-9_])Private-MAC:[^\r\n]*+")
+    closings = iter(re.finditer(r"[\"'\]})]", text))
+    closing = next(closings, None)
+    position = 0
+    while match := headers.search(text, position):
+        level = syntax.layer(match.start(), match.end())
+        while closing and (
+            closing.start() < match.end()
+            or syntax.depth(closing.start()) > level
+            or min(
+                syntax.quote_closings.get(closing.start(), closing.start()),
+                syntax.closings.get(closing.start(), closing.start()),
+            )
+            >= match.start()
+        ):
+            closing = next(closings, None)
+        limit = closing.start() if closing else len(text)
+        end_match = mac.search(text, match.end(), limit)
+        end = min(end_match.end(), limit) if end_match else limit
+        yield match.start(), end, "private_key", _REDACTED
+        position = end
+
+
 def _command_spans(text, syntax):
     pattern = re.compile(
         r"(?i)(?P<mysql>\b(?:mysql|mariadb|mysqldump)\b)|"
         r"(?P<attached>\s-p(?=\S))|(?P<boundary>[\r\n;&|])|"
-        r"\b(?:IDENTIFIED\s++BY|WITH\s++PASSWORD|sshpass\s++-p)\s++|"
-        r"(?P<putty>(?m:^PuTTY-User-Key-File-[0-9]++:))"
+        r"\b(?:IDENTIFIED\s++BY|WITH\s++PASSWORD|sshpass\s++-p)\s++"
     )
     position = 0
     mysql = False
     mysql_depth = 0
     while match := pattern.search(text, position):
         position = match.end()
-        if match["putty"]:
-            yield match.start(), len(text), "private_key", _REDACTED
-            return
         if match["boundary"]:
             if syntax.depth(match.start()) <= mysql_depth:
                 mysql = False
@@ -2705,6 +2726,7 @@ def _view_spans(text, encoded_positions, syntax):
             _prefix_spans(text),
             _jwt_spans(text),
             _pem_spans(text, syntax),
+            _putty_spans(text, syntax),
             _xml_spans(text, syntax),
             _curl_spans(text, syntax),
             _command_spans(text, syntax),

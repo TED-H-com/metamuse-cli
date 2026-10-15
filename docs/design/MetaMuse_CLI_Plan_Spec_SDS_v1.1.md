@@ -521,6 +521,12 @@ and project. Replaying the human-approved request, before or after settlement, a
 re-previewing an existing job retain the original job identity. A saved display title
 that no longer matches current rules requires requesting reconciliation again.
 
+PuTTY private-key headers match after a non-identifier boundary at every layer,
+including inline labels and JSON/form captures. The mask extends through Private-MAC
+or, without that line, to its enclosing delimiter or end of input. Raw, JSON-escaped
+and percent-encoded line breaks share this behaviour. PEM and PGP begin markers
+have no line-start anchor; their existing matching-end/unterminated rule remains.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -1087,6 +1093,12 @@ the stored title or its current display-redacted form, together with discussion 
 and project. Replaying the human-approved request, before or after settlement, and
 re-previewing an existing job retain the original job identity. A saved display title
 that no longer matches current rules requires requesting reconciliation again.
+
+PuTTY private-key headers match after a non-identifier boundary at every layer,
+including inline labels and JSON/form captures. The mask extends through Private-MAC
+or, without that line, to its enclosing delimiter or end of input. Raw, JSON-escaped
+and percent-encoded line breaks share this behaviour. PEM and PGP begin markers
+have no line-start anchor; their existing matching-end/unterminated rule remains.
 
 ---
 
