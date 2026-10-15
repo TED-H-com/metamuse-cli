@@ -115,9 +115,9 @@ WALK = (
     + HELPERS
     + r"""
   if (D.contentType(document) !== 'text/html') return {error:'document'};
+  const v_slots=slotMap(document);
   const v_nodes=[], v_ids=new Map(), v_raw=[], v_pending=[document]; let v_bytes=0;
   const v_utf8=new TextEncoder();
-  function shadow(n_node) {return D.shadowRoot(n_node)||globalThis.__metamuseClosed.get(n_node);}
   function allChildren(n_node) {
     const v_children=children(n_node);
     if(D.nodeType(n_node)===1) {

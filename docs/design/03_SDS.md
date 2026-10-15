@@ -1141,3 +1141,10 @@ painted descendants cannot attach to an enclosing or sibling identity. A rendere
 nested identity owns its own content. Painted text without such an identity is
 dropped and adds unattributed_rendered_text, making coverage partial. Each extractor
 stack frame saves and restores this isolation state as well as body/comment state.
+
+Before WALK and HIT_TEST, one shared bounded helper indexes assignedNodes from
+every discovered slot, including closed roots, without flattening. Composed parent
+uses that reverse map when Element/Text assignedSlot returns null for a closed
+root. Both consumers use the same captured accessors and the same 65,536-node
+bound. Slotted text and labels therefore retain their shadow ancestors for both
+rendering and click validation.

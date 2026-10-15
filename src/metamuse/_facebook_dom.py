@@ -71,9 +71,26 @@ function children(n_node) {
   for(let v_i=0;v_i<D.listLength(n_list);v_i++)v_result.push(D.listItem(n_list,v_i));
   return v_result;
 }
+function shadow(n_node) {return D.shadowRoot(n_node)||globalThis.__metamuseClosed.get(n_node);}
+function slotMap(n_root) {
+  const v_map=new WeakMap(), v_pending=[n_root], v_seen=new Set();let v_count=0;
+  while(v_pending.length) {
+    const n_node=v_pending.pop();if(v_seen.has(n_node))continue;v_seen.add(n_node);
+    if(++v_count>65536)throw new Error('bound');
+    const v_children=children(n_node);
+    if(D.nodeType(n_node)===1) {
+      if(D.namespaceURI(n_node)===html && D.localName(n_node)==='slot') {
+        for(const n_assigned of D.assignedNodes(n_node))v_map.set(n_assigned,n_node);
+      }
+      const n_shadow=shadow(n_node);if(n_shadow)v_children.push(n_shadow);
+    }
+    for(const n_child of v_children)v_pending.push(n_child);
+  }
+  return v_map;
+}
 function parent(n_node) {
-  const n_slot=D.nodeType(n_node)===1?D.assignedSlot(n_node):
-    (D.nodeType(n_node)===3?D.textSlot(n_node):null);
+  const n_slot=(D.nodeType(n_node)===1?D.assignedSlot(n_node):
+    (D.nodeType(n_node)===3?D.textSlot(n_node):null)) || v_slots.get(n_node);
   if(n_slot)return n_slot;
   const n_parent=D.parentNode(n_node);if(n_parent)return n_parent;
   return D.nodeType(n_node)===11?D.host(n_node):null;
@@ -88,7 +105,7 @@ HIT_TEST = (
     + ACCESSOR_TABLE
     + HELPERS
     + r"""
-  const v_seen=new Set();
+  const v_slots=slotMap(document), v_seen=new Set();
   while(n_node && !v_seen.has(n_node)) {
     if(n_node===this)return true;
     v_seen.add(n_node);n_node=parent(n_node);
