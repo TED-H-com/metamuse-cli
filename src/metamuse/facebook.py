@@ -2730,6 +2730,8 @@ class _PlaywrightSession:
         cdp = self._network_cdp
 
         def click() -> None:
+            if self._capture_controls.get(control_id) != backend:
+                raise capture.failure()
             cdp.send("DOM.scrollIntoViewIfNeeded", {"backendNodeId": backend})
             quad = cdp.send("DOM.getContentQuads", {"backendNodeId": backend})["quads"][0]
             x, y = sum(quad[::2]) / 4, sum(quad[1::2]) / 4

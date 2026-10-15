@@ -244,7 +244,9 @@ def test_r9_slot_contents_hidden_composed_ancestor(tmp_path, monkeypatch):
     assert "NEVER_PAINTED" not in stored[0]["text"]
 
 
-@pytest.mark.parametrize("kind", ["missing", "duplicate", "own-shadow", "slotted", "overlay"])
+@pytest.mark.parametrize(
+    "kind", ["missing", "duplicate", "own-shadow", "slotted", "overlay", "hidden-before-capture"]
+)
 @browser_deadline
 def test_r9_click_identity(tmp_path, monkeypatch, kind, request):
     markup = _synthetic_post_html(
@@ -283,15 +285,32 @@ def test_r9_click_identity(tmp_path, monkeypatch, kind, request):
                 "document.getElementById('host').shadowRoot.querySelectorAll('[data-expand-kind]')",
             )
         )
+    elif kind == "hidden-before-capture":
+        markup = markup.replace(
+            '<button data-expand-kind="more_comments" data-expand-id="more">More</button>',
+            '<div data-expand-kind="more_comments" data-expand-id="more" style="width:150px;height:40px"><span style="visibility:visible">More</span></div>',
+        )
+        original = facebook._PlaywrightSession._progress_signature
+
+        def changed_before_capture(session):
+            session._page.evaluate(
+                "document.querySelector('[data-expand-kind]').style.visibility='hidden'"
+            )
+            return original(session)
+
+        monkeypatch.setattr(
+            facebook._PlaywrightSession, "_progress_signature", changed_before_capture
+        )
     else:
         script += "<div style=\"position:fixed;inset:0;z-index:99999\" onclick=\"document.querySelector('[data-comment-id] [data-fb-role=comment-body]').textContent='WRONG'\"></div>"
     markup = markup.replace("</body>", script + "</body>")
     job, stored = run(tmp_path, monkeypatch, markup, "chromium")
     assert job["error"] is None, job
     texts = [r["text"] for r in stored if r["kind"] == "comment"]
-    assert texts[-1] == ("INITIAL" if kind == "overlay" else "EXPANDED")
+    blocked = kind in {"overlay", "hidden-before-capture"}
+    assert texts[-1] == ("INITIAL" if blocked else "EXPANDED")
     assert "WRONG" not in texts
-    assert job["coverage_status"] == ("partial" if kind == "overlay" else "scope_satisfied"), job
+    assert job["coverage_status"] == ("partial" if blocked else "scope_satisfied"), job
 
 
 @pytest.mark.parametrize(
