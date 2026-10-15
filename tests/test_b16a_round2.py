@@ -17,7 +17,6 @@ from metamuse import models as m
 from metamuse import safety
 
 BENIGN = (
-    '"?token="+t',
     "https://example.invalid/?session=",
     "the session ended",
     "token economy",
@@ -581,3 +580,8 @@ def test_f3_json_escaped_credential_values_are_classified(form, layers):
     with pytest.raises(m.CoreError) as error:
         _check_question(text)
     assert error.value.detail.code == m.ErrorCode.INPUT_INVALID
+
+
+def test_f3_owned_query_quote_requires_valid_follower():
+    # D2: concatenation '+' cannot validate the raw owned quote.
+    assert safety.redact_text('"?token="+t')[0] == '"?token=[REDACTED]'
