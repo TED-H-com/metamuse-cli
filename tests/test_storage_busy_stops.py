@@ -4,7 +4,7 @@ import fcntl
 import sqlite3
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 
 import pytest
 
@@ -103,6 +103,26 @@ def test_exit_propagates_nonbusy_error_after_releasing_lock(ctx, monkeypatch):
     with ctx.paths.worker_lock.open("r+b") as handle:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
         fcntl.flock(handle, fcntl.LOCK_UN)
+    assert executor.nonce not in jobs._LIVE_OWNER_NONCES
+    assert jobs.worker_available(ctx.store) is False
+
+
+@pytest.mark.parametrize("inner_error", [False, True])
+def test_nested_busy_timeout_restores_previous_scope(ctx, inner_error):
+    def read():
+        with ctx.store.connection() as conn:
+            return conn.execute("PRAGMA busy_timeout").fetchone()[0]
+
+    assert read() == 30_000
+    with ctx.store._busy_timeout(1.0):
+        assert read() == 1_000
+        with pytest.raises(ValueError, match="synthetic") if inner_error else nullcontext():
+            with ctx.store._busy_timeout(0.25):
+                assert read() == 250
+                if inner_error:
+                    raise ValueError("synthetic")
+        assert read() == 1_000
+    assert read() == 30_000
 
 
 def test_unclaimed_timeout_is_scoped_and_thread_local(ctx, monkeypatch):
