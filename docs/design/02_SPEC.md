@@ -286,6 +286,13 @@ failed_before_send回never-sent。mutation只consume一次。
 in-flight socket關閉不replay：incomplete read回E_NETWORK_TIMEOUT；handoff後chat.stream保留
 uncertain/partial evidence，session.start回MuseStateUnknown/reconcile；protocol failure仍never。
 下一call只重連，不重送之前的mutation。
+240s不是whole-connect deadline：auth/session及最多兩次mint在其前，claimed Muse trust
+transaction仍各用30s SQLite busy timeout；currentness亦以BEGIN IMMEDIATE取writer。
+持續held WAL writer會在第一個freeze/currentness wait逾時即stop，不進三次invalidation retry。
+clock內trust wait可overrun，final check亦在handshake後。stable WAL、adapter遵守timeout時，
+保守budget accounting每fresh connect為80s bootstrap HTTP+60s pre-budget trust+270s
+（240s phase及最多30s check）=410s；三次1230s，加initial cached check最多30s為1260s。
+這不是wall-clock上限：file/RLocks、fsync、schema work、DNS/guard與host scheduling另有等待。
 
 
 

@@ -141,13 +141,26 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    `vm_id`, `auth_token`, optional `notary_token`, `app_id=hatch-web`, `request_id=<fresh UUID4>`.
    WSS sends fixed `Origin: https://muse.ai`; no notary header. Upgrade 502/503/504 causes
    wake `{vm_id, retry_count: n, connect_attempt_id: <fresh UUID4>}`, followed by
-   `max(2s, min(0.2s × 1.5^(n−1), 8s))`. Stop after 20 redials or 240 seconds, whichever
-   comes first, with `E_RESOURCE_UNAVAILABLE` and an operator action to retry later because
+   `max(2s, min(0.2s × 1.5^(n−1), 8s))`. Stop after 20 redials or exhaustion of the
+   240-second wake/dial/handshake budget, with `E_RESOURCE_UNAVAILABLE` and an operator action to retry later because
    the VM is not running yet. Each redial rechecks captured currentness and uses a fresh
    request ID. Remaining budget is checked immediately before each wake, dial and handshake,
    including after guard/peer validation. Exhaustion never passes a nonpositive curl timeout
    or sends msg1; it returns `E_RESOURCE_UNAVAILABLE` with an operator retry action.
-   Other failures do not enter this redial loop.
+   Other failures do not enter this redial loop. The 240-second clock starts after mint;
+   it is not an end-to-end connect deadline. Claimed Muse trust transactions retain core's
+   30-second SQLite busy timeout (unclaimed worker maintenance uses a separate one-second
+   scope). Trust currentness checks use `BEGIN IMMEDIATE` even though they inspect state.
+   A continuously held WAL writer stops the first freeze/currentness transaction after
+   its busy wait; that error does not trigger the three-connect invalidation retry.
+   Auth/session and up to two mints precede the clock. An in-budget trust wait can overrun
+   it, and the final currentness check follows the handshake. For stable WAL and adapters
+   honoring their timeouts, conservative budget accounting is 410 seconds per fresh
+   connect: 80 seconds bootstrap HTTP, 60 seconds pre-budget trust waits, and 270 seconds
+   for the 240-second phase plus a possible 30-second check. Three notification-driven
+   connects total 1230 seconds; an initial cached-loop recheck adds up to 30 (1260 seconds).
+   These are timeout contributions, not wall-clock guarantees: file/RLocks, fsync, schema
+   work, DNS/guard callbacks and host scheduling have no end-to-end deadline here.
 6. Mature `Noise_XX_25519_AESGCM_SHA256`, empty prologue: fresh CSPRNG 32-byte challenge
    in msg1 bytes field 1. Msg2 must classify strictly as outer bytes field 2 (optional
    platform field 1/varint=0), containing exactly two nested bytes fields, key and nonce,

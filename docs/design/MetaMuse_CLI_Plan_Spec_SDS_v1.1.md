@@ -377,6 +377,13 @@ failed_before_send回never-sent。mutation只consume一次。
 in-flight socket關閉不replay：incomplete read回E_NETWORK_TIMEOUT；handoff後chat.stream保留
 uncertain/partial evidence，session.start回MuseStateUnknown/reconcile；protocol failure仍never。
 下一call只重連，不重送之前的mutation。
+240s不是whole-connect deadline：auth/session及最多兩次mint在其前，claimed Muse trust
+transaction仍各用30s SQLite busy timeout；currentness亦以BEGIN IMMEDIATE取writer。
+持續held WAL writer會在第一個freeze/currentness wait逾時即stop，不進三次invalidation retry。
+clock內trust wait可overrun，final check亦在handshake後。stable WAL、adapter遵守timeout時，
+保守budget accounting每fresh connect為80s bootstrap HTTP+60s pre-budget trust+270s
+（240s phase及最多30s check）=410s；三次1230s，加initial cached check最多30s為1260s。
+這不是wall-clock上限：file/RLocks、fsync、schema work、DNS/guard與host scheduling另有等待。
 
 
 
@@ -699,7 +706,7 @@ wake是account-side power-state request，只在已grant Muse operation觸發的
 DISABLED/DELETING/ERROR在wake前停止，CVM_*或hatch_cvm先record sticky再停止；其餘activation
 POST /api/hatch/vm/wake {vm_id,retry_count:0}後dial。upgrade 502/503/504在每次redial前wake
 {vm_id,retry_count:n,connect_attempt_id:UUID4}，delay=max(2s,min(0.2s×1.5^(n−1),8s))，最多20
-redials或240s，超界E_RESOURCE_UNAVAILABLE並請操作者VM尚未running、稍後再試。
+redials或mint後啟動的240s wake/dial/handshake budget，超界E_RESOURCE_UNAVAILABLE並請操作者VM尚未running、稍後再試。
 401/403→E_AUTH_REQUIRED；429→E_RATE_LIMITED；connect/DNS/TLS→E_NETWORK_TIMEOUT，guard refusal
 →E_SCOPE_REQUIRED。bootstrap只收200（spike§2/5）；wake 200（operator LIVE probe，evidence在repository之外）或operator round-2
 contract的202/204（非本task LIVE observation）不要求JSON。session/wake 404/409/410 unavailable，
@@ -993,6 +1000,13 @@ failed_before_send回never-sent。mutation只consume一次。
 in-flight socket關閉不replay：incomplete read回E_NETWORK_TIMEOUT；handoff後chat.stream保留
 uncertain/partial evidence，session.start回MuseStateUnknown/reconcile；protocol failure仍never。
 下一call只重連，不重送之前的mutation。
+240s不是whole-connect deadline：auth/session及最多兩次mint在其前，claimed Muse trust
+transaction仍各用30s SQLite busy timeout；currentness亦以BEGIN IMMEDIATE取writer。
+持續held WAL writer會在第一個freeze/currentness wait逾時即stop，不進三次invalidation retry。
+clock內trust wait可overrun，final check亦在handshake後。stable WAL、adapter遵守timeout時，
+保守budget accounting每fresh connect為80s bootstrap HTTP+60s pre-budget trust+270s
+（240s phase及最多30s check）=410s；三次1230s，加initial cached check最多30s為1260s。
+這不是wall-clock上限：file/RLocks、fsync、schema work、DNS/guard與host scheduling另有等待。
 
 
 
