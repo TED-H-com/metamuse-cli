@@ -1414,6 +1414,7 @@ def redaction_sensitive_key(key: str) -> bool:
             "pwd",
             "pass",
             "privatekey",
+            "passphrase",
             "session",
             "sessionid",
             "sessioncookie",
@@ -1449,6 +1450,10 @@ def redaction_sensitive_key(key: str) -> bool:
                 "passwd",
                 "pwd",
                 "pass",
+                "apikey",
+                "secretkey",
+                "accesskey",
+                "privatekey",
             )
         )
         or unquote(unquote(unquote(key)))
@@ -1839,7 +1844,7 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
     pattern = re.compile(
         r"(?:(?P<q>[\"'])(?P<quotedkey>" + _NAME + r")(?P=q)(?:\])?|"
         r"(?<![A-Za-z0-9_.%?&#-])(?P<flag>--|-D|-)?(?P<key>" + _NAME + r"))"
-        r"(?:\s*+(?P<sep>=>|[=:])\s*+|(?P<flagspace>\s++))",
+        r"(?:\s*+(?P<sep>=>|[=:：＝])\s*+|(?P<flagspace>\s++))",
     )
     position = line_index = 0
     while match := pattern.search(text, position):
@@ -1961,7 +1966,7 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
 
 
 def _header_spans(text, syntax):
-    pattern = re.compile(r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*[:=]\s*+")
+    pattern = re.compile(r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*[:=：＝]\s*+")
     line_end = re.compile(r"[\r\n]")
     fold = re.compile(r"\r?\n\s+")
     position = quote_index = 0
@@ -2234,7 +2239,7 @@ def _prefix_spans(text):
 
 def _jwt_spans(text):
     for match in re.finditer(
-        r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]++\.[A-Za-z0-9_-]++\.[A-Za-z0-9_-]++(?![A-Za-z0-9_-])",
+        r"(?<![A-Za-z0-9_-])eyJ[A-Za-z0-9_-]++\.[A-Za-z0-9_-]++\.[A-Za-z0-9_-]*+(?![A-Za-z0-9_-])",
         text,
         re.ASCII,
     ):
@@ -2242,14 +2247,15 @@ def _jwt_spans(text):
 
 
 def _pem_spans(text):
-    begin = re.compile(r"-----BEGIN (?P<label>(?:[A-Z0-9]+ ){0,6}PRIVATE KEY)-----")
+    label_pattern = r"(?P<label>(?:[A-Z0-9]+ ){0,6}PRIVATE KEY(?: BLOCK)?)"
+    begin = re.compile(r"-----BEGIN " + label_pattern + r"-----", re.I)
     end_lines = {}
-    for match in re.finditer(r"-----END (?P<label>(?:[A-Z0-9]+ ){0,6}PRIVATE KEY)-----", text):
-        end_lines.setdefault(match["label"], []).append(match)
+    for match in re.finditer(r"-----END " + label_pattern + r"-----", text, re.I):
+        end_lines.setdefault(match["label"].upper(), []).append(match)
     cursors = {}
     position = 0
     while match := begin.search(text, position):
-        label = match["label"]
+        label = match["label"].upper()
         ends = end_lines.get(label, [])
         index = cursors.get(label, 0)
         while index < len(ends) and ends[index].start() < match.end():
@@ -2340,6 +2346,83 @@ def _path_spans(text):
     yield from _merge_spans([matches(quoted, "path"), matches(bare, None)])
 
 
+def _har_spans(text, syntax):
+    """Index HAR fields once in object order, including arbitrary cookie names."""
+    objects = []
+    stack = []
+    token = re.compile(r'"(?:\\[^\r\n]|[^"\\])*+"|[{}\[\]]')
+    colon = re.compile(r"\s*+:\s*+")
+    for match in token.finditer(text):
+        char = match[0]
+        if char == "{":
+            record = {"private": False, "value": None}
+            objects.append(record)
+            stack.append(record)
+        elif char == "[":
+            stack.append(None)
+        elif char in {"}", "]"}:
+            if stack:
+                stack.pop()
+        elif stack and stack[-1] is not None and char in {'"name"', '"value"', '"cookies"'}:
+            separator = colon.match(text, match.end())
+            if not separator:
+                continue
+            start = separator.end()
+            end = syntax.value(text, start)
+            record = stack[-1]
+            if char == '"name"':
+                name = text[start:end].strip('"')
+                record["private"] = redaction_sensitive_key(name)
+            elif char == '"value"':
+                record["value"] = (start, end)
+            elif text[start : start + 1] == "[" and text[start:end].strip() != "[]":
+                record["cookies"] = (start, end)
+    # Objects occur in opening order. In a HAR object the cookie/value span can
+    # only precede its child objects; this avoids a per-span sort or rebuild.
+    for record in objects:
+        if record.get("cookies"):
+            yield *record["cookies"], "cookie", '"' + _REDACTED + '"'
+        elif record["private"] and record["value"]:
+            start, end = record["value"]
+            if redaction_sensitive_value("password", text[start:end]):
+                quoted = text[start : start + 1] == '"'
+                yield (
+                    start + int(quoted),
+                    end - int(quoted and text[end - 1 : end] == '"'),
+                    "sensitive_field",
+                    _REDACTED if quoted else '"' + _REDACTED + '"',
+                )
+
+
+def _command_spans(text, syntax):
+    pattern = re.compile(
+        r"(?i)\b(?:IDENTIFIED\s++BY|WITH\s++PASSWORD|sshpass\s++-p)\s++|\b(?:mysql|mariadb|mysqldump)\b[^\r\n]*+|(?m:^PuTTY-User-Key-File-[0-9]++:)"
+    )
+    position = 0
+    while match := pattern.search(text, position):
+        if match[0].lower().startswith("putty-"):
+            yield match.start(), len(text), "private_key", _REDACTED
+            return
+        if re.match(r"(?i)(?:mysql|mariadb|mysqldump)\b", match[0]):
+            flag = re.search(r"\s-p(?=\S)", match[0])
+            if not flag:
+                position = match.end()
+                continue
+            start = match.start() + flag.end()
+        else:
+            start = match.end()
+        end = syntax.value(text, start)
+        position = max(match.end(), end)
+        if redaction_sensitive_value("password", text[start:end]):
+            quoted = text[start : start + 1] in {'"', "'"}
+            yield (
+                start + int(quoted),
+                end - int(quoted and text[end - 1 : end] == text[start]),
+                "sensitive_field",
+                _REDACTED,
+            )
+
+
 def _view_spans(text, encoded_positions, syntax):
     return _merge_spans(
         [
@@ -2355,6 +2438,8 @@ def _view_spans(text, encoded_positions, syntax):
             _pem_spans(text),
             _xml_spans(text, syntax),
             _curl_spans(text, syntax),
+            _har_spans(text, syntax),
+            _command_spans(text, syntax),
             _path_spans(text),
         ]
     )

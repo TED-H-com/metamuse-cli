@@ -539,3 +539,16 @@ authority; raw authority terminators cannot occur in a URL password. Query value
 end at &, #, whitespace, a same-layer encoded ?, or the URL's enclosing quote/bracket.
 Namespaced XML elements use their local name and mask CDATA whole. Quoted subscript
 keys, single-dash flags and quoted type annotations with defaults are supported.
+
+Additional sensitive names include normalized suffixes api_key/apikey, secret_key,
+access_key and private_key, passphrase and sid. Fullwidth ： and ＝ are assignment
+operators. HAR name/value objects follow the name classifier; every cookies-array
+entry is private. SQL IDENTIFIED BY / WITH PASSWORD, sshpass -p and attached -p
+values after mysql/mariadb/mysqldump identify credentials. Empty-signature JWTs,
+PGP private-key blocks, PuTTY private-key files and case-insensitive PEM labels
+are self-identifying private material. These use existing finding classes.
+
+Out of scope: .netrc and .pgpass lines need separate positional file grammars;
+token-only URL userinfo has no password delimiter (known token prefixes still
+apply); localized names such as 密碼 require an explicitly maintained language
+policy. These omissions are not evidence that a document is public.
