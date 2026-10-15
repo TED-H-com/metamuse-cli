@@ -3485,6 +3485,8 @@ def classify_and_parse_observation(
             extractor.feed(obs.html)
         else:
             extractor.walk(obs.capture_nodes)
+    except m.CoreError:
+        raise
     except Exception as exc:
         raise m.CoreError(
             m.ErrorCode.SELECTOR_DRIFT,
