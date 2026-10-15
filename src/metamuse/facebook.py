@@ -3121,7 +3121,7 @@ class _DOMExtractor:
             attr_map.get("id") == "login_form" or attr_map.get("data-testid") == "royal_login_form"
         ):
             states.append("login_wall")
-        if attr_map.get("data-checkpoint") == "true" or attr_map.get("id") == "checkpoint_Form":
+        if attr_map.get("data-checkpoint") == "true" or attr_map.get("id", "").lower() == "checkpoint_form":
             states.append("checkpoint")
         # Match classification priority; later benign state cannot erase a stop.
         priority = {
