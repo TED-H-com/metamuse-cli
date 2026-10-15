@@ -740,6 +740,27 @@ adapt(
     within("_userinfo_spans", "end = min(end, next_boundary)", "end = end"),
 )
 
+add(
+    "r6_context_peels_url_value_data",
+    "b16a_r6_context.py",
+    exact(
+        're.fullmatch(r"(?:[A-Za-z0-9_.~-]|%[0-9a-fA-F]{2})++", text)',
+        "not any(c.isspace() for c in text)",
+    ),
+    CTX,
+    "unwrap_preserves",
+)
+add(
+    "r6_context_adds_fourth_percent_layer",
+    "b16a_r6_context.py",
+    exact(
+        'if layer in {"percent", "form"} and re.search(',
+        'if False and layer in {"percent", "form"} and re.search(',
+    ),
+    CTX,
+    "within_encoding_budget",
+)
+
 if __name__ == "__main__":
     from b16a_r6_mutation_run import main
 

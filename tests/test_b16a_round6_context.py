@@ -15,6 +15,23 @@ def test_r6_context_unwrap_preserves_url_password_encoding():
     assert unwrapped(quote(url, safe="")) == url
 
 
+def test_r6_context_keeps_natural_contexts_within_encoding_budget(monkeypatch):
+    import re
+
+    import b16a_r6_context as corpus
+
+    marker = f"{'BUDGET'}_MARKER_LAYER_683291"
+    url = "https://user:" + marker + "@example.invalid/p"
+    for _ in range(3):
+        url = quote(url, safe="")
+    row = corpus.Row("budget", "https://example.invalid|" + url, (marker,))
+    monkeypatch.setattr(corpus, "rows", lambda: iter([row]))
+    selected = list(corpus.cases(520, randomize=False))
+    assert {context for _, context, *_ in selected} == {name for name, _ in NATURAL}
+    assert not any(re.search(r"%(?:25){3}[0-9a-fA-F]{2}", text) for *_, text in selected)
+    assert corpus.verify(520, randomize=False)["failures"] == []
+
+
 def test_r6_context_subset_covers_every_context_and_representation():
     assert len(NATURAL) == 26
     selected = list(cases(3000))

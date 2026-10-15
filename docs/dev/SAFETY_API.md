@@ -517,6 +517,11 @@ whitespace remains form value data.
 
 B16a context assurance: natural and seeded malformed contexts surround in-scope
 rows both inside and outside raw, JSON (one/two), percent and form layers.
+Representations stay within the supported decoding budgets: a row already using
+three percent layers retains its context in raw/JSON form instead of receiving a
+fourth percent/form wrapper. Count these representation adjustments; no natural
+context is excluded. Whole-input peeling preserves percent escapes inside URL
+password data.
 The property checks marker fragments as well as whole values, and checks the
 one-call fixpoint. Natural-context benign mirrors must remain unchanged;
 malformed random-context benign changes are measured, since ambiguous structure

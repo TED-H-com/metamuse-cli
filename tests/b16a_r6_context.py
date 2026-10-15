@@ -201,6 +201,11 @@ def cases(count, *, seed=SEED, natural=True, randomize=True):
         sep = "\n" if index % 3 == 0 else " "
         inside = index % 4 < 2
         raw = prefix + sep + row.text + sep + suffix
+        # Context is retained; another percent/form wrapper is not available
+        # when the row already spends the three-layer percent budget.
+        value = raw if inside else row.text
+        if layer in {"percent", "form"} and re.search(r"%(?:25){2}[0-9a-fA-F]{2}", value):
+            layer = "raw"
         text = (
             encode(raw, layer) if inside else prefix + sep + encode(row.text, layer) + sep + suffix
         )
@@ -215,6 +220,9 @@ def verify(count, *, seed=SEED, natural=True, randomize=True):
     ):
         output, findings = redact_text(text)
         counts["pairs"] += 1
+        requested_layer = LAYERS[((counts["pairs"] - 1) // len(NATURAL)) % len(LAYERS)]
+        if layer != requested_layer:
+            counts["representation_limited:percent_budget"] += 1
         counts["context:" + ctx] += 1
         counts["layer:" + layer] += 1
         counts["family:" + row.family.split(":")[0]] += 1
