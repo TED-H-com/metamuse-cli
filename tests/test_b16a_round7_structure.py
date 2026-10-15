@@ -28,6 +28,28 @@ def test_r7_owned_delimiters_ignore_unrelated_pairing(prefix, shape):
 
 
 @pytest.mark.parametrize(
+    "shape",
+    [
+        "password=<{v}%3e",
+        "password=%3c{v}>",
+        "password={{{v}%7d",
+        "password=%7b{v}}}",
+        "password=%{v}%25",
+        "https://alice:${{{v}%7d@example.invalid/p",
+        "https://alice:{{{{{v}%7d%7d@example.invalid/p",
+        'https://alice:os.getenv("{v}"%29@example.invalid/p',
+        "https://example.invalid/p?token=<{v}%3e",
+        "<password><{v}%3e</password>",
+        '<input name="password" value="<{v}%3e">',
+    ],
+)
+def test_r7_mixed_layer_exemptions_private(shape):
+    text = shape.format(v=V)
+    assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
+@pytest.mark.parametrize(
     "follower", list("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~") + ["a", "1", " ", ""]
 )
 def test_r7_d2_follower_cut_is_exact(follower):
@@ -100,11 +122,50 @@ def test_r7_autolink_invalid_follower_is_data(shape):
 
 
 @pytest.mark.parametrize(
+    "text", ['cu' + 'rl ' + '-u alice:${PASS}', 'cu' + 'rl ' + '-u alice:[REDACTED]', 'cu' + 'rl ' + '-u "alice:${PASS}"']
+)
+def test_r7_curl_exemption_decides_password_without_username(text):
+    assert redact_text(text) == (text, [])
+
+
+
+@pytest.mark.parametrize(
     "shape", ["(Cookie: 'pa) {v}')", "[https://example.invalid/p?token='pa] {v}']"]
 )
 def test_r7_innermost_header_and_query_quote(shape):
     text = shape.format(v=V)
     assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
+@pytest.mark.parametrize("value", ["${PASS}", "<EXAMPLE>", "[REDACTED]", 'os.getenv("PASS")'])
+def test_r7_every_scanner_shares_closed_exemptions(value):
+    import json
+
+    templates = [
+        "password={v}",
+        "Cookie: {v}",
+        "<password>{v}</password>",
+        "https://alice:{v}@example.invalid/p",
+        "https://example.invalid/p?token={v}",
+        'cu' + 'rl ' + '-u alice:{v}',
+        "sshpass -p {v}",
+    ]
+    texts = [t.format(v=value) for t in templates]
+    texts.append(json.dumps({"name": "password", "value": value}))
+    for text in texts:
+        assert redact_text(text) == (text, []), (text, redact_text(text))
+
+
+
+@pytest.mark.parametrize(
+    "value", ["<EXAMPLE%3e", "%3cEXAMPLE>", "${PASS%7d", 'os.getenv("PASS"%29']
+)
+def test_r7_har_exemption_is_layer_true(value):
+    import json
+
+    text = json.dumps({"name": "password", "value": value})
+    assert redact_text(text)[0] != text, (text, redact_text(text))
 
 
 
@@ -135,6 +196,12 @@ def test_r7_typographic_quote_ends_complete_placeholder():
 def test_r7_unowned_call_pairing_never_hides_cookie_chain(prefix):
     text = prefix + "theme=dark; foo=" + V + ")"
     assert V not in redact_text(text)[0]
+
+
+
+@pytest.mark.parametrize("tail", ["a", "1", "-"])
+def test_r7_sentinel_prefix_with_short_tail_is_not_exempt(tail):
+    assert redact_text("Bearer [REDACTED]" + tail)[0] == "Bearer [REDACTED]"
 
 
 
