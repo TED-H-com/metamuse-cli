@@ -35,15 +35,15 @@ GENERATED_SITE_FILES = (
     ".nojekyll",
 )
 
-KIT_COMMIT = "d6d067412279ab61d73151e836722799662edb11"
+KIT_COMMIT = "5e51fb954acef56e9f75b4cfd2b57dc76afcdfd8"
 CHECKOUT_SHA = "3d3c42e5aac5ba805825da76410c181273ba90b1"  # actions/checkout v7.0.1
 CONFIGURE_PAGES_SHA = "45bfe0192ca1faeb007ade9deae92b16b8254a0d"  # v6.0.0
 UPLOAD_PAGES_SHA = "fc324d3547104276b827a68afc52ff2a11cc49c9"  # v5.0.0
 DEPLOY_PAGES_SHA = "368f82528645a54fb793d4d04e342629a3f51346"  # v5.0.1
 
-TRANSCRIPT_URL_PREFIX = "https://teddashh.github.io/metamuse-cli/images/"
+TRANSCRIPT_URL_PREFIX = "https://ted-h-com.github.io/metamuse-cli/images/"
 _TRANSCRIPT_LINK_RE = re.compile(
-    r'href="(https://teddashh\.github\.io/metamuse-cli/images/([a-zA-Z0-9_-]+\.txt))"'
+    rf'href="({re.escape(TRANSCRIPT_URL_PREFIX)}([a-zA-Z0-9_-]+\.txt))"'
 )
 _TAG_RE = re.compile(r"<[^>]+>")
 _HOME_MARKER = "/" + "home/"
@@ -197,6 +197,14 @@ def status_problems(readme: str, page: dict) -> list[str]:
 def caption_transcript_problems(site: Path, page: dict) -> list[str]:
     """Every frame caption must link its plain-text transcript under site/images/."""
     problems: list[str] = []
+    owner = page["repo"].split("/")[0].lower()
+    expected = f"https://{owner}.github.io/{page['slug']}/"
+    actual = TRANSCRIPT_URL_PREFIX.removesuffix("images/")
+    if actual != expected:
+        problems.append(
+            f"transcript site address disagrees with page.json: "
+            f"expected {expected!r}, got {actual!r}"
+        )
     targets: list[tuple[str, dict]] = []
     visual = page.get("hero", {}).get("visual", {})
     if visual.get("type") == "image":

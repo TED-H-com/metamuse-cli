@@ -1,10 +1,10 @@
 # Project page
 
-The public page is `site/page.json`, rendered with the external page kit (`teddashh/teddashh.github.io` at commit `d6d067412279ab61d73151e836722799662edb11`, MIT). Screenshots use only the shipped CLI (`metamuse`) and MCP (`metamuse mcp`) entrypoints on `main`.
+The public page is `site/page.json`, rendered with the external page kit (`teddashh/teddashh.github.io` at commit `5e51fb954acef56e9f75b4cfd2b57dc76afcdfd8`, MIT). Screenshots use only the shipped CLI (`metamuse`) and MCP (`metamuse mcp`) entrypoints on `main`.
 
 ## Render and validate
 
-Set `PAGE_KIT_DIR` to the `kit/` directory of a checkout of `teddashh/teddashh.github.io` at commit `d6d067412279ab61d73151e836722799662edb11`:
+Set `PAGE_KIT_DIR` to the `kit/` directory of a checkout of `teddashh/teddashh.github.io` at commit `5e51fb954acef56e9f75b4cfd2b57dc76afcdfd8`:
 
 ```sh
 python3 "$PAGE_KIT_DIR/render.py" .
@@ -12,6 +12,13 @@ PAGE_KIT_DIR="$PAGE_KIT_DIR" python3 scripts/check_site.py
 ```
 
 `check_site.py` requires `PAGE_KIT_DIR` (there is no default local path). It runs `render.py --check`, renders again, and fails if a generated file changes. It also checks local links, transcript links in captions, image and transcript SHA-256 hashes, crop rectangles, bilingual alt text, the row-by-row README status mirror, transcript privacy, and `.github/workflows/pages.yml`.
+
+The page address follows the lowercased owner in `page.json` `repo` and its `slug`.
+After a repository move, update `repo`, repository links and caption transcript URLs,
+then re-render. The transcript checker requires `TRANSCRIPT_URL_PREFIX` in
+`scripts/site_lib.py` to use the same page address; its link regex derives from that
+prefix. See the kit README's “When a repository moves” procedure for forwarding at
+the old address, which belongs to the kit repository.
 
 The kit writes `pages.yml` only when the file is absent. After the first render, add the validate step if it is missing:
 

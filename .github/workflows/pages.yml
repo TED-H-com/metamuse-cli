@@ -35,7 +35,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: teddashh/teddashh.github.io
-          ref: d6d067412279ab61d73151e836722799662edb11
+          ref: 5e51fb954acef56e9f75b4cfd2b57dc76afcdfd8
           path: .page-kit
           persist-credentials: false
 

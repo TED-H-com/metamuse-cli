@@ -1,5 +1,5 @@
 {
-  "repo": "teddashh/metamuse-cli",
+  "repo": "TED-H-com/metamuse-cli",
   "slug": "metamuse-cli",
   "name": "MetaMuse CLI",
   "mark": "Mm",
@@ -36,7 +36,7 @@
       "zh": "MetaMuse CLI 把獲准使用的貼文、留言、影音與字幕收成有來源的證據。Claude Code、Codex 這類主代理負責寫問題與文案。Muse 是協作者，不是主控。"
     },
     "primary": {
-      "href": "https://github.com/teddashh/metamuse-cli",
+      "href": "https://github.com/TED-H-com/metamuse-cli",
       "label": {
         "en": "View the code",
         "zh": "查看程式碼"
@@ -71,8 +71,8 @@
         "zh": "終端機上的資料包預覽：將被分享的精確文字、一筆 url_token 遮蔽，以及 SHA-256。權杖顯示為 [REDACTED]。"
       },
       "caption": {
-        "en": "Exact packet text, one redaction and its digest. <a href=\"https://teddashh.github.io/metamuse-cli/images/00-hero.txt\">Read transcript</a>.",
-        "zh": "精確資料包文字、一筆遮蔽與 SHA-256。<a href=\"https://teddashh.github.io/metamuse-cli/images/00-hero.txt\">閱讀純文字紀錄</a>。"
+        "en": "Exact packet text, one redaction and its digest. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/00-hero.txt\">Read transcript</a>.",
+        "zh": "精確資料包文字、一筆遮蔽與 SHA-256。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/00-hero.txt\">閱讀純文字紀錄</a>。"
       }
     }
   },
@@ -383,8 +383,8 @@
           "zh": "CLI 初始化、offline 與 fixture 設定，以及 doctor 能力列。"
         },
         "caption": {
-          "en": "Offline setup. The config selects the fixture backend; doctor lists capabilities and worker_available=false. <a href=\"https://teddashh.github.io/metamuse-cli/images/01-setup.txt\">Read transcript</a>.",
-          "zh": "離線設定。設定檔選用 fixture 後端；doctor 列出能力與 worker_available=false。<a href=\"https://teddashh.github.io/metamuse-cli/images/01-setup.txt\">閱讀純文字紀錄</a>。"
+          "en": "Offline setup. The config selects the fixture backend; doctor lists capabilities and worker_available=false. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/01-setup.txt\">Read transcript</a>.",
+          "zh": "離線設定。設定檔選用 fixture 後端；doctor 列出能力與 worker_available=false。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/01-setup.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -394,8 +394,8 @@
           "zh": "accepted、queued、worker_available=false；執行一次後為 partial，7 筆寫入、7 筆拒絕，並列出錯誤碼。"
         },
         "caption": {
-          "en": "Accepted is queued with no worker. One foreground worker pass leaves 7 committed, 7 rejected and a partial job. <a href=\"https://teddashh.github.io/metamuse-cli/images/02-queue.txt\">Read transcript</a>.",
-          "zh": "accepted 表示排隊，沒有 worker。前景 worker 執行一次後，7 筆寫入、7 筆拒絕，工作維持 partial。<a href=\"https://teddashh.github.io/metamuse-cli/images/02-queue.txt\">閱讀純文字紀錄</a>。"
+          "en": "Accepted is queued with no worker. One foreground worker pass leaves 7 committed, 7 rejected and a partial job. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/02-queue.txt\">Read transcript</a>.",
+          "zh": "accepted 表示排隊，沒有 worker。前景 worker 執行一次後，7 筆寫入、7 筆拒絕，工作維持 partial。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/02-queue.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -405,8 +405,8 @@
           "zh": "搜尋命中包含精確項目版本、中文片段與來源標籤。"
         },
         "caption": {
-          "en": "One hit cites its exact item revision. Its source labels remain file_import and synthetic_fixture. <a href=\"https://teddashh.github.io/metamuse-cli/images/03-search.txt\">Read transcript</a>.",
-          "zh": "一筆命中引用精確項目版本。來源標籤維持 file_import 與 synthetic_fixture。<a href=\"https://teddashh.github.io/metamuse-cli/images/03-search.txt\">閱讀純文字紀錄</a>。"
+          "en": "One hit cites its exact item revision. Its source labels remain file_import and synthetic_fixture. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/03-search.txt\">Read transcript</a>.",
+          "zh": "一筆命中引用精確項目版本。來源標籤維持 file_import 與 synthetic_fixture。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/03-search.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -416,8 +416,8 @@
           "zh": "準備資料包、精確文字、一筆 url_token 遮蔽與 SHA-256。"
         },
         "caption": {
-          "en": "The exact text that would be shared, with access_token=[REDACTED], one redaction and a SHA-256 digest. Nothing is sent. <a href=\"https://teddashh.github.io/metamuse-cli/images/04-packet.txt\">Read transcript</a>.",
-          "zh": "將被分享的精確文字，含 access_token=[REDACTED]、一筆遮蔽與 SHA-256。沒有送出。<a href=\"https://teddashh.github.io/metamuse-cli/images/04-packet.txt\">閱讀純文字紀錄</a>。"
+          "en": "The exact text that would be shared, with access_token=[REDACTED], one redaction and a SHA-256 digest. Nothing is sent. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/04-packet.txt\">Read transcript</a>.",
+          "zh": "將被分享的精確文字，含 access_token=[REDACTED]、一筆遮蔽與 SHA-256。沒有送出。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/04-packet.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -427,8 +427,8 @@
           "zh": "Muse 開啟預覽與精確操作雜湊"
         },
         "caption": {
-          "en": "A grant-free open returns E_SCOPE_REQUIRED with the operation, exact digest and request to review. <a href=\"https://teddashh.github.io/metamuse-cli/images/05-approval-preview.txt\">Read transcript</a>.",
-          "zh": "未附授權的開啟指令回傳 E_SCOPE_REQUIRED，列出操作、精確雜湊與待審查請求。<a href=\"https://teddashh.github.io/metamuse-cli/images/05-approval-preview.txt\">閱讀純文字紀錄</a>。"
+          "en": "A grant-free open returns E_SCOPE_REQUIRED with the operation, exact digest and request to review. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/05-approval-preview.txt\">Read transcript</a>.",
+          "zh": "未附授權的開啟指令回傳 E_SCOPE_REQUIRED，列出操作、精確雜湊與待審查請求。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/05-approval-preview.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -438,8 +438,8 @@
           "zh": "資料包預覽、人類專用核准與獲接受的開啟請求"
         },
         "caption": {
-          "en": "The host agent has no approval tool: a person previews the packet and approves the exact digest. The operator review shows expiry and one use; open is then accepted. <a href=\"https://teddashh.github.io/metamuse-cli/images/06-human-approval.txt\">Read transcript</a>.",
-          "zh": "主代理沒有核准工具：人類預覽資料包，再核准精確雜湊。操作者審查列出到期時間與一次使用；開啟請求接著獲接受。<a href=\"https://teddashh.github.io/metamuse-cli/images/06-human-approval.txt\">閱讀純文字紀錄</a>。"
+          "en": "The host agent has no approval tool: a person previews the packet and approves the exact digest. The operator review shows expiry and one use; open is then accepted. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/06-human-approval.txt\">Read transcript</a>.",
+          "zh": "主代理沒有核准工具：人類預覽資料包，再核准精確雜湊。操作者審查列出到期時間與一次使用；開啟請求接著獲接受。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/06-human-approval.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -449,8 +449,8 @@
           "zh": "fixture Muse 問題、worker 更新、進度回覆與結束"
         },
         "caption": {
-          "en": "A host-written question and approved packet go to the offline fixture backend, not a real Muse account. The cached reply retains backend=fixture, mock=true and research_complete=false; the exchange closes as needs_more_data. <a href=\"https://teddashh.github.io/metamuse-cli/images/07-fixture-discussion.txt\">Read transcript</a>.",
-          "zh": "主代理撰寫的問題與已核准資料包送往離線 fixture 後端，並非真實 Muse 帳號。回覆保留 backend=fixture、mock=true、research_complete=false；此輪以 needs_more_data 結束。<a href=\"https://teddashh.github.io/metamuse-cli/images/07-fixture-discussion.txt\">閱讀純文字紀錄</a>。"
+          "en": "A host-written question and approved packet go to the offline fixture backend, not a real Muse account. The cached reply retains backend=fixture, mock=true and research_complete=false; the exchange closes as needs_more_data. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/07-fixture-discussion.txt\">Read transcript</a>.",
+          "zh": "主代理撰寫的問題與已核准資料包送往離線 fixture 後端，並非真實 Muse 帳號。回覆保留 backend=fixture、mock=true、research_complete=false；此輪以 needs_more_data 結束。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/07-fixture-discussion.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -460,8 +460,8 @@
           "zh": "同一個 fixture 討論的追問與未完成研究標記"
         },
         "caption": {
-          "en": "A second neutral question stays in the same fixture discussion. Its reply remains progress with research_complete=false, and the exchange again closes as needs_more_data. <a href=\"https://teddashh.github.io/metamuse-cli/images/08-fixture-follow-up.txt\">Read transcript</a>.",
-          "zh": "第二個中性問題沿用同一個 fixture 討論。回覆仍是 research_complete=false 的進度，此輪也以 needs_more_data 結束。<a href=\"https://teddashh.github.io/metamuse-cli/images/08-fixture-follow-up.txt\">閱讀純文字紀錄</a>。"
+          "en": "A second neutral question stays in the same fixture discussion. Its reply remains progress with research_complete=false, and the exchange again closes as needs_more_data. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/08-fixture-follow-up.txt\">Read transcript</a>.",
+          "zh": "第二個中性問題沿用同一個 fixture 討論。回覆仍是 research_complete=false 的進度，此輪也以 needs_more_data 結束。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/08-fixture-follow-up.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -471,8 +471,8 @@
           "zh": "主代理草稿引用項目與兩筆 Muse 觀察"
         },
         "caption": {
-          "en": "The host saves its own text with the item revision and observations from both fixture exchanges. No generation call. <a href=\"https://teddashh.github.io/metamuse-cli/images/09-host-draft.txt\">Read transcript</a>.",
-          "zh": "主代理保存自行撰寫的文字，引用項目版本與兩輪 fixture 討論的觀察。沒有呼叫生成模型。<a href=\"https://teddashh.github.io/metamuse-cli/images/09-host-draft.txt\">閱讀純文字紀錄</a>。"
+          "en": "The host saves its own text with the item revision and observations from both fixture exchanges. No generation call. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/09-host-draft.txt\">Read transcript</a>.",
+          "zh": "主代理保存自行撰寫的文字，引用項目版本與兩輪 fixture 討論的觀察。沒有呼叫生成模型。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/09-host-draft.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -482,8 +482,8 @@
           "zh": "本地套件清單、fixture 標記與未發布警告"
         },
         "caption": {
-          "en": "The local bundle manifest lists file hashes and retains the fixture labels. Stderr says nothing was published or uploaded, and redaction is a guard. <a href=\"https://teddashh.github.io/metamuse-cli/images/10-local-export.txt\">Read transcript</a>.",
-          "zh": "本地套件清單列出檔案雜湊並保留 fixture 標記。stderr 寫明沒有發布或上傳，遮蔽只是一道防護。<a href=\"https://teddashh.github.io/metamuse-cli/images/10-local-export.txt\">閱讀純文字紀錄</a>。"
+          "en": "The local bundle manifest lists file hashes and retains the fixture labels. Stderr says nothing was published or uploaded, and redaction is a guard. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/10-local-export.txt\">Read transcript</a>.",
+          "zh": "本地套件清單列出檔案雜湊並保留 fixture 標記。stderr 寫明沒有發布或上傳，遮蔽只是一道防護。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/10-local-export.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -493,8 +493,8 @@
           "zh": "官方 MCP 用戶端、15 個工具與附掛 worker 匯入"
         },
         "caption": {
-          "en": "The official stdio client lists 15 tools, submits a local synthetic file and polls the attached worker to completion. The server reports worker_available=true. <a href=\"https://teddashh.github.io/metamuse-cli/images/11-mcp-worker.txt\">Read transcript</a>.",
-          "zh": "官方 stdio 用戶端列出 15 個工具、提交本地合成檔，並輪詢附掛 worker 至工作結束。伺服器回報 worker_available=true。<a href=\"https://teddashh.github.io/metamuse-cli/images/11-mcp-worker.txt\">閱讀純文字紀錄</a>。"
+          "en": "The official stdio client lists 15 tools, submits a local synthetic file and polls the attached worker to completion. The server reports worker_available=true. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/11-mcp-worker.txt\">Read transcript</a>.",
+          "zh": "官方 stdio 用戶端列出 15 個工具、提交本地合成檔，並輪詢附掛 worker 至工作結束。伺服器回報 worker_available=true。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/11-mcp-worker.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -504,8 +504,8 @@
           "zh": "打包 Skill 匯出與產生的本地檔案"
         },
         "caption": {
-          "en": "Skill export writes SKILL.md and three references to the named host directory. <a href=\"https://teddashh.github.io/metamuse-cli/images/12-skill-export.txt\">Read transcript</a>.",
-          "zh": "Skill 匯出把 SKILL.md 與三份參考寫入指定的主代理目錄。<a href=\"https://teddashh.github.io/metamuse-cli/images/12-skill-export.txt\">閱讀純文字紀錄</a>。"
+          "en": "Skill export writes SKILL.md and three references to the named host directory. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/12-skill-export.txt\">Read transcript</a>.",
+          "zh": "Skill 匯出把 SKILL.md 與三份參考寫入指定的主代理目錄。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/12-skill-export.txt\">閱讀純文字紀錄</a>。"
         }
       }
     ]
@@ -693,7 +693,7 @@
       "zh": "Python 3.12，由 uv 管理。範例把工作區放在檢出目錄之外；CLI 使用不帶 --json 的可讀輸出。"
     },
     "primary": {
-      "href": "https://github.com/teddashh/metamuse-cli",
+      "href": "https://github.com/TED-H-com/metamuse-cli",
       "label": {
         "en": "Repository",
         "zh": "儲存庫"
@@ -852,14 +852,14 @@
   ],
   "links": [
     {
-      "href": "https://github.com/teddashh/metamuse-cli/blob/main/docs/dev/OFFLINE_SLICE.md",
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/OFFLINE_SLICE.md",
       "label": {
         "en": "Offline slice",
         "zh": "離線切片"
       }
     },
     {
-      "href": "https://github.com/teddashh/metamuse-cli/blob/main/skills/metamuse/SKILL.md",
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/skills/metamuse/SKILL.md",
       "label": {
         "en": "Skill",
         "zh": "Skill"

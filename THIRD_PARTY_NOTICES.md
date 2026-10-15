@@ -169,11 +169,12 @@ project-wide license decision or permission to publish is made by this notice.
 ## Project page (B17)
 
 The external renderer is `teddashh/teddashh.github.io` at full commit
-`d6d067412279ab61d73151e836722799662edb11`, MIT,
+`5e51fb954acef56e9f75b4cfd2b57dc76afcdfd8`, MIT,
 `Copyright (c) 2026 Ted Huang`. Original paths: `kit/render.py`, `kit/base.css`,
 `kit/lang.js`, `kit/app.js`, `kit/flow.js` and `kit/flow.css`. Generated assets live
 under `site/`; the renderer remains external. The full MIT notice is retained in
 [site/README.md](site/README.md). No kit code is mechanically rewritten here.
+This commit derives the page address from the repository owner, so this page follows the move to TED-H-com.
 
 The standalone capture script uses Pillow 12.1.1 (MIT-CMU), an existing pinned script
 dependency, for X11 framebuffer capture and lossless PNG encoding. Pillow is not

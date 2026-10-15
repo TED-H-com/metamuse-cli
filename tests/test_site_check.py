@@ -48,6 +48,8 @@ SAMPLE_README = """# MetaMuse CLI
 
 def _sample_page() -> dict:
     page = {
+        "repo": "TED-H-com/metamuse-cli",
+        "slug": "metamuse-cli",
         "hero": {"visual": {"type": "image", "src": "site/images/00-hero.png"}},
         "showcase": {"shots": [{"src": "site/images/01-setup.png"}]},
         "status": {
@@ -257,6 +259,45 @@ def test_manifest_and_caption_pass(image_site) -> None:
     site, _manifest = image_site
     assert manifest_problems(site) == []
     assert caption_transcript_problems(site, _sample_page()) == []
+
+
+@pytest.mark.parametrize("owner", ["TED-H-com", "ted-h-com", "TeD-h-CoM"])
+def test_caption_site_address_lowercases_owner(image_site, owner: str) -> None:
+    site, _manifest = image_site
+    page = _sample_page()
+    page["repo"] = f"{owner}/metamuse-cli"
+    assert caption_transcript_problems(site, page) == []
+
+
+@pytest.mark.parametrize(
+    "key,value,expected",
+    [
+        ("repo", "another-owner/metamuse-cli", "https://another-owner.github.io/metamuse-cli/"),
+        ("slug", "another-slug", "https://ted-h-com.github.io/another-slug/"),
+    ],
+)
+def test_caption_site_address_must_match_page(
+    image_site, key: str, value: str, expected: str
+) -> None:
+    site, _manifest = image_site
+    page = _sample_page()
+    page[key] = value
+    assert caption_transcript_problems(site, page) == [
+        f"transcript site address disagrees with page.json: expected {expected!r}, "
+        f"got {TRANSCRIPT_URL_PREFIX.removesuffix('images/')!r}"
+    ]
+
+
+def test_caption_rejects_old_page_address(image_site) -> None:
+    site, _manifest = image_site
+    page = _sample_page()
+    old_owner = "teddashh"
+    old_prefix = f"https://{old_owner}.github.io/metamuse-cli/images/"
+    caption = page["hero"]["visual"]["caption"]
+    caption["en"] = caption["en"].replace(TRANSCRIPT_URL_PREFIX, old_prefix)
+    assert caption_transcript_problems(site, page) == [
+        f"hero.visual.caption.en must link a transcript under {TRANSCRIPT_URL_PREFIX}"
+    ]
 
 
 @pytest.mark.parametrize(

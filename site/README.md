@@ -2,11 +2,11 @@
 
 This directory is the GitHub Pages site for MetaMuse CLI. `page.json` is the source. The HTML, CSS, and script files next to it are generated. Change `page.json`, then render again. Do not hand-edit the generated files.
 
-Renderer: `kit/render.py` from `teddashh/teddashh.github.io` at commit `d6d067412279ab61d73151e836722799662edb11`.
+Renderer: `kit/render.py` from `teddashh/teddashh.github.io` at commit `5e51fb954acef56e9f75b4cfd2b57dc76afcdfd8`.
 
 Set `PAGE_KIT_DIR` to a checkout of that `kit/` directory when rendering or running `scripts/check_site.py`.
 
-License: MIT, Copyright (c) 2026 Ted Huang (`LICENSE` in `teddashh/teddashh.github.io` at commit `d6d067412279ab61d73151e836722799662edb11`). The generated `styles.css`, `lang.js`, `app.js`, `flow.js`, and `flow.css` are portions of that kit.
+License: MIT, Copyright (c) 2026 Ted Huang (`LICENSE` in `teddashh/teddashh.github.io` at commit `5e51fb954acef56e9f75b4cfd2b57dc76afcdfd8`). The generated `styles.css`, `lang.js`, `app.js`, `flow.js`, and `flow.css` are portions of that kit.
 
 ```
 MIT License
