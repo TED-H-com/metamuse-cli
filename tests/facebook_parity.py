@@ -128,6 +128,51 @@ def literal_corpus():
     return result
 
 
+# Every marker/role read by the extractor, plus its DOM identity/count fields.
+# The differential test derives the required names from the actual source.
+MARKER_VALUES = {
+    "data-fb-state": ("login_wall", "checkpoint", "challenge", "rate_limited", "access_denied"),
+    "data-page-state": ("login_wall",),
+    "data-checkpoint": ("true",),
+    "id": ("login_form", "checkpoint_form"),
+    "data-testid": ("royal_login_form",),
+    "role": ("article",),
+    "data-fb-role": (
+        "post",
+        "post-body",
+        "comments-section",
+        "comment",
+        "reply",
+        "comment-body",
+        "attachment",
+    ),
+    "data-ad-preview": ("message",),
+    "data-comments-section": ("true",),
+    "data-comment-body": ("true",),
+    "data-comment-kind": ("reply",),
+    "data-comments-exhausted": ("true",),
+    "data-fb-post-payload": ("true",),
+    "data-expand-kind": ("more_comments", "more_replies"),
+    "data-expand-id": ("more",),
+    "data-remaining-count": ("many", "1"),
+    "data-post-id": ("pfbid0101synth",),
+    "data-actor": ("synth.author",),
+    "data-post-text": ("POST",),
+    "data-author": ("SYNTHETIC",),
+    "data-created-at": ("2026-01-01T00:00:00Z",),
+    "data-permalink": ("https://www.facebook.com/synth.author/posts/pfbid0101synth",),
+    "data-comment-id": ("c1",),
+    "data-parent-comment-id": ("c0",),
+    "data-mention": ("SYNTHETIC",),
+    "data-reaction-count": ("0",),
+    "data-comment-count": ("0",),
+    "data-share-count": ("0",),
+    "data-attachment-url": ("https://www.facebook.com/synthetic.png",),
+    "data-attachment-kind": ("image",),
+    "alt": ("SYNTHETIC",),
+}
+
+
 def seeded_corpus(size=160):
     rng = random.Random(139009)
     vocabulary = "div span p article section form input button a img ul li table tbody thead tfoot tr td th caption colgroup col template svg math noscript xmp iframe noembed noframes plaintext textarea title details summary dialog head meta slot".split()
@@ -149,7 +194,13 @@ def seeded_corpus(size=160):
         ' data-expand-kind="more_comments"',
         ' role="article" data-post-id="pfbid0101synth"',
     ]
-    result = []
+    marker_attrs = [
+        f' {name}="{value}"' for name, values in MARKER_VALUES.items() for value in values
+    ]
+    attrs.extend(marker_attrs)
+    # Include every marker in the default subset, independently of RNG draws.
+    result = [f"<div{attr}>TEXT</div>" for attr in marker_attrs]
+    result.extend(f'<form id="{identity}"></form>' for identity in MARKER_VALUES["id"])
     for _ in range(size):
         tags = [rng.choice(vocabulary) for _ in range(rng.randrange(1, 6))]
         markup = "".join(f"<{tag}{rng.choice(attrs)}>" for tag in tags) + rng.choice(
