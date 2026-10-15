@@ -13,6 +13,7 @@ from test_facebook_round6 import reset_seams  # noqa: F401
 
 CASES = {
     "void-hidden": ("<bgsound hidden><span>VISIBLE</span>", True),
+    "math-marker": ("<math><mtext data-metamuse-display-none>VISIBLE</mtext></math>", True),
     "svg-marker": ("<svg><text data-metamuse-display-none>VISIBLE</text></svg>", True),
     "ordinary": ("<span>VISIBLE</span>", True),
     "opacity": ('<span style="opacity:0">VISIBLE</span>', True),
@@ -26,6 +27,15 @@ CASES = {
         True,
     ),
     "aria": ('<span aria-hidden="true">VISIBLE</span>', True),
+    "hidden-initial": ('<span hidden style="display:initial">VISIBLE</span>', True),
+    "hidden-unset": ('<span hidden style="display:unset">VISIBLE</span>', True),
+    "hidden-revert-layer": ('<span hidden style="display:revert-layer">VISIBLE</span>', False),
+    "hidden-revert": ('<span hidden style="display:revert">VISIBLE</span>', True),
+    "hidden-invalid": ('<span hidden style="display:invalid-token">VISIBLE</span>', False),
+    "invalid-last": (
+        '<span style="visibility:visible;visibility:invalid-token">VISIBLE</span>',
+        True,
+    ),
     "hidden-override": ('<span hidden style="display:inline">VISIBLE</span>', True),
     "display-none": ('<span style="display:none">VISIBLE</span>', False),
     "hidden": ("<span hidden>VISIBLE</span>", False),
@@ -107,7 +117,7 @@ def test_r8_rendering_table_parity(tmp_path, monkeypatch, case, request):
 
 TAMPERS = {
     "remove": "const o=Element.prototype.removeAttribute;Element.prototype.removeAttribute=function(n){if(n.toLowerCase().startsWith('data-metamuse-'))return;return o.call(this,n)};",
-    "style": "const g=getComputedStyle;window.getComputedStyle=n=>n.matches('[data-comment-id]')?{display:'none',visibility:'hidden'}:g(n);",
+    "style": "const g=getComputedStyle;window.getComputedStyle=n=>n.matches('[data-comment-id]')?{display:'none',visibility:'hidden'}:n.id==='fake-done'?{display:'block',visibility:'visible'}:g(n);",
     "serialize": "const d=Object.getOwnPropertyDescriptor(Element.prototype,'outerHTML');Object.defineProperty(Element.prototype,'outerHTML',{get(){return this.tagName==='HTML'&&!this.isConnected?'FAKE':d.get.call(this)}});",
     "constructor": "customElements.define('x-tamper',class extends HTMLElement{constructor(){super();if(!this.isConnected){let b=this.getRootNode().querySelector('[data-fb-role=post-body]');if(b)b.textContent='FORGED'}}});",
     "callback": "customElements.define('x-hider',class extends HTMLElement{static get observedAttributes(){return ['data-metamuse-visibility']}attributeChangedCallback(){if(!this.isConnected&&!this.hasAttribute('data-metamuse-display-none'))this.setAttribute('data-metamuse-display-none','')}});",
@@ -129,6 +139,26 @@ def test_r8_capture_cannot_be_forged(tmp_path, monkeypatch, tamper, request):
         )
         .replace("</body>", "<x-tamper></x-tamper></body>")
     )
+    expected = "Lead VISIBLE PAINTED"
+    if tamper == "style":
+        markup = (
+            markup.replace('data-comment-count="1"', 'data-comment-count="0"')
+            .replace('data-comments-exhausted="true"', 'data-comments-exhausted="false"')
+            .replace(
+                "</body>",
+                '<div id="fake-done" style="display:none" data-comments-exhausted="true"></div></body>',
+            )
+        )
+    if tamper == "walker":
+        markup = markup.replace(
+            "</x-hider></div>",
+            '</x-hider><span id="shadow-host"><b slot="chosen"> SLOTTED</b></span></div>',
+        )
+        markup = markup.replace(
+            "</body>",
+            """<script>document.getElementById("shadow-host").attachShadow({mode:"open"}).innerHTML='<span> SHADOW</span><slot name="chosen"></slot>';</script></body>""",
+        )
+        expected += " SHADOW SLOTTED"
     results = []
     for label, script in [("control", ""), ("tamper", TAMPERS[tamper])]:
         page = markup.replace("</body>", "<script>" + script + "</script></body>")
@@ -143,7 +173,7 @@ def test_r8_capture_cannot_be_forged(tmp_path, monkeypatch, tamper, request):
             )
         )
     assert results[0] == results[1]
-    assert results[1][3][0][1] == "Lead VISIBLE PAINTED"
+    assert results[1][3][0][1] == expected
 
 
 @pytest.mark.parametrize("mode", ["open", "closed", "declarative", "slotted", "unslotted"])

@@ -366,7 +366,7 @@ structural bounds in addition to the existing observation/job byte limit; flat
 records add overhead beyond equivalent HTML. Bounds, unsupported non-HTML main MIME
 types (XHTML/XML/SVG), and capture failures refuse with fixed Facebook-specific
 `E_SELECTOR_DRIFT`, without page text or `E_STORAGE`. Inaccessible closed roots add
-`closed_shadow_capture_unavailable` and force partial coverage. DOM mutations observed
+`closed_shadow_capture_unavailable` and force partial coverage. Subtree insertions or shadow-root attachments observed
 across CDP discovery/capture commands add `capture_changed_during_observation`, so
 a closed root created during handle discovery cannot be silently omitted. Incomplete captures
 never claim `scope_satisfied`.
