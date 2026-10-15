@@ -135,6 +135,8 @@ def test_r2_3_fixpoint_token_formats(kind, template):
 
 # The reviewer used deliberately abbreviated vendor tokens in its handoff probe;
 # those invalid lengths are checked separately from valid documented formats.
+URL_TERMINATOR_HANDOFF = {"ui_pw_has_slash", "ui_pw_has_hash", "ui_pw_has_question"}
+
 INVALID_PREFIX_HANDOFF = {
     "ghp_prefix",
     "xoxb_prefix",
@@ -147,7 +149,7 @@ INVALID_PREFIX_HANDOFF = {
 
 @pytest.mark.parametrize(
     "name,text,marker",
-    [row for row in HANDOFF if row[0] not in INVALID_PREFIX_HANDOFF],
+    [row for row in HANDOFF if row[0] not in INVALID_PREFIX_HANDOFF | URL_TERMINATOR_HANDOFF],
     ids=lambda value: value[:48],
 )
 def test_r2_4_handoff(name, text, marker):
