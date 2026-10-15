@@ -685,6 +685,17 @@ records each revision's own file hash. A packet or draft that cites an older
 cue revision is stale. A subtitle HTTP 403 is `E_ACCESS_DENIED` and
 `awaiting_user`, same as a page 403. No later subtitle or media request runs.
 
+A 2xx subtitle/media final response is classified for login forms when its type is
+text/html or application/xhtml+xml, or its bytes begin with a UTF-8 BOM, optional
+ASCII whitespace, then <!doctype html, <html or <form (case-insensitive; the BOM
+is optional). The original `_purpose` context controls classification across
+redirects. The full body is fed to the HTML parser in 32 KiB blocks with the same
+paced scan guard as challenge detection. A match stops with E_AUTH_REQUIRED before
+later requests or any cue/asset/track row for that response; its received bytes
+still count. An HTML error page without a form stays partial. Default page requests
+are left to the extractor, so public header login forms do not stop collection.
+A subtitle HTTP 403 is E_ACCESS_DENIED/awaiting_user, also before later requests.
+
 One `_stored_url` function decides every durable extractor-derived URL: it returns
 only `_require_reviewable_url`'s display on a host in the job's bound approvals.
 Canonical provenance tries webpage_url, then the extract URL after share resolution,
@@ -755,14 +766,26 @@ also covers `%5F`; JavaScript `\u005f`/`\x5f` underscore escapes and NFKC fullwi
 underscores are recognized. Split string literals are not detected; no JavaScript
 is executed or reconstructed.
 Marker normalization scans overlapping 32 KiB blocks, so it does not decode an
-entire media response at once. Every block checks the step's cancellation and wall
-deadline; expiry keeps the existing E_LIMIT_REACHED / Job wall clock limit reached
+entire media response at once. Every block checks the cheap in-memory wall
+deadline; the on-disk cancellation/epoch guard runs on the first block, at most
+once every 250 ms of monotonic time, and once after the last block. Both body
+classifiers share that pacing. Expiry keeps the existing E_LIMIT_REACHED / Job wall clock limit reached
 error. Every response body is scanned, including media bytes.
 An offline measurement of eight 64 MiB bodies (512 MiB total per content type,
 16,384 guarded blocks) used 0.290 CPU seconds for ASCII, 64.013 for deterministic
 random bytes, and 110.962 for NFKC-expanding U+FDFA text on the review host.
 These are measured scan costs, not throughput or wall-time guarantees; the wall
 budget can stop a scan before completion.
+Real on-disk StepContext guards use BEGIN IMMEDIATE and synchronous=FULL, not a
+pure counter. The round-9 independent review measured 2,048 such transactions
+for a 64 MiB scan at 3.691 seconds (about 1.8 ms/block; roughly 30 seconds per
+512 MiB before contention). With the paced guard, this round's real 64 MiB ASCII
+challenge scan used 0.0551 CPU / 0.0551 wall seconds, two DB guards (0.0038 wall
+seconds inside guards). A 64 MiB flat HTML login scan used 0.0213 CPU / 0.0237 wall
+seconds and two guards (0.0059 seconds). Dense `<p>safe</p>` HTML of the same size
+used 10.8018 CPU / 14.1484 wall seconds and 45 guards (3.0902 wall seconds inside
+guards). These are actual 64 MiB measurements on a shared disk, not a throughput
+promise; HTML structure and contention materially change cost.
 Invalid or credential-shaped `remote_media.provider` / `remote_media.account` labels
 return a fixed E_INPUT_INVALID configuration error naming the setting, never its value.
 

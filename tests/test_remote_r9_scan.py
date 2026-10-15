@@ -73,6 +73,7 @@ def test_r9_response_scan_checks_step_deadline_each_block(monkeypatch):
         media_max=len(body),
         timeout=2,
         before_dial=remote_media._dial_timeout(step, 2),
+        scan_deadline=remote_media._dial_timeout(step, 2, guard=False),
     )
     with pytest.raises(m.CoreError) as held:
         remote_media._exchange(net, "GET", checked.url, {}, None, follow=True)
