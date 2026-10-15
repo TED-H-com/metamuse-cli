@@ -172,7 +172,64 @@ def test_r6_pairing_is_local_and_contraction_aware():
     assert syntax.quote_closings.get(text.index('"', 5)) == 4
 
 
-@pytest.mark.parametrize('wrapper', ['"""{x}"""', "'''{x}'''", '`{x}`'])
+@pytest.mark.parametrize("wrapper", ['"""{x}"""', "'''{x}'''", "`{x}`"])
 def test_r6_multiline_tokens_preserve_benign_content(wrapper):
-    text = wrapper.replace('{x}', 'token = os.getenv("TOKEN")\nx = 1')
+    text = wrapper.replace("{x}", 'token = os.getenv("TOKEN")\nx = 1')
     assert redact_text(text) == (text, [])
+
+
+@pytest.mark.parametrize("kind", ["name", "type", "meta", "nested"])
+@pytest.mark.parametrize("layers", [0, 1, 2])
+def test_r6_html_attributes_have_complete_local_extents(kind, layers):
+    if kind == "nested":
+        text = (
+            "<input name=\"password\" value=\"${T:-<input name='password' value='"
+            + MARKER
+            + "'>}\">"
+        )
+    else:
+        attr = (
+            'name="password"'
+            if kind == "name"
+            else 'type="password"'
+            if kind == "type"
+            else 'name="csrf_token"'
+        )
+        value = "content" if kind == "meta" else "value"
+        text = "<input " + value + '="public\n' + MARKER + '" ' + attr + ">"
+    output, findings = redact_text(encoded(text, layers))
+    assert MARKER not in output and findings
+
+
+def test_r6_full_sweep_counterexamples():
+    from b16a_r6_counterexamples import TEMPLATES
+
+    first = f"{'SYNTH'}qheadqVAL{4242}"
+    tail = f"{'SYNTH'}qtailqVAL{4242}"
+    value = f"{'CONTEXT'}_PRIVATE_MARKER_{684329}"
+    for template in TEMPLATES:
+        text = (
+            template.replace("__HEAD__", first)
+            .replace("__TAIL__", tail)
+            .replace("__VALUE__", value)
+        )
+        output, findings = redact_text(text)
+        assert not any(marker in output for marker in [first, tail, value]), (
+            text,
+            output,
+            findings,
+        )
+        assert redact_text(output)[0] == output
+
+
+@pytest.mark.parametrize("element", ["password", "wsse:Password"])
+@pytest.mark.parametrize("layers", [0, 1, 2])
+def test_r6_multiline_xml_attributes_do_not_hide_body(element, layers):
+    text = "<" + element + ' comment="ordinary\ntext">' + MARKER + "</" + element + ">"
+    assert MARKER not in redact_text(encoded(text, layers))[0]
+
+
+@pytest.mark.parametrize("attribute", ["name", "type"])
+def test_r6_html_character_references_name_the_private_field(attribute):
+    text = "<input " + attribute + '="pass&#119;ord" value="' + MARKER + '">'
+    assert MARKER not in redact_text(text)[0]

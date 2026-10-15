@@ -452,7 +452,7 @@ exemptions inside JSON captures. Shell quoting of option names, including curl
 --user/--cookie, sshpass -p and attached mysql -p, retains the argument rule.
 A whole form field is decoded before lexing a HAR document it contains, including
 whole percent-encoded form bodies. The HAR lexer never decodes string data into
-structure or resumes after an error within that JSON layer.
+structure. A failed container stops at its first error; independently indexed later containers remain eligible, even after prose or a damaged outer candidate.
 
 Known form boundaries are carried through decoded layers, including encoded newlines.
 An encoded nested form prefix gets its own operator layer within its parent field;
@@ -508,3 +508,33 @@ every supported layer. Quotes in PuTTY comments shorten the block only when
 proved to close an enclosing string; otherwise it extends through Private-MAC.
 Quoted form-body discovery pairs quotes per decoding layer, and decoded-only
 whitespace remains form value data.
+
+
+B16a context assurance: natural and seeded malformed contexts surround in-scope
+rows both inside and outside raw, JSON (one/two), percent and form layers.
+The property checks marker fragments as well as whole values, and checks the
+one-call fixpoint. Natural-context benign mirrors must remain unchanged;
+malformed random-context benign changes are measured, since ambiguous structure
+may lengthen a mask. The installed CPython corpus retains a 0.40% refusal budget.
+HTML/XML elements make value/content private when the same element has a sensitive
+name; type=password makes value private. Attribute order and quoting do not
+change that rule. Benign username/description elements remain unchanged.
+
+
+Grammar-proven HTML/XML attribute strings may contain line breaks; their local
+matching quote is indexed separately from prose quote pairing. Attribute name/type
+classification resolves HTML character references. Oversized (over 1,024-character)
+name/type selectors fail closed before decoding. Exempt attribute values remain
+searchable for independent nested elements. A malformed unquoted nested tag starts
+an independent candidate instead of causing a repeated suffix walk.
+
+A shell-parameter placeholder must have a complete balanced closing brace and a
+parameter header (identifier/positional/special parameter, optionally followed by
+its parameter operator). Random prose before the brace cannot turn an incomplete
+credential into a valid placeholder. Fixed lookup and complete double-brace extents
+are indexed once; exemption checks do not copy an enclosing suffix per assignment.
+Exact JSON string boundaries stay mapped through form/percent/JSON decoding;
+quoted defaults cannot jump over a proven enclosing JSON close. Raw special-scheme
+backslash barriers exclude serialization backslashes and Unicode-escape data.
+Netscape jar fields remain recognizable after a surrounding context prefix and
+retain CR/LF line endings. These rules preserve the existing four-application bound.

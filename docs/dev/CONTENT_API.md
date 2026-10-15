@@ -279,7 +279,7 @@ Exempt environment lookups end at their own closing bracket or parenthesis.
 HAR structure is read by an escape-aware JSON lexer at its JSON layer, before
 percent or JSON escapes inside its string values become data in canonical views.
 Complete documents and whole JSON-string layers share the lexer. Partial documents
-stop at the first syntax error, without guessed resynchronization. Name/value order
+stop at the first syntax error within each candidate; independent later candidates remain eligible. Name/value order
 is immaterial; sensitive HAR scalars, including numbers and boolean/null literals,
 are redacted whole, as are cookies arrays.
 
@@ -309,7 +309,7 @@ exemptions inside JSON captures. Shell quoting of option names, including curl
 --user/--cookie, sshpass -p and attached mysql -p, retains the argument rule.
 A whole form field is decoded before lexing a HAR document it contains, including
 whole percent-encoded form bodies. The HAR lexer never decodes string data into
-structure or resumes after an error within that JSON layer.
+structure. A failed container stops at its first error; independently indexed later containers remain eligible, even after prose or a damaged outer candidate.
 
 Known form boundaries are carried through decoded layers, including encoded newlines.
 An encoded nested form prefix gets its own operator layer within its parent field;
@@ -320,3 +320,80 @@ assignments remain independently inspected. Public-key block mirrors stay public
 
 Triple-quoted strings, heredoc/YAML multiline bodies and backticks are ordinary
 credential-bearing contexts. Their benign content remains byte-for-byte intact.
+
+B16a structural rule: ambiguity may only lengthen a redaction. Single-line single,
+double and backtick quotes pair locally at the same decoding layer and never
+cross a line break at that layer. An apostrophe between alphanumerics is prose,
+not a delimiter. Triple quotes are one multiline token, recognized before single
+quotes; heredoc bodies and YAML block scalars retain their multiline extent.
+A fully parsed JSON layer proves exact string extents. Only a delimiter proved
+by these rules may shorten a credential value, URL authority or private-key block.
+
+At a credential value's start, a single, double or backtick quote opens its own
+value if the same-layer, same-line matching quote follows. This local opener
+takes priority over an unrelated earlier quote. Attached command flags use the
+same rule; only a proven quoted flag's closing delimiter precedes its argument.
+
+Exemptions require a complete genuine closing delimiter at the same layer.
+Forced closure at an enclosing quote or end of input is not a match. Unclosed
+placeholders and lookups are credentials. Fixed environment lookups have locally
+quoted arguments, so parentheses or brackets within an argument are data. Lookup
+and placeholder extents are indexed once; nested lookups never repeatedly copy
+or decode a suffix per assignment.
+
+Every scanner continues inside an exempt outer value. Assignment, header, XML,
+query, curl and SQL/sshpass/mysql passes advance only past the matched key or
+operator until masking a value. Cookie-chain discovery likewise revisits exempt
+single members. URL candidates always resume at the next candidate; HAR walks
+all string/container children; jar, prefix, JWT, block and path passes enumerate
+independent matches. Only a selected redaction permits skipping its consumed value.
+
+Protocol-relative // authorities are URL candidates, independent of preceding
+URLs. Markdown autolinks end at their proven > in both authority and query
+passes. A raw backslash ends a special-scheme authority even when a permissive
+decoded view would treat its escape as data. Accepted benign cost: an unenclosed
+scheme://host:port,user@host contains WHATWG userinfo, as does a literal backslash
+in a non-special scheme's userinfo; both are redacted by design.
+
+HAR JSON containers are candidates at every offset and decoded layer, including
+prose, fences, log prefixes and packet headers. A strict lexer evaluates completed
+objects before an error; an independent candidate swallowed as string content is
+not lost. Lexical ends and container outcomes are memoized once, so late failures
+and candidate recovery remain linear. Any sensitive repeated name marks every
+value in that object private, without overwriting an earlier sensitivity decision.
+
+Private-key block labels accept space, form plus and percent-encoded space at
+every supported layer. Quotes in PuTTY comments shorten the block only when
+proved to close an enclosing string; otherwise it extends through Private-MAC.
+Quoted form-body discovery pairs quotes per decoding layer, and decoded-only
+whitespace remains form value data.
+
+
+B16a context assurance: natural and seeded malformed contexts surround in-scope
+rows both inside and outside raw, JSON (one/two), percent and form layers.
+The property checks marker fragments as well as whole values, and checks the
+one-call fixpoint. Natural-context benign mirrors must remain unchanged;
+malformed random-context benign changes are measured, since ambiguous structure
+may lengthen a mask. The installed CPython corpus retains a 0.40% refusal budget.
+HTML/XML elements make value/content private when the same element has a sensitive
+name; type=password makes value private. Attribute order and quoting do not
+change that rule. Benign username/description elements remain unchanged.
+
+
+Grammar-proven HTML/XML attribute strings may contain line breaks; their local
+matching quote is indexed separately from prose quote pairing. Attribute name/type
+classification resolves HTML character references. Oversized (over 1,024-character)
+name/type selectors fail closed before decoding. Exempt attribute values remain
+searchable for independent nested elements. A malformed unquoted nested tag starts
+an independent candidate instead of causing a repeated suffix walk.
+
+A shell-parameter placeholder must have a complete balanced closing brace and a
+parameter header (identifier/positional/special parameter, optionally followed by
+its parameter operator). Random prose before the brace cannot turn an incomplete
+credential into a valid placeholder. Fixed lookup and complete double-brace extents
+are indexed once; exemption checks do not copy an enclosing suffix per assignment.
+Exact JSON string boundaries stay mapped through form/percent/JSON decoding;
+quoted defaults cannot jump over a proven enclosing JSON close. Raw special-scheme
+backslash barriers exclude serialization backslashes and Unicode-escape data.
+Netscape jar fields remain recognizable after a surrounding context prefix and
+retain CR/LF line endings. These rules preserve the existing four-application bound.
