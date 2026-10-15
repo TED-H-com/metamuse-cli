@@ -411,3 +411,9 @@ new key suffixes/syntaxes and explicit out-of-scope formats are specified in
 except local_path refuses new Muse text. Accepted topic/question bytes remain exact;
 credentials never enter a new approval preview. Unstable nonrefusable details use
 one complete mask. This is OFFLINE/FIXTURE/INTEGRATION/MEASURE evidence, not LIVE.
+
+Reconciliation preparation and receipt replay use one topic-identity predicate:
+the stored title or its current display-redacted form, together with discussion ID
+and project. Replaying the human-approved request, before or after settlement, and
+re-previewing an existing job retain the original job identity. A saved display title
+that no longer matches current rules requires requesting reconciliation again.

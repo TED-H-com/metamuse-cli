@@ -259,11 +259,14 @@ def prepare_send(ctx, request: m.MuseSendRequest):
     )
 
 
+def _reconciliation_topic_matches(discussion, request):
+    return request.topic in {discussion.topic, redact_display(discussion.topic)}
+
+
 def _check_reconciliation_topic(discussion, request):
-    if discussion.project_id != request.project_id or request.topic not in {
-        discussion.topic,
-        redact_display(discussion.topic),
-    }:
+    if discussion.project_id != request.project_id or not _reconciliation_topic_matches(
+        discussion, request
+    ):
         raise m.CoreError(
             m.ErrorCode.REFERENCE_INVALID,
             "Reconciliation must name the original discussion",
@@ -534,7 +537,7 @@ def _receipt(ctx, operation, request):
                 if (
                     job.project_id != request.project_id
                     or discussion.project_id != request.project_id
-                    or discussion.topic != request.topic
+                    or not _reconciliation_topic_matches(discussion, request)
                     or job.payload.get("discussion_id") != request.discussion_id
                     or job.payload.get("exchange_id") is not None
                     or job.payload.get("permit_id") != request.access_grant_id

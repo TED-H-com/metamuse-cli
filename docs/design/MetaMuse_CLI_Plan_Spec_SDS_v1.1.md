@@ -515,6 +515,12 @@ stop at the first syntax error, without guessed resynchronization. Name/value or
 is immaterial; sensitive HAR scalars, including numbers and boolean/null literals,
 are redacted whole, as are cookies arrays.
 
+Reconciliation preparation and receipt replay use one topic-identity predicate:
+the stored title or its current display-redacted form, together with discussion ID
+and project. Replaying the human-approved request, before or after settlement, and
+re-previewing an existing job retain the original job identity. A saved display title
+that no longer matches current rules requires requesting reconciliation again.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -1075,6 +1081,12 @@ Complete documents and whole JSON-string layers share the lexer. Partial documen
 stop at the first syntax error, without guessed resynchronization. Name/value order
 is immaterial; sensitive HAR scalars, including numbers and boolean/null literals,
 are redacted whole, as are cookies arrays.
+
+Reconciliation preparation and receipt replay use one topic-identity predicate:
+the stored title or its current display-redacted form, together with discussion ID
+and project. Replaying the human-approved request, before or after settlement, and
+re-previewing an existing job retain the original job identity. A saved display title
+that no longer matches current rules requires requesting reconciliation again.
 
 ---
 
