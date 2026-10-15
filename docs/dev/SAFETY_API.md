@@ -488,3 +488,10 @@ operator until masking a value. Cookie-chain discovery likewise revisits exempt
 single members. URL candidates always resume at the next candidate; HAR walks
 all string/container children; jar, prefix, JWT, block and path passes enumerate
 independent matches. Only a selected redaction permits skipping its consumed value.
+
+Protocol-relative // authorities are URL candidates, independent of preceding
+URLs. Markdown autolinks end at their proven > in both authority and query
+passes. A raw backslash ends a special-scheme authority even when a permissive
+decoded view would treat its escape as data. Accepted benign cost: an unenclosed
+scheme://host:port,user@host contains WHATWG userinfo, as does a literal backslash
+in a non-special scheme's userinfo; both are redacted by design.

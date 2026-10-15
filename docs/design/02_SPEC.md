@@ -489,3 +489,10 @@ placeholders and lookups are credentials. Fixed environment lookups have locally
 quoted arguments, so parentheses or brackets within an argument are data. Lookup
 and placeholder extents are indexed once; nested lookups never repeatedly copy
 or decode a suffix per assignment.
+
+Protocol-relative // authorities are URL candidates, independent of preceding
+URLs. Markdown autolinks end at their proven > in both authority and query
+passes. A raw backslash ends a special-scheme authority even when a permissive
+decoded view would treat its escape as data. Accepted benign cost: an unenclosed
+scheme://host:port,user@host contains WHATWG userinfo, as does a literal backslash
+in a non-special scheme's userinfo; both are redacted by design.

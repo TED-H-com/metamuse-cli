@@ -2432,7 +2432,7 @@ def _query_spans(text, syntax, encoded_positions):
     pattern = re.compile(
         r"[?&#]" + r"(?P<key>" + _NAME + r")[^\S\r\n]*+=[^\S\r\n]*+",
     )
-    ending = re.compile(r"%(?:25){0,2}(?:3f|26|23)|[\s&#\"'\[\]{}()]|\?", re.I)
+    ending = re.compile(r"%(?:25){0,2}(?:3f|26|23)|[\s&#\"'`\[\]{}()>]|\?", re.I)
     signed = {
         "oh",
         "oe",
@@ -2461,6 +2461,16 @@ def _query_spans(text, syntax, encoded_positions):
         while boundary := ending.search(text, cursor):
             encoded = encoded_positions.contains(boundary.start())
             if (
+                boundary[0] == ">"
+                and re.search(
+                    r"<[A-Za-z][A-Za-z0-9+.-]*+://[^<>\s]*+$",
+                    text[max(0, match.start() - 8192) : match.start()],
+                )
+                is None
+            ):
+                cursor = boundary.end()
+                continue
+            if (
                 (boundary.group() == "?" and not encoded)
                 or (boundary.group() == "?" and encoded_positions.form)
                 or (boundary.group() not in {"?", "&", "#"} and encoded)
@@ -2487,7 +2497,7 @@ def _query_spans(text, syntax, encoded_positions):
 
 
 def _userinfo_spans(text, syntax):
-    scheme = re.compile(r"(?i)(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://")
+    scheme = re.compile(r"(?i)(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*+://|(?<![:/])//")
 
     class Positions:
         def __init__(self, values):
@@ -2500,7 +2510,7 @@ def _userinfo_spans(text, syntax):
             return self.current
 
     def boundaries(level, special):
-        for boundary in re.finditer(r"[/\?#\\\s\"'()\[\]{}]", text):
+        for boundary in re.finditer(r"[/\?#\\\s\"'`()\[\]{}>]", text):
             pos = boundary.start()
             enclosing = min(syntax.closings.get(pos, pos), syntax.quote_closings.get(pos, pos))
             if syntax.depth(pos) <= level and (
@@ -2508,6 +2518,7 @@ def _userinfo_spans(text, syntax):
                 or boundary[0].isspace()
                 or (boundary[0] == "\\" and special)
                 or enclosing < pos
+                or boundary[0] == ">"
             ):
                 yield pos
 
@@ -2519,7 +2530,14 @@ def _userinfo_spans(text, syntax):
         following = next(candidates, None)
         position = match.end()
         level = syntax.depth(position - 1)
-        special = match[0].split(":", 1)[0].lower() in {"http", "https", "ftp", "file", "ws", "wss"}
+        special = match[0].startswith("//") or match[0].split(":", 1)[0].lower() in {
+            "http",
+            "https",
+            "ftp",
+            "file",
+            "ws",
+            "wss",
+        }
         key = (level, special)
         if key not in ends:
             ends[key] = Positions(boundaries(level, special))
@@ -2532,6 +2550,10 @@ def _userinfo_spans(text, syntax):
         ):
             end = ends[key].first(end + 1)
         end = min(end, following.start() if following else len(text))
+        # Only a '<' immediately introducing the URL proves an autolink.
+        if text[match.start() - 1 : match.start()] != "<":
+            while end < len(text) and text[end] == ">":
+                end = min(ends[key].first(end + 1), following.start() if following else len(text))
         first_at = ats.first(position)
         if first_at < end:
             colon = text.find(":", position, first_at)
@@ -3311,6 +3333,37 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     )
     for edits in reversed(layers):
         spans = _SpanIndex(_original_spans(spans, edits))
+    if layers and "\\" in text:
+        try:
+            json.loads(text)
+        except (ValueError, RecursionError):
+            barriers = iter(
+                m.start()
+                for m in re.finditer(
+                    r"(?i)(?<![A-Za-z0-9+.-])(?:https?|ftp|file|wss?)://[^\s/?#\\]*+\\", text
+                )
+            )
+            # The candidates are disjoint. Filter only a userinfo mask crossing
+            # its raw backslash; a later URL remains independent.
+            limits = []
+            for begin in barriers:
+                boundary = text.find("\\", begin)
+                limits.append((begin, boundary))
+            if limits:
+
+                def retained():
+                    index = 0
+                    for span in spans:
+                        while index < len(limits) and limits[index][1] < span[0]:
+                            index += 1
+                        if not (
+                            span[2] == "url_token"
+                            and index < len(limits)
+                            and limits[index][0] <= span[0] <= limits[index][1] < span[1]
+                        ):
+                            yield span
+
+                spans = _SpanIndex(retained())
     # Original quoted/structured values have their original quote terminators,
     # even when JSON unescaping reveals quotes inside the credential itself.
     del syntax, depths
