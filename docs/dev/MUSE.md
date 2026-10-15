@@ -161,8 +161,17 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
 7. Commit standard-observation provenance with generation CAS immediately before empty msg3,
    holding trust-domain/per-account locks across commit and msg3 handoff. Release the shared
    maintenance lock after commit and before network handoff. Split only through the
-   mature library. Confidential writes notify every live workspace listener, including other labels; generation changes invalidate local sockets; each call rechecks durable
-   currentness. No standard enrollment-health or capability-registration gate is added.
+   mature library. After commit, every confidential write notifies all live workspace
+   listeners and immediately closes their sockets, including unrelated labels. This covers
+   new confidential account, VM or observation rows and every 0→1 flag transition,
+   including inherited edges and SQL propagation. A non-direct freeze with no confidential
+   write does not broadcast; a binding/generation change still notifies its own label.
+   Each call first rechecks durable currentness. A refused context closes and stops before
+   any HTTPS request or WSS dial. An unaffected context whose socket was closed by a
+   broadcast closes its old receive loop and reconnects through auth, session, freeze,
+   mint, wake and the full handshake in that same call. Only a newly registered loop
+   clears the invalidation flag. No standard enrollment-health or capability-registration
+   gate is added.
 
 Wake is an account-side power-state request, performed only inside a connection triggered
 by an already-granted Muse operation in live network mode. Offline mode and the separately
@@ -231,6 +240,16 @@ The response body is not copied into these errors. Unavailable VM is not an auth
 | `body` | scrubbed UTF-8 body for persistence, or empty when the bytes are not UTF-8 |
 
 The verdict is classified on the original bounded body, then a separate public body is scrubbed. Known credential values held on that call are removed, then `safety.redact_text` runs. Undecodable bytes are not returned.
+
+A broadcast can also interrupt an exchange already waiting on a socket. It closes the
+socket without replaying the request. An incomplete read returns `E_NETWORK_TIMEOUT`;
+a handed-off `chat.stream` retains its partial/uncertain attempt, marker, digest and
+stream id, and a handed-off `session.start` raises `MuseStateUnknown` for reconciliation.
+Protocol failures keep their existing `never` handling. A later call rechecks durable
+state before reconnecting; it does not resend the interrupted mutation. Mutation
+`consume` runs once before `_connect`; this call's application frame is opened only
+in `_unary`, after reconnect completes, so reconnecting an idle, unaffected socket
+neither reauthorizes nor sends this call twice.
 
 After a mutation handoff, a read failure does not use safe-read retry guidance. `chat_stream` returns an uncertain attempt and keeps the marker, digest, and stream id. `session.start` raises `MuseStateUnknown` (`E_EXTERNAL_STATE_UNKNOWN`, `reconcile`). A protocol failure after handoff raises `MuseProtocolStop` (`E_PROTOCOL_MISMATCH`, `never`) and still carries that evidence. Only a read, or a failure proven to be before handoff, may use safe-read retry guidance. A raised network timeout does not mean the frame was not handed off.
 

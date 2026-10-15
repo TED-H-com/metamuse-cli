@@ -503,7 +503,15 @@ A committed muse_trust_propagating marker is always invalid and has a specific E
 
 HTTP 200 session: status=unavailable或完全沒有identity key回resource；alias-only vmid回protocol；其他非assigned status（含missing/type/case drift）回protocol/never。non-object response action標session/hatch/auth path。
 
-Confidential write後notify全部workspace live listeners，跨local labels立即close sockets；下一call仍重查durable state。
+Confidential write（new confidential account/VM/observation row，或任何0→1 flag含SQL
+propagation及inherited edge）commit後notify全部workspace live listeners，跨local labels
+立即close sockets。non-direct freeze沒有confidential write不broadcast；binding/generation
+change仍只notify自己的label。下一call先重查durable state；refusal在任何HTTPS/WSS前stop。
+若仍current但socket被broadcast關閉，同一call完成fresh auth/session/freeze/mint/wake/handshake
+後才開application frame；新loop註冊才清invalidation，不回假的E_STORAGE。mutation只consume一次。
+in-flight socket關閉不replay：incomplete read回E_NETWORK_TIMEOUT；handoff後chat.stream保留
+uncertain/partial evidence，session.start回MuseStateUnknown/reconcile；protocol failure仍never。
+下一call只重連，不重送之前的mutation。
 
 
 

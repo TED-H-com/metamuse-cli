@@ -859,6 +859,7 @@ class Store:
                 binding=(session_hash, vm_id),
             )
         changed = False
+        confidential_written = False
         with self._muse_boundary(provider, account):
             with self.transaction() as conn:
                 owner, vm = self._muse_rows(conn, provider, account, vm_id)
@@ -888,6 +889,7 @@ class Store:
                     if vm is not None:
                         raise _muse_storage_error()
                     generation = 1
+                    before = conn.total_changes
                     conn.execute(
                         "INSERT INTO muse_trust_accounts VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)",
                         (
@@ -901,6 +903,7 @@ class Store:
                             self.clock(),
                         ),
                     )
+                    confidential_written = required and conn.total_changes > before
                 else:
                     if owner["viewer_hash"] != viewer_hash:
                         raise m.CoreError(
@@ -921,24 +924,34 @@ class Store:
                         or owner["confidential_required"] != int(required)
                     )
                     generation = owner["generation"] + int(changed)
-                    result = conn.execute(
+                    update = (
                         "UPDATE muse_trust_accounts SET session_hash=?, active_vm_id=?, "
                         "generation=?, "
                         "confidential_required=?, updated_at=? WHERE provider=? "
-                        "AND account=? AND generation=?",
-                        (
-                            session_hash,
-                            selected_vm,
-                            generation,
-                            int(required),
-                            self.clock(),
-                            provider,
-                            account,
-                            owner["generation"],
-                        ),
+                        "AND account=? AND generation=?"
                     )
+                    values = (
+                        session_hash,
+                        selected_vm,
+                        generation,
+                        int(required),
+                        self.clock(),
+                        provider,
+                        account,
+                        owner["generation"],
+                    )
+                    # Count flag transitions (including trigger writes) separately
+                    # from session/timestamp updates that do not change confidentiality.
+                    before = conn.total_changes
+                    result = conn.execute(
+                        update + " AND confidential_required!=?", (*values, int(required))
+                    )
+                    confidential_written = required and conn.total_changes > before
+                    if result.rowcount == 0:
+                        result = conn.execute(update, values)
                     if result.rowcount != 1:
                         raise _muse_storage_error()
+                before = conn.total_changes
                 self._muse_observe(
                     conn,
                     viewer_hash,
@@ -946,6 +959,7 @@ class Store:
                     confidential=required,
                     source="authenticated_assignment",
                 )
+                confidential_written |= required and conn.total_changes > before
                 identities = ([vm_id] if vm_id is not None else []) + sorted(vm_ids - {vm_id})
                 for identity in identities:
                     _, existing = (
@@ -956,6 +970,7 @@ class Store:
                     inherited = required or self._muse_effective(
                         conn, provider, account, viewer_hash, identity
                     )
+                    before = conn.total_changes
                     if existing is None:
                         conn.execute(
                             "INSERT INTO muse_trust_vms VALUES (?, ?, ?, 1, ?, ?, ?)",
@@ -975,6 +990,7 @@ class Store:
                             "observed_at=? WHERE provider=? AND account=? AND vm_id=?",
                             (self.clock(), provider, account, identity),
                         )
+                    confidential_written |= inherited and conn.total_changes > before
                 # SQL propagation may also have raised this account's expectation/generation.
                 owner = conn.execute(
                     "SELECT * FROM muse_trust_accounts WHERE provider=? AND account=?",
@@ -990,7 +1006,9 @@ class Store:
                     owner["generation"],
                     required,
                 )
-            if changed:
+            if confidential_written:
+                self._muse_notify(provider, account, confidential=True)
+            elif changed:
                 self._muse_notify(provider, account)
         return snapshot
 

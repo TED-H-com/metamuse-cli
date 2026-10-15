@@ -905,7 +905,17 @@ A stale snapshot/binding is E_STORAGE / never with a fresh-connection retry acti
 `muse_standard_handoff` checks the same state and commits provenance/CAS before empty
 msg3. Trust-domain and per-account locks span handoff; maintenance.lock and the SQLite
 transaction are released before network I/O. Every call rechecks durable state, including
-cross-process writers. Confidential writes notify every live workspace listener, so cross-label propagation immediately closes obsolete sockets. Selection-only writes notify their own label.
+cross-process writers. After commit, a new confidential account/VM/observation row or
+any 0→1 flag transition (including inherited edges and trigger propagation) notifies
+all live workspace listeners and immediately closes their sockets. A non-direct freeze
+counts actual confidential SQL writes, including trigger writes, independently of its
+label's binding changes. A no-op freeze does not broadcast; selection-only changes
+notify their own label. On its next call an unaffected, invalidated transport first
+passes the durable recheck, then reconnects through the full bootstrap and handshake
+before any application frame. An affected context stops before HTTPS or WSS. An
+in-flight interruption retains normal read failure or mutation uncertainty handling;
+no notification replays a mutation. The documented human closure repair runs after
+stopping Muse connections, so it has no live listeners to notify.
 
 Canonical schema verification is cached per Store trust boundary; every boundary checks
 the actual schema signature for changed guards. Integrity/schema failures block with

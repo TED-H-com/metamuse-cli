@@ -9,7 +9,7 @@ from metamuse.models import CoreError, ErrorCode
 
 @pytest.mark.parametrize("path", ["hint", "rv"])
 def test_r4_7_cross_label_confidential_write_closes_open_socket(ctx, monkeypatch, path):
-    transport, _, _, connector = build(handler=ok_frames([]), store=ctx.store)
+    transport, http, _, connector = build(handler=ok_frames([]), store=ctx.store)
     transport._trust = StoreMuseTrust(ctx.store, "Synthetic", "A")
     with transport:
         transport.sessions_list()
@@ -42,7 +42,9 @@ def test_r4_7_cross_label_confidential_write_closes_open_socket(ctx, monkeypatch
         assert transport._trust_invalidated
         assert closed
         dials = len(connector.urls)
+        requests = len(http.calls)
         with pytest.raises(CoreError) as caught:
             transport.sessions_list()
         assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
         assert len(connector.urls) == dials
+        assert len(http.calls) == requests

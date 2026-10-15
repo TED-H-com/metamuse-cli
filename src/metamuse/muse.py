@@ -1654,8 +1654,8 @@ class MuseTransport:
                 raise
             if self._trust_invalidated:
                 self._close_locked()
-                raise storage_stop()
-            return
+            else:
+                return
         jar = self._cookie_jar()
         if self._trust is None:
             raise storage_stop()
