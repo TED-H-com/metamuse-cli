@@ -547,7 +547,11 @@ them before waiting for the dial barrier, so pending connects are included. A
 50 ms browser-loop watcher reacts to byte cutoff and latched socket/guard
 failures, closing the affected page to interrupt in-flight
 navigation, click and expansion operations, instead of waiting for the full
-`read_timeout_seconds`. Only navigation/socket/wait interruptions caused by the
+`read_timeout_seconds`. Owned shutdown detaches the response listener; in-flight
+peer lookups ignore only target-closed replies with owned closure or an observed
+closed page on a connected browser. Active peer refusals retain their typed stop;
+an unexplained lost target fails the guard, and other exceptions are not suppressed.
+Only navigation/socket/wait interruptions caused by the
 cutoff become `E_LIMIT_REACHED` with partial coverage. Existing fatal errors are
 never rewritten merely because the byte latch is set. Error precedence is guard
 failure or unverified target shutdown, denied destination (`E_SCOPE_DENIED`),
