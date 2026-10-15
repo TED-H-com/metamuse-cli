@@ -1528,7 +1528,7 @@ class _TextEdit:
     original_end: int
 
 
-def _decode_view(text: str, *, json_escapes: bool = False, form: bool = False):
+def _decode_view(text: str, *, json_escapes: bool = False, form: bool = False, ranges=None):
     """One canonicalization pass; allocate offsets only where bytes actually change."""
     pattern = re.compile(
         r"\+|\\{1,8}u002[bB]"
@@ -1540,7 +1540,14 @@ def _decode_view(text: str, *, json_escapes: bool = False, form: bool = False):
     edits = []
     parts = []
     position = offset = 0
+    ranges = iter(ranges or ())
+    active = next(ranges, None)
     for match in pattern.finditer(text):
+        if form:
+            while active and active[1] <= match.start():
+                active = next(ranges, None)
+            if active is None or not active[0] <= match.start() < active[1]:
+                continue
         raw = match.group()
         if form:
             units = [(" ", len(raw))]
@@ -2336,32 +2343,28 @@ def _close_bearer_spans(text, spans):
         yield start, end, kind, replacement
 
 
+def _form_ranges(text):
+    """Only a complete form body or an actual URL query gives '+' space syntax."""
+    if re.fullmatch(_NAME + r"=[^\s]++", text):
+        yield 0, len(text)
+        return
+    for match in re.finditer(r"(?i)[A-Za-z][A-Za-z0-9+.-]*+://[^\s\"'<>]++", text):
+        question = text.find("?", match.start(), match.end())
+        if question >= 0:
+            yield question + 1, match.end()
+
+
 def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
     """Canonical decoded views, forward scans, sparse offsets, one output join."""
     layers = []
     view = text
-    form = False
+    ranges = list(_form_ranges(text))
+    form = bool(ranges) and ranges[0] == (0, len(text))
     if "+" in text or re.search(r"\\{1,8}u002b", text, re.I):
-        query = re.search(r"\?|%(?:25){0,2}3f|\\{1,8}u003f", text, re.I)
-        form = (
-            query is not None or re.search(r"%(?:25){0,2}3d|\\{1,8}u003d", text, re.I) is not None
-        )
-        if form:
-            # Decode literal '+' before percent encoding: %2B remains a literal plus.
-            begin = query.end() if query else 0
-            tail, edits = _decode_view(text[begin:], form=True)
-            view = text[:begin] + tail
-            layers.append(
-                [
-                    _TextEdit(
-                        e.start + begin,
-                        e.end + begin,
-                        e.original_start + begin,
-                        e.original_end + begin,
-                    )
-                    for e in edits
-                ]
-            )
+        # Decode before percent escapes: an encoded %2B remains a literal plus.
+        view, edits = _decode_view(text, form=True, ranges=ranges)
+        if edits:
+            layers.append(edits)
     # Escaped documents can reveal percent escapes, and conversely. Each
     # successful layer consumes its own budget; failed probes do not consume it.
     budgets = {False: 3, True: 3}
@@ -2395,7 +2398,7 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
     # even when JSON unescaping reveals quotes inside the credential itself.
     original_syntax = _Syntax(text) if layers else None
     original_fields = _assignment_spans(text, original_syntax) if layers else ()
-    spans = list(_merge_spans([spans, original_fields]))
+    spans = list(_merge_spans([spans, original_fields, _bearer_spans(text)]))
     if not spans:
         return text, []
     parts = []
