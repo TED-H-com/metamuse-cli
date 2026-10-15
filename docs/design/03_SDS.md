@@ -418,7 +418,9 @@ contextual list separator, or a closing enclosing string. A quote, ] or } that d
 not close an enclosing string/container is value data. List separators are &/; in
 query/form context, commas between call arguments, and ;/, in cookie contexts.
 Ambiguous raw assignments extend conservatively rather than exposing a password
-suffix; code equality comparisons with spaces around the operator are not assignments.
+suffix. If a consumed value ends in another sensitive assignment name/operator, its
+following value is included conservatively, including across a newline. Code equality
+comparisons with spaces around the operator are not assignments.
 
 Authorization/Proxy-Authorization with a scheme and following material is private
 through end of line or its enclosing string, for every scheme. A bare standard scheme
@@ -465,8 +467,9 @@ Canonical percent and JSON-escape views each allow three layers, including JSON
 strings containing JSON. Literal + means space only inside each actual URL query,
 through that URL's end, or a complete whitespace-free form body of name=value pairs
 joined by &. Independent body lines and quoted captured bodies retain their own form
-scope. A question mark earlier in prose never changes a later +. Percent-encoded %2B
-remains a literal plus. Unaffected original characters are preserved.
+scope. Scopes revealed by canonical decoding follow the same rule: only pluses at
+the form operator layer or shallower become spaces. A question mark earlier in prose
+never changes a later +. Deeper percent-encoded %2B remains a literal plus. Unaffected original characters are preserved.
 
 One redact_text call applies the single pass at most four times: three changing
 applications and one confirming application. For every input without

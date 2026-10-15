@@ -1548,7 +1548,9 @@ class _TextEdit:
     original_end: int
 
 
-def _decode_view(text: str, *, json_escapes: bool = False, form: bool = False, ranges=None):
+def _decode_view(
+    text: str, *, json_escapes: bool = False, form: bool = False, ranges=None, form_depths=None
+):
     """One canonicalization pass; allocate offsets only where bytes actually change."""
     pattern = re.compile(
         r"\+|\\{1,8}u002[bB]"
@@ -1567,6 +1569,8 @@ def _decode_view(text: str, *, json_escapes: bool = False, form: bool = False, r
             while active and active[1] <= match.start():
                 active = next(ranges, None)
             if active is None or not active[0] <= match.start() < active[1]:
+                continue
+            if form_depths is not None and form_depths[match.start()] > active[2]:
                 continue
         raw = match.group()
         if form:
@@ -1802,8 +1806,6 @@ class _Syntax:
     def value(self, text, start, *, list_separators=False, operator_depth=None):
         if start >= len(text):
             return start
-        if self.quote_closings.get(start, start) < start:
-            return start  # Empty value immediately before its enclosing quote.
         level = self.depth(start) if operator_depth is None else operator_depth
         quoted_end = (
             self.ends.get(start, len(text))
@@ -1878,13 +1880,22 @@ def _merge_spans(streams):
 def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
     pattern = re.compile(
         r"(?:(?P<q>[\"'])(?P<quotedkey>" + _NAME + r")(?P=q)(?:\])?|"
-        r"(?<![A-Za-z0-9_.%?&#-])(?P<flag>--|-D|-)?(?P<key>" + _NAME + r"))"
+        r"(?<![A-Za-z0-9_.-])(?P<flag>--|-D|-)?(?P<key>" + _NAME + r"))"
         r"(?:\s*+(?P<sep>=>|=|:(?!=)|[：＝])\s*+|(?P<flagspace>\s++))",
+    )
+    trailing_assignment = re.compile(
+        r"(?<![A-Za-z0-9_.-])(?P<flag>--|-D|-)?(?P<name>" + _NAME + r")(?P<op>=>|[=:：＝])?$"
     )
     position = line_index = 0
     while match := pattern.search(text, position):
         position = match.end()
         key = match["key"] or match["quotedkey"]
+        if (
+            not match["q"]
+            and match["sep"] == "="
+            and text[match.start() - 1 : match.start()] in {"?", "&", "#"}
+        ):
+            continue  # Query '=' values retain their query terminators and class.
         # Space alone is assignment syntax only on a command-line flag.
         if match["flagspace"] and not match["flag"]:
             continue
@@ -1971,11 +1982,35 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             if scalar_end is not None
             else syntax.value(text, start, operator_depth=operator_depth)
         )
+        if (
+            not match["q"]
+            and text[match.start() - 1 : match.start()] in {'"', "'"}
+            and text[start : start + 1] == text[match.start() - 1 : match.start()]
+        ):
+            end = start  # Empty value in a string such as prompt='Password: '.
         quoted = (
             yaml_end is None
             and text[start : start + 1] in {'"', "'"}
             and syntax.depth(start) <= operator_depth
         )
+        nested = (
+            trailing_assignment.search(text, max(start, end - 134), end) if not quoted else None
+        )
+        continuation = re.compile(r"\s*+(?:=>|[=:：＝])").match(text, end)
+        if (
+            nested
+            and (nested["flag"] or nested["op"] or continuation)
+            and redaction_sensitive_key(nested["name"])
+            and end < len(text)
+            and text[end].isspace()
+        ):
+            if continuation:
+                end = continuation.end()
+            while end < len(text) and text[end].isspace():
+                end += 1
+            while line_index < len(syntax.line_ends) and syntax.line_ends[line_index] < end:
+                line_index += 1
+            end = syntax.line_ends[line_index] if line_index < len(syntax.line_ends) else len(text)
         if not quoted and any(c in text[start:end] for c in "\"'"):
             while line_index < len(syntax.line_ends) and syntax.line_ends[line_index] < start:
                 line_index += 1
@@ -2665,8 +2700,20 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
                 changed = True
         if not changed:
             break
+    depths = _decoding_depths(len(text), layers)
+    if layers and "+" in view:
+        scoped = []
+        for start, end in _form_ranges(view):
+            equals = view.find("=", start, end)
+            level = max(depths[start - 1] if start else 0, depths[equals] if equals >= 0 else 0)
+            scoped.append((start, end, level))
+        decoded, edits = _decode_view(view, form=True, ranges=scoped, form_depths=depths)
+        if edits:
+            view = decoded
+            layers.append(edits)
+            depths = _decoding_depths(len(text), layers)
     encoded = _EncodedPositions(text, layers, form=form)
-    syntax = _Syntax(view, _decoding_depths(len(text), layers))
+    syntax = _Syntax(view, depths)
     spans = list(
         _merge_spans(
             [
