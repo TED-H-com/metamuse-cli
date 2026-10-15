@@ -56,7 +56,8 @@ if __name__ == "__main__":
                 {
                     "baseline_kib": baseline_kib,
                     "family": args.family,
-                    "size": len(text),
+                    "size": len(text.encode("utf-8")),
+                    "characters": len(text),
                     "cpu": time.process_time() - started,
                     "module": safety.__file__,
                     "source_sha256": hashlib.sha256(Path(safety.__file__).read_bytes()).hexdigest(),

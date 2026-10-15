@@ -1799,9 +1799,9 @@ class _Syntax:
         self.escaped_closings = _PositionIndex(text)
         escaped_quotes = {}
         if depths is None:
-            for escaped in re.finditer(r"(?P<slashes>\\++)(?P<quote>[\"'])", text):
+            for escaped in re.finditer(r"(?P<slashes>\\++)(?P<quote>[\"']?)", text):
                 layer = len(escaped["slashes"]).bit_length()
-                if layer > 3:
+                if layer > 3 or not escaped["quote"]:
                     continue
                 channel = (escaped["quote"], layer)
                 opening = escaped_quotes.pop(channel, None)

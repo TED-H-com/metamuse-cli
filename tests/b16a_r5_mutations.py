@@ -237,6 +237,14 @@ add(
 )
 add("drop_sid_name", SAFE, exact('            "sid",\n', ""), prior.SYNTAX, "names_and_operators")
 
+add(
+    "restart_unmatched_escape_quote",
+    SAFE,
+    exact('r"(?P<slashes>\\\\++)(?P<quote>[\\"\']?)"', 'r"(?P<slashes>\\\\++)(?P<quote>[\\"\'])"'),
+    "tests/test_b16a_round4_complexity.py",
+    "review_backslash_run",
+)
+
 
 if __name__ == "__main__":
     base.main()
