@@ -58,11 +58,11 @@ old = base.MUTANTS["drop_nested_dollar_brace_exemption"]
 add(
     "drop_nested_dollar_brace_exemption",
     SAFE,
-    lambda text: within(
+    lambda text, exempt=old[1]: within(
         "_assignment_spans",
         'not include_exempt\n            and text.startswith("${", inner_start)',
         'False\n            and text.startswith("${", inner_start)',
-    )(old[1](text)),
+    )(exempt(text)),
     old[2],
     old[3],
 )
