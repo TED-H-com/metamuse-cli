@@ -482,3 +482,10 @@ not a delimiter. Triple quotes are one multiline token, recognized before single
 quotes; heredoc bodies and YAML block scalars retain their multiline extent.
 A fully parsed JSON layer proves exact string extents. Only a delimiter proved
 by these rules may shorten a credential value, URL authority or private-key block.
+
+Exemptions require a complete genuine closing delimiter at the same layer.
+Forced closure at an enclosing quote or end of input is not a match. Unclosed
+placeholders and lookups are credentials. Fixed environment lookups have locally
+quoted arguments, so parentheses or brackets within an argument are data. Lookup
+and placeholder extents are indexed once; nested lookups never repeatedly copy
+or decode a suffix per assignment.

@@ -1492,6 +1492,37 @@ def redaction_sensitive_value(key: str, value: Any) -> bool:
     return not _credential_value_exempt(key, value)
 
 
+def _complete_lookup(value):
+    """Validate one complete fixed environment lookup, respecting quoted arguments."""
+    match = re.match(r"os\.(?:getenv\(|environ\[)", value)
+    if match is None:
+        return False
+    stack = [value[match.end() - 1]]
+    quote = None
+    escaped = False
+    for index in range(match.end(), len(value)):
+        char = value[index]
+        if char in "\r\n":
+            return False
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == quote:
+                quote = None
+        elif char in "\"'":
+            quote = char
+        elif char in "([{":
+            stack.append(char)
+        elif char in ")]}":
+            if not stack or char != {"(": ")", "[": "]", "{": "}"}[stack.pop()]:
+                return False
+            if not stack:
+                return index == len(value) - 1
+    return False
+
+
 def _credential_value_exempt(key: str, value: Any) -> bool:
     if value is None or isinstance(value, bool):
         return True
@@ -1537,7 +1568,7 @@ def _credential_value_exempt(key: str, value: Any) -> bool:
             "process.env."
         ):
             return True
-    if re.fullmatch(r"os\.(?:environ\[[^\r\n\]]*+\]|getenv\([^\r\n)]*+\))", value):
+    if _complete_lookup(value):
         return True
     if leaf.endswith("session") and re.fullmatch(
         r"[+-]?(?:[0-9]++(?:\.[0-9]*+)?|\.[0-9]++)(?:[eE][+-]?[0-9]++)?%?", value, re.ASCII
@@ -1892,6 +1923,32 @@ class _Syntax:
             self.ends[opening] = len(text)
         for begin in stack:
             self.ends[begin] = len(text)
+        # Lookup calls have local quoted arguments. Unrelated prose quotes
+        # cannot close their parentheses, and punctuation in arguments is data.
+        call_tokens = re.compile(r"os\.(?:getenv\(|environ\[)|[()\[\]{}\"'\r\n]")
+        calls = []
+        cursor = 0
+        while token := call_tokens.search(text, cursor):
+            char, pos = token[0], token.start()
+            cursor = token.end()
+            if char.startswith("os."):
+                calls.append((token.end() - 1, char[-1], True))
+            elif calls:
+                if char in "\"'":
+                    closing = self.quote_next.get(pos)
+                    if closing is not None:
+                        cursor = closing
+                    else:
+                        calls.clear()
+                elif char in "\r\n":
+                    calls.clear()
+                elif char in "([{":
+                    calls.append((pos, char, False))
+                elif char == {"(": ")", "[": "]", "{": "}"}[calls[-1][1]]:
+                    opening, _, lookup = calls.pop()
+                    if lookup:
+                        self.ends[opening] = token.end()
+                        self.closings[pos] = opening
         # Indented YAML containers/scalars end at the next dedent. Close every
         # pending block once, using the previous content end computed once/line.
         self.yaml_ends = _PositionIndex(text)
@@ -2186,8 +2243,13 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
         if (
             not include_exempt
             and text.startswith("${", inner_start)
-            and syntax.ends.get(inner_start + 1) == inner_end
+            and syntax.complete(inner_start + 1, inner_end)
         ):
+            continue
+        # Complete fixed lookups are indexed once, not copied and reparsed
+        # for every nested assignment in an O(N)-sized suffix.
+        call = re.compile(r"os\.(?:getenv\(|environ\[)").match(text, inner_start)
+        if not include_exempt and call and syntax.complete(call.end() - 1, inner_end):
             continue
         nested = (
             trailing_assignment.search(text, max(start, end - 134), end) if not quoted else None

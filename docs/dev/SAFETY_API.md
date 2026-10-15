@@ -474,3 +474,10 @@ At a credential value's start, a single, double or backtick quote opens its own
 value if the same-layer, same-line matching quote follows. This local opener
 takes priority over an unrelated earlier quote. Attached command flags use the
 same rule; only a proven quoted flag's closing delimiter precedes its argument.
+
+Exemptions require a complete genuine closing delimiter at the same layer.
+Forced closure at an enclosing quote or end of input is not a match. Unclosed
+placeholders and lookups are credentials. Fixed environment lookups have locally
+quoted arguments, so parentheses or brackets within an argument are data. Lookup
+and placeholder extents are indexed once; nested lookups never repeatedly copy
+or decode a suffix per assignment.
