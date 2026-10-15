@@ -63,3 +63,6 @@ class StoreMuseTrust:
 
     def standard_handoff(self, snapshot: MuseTrustSnapshot, handoff) -> None:
         self.store.muse_standard_handoff(snapshot, handoff)
+
+    def application_handoff(self, snapshot: MuseTrustSnapshot, handoff) -> None:
+        self.store.muse_application_handoff(snapshot, handoff)

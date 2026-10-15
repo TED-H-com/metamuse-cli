@@ -649,7 +649,7 @@ class Store:
 
     @contextmanager
     def _muse_boundary(self, provider: str, account: str):
-        """Selection writes and final msg3 share an account file lock across Store instances."""
+        """Trust writes, msg3 and application handoff share locks across Store instances."""
         digest = m.payload_digest([provider, account])
         failure = None
         validated = False
@@ -1236,6 +1236,24 @@ class Store:
                 handoff()
             except Exception as exc:
                 handoff_error = exc
+        if handoff_error is not None:
+            raise handoff_error
+
+    def muse_application_handoff(
+        self, snapshot: MuseTrustSnapshot, handoff: Callable[[], None]
+    ) -> None:
+        """Check the old context and serialize one application send with trust writes."""
+        handoff_error = None
+        with self._muse_boundary(snapshot.provider, snapshot.account) as release_maintenance:
+            with self.transaction() as conn:
+                self._muse_current(conn, snapshot, standard=True)
+            # Keep the existing trust locks, never SQLite or maintenance, over I/O.
+            release_maintenance()
+            try:
+                handoff()
+            except BaseException as exc:
+                handoff_error = exc
+        # Callback failures are transport failures, outside the storage wrapper.
         if handoff_error is not None:
             raise handoff_error
 

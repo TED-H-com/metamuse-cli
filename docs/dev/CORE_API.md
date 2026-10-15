@@ -917,8 +917,8 @@ passes the durable recheck, then reconnects through the full bootstrap and hands
 before any application frame. Immediately after freeze returns, the transport clears
 invalidation and registers `muse_watch`, before mint, wake or opening a socket. The
 registry de-duplicates each bound callback per workspace/label key. Any subsequent
-workspace-confidential or own-label notification forces a fresh connect in the same
-call before its first application frame; the transport rechecks invalidation after
+workspace-confidential or own-label notification that wins before application handoff
+forces a fresh connect in the same call before its first application frame; the transport rechecks invalidation after
 publishing the loop and the final durable assertion. At most three connects per call
 are allowed. The transport tracks an owned candidate from connector return through
 handshake to promotion or actual closure; notifications close it even during a blocked
@@ -934,6 +934,25 @@ attempt. An affected context stops before HTTPS or WSS. An
 in-flight interruption retains normal read failure or mutation uncertainty handling;
 no notification replays a mutation. The documented human closure repair runs after
 stopping Muse connections, so it has no live listeners to notify.
+
+`muse_application_handoff(snapshot, handoff)` uses the same trust-domain/account locks
+to check the old snapshot and serialize the first application send against trust writes
+and their notifications. Unlike `muse_standard_handoff`, it does not write msg3
+provenance or repeat its CAS bookkeeping. Its check transaction commits and
+`maintenance.lock` is released before the callback; both trust locks remain held until
+the callback completes. The callback checks invalidation and calls `open_request`/send;
+it must not recursively perform trust writes. Response collection runs after release.
+Callback exceptions, including SendUncertain and protocol failures, are re-raised outside
+the storage error wrapper with their original identity. StoreMuseTrust exposes this as
+`application_handoff`.
+
+If a notification wins before handoff, the old durable snapshot decides refusal before
+any new bootstrap. A current, invalidated socket reconnects in the same call, sharing
+the existing three-attempt budget with handshake recovery and consuming authorization
+once. True pre-send refusal returns MuseNotSubmitted/session.start or
+FAILED_BEFORE_SEND/chat.stream. If handoff wins the boundary first, a later notification
+is an in-flight close and never replays the action; it cannot cancel already handed-off
+bytes. Invalidation callbacks take no transport lock.
 
 Canonical schema verification is cached per Store trust boundary; every boundary checks
 the actual schema signature for changed guards. Integrity/schema failures block with

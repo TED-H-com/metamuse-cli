@@ -277,12 +277,20 @@ propagation及inherited edge）commit後notify全部workspace live listeners，�
 change仍只notify自己的label。下一call先重查durable state；refusal在任何HTTPS/WSS前stop。
 若仍current但socket被broadcast關閉，同一call完成fresh auth/session/freeze/mint/wake/handshake
 後才開application frame，不回假的E_STORAGE。freeze回來後立即清invalidation並註冊listener，
-在mint/wake/socket之前；同transport/key註冊deduplicate。註冊後任何workspace confidential
-或own-label notification（含publish前及final durable check期間）都在同一call先fresh connect；
+在mint/wake/socket之前；同transport/key註冊deduplicate。註冊後application handoff
+尚未贏trust boundary時，任何workspace confidential或own-label notification（含publish前及final durable check期間）都在同一call先fresh connect；
 publish並assert_current後重查invalidation，每call最多3次connect。耗盡回固定retryable
 E_NETWORK_TIMEOUT/safe_read「Muse connection failed」，action「Retry the connection.
 No gateway request frame was sent.」；mutation經MuseNotSubmitted或chat.stream
 failed_before_send回never-sent。mutation只consume一次。
+每call（含existing loop）以muse_application_handoff在既有trust-domain/account boundary
+重查OLD snapshot，再清除SQLite transaction及maintenance.lock，持trust locks跨
+invalidation check及open_request/send；不更新msg3 provenance。trust write/notify先贏則
+current context先fresh connect，changed/confidential/refused context在新HTTP/WSS及app frame前stop。
+connect與application前recovery共用上述3次上限，authorization只consume一次；真正pre-send
+refusal回MuseNotSubmitted/session.start或FAILED_BEFORE_SEND/chat.stream。handoff先贏則
+較晚的notification屬in-flight，不能撤回已handoff bytes，不replay；response collect不持trust lock。
+callback不取transport lock；callback的SendUncertain/protocol exception不改成storage failure。
 in-flight socket關閉不replay：incomplete read回E_NETWORK_TIMEOUT；handoff後chat.stream保留
 uncertain/partial evidence，session.start回MuseStateUnknown/reconcile；protocol failure仍never。
 下一call只重連，不重送之前的mutation。

@@ -211,7 +211,7 @@ class MuseStateUnknown(CoreError):
 
 
 class MuseNotSubmitted(CoreError):
-    """Affirmative accounting: connect failed before any gateway request frame."""
+    """Affirmative accounting: refusal before any gateway request frame."""
 
     bytes_handed_off = False
 
@@ -894,7 +894,7 @@ def _exchange_for(
 
 
 class _CandidateInvalidated(Exception):
-    """A notification closed an owned candidate before any application frame."""
+    """A notification invalidated a pipe before application handoff."""
 
 
 class _ConnectCandidate(OwnedLink):
@@ -1126,19 +1126,11 @@ class MuseTransport:
         try:
             connect_error = None
             try:
-                self._connect()
+                connect_attempts_left = self._connect()
             except CoreError as exc:
                 connect_error = exc
-            if connect_error is not None and spec.mutating:
-                if route == "chat.stream":
-                    from dataclasses import replace
-
-                    return replace(
-                        self._never_sent(marker, raw), error_code=connect_error.detail.code.value
-                    )
-                raise MuseNotSubmitted(connect_error)
             if connect_error is not None:
-                raise connect_error
+                return _emit(self._before_send_failure(route, connect_error, marker, raw))
             return self._unary(
                 route,
                 spec,
@@ -1152,6 +1144,7 @@ class MuseTransport:
                 events=events,
                 marker=marker,
                 payload=payload,
+                connect_attempts_left=connect_attempts_left,
             )
         finally:
             self._secrets.clear()
@@ -1699,13 +1692,13 @@ class MuseTransport:
         if loop is not None:
             loop.link.close()
 
-    def _connect(self) -> None:
-        for _ in range(3):
+    def _connect(self, *, attempts: int = 3) -> int:
+        for remaining in reversed(range(attempts)):
             self._connect_once()
             # A notification may precede publication of the loop, or arrive during
             # its final durable check. Neither socket may carry an application frame.
             if not self._trust_invalidated:
-                return
+                return remaining
             self._close_locked()
         message, action = _PUBLIC_CODES[ErrorCode.NETWORK_TIMEOUT]
         raise _error(ErrorCode.NETWORK_TIMEOUT, message, next_action=action)
@@ -1892,6 +1885,7 @@ class MuseTransport:
         events: list[dict[str, Any]] | None,
         marker: str,
         payload: Mapping[str, Any] | None,
+        connect_attempts_left: int,
     ) -> GatewayResult | StreamAttempt:
         headers = [Header("x-request-id", marker), Header("accept-encoding", "identity")]
         if raw:
@@ -1900,41 +1894,57 @@ class MuseTransport:
         if loop is None:
             raise MuseProgrammingError("gateway connection is not open")
         stream_id: int | None = None
+        handoff_started = False
         result: GatewayResult | StreamAttempt | BaseException
         try:
-            stream_id = loop.open_request(verb=verb, path=path, body=raw, headers=headers)
+            while True:
+                loop = self._loop
+                if loop is None:
+                    raise MuseProgrammingError("gateway connection is not open")
+
+                def handoff(loop: ReceiveLoop = loop) -> None:
+                    nonlocal stream_id, handoff_started
+                    # The Store trust boundary excludes writes/notifications until send.
+                    if self._trust_invalidated:
+                        raise _CandidateInvalidated()
+                    handoff_started = True
+                    stream_id = loop.open_request(verb=verb, path=path, body=raw, headers=headers)
+
+                try:
+                    self._trust.application_handoff(self._snapshot, handoff)
+                except _CandidateInvalidated:
+                    self._close_locked()
+                    connect_attempts_left = self._connect(attempts=connect_attempts_left)
+                    continue
+                break
+            assert stream_id is not None
             status, response_body = loop.collect(stream_id, timeout_s=timeout_s)
-        except IncompleteBody as exc:
-            self._abandon(loop)
-            result = self._incomplete(route, exc, loop, marker, raw, payload, exchange, events)
-        except ProtocolMismatch:
-            self._abandon(loop)
-            result = self._from_code(
-                route,
-                ErrorCode.PROTOCOL_MISMATCH,
-                loop.handed_off,
-                loop,
-                marker,
-                raw,
-                payload,
-                exchange,
-                events,
-            )
         except SendUncertain:
             self._abandon(loop)
             result = self._after_uncertain_send(route, loop, marker, raw, payload, exchange, events)
         except CoreError as exc:
             code = exc.detail.code
-            handed = loop.handed_off
-            self._abandon(loop)
-            result = self._from_code(
-                route, code, handed, loop, marker, raw, payload, exchange, events
-            )
+            handed = handoff_started and loop.handed_off
+            if not handed:
+                self._close_locked()
+                result = self._before_send_failure(
+                    route, _sanitize_transport_error(exc), marker, raw
+                )
+            else:
+                self._abandon(loop)
+                result = self._from_code(
+                    route, code, handed, loop, marker, raw, payload, exchange, events
+                )
         except Exception:
-            handed = loop.handed_off
+            handed = handoff_started and loop.handed_off
             self._abandon(loop)
-            if route == "chat.stream" and not handed:
-                result = self._never_sent(marker, raw)
+            if not handed and route in _MUTATING:
+                result = self._before_send_failure(
+                    route,
+                    _error(ErrorCode.NETWORK_TIMEOUT, "Muse request failed before frame handoff"),
+                    marker,
+                    raw,
+                )
             elif handed and route in _MUTATING:
                 result = self._from_code(
                     route,
@@ -1980,6 +1990,17 @@ class MuseTransport:
                     bytes_handed_off=True,
                 )
         return _emit(result)
+
+    def _before_send_failure(
+        self, route: str, error: CoreError, marker: str, raw: bytes
+    ) -> StreamAttempt | CoreError:
+        if route == "chat.stream":
+            from dataclasses import replace
+
+            return replace(self._never_sent(marker, raw), error_code=error.detail.code.value)
+        if route in _MUTATING:
+            return MuseNotSubmitted(error)
+        return error
 
     def _abandon(self, loop: ReceiveLoop) -> None:
         if loop.failed:

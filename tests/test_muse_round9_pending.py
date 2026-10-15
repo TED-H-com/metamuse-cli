@@ -433,26 +433,21 @@ def test_failure_cleanup_retains_candidate_until_it_is_closed(ctx, monkeypatch):
 @pytest.mark.parametrize("route", ROUTES)
 def test_published_candidate_inflight_close_never_replays_action(ctx, monkeypatch, route):
     transport, http, connector, writer = setup_connection(ctx)
-    original = connector.connect
+    original = ctx.store.muse_application_handoff
     observed, token = [], Token()
 
-    def connect(*args, **kwargs):
-        peer = original(*args, **kwargs)
-        send = peer.send
+    def after_handoff(snapshot, handoff):
+        original(snapshot, handoff)
+        # Trust writes cannot recurse inside send's boundary. Notify immediately
+        # after release, still before response collection, with one frame handed off.
+        peer = connector.peers[0]
+        assert transport._pending_link is None
+        assert transport._loop.link.raw is peer and len(peer.frames) == 1
+        freeze(writer, confidential=True)
+        observed.append(peer.closed)
+        peer.incoming.clear()  # EOF instead of an application response.
 
-        def after_send(data):
-            send(data)
-            if peer.frames:
-                assert transport._pending_link is None
-                assert transport._loop.link.raw is peer
-                freeze(writer, confidential=True)
-                observed.append(peer.closed)
-                peer.incoming.clear()  # EOF instead of an application response.
-
-        peer.send = after_send
-        return peer
-
-    monkeypatch.setattr(connector, "connect", connect)
+    monkeypatch.setattr(ctx.store, "muse_application_handoff", after_handoff)
     with transport:
         if route == "chat.stream":
             result = call(transport, route, token)

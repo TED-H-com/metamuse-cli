@@ -188,8 +188,8 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    mint, wake and the full handshake in that same call. Immediately after freeze returns,
    clear invalidation and register the listener, before mint, wake or opening a socket.
    Registrations are de-duplicated per transport and label key. Any workspace-confidential
-   or own-label notification after registration forces a fresh connect in this call before
-   its first application frame, including a notification before loop publication or during
+   or own-label notification after registration that wins before application handoff forces
+   a fresh connect in this call before its first application frame, including a notification before loop publication or during
    the final durable check. Track the returned candidate from connector return through
    Noise, including a blocked msg2 read, until loop promotion or actual failure cleanup.
    Notification closes both the owned candidate and any published socket without taking
@@ -205,6 +205,22 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    `Retry the connection. No gateway request frame was sent.` A mutation then reports
    never-sent through `MuseNotSubmitted` or the `chat.stream` `failed_before_send` attempt.
    No standard enrollment-health or capability-registration gate is added.
+
+Every call, including reuse of an open loop, hands its first application request to
+`muse_application_handoff` under the existing trust-domain/account boundary. It checks
+the **old** snapshot, commits the check without changing msg3 provenance, and releases
+SQLite and `maintenance.lock` before the invalidation check and `open_request`/send.
+Trust writes and their notifications share that boundary. If a write wins first, an
+unaffected context reconnects before any application frame; a changed binding or
+confidential/refused context stops before fresh HTTPS/WSS or application work. Connect
+and pre-send recovery share the same three-attempt budget, and authorization is consumed
+once. A true pre-send refusal yields `MuseNotSubmitted` for session.start or
+`failed_before_send` for chat.stream. Storage/protocol failures stop rather than retry.
+If application handoff wins first, a later write is an in-flight case: bytes already
+handed off cannot be cancelled. Send uncertainty is never replayed. The trust locks span
+only validation and the first send, not response collection; callbacks remain lock-free
+with respect to the transport lock. Callback exceptions leave the Store boundary with
+their original transport meaning.
 
 Wake is an account-side power-state request, performed only inside a connection triggered
 by an already-granted Muse operation in live network mode. Offline mode and the separately
