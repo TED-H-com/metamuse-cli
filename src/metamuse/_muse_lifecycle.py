@@ -40,6 +40,7 @@ from metamuse.safety import (
     action_digest,
     external_action_verifier,
     operator_command,
+    redact_display,
     redact_text,
     register_approval_preview,
     verify_permit,
@@ -295,7 +296,7 @@ def _approval_preview(ctx, request):
     safe_request = {
         key: value
         if key == "question" or (key == "topic" and not stored_topic)
-        else redact_text(value)[0]
+        else redact_display(value)
         if isinstance(value, str)
         else value
         for key, value in request.model_dump(mode="json").items()
@@ -318,7 +319,7 @@ def _approval_preview(ctx, request):
         if target.get("session_id")
         else "List sessions to reconcile the original creation intent"
     )
-    safe_topic = redact_text(topic)[0] if stored_topic and topic is not None else topic
+    safe_topic = redact_display(topic) if stored_topic and topic is not None else topic
     safe_question = safe_request.get("question") if question is not None else None
     details = [
         "Would: " + summary,
@@ -1094,7 +1095,7 @@ def _save_send(step, discussion, exchange, result, failure):
         else None
     )
 
-    safe_detail = redact_text(attempt.evidence.detail)[0][:512]
+    safe_detail = redact_display(attempt.evidence.detail)[:512]
 
     def save(writer):
         current = writer.get(m.Exchange, exchange.id)

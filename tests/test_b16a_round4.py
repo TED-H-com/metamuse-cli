@@ -18,6 +18,7 @@ def assert_private(text, value):
     assert any(row["kind"] != "local_path" for row in findings), (text, output)
     assert value not in output, (text, output)
     assert not any(value[i : i + 6] in output for i in range(len(value) - 5)), output
+    assert safety.redact_text(output) == (output, [])
     with pytest.raises(CoreError) as refused:
         _check_question(text)
     assert refused.value.detail.code == ErrorCode.INPUT_INVALID
@@ -68,3 +69,58 @@ def test_r31_decoding_layer_terminators(layers):
 def test_r31_raw_span_is_not_dropped_for_percent():
     value = marker()
     assert_private(f"password=Ab3%3B{value}", value)
+
+
+@pytest.mark.parametrize(
+    "template",
+    [
+        "q=password%3A+%22{v}%22",
+        "q=%7B%22password%22%3A+%22{v}%22%7D",
+        '{{"cfg": "password: |\\n  {v}\\n"}}',
+        "q=--password+{v}",
+        "q=curl+-u+user%3A{v}",
+        "https://example.invalid/run?q=--password+{v}",
+    ],
+)
+def test_r33_partial_mask_table(template):
+    value = marker()
+    output = assert_private(template.format(v=value), value)
+    assert safety.redact_text(output) == (output, [])
+
+
+@pytest.mark.parametrize("changes", [0, 1, 2, 3, 4, 5, 9])
+def test_r33_exact_internal_application_bound(monkeypatch, changes):
+    calls = 0
+
+    def single(text):
+        nonlocal calls
+        calls += 1
+        return (
+            (text + "!", [{"kind": "session_cookie", "count": 1}])
+            if calls <= changes
+            else (text, [])
+        )
+
+    monkeypatch.setattr(safety, "_redact_once", single, raising=False)
+    output, findings = safety.redact_text("input")
+    assert calls == min(changes + 1, 4)
+    assert any(row["kind"] == "redaction_unstable" for row in findings) == (changes >= 4)
+    assert output == "input" + "!" * min(changes, 4)
+
+
+@pytest.mark.parametrize("value", ["text", {"text": "value"}, ["text"]])
+def test_r33_unstable_bundle_values_refuse(monkeypatch, value):
+    from metamuse.content import _safe_value
+
+    monkeypatch.setattr(safety, "_redact_once", lambda text: (text + "!", []))
+    with pytest.raises(CoreError, match="redaction did not stabilize"):
+        _safe_value(value, [])
+
+
+def test_r33_nonrefusable_display_masks_unstable_value(monkeypatch):
+    value = marker()
+    monkeypatch.setattr(safety, "_redact_once", lambda text: (text + "!", []))
+    assert safety.redact_display(value) == "[REDACTED]"
+    with pytest.raises(CoreError) as error:
+        _check_question(value)
+    assert error.value.detail.code == ErrorCode.INPUT_INVALID

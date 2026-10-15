@@ -1736,8 +1736,11 @@ class _Syntax:
                 comment = re.search(r"\s#", stripped[scalar.end() :])
                 finish = scalar.end() + comment.start() if comment else len(stripped.rstrip())
                 self.yaml_scalars[colon] = line.start() + indent + finish
-            if header.fullmatch(stripped):
-                colon = line.start() + body.index(":")
+            block_header = re.search(
+                _NAME + r"\s*+:[^\S\r\n]*+[|>][-+]?[^\S\r\n]*+$", stripped
+            ) or header.fullmatch(stripped)
+            if block_header and block_header.end() == len(stripped):
+                colon = line.start() + indent + stripped.rfind(":", block_header.start())
                 blocks.append((indent, colon))
             content_end = line.start() + len(body.rstrip())
         for _, colon in blocks:
@@ -2354,7 +2357,7 @@ def _form_ranges(text):
             yield question + 1, match.end()
 
 
-def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
+def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     """Canonical decoded views, forward scans, sparse offsets, one output join."""
     layers = []
     view = text
@@ -2414,3 +2417,25 @@ def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
     return "".join(parts), [
         {"kind": kind, "count": count} for kind, count in sorted(counts.items())
     ]
+
+
+def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
+    """Three changing applications and one confirming application, at most."""
+    counts = {}
+    for _ in range(4):
+        output, findings = _redact_once(text)
+        for finding in findings:
+            kind = finding["kind"]
+            counts[kind] = counts.get(kind, 0) + finding["count"]
+        if output == text:
+            break
+        text = output
+    else:
+        counts["redaction_unstable"] = 1
+    return text, [{"kind": kind, "count": count} for kind, count in sorted(counts.items())]
+
+
+def redact_display(text: str) -> str:
+    """A nonrefusable display/log value must fail closed as one complete mask."""
+    output, findings = redact_text(text)
+    return _REDACTED if any(row["kind"] == "redaction_unstable" for row in findings) else output

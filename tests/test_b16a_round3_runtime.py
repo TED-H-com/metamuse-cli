@@ -253,7 +253,7 @@ def test_packet_fixpoint_backstop_fails_before_hash_or_write(ctx, project, monke
     from test_b16a_privacy import evidence
 
     ref = evidence(ctx, project, "A synthetic source.")
-    monkeypatch.setattr("metamuse.content.redact_text", lambda text: (text + "!", []))
+    monkeypatch.setattr("metamuse.safety._redact_once", lambda text: (text + "!", []))
     result = app.prepare_packet(
         ctx, {"project_id": project, "selection": [ref], "request_key": "nonfixpoint"}
     )
