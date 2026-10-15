@@ -88,7 +88,7 @@ def page(click="", extra=""):
     )
 
 
-def outcome(tmp_path, monkeypatch, markup):
+def outcome(tmp_path, monkeypatch, markup, *, max_bytes=1_000_000):
     with browser_fixture(
         tmp_path,
         monkeypatch,
@@ -97,7 +97,7 @@ def outcome(tmp_path, monkeypatch, markup):
         read_timeout=2,
     ) as (ctx, project, permit, _, hits, *_):
         started = time.monotonic()
-        job = finish(ctx, submit(ctx, project, permit))
+        job = finish(ctx, submit(ctx, project, permit, max_bytes=max_bytes))
         assert job["error"] is None, job
         assert time.monotonic() - started < 45  # independent wrapper is 90s
         return job, rows(ctx), list(hits)
@@ -128,8 +128,14 @@ def test_r10_collateral_and_flood_do_not_decide_outcome(tmp_path, monkeypatch, c
     click = (
         "for(let i=0;i<300;i++)fetch('/api/noop?i='+i);" if collateral == "flood" else ""
     ) + PROGRESS
-    expected, expected_rows, _ = outcome(tmp_path / "control", monkeypatch, page(PROGRESS))
-    job, stored, _ = outcome(tmp_path / "attack", monkeypatch, page(click, extra))
+    # HTTP/1.0 closes each response: 300 full TLS handshakes alone consume
+    # about 1.15 MB. Allow 8 MiB for this DOM-progress test, including wire
+    # overhead and structured captures; dedicated 24 KB tests cover cutoff.
+    budget = 8 * 1024 * 1024 if collateral == "flood" else 1_000_000
+    expected, expected_rows, _ = outcome(
+        tmp_path / "control", monkeypatch, page(PROGRESS), max_bytes=budget
+    )
+    job, stored, _ = outcome(tmp_path / "attack", monkeypatch, page(click, extra), max_bytes=budget)
     assert (job["state"], job["coverage_status"], job["missing_fields"]) == (
         expected["state"],
         expected["coverage_status"],
