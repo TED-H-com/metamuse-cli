@@ -333,9 +333,10 @@ a discussion as an unknown delivery.
 
 Stored discussion titles are not new outbound text and are never re-checked. Previews
 show a display-redacted "Stored discussion title"; it is not in the send body or read
-payload. Reconciliation compares its request topic with the exact stored title only.
-The original reconciliation request, not the display-redacted topic, is used for the
-human approval request file and retry. Approval failures propagate their actual fixed
+payload. Reconciliation identifies the discussion by ID and project. Its request topic must
+equal the stored title or its current display-redacted form. Approval requests and
+saved request files carry only the display-redacted title. A changed display after
+saving requires a fresh reconciliation preview (E_REFERENCE_INVALID). Approval failures propagate their actual fixed
 code, message and next action rather than replacing them with a permit error.
 
 Packets and bundles use the shared redactor's bounded fixpoint before hashing. Still-changing text is fixed `E_INPUT_INVALID` "Packet redaction did not
@@ -424,3 +425,9 @@ Out of scope: .netrc and .pgpass lines need separate positional file grammars;
 token-only URL userinfo has no password delimiter (known token prefixes still
 apply); localized names such as 密碼 require an explicitly maintained language
 policy. These omissions are not evidence that a document is public.
+
+Human reconciliation uses discussion_id and project, accepting either the raw
+stored topic or exactly its current display-redacted form. The saved approval
+request never carries the raw topic. A stale saved display is E_REFERENCE_INVALID
+and asks to request reconciliation again. Stored topics are never re-checked as
+new outbound text.
