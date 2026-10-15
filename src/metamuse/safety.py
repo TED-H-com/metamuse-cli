@@ -2500,58 +2500,158 @@ def _path_spans(text):
     yield from _merge_spans([matches(quoted, "path"), matches(bare, None)])
 
 
-def _har_spans(text, syntax):
-    """Index HAR fields once in object order, including arbitrary cookie names."""
-    objects = []
-    stack = []
-    token = re.compile(r'"(?:\\[^\r\n]|[^"\\])*+"|[{}\[\]]')
-    colon = re.compile(r"\s*+:\s*+")
-    for match in token.finditer(text):
-        char = match[0]
-        if char == "{":
-            record = {"private": False, "value": None}
-            objects.append(record)
-            stack.append(record)
-        elif char == "[":
-            stack.append(None)
-        elif char in {"}", "]"}:
-            if stack:
-                stack.pop()
-        elif stack and stack[-1] is not None and char in {'"name"', '"value"', '"cookies"'}:
-            separator = colon.match(text, match.end())
-            if not separator:
+def _har_spans(text, syntax=None, *, _depth=0):
+    """Lex JSON before decoding its string data; partial documents stop at error.
+
+    Slots are allocated in source order and selected when an object is closed, so
+    value-before-name and scalar values require neither resynchronization nor sorting.
+    """
+    if _depth > 3:
+        return
+    begin = len(text) - len(text.lstrip())
+    if text[begin : begin + 1] not in {"{", "[", '"'}:
+        view = text
+        layers = []
+        for _ in range(3):
+            decoded, edits = _decode_view(view)
+            if not edits:
+                break
+            layers.append(edits)
+            view = decoded
+            if view.lstrip().startswith(("{", "[", '"')):
+                spans = list(_har_spans(view, _depth=_depth))
+                for edits in reversed(layers):
+                    spans = list(_original_spans(spans, edits))
+                yield from spans
+                return
+        return
+
+    tokens = re.compile(
+        r'"(?:\\(?:u[0-9a-fA-F]{4}|["\\/bfnrt])|[^"\\\x00-\x1f])*+(?:"|$)'
+        r"|[{}\[\]:,]|-?(?:0|[1-9][0-9]*+)(?:\.[0-9]++)?(?:[eE][+-]?[0-9]++)?"
+        r"|true|false|null"
+    )
+    whitespace = re.compile(r"\s*+")
+    slots = []
+    nested = []
+    frames = []
+    position = begin
+
+    def close_record(frame):
+        if frame.get("private"):
+            slot = frame.get("value")
+            if slot is not None:
+                slots[slot][4] = True
+
+    def register(frame, kind, start, end):
+        key = frame.get("key")
+        if key not in {"value", "cookies"}:
+            return None
+        quoted = kind == '"'
+        stop = end - int(quoted and text[end - 1 : end] == '"')
+        first = start + int(quoted)
+        # HAR scalars are private even for numeric session values / boolean literals.
+        opaque = text[first:stop] in {_REDACTED, "REDACTED", ""}
+        slot = len(slots)
+        slots.append(
+            [
+                first,
+                stop,
+                "cookie" if key == "cookies" else "sensitive_field",
+                _REDACTED if quoted else '"' + _REDACTED + '"',
+                key == "cookies" and not opaque and text[start:end] != "[]",
+            ]
+        )
+        if key == "value" and not opaque:
+            frame["value"] = slot
+        return slot
+
+    while position < len(text):
+        position = whitespace.match(text, position).end()
+        if position == len(text):
+            break
+        token = tokens.match(text, position)
+        if token is None:
+            break  # Never search for a later plausible object after an error.
+        raw, start, end = token[0], position, token.end()
+        kind = raw[0]
+        frame = frames[-1] if frames else None
+        state = frame["state"] if frame else "value"
+        if state in {"key", "first_key"}:
+            if kind == "}" and state == "first_key":
+                pass
+            elif kind != '"' or not raw.endswith('"'):
+                break
+            else:
+                frame["key"] = json.loads(raw)
+                frame["state"] = "colon"
+                position = end
                 continue
-            start = separator.end()
-            end = syntax.value(text, start)
-            record = stack[-1]
-            if char == '"name"':
-                name = text[start:end].strip('"')
-                record["private"] = redaction_sensitive_key(name)
-            elif char == '"value"':
-                record["value"] = (start, end)
-            elif text[start : start + 1] == "[" and text[start:end].strip() != "[]":
-                record["cookies"] = (start, end)
-    # Fields can occur in any order, including before their parent's cookies.
-    # Revisit the token stream once to emit spans in order, without sorting or
-    # restarting inside any value.
-    selected = {}
-    for record in objects:
-        if record.get("cookies"):
-            start, end = record["cookies"]
-            selected[start] = (start, end, "cookie", '"' + _REDACTED + '"')
-        if record["private"] and record["value"]:
-            start, end = record["value"]
-            if redaction_sensitive_value("password", text[start:end]):
-                quoted = text[start : start + 1] == '"'
-                selected[start] = (
-                    start + int(quoted),
-                    end - int(quoted and text[end - 1 : end] == '"'),
-                    "sensitive_field",
-                    _REDACTED if quoted else '"' + _REDACTED + '"',
-                )
-    for match in token.finditer(text):
-        if match.start() in selected:
-            yield selected[match.start()]
+        elif state == "colon":
+            if kind != ":":
+                break
+            frame["state"] = "value"
+            position = end
+            continue
+        elif state in {"comma", "array_comma"}:
+            if kind == ",":
+                frame["state"] = "key" if frame["kind"] == "{" else "value"
+                position = end
+                continue
+            if kind != ("}" if frame["kind"] == "{" else "]"):
+                break
+        if kind in "}]":
+            if frame is None or kind != ("}" if frame["kind"] == "{" else "]"):
+                break
+            if state not in {"comma", "array_comma", "first_key", "first_value"}:
+                break
+            close_record(frame)
+            frames.pop()
+            if frame.get("slot") is not None:
+                slot = slots[frame["slot"]]
+                slot[1] = end
+                if text[frame["start"] : end] == "[]":
+                    slot[4] = False
+            position = end
+            continue
+        if state not in {"value", "first_value"} or kind in ":,":
+            break
+        slot = register(frame, kind, start, end) if frame else None
+        if frame:
+            frame["state"] = "comma" if frame["kind"] == "{" else "array_comma"
+            if frame.get("key") == "name" and kind == '"' and raw.endswith('"'):
+                name = json.loads(raw)
+                frame["private"] = redaction_sensitive_key(name) or _credential_name(name) in {
+                    "authorization",
+                    "proxyauthorization",
+                    "cookie",
+                    "setcookie",
+                }
+        if kind in "{[":
+            frames.append(
+                {
+                    "kind": kind,
+                    "state": "first_key" if kind == "{" else "first_value",
+                    "start": start,
+                    "slot": slot,
+                }
+            )
+        elif kind == '"':
+            if not raw.endswith('"') or len(raw) == 1:
+                position = end
+                break
+            inner, edits = _decode_view(raw[1:-1], json_escapes=True)
+            if inner.lstrip().startswith(("{", "[", '"')) and edits:
+                spans = _original_spans(_har_spans(inner, _depth=_depth + 1), edits)
+                nested.extend((a + start + 1, b + start + 1, k, r) for a, b, k, r in spans)
+        position = end
+    for frame in frames:
+        close_record(frame)
+        if frame.get("slot") is not None:
+            slots[frame["slot"]][1] = len(text)
+    yield from _merge_spans(
+        [((a, b, k, r) for a, b, k, r, selected in slots if selected), iter(nested)]
+    )
 
 
 def _command_spans(text, syntax):
@@ -2607,7 +2707,6 @@ def _view_spans(text, encoded_positions, syntax):
             _pem_spans(text, syntax),
             _xml_spans(text, syntax),
             _curl_spans(text, syntax),
-            _har_spans(text, syntax),
             _command_spans(text, syntax),
             _path_spans(text),
         ]
@@ -2744,7 +2843,11 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     original_syntax = _Syntax(text) if layers else None
     original_fields = _assignment_spans(text, original_syntax) if layers else ()
     original_headers = _header_spans(text, original_syntax) if layers else ()
-    spans = list(_merge_spans([spans, original_fields, original_headers, _bearer_spans(text)]))
+    spans = list(
+        _merge_spans(
+            [spans, original_fields, original_headers, _bearer_spans(text), _har_spans(text)]
+        )
+    )
     if not spans:
         return text, []
     parts = []

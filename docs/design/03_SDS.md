@@ -549,3 +549,10 @@ Quote and bracket pairs are tracked at every decoding layer, including inside an
 outer string. Quoted command arguments may open at their operator layer or deeper,
 and end at the matching quote at that layer. Spaces inside remain value data.
 Exempt environment lookups end at their own closing bracket or parenthesis.
+
+HAR structure is read by an escape-aware JSON lexer at its JSON layer, before
+percent or JSON escapes inside its string values become data in canonical views.
+Complete documents and whole JSON-string layers share the lexer. Partial documents
+stop at the first syntax error, without guessed resynchronization. Name/value order
+is immaterial; sensitive HAR scalars, including numbers and boolean/null literals,
+are redacted whole, as are cookies arrays.
