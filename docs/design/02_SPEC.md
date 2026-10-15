@@ -686,7 +686,7 @@ refused: xmp, iframe, noembed, noframes, plaintext, textarea and title. Foreign 
 names (including noscript/template/slot), dialog, popover and declarative shadow DOM
 are refused. Executable scripts, event handlers, stylesheets, external stylesheet
 links, refresh metadata and unsupported inline rendering declarations also refuse;
-fixtures do not simulate execution, resources or the external CSS cascade.
+fixtures do not simulate execution, resources or the external CSS cascade. Inert script payloads admit application/json, application/ld+json and text/plain; other non-empty script bodies refuse. Legacy executable-script and embed examples remain real Chromium regressions, with explicit fixture refusals.
 
 The differential corpus includes committed HTML literals/files, runtime fixture
 inputs recorded by the suite, reviewer-provided markup and a seeded depth-five

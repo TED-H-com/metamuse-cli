@@ -539,7 +539,7 @@ class FixtureTree(HTMLParser):
         if (
             parent["tag"] == "script"
             and parent["attrs"].get("type", "").lower()
-            not in {"application/json", "application/ld+json"}
+            not in {"application/json", "application/ld+json", "text/plain"}
             and data.strip()
         ):
             raise failure()  # Static fixtures never simulate executable scripts.
