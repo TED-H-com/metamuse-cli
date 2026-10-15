@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import shlex
+import stat
 import subprocess
 import sys
 from dataclasses import replace
@@ -401,6 +403,105 @@ def test_backup_cleanup_failure_keeps_complete_new_set(capture_run, monkeypatch)
     assert _tree_bytes(backups[0]) == capture_run.before
     assert list(capture_run.out.parent.glob(".images-stage-*")) == []
     assert list((capture_run.demo / "tmp").iterdir()) == []
+
+
+def test_publication_preserves_existing_directory_mode(capture_run, monkeypatch):
+    capture_run.out.chmod(0o750)
+    rename = Path.rename
+    published_modes = []
+
+    def observe_publish(path, target):
+        if path.name.startswith(".images-stage-"):
+            published_modes.append(stat.S_IMODE(path.stat().st_mode))
+        return rename(path, target)
+
+    monkeypatch.setattr(
+        capture, "_capture_scene", lambda scene, display, staged: _stage_fake_frame(scene, staged)
+    )
+    monkeypatch.setattr(Path, "rename", observe_publish)
+    capture.main()
+    assert published_modes == [0o750]
+    assert stat.S_IMODE(capture_run.out.stat().st_mode) == 0o750
+
+
+@pytest.mark.parametrize("umask", [0o002, 0o027])
+def test_initial_publication_matches_plain_mkdir_mode(capture_run, monkeypatch, tmp_path, umask):
+    for path in capture_run.out.iterdir():
+        path.unlink()
+    capture_run.out.rmdir()
+    monkeypatch.setattr(
+        capture, "_capture_scene", lambda scene, display, staged: _stage_fake_frame(scene, staged)
+    )
+    rename = Path.rename
+    published_modes = []
+
+    def observe_publish(path, target):
+        if path.name.startswith(".images-stage-"):
+            published_modes.append(stat.S_IMODE(path.stat().st_mode))
+        return rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", observe_publish)
+    previous_umask = os.umask(umask)
+    try:
+        probe = tmp_path / "plain-mkdir-probe"
+        probe.mkdir()
+        expected_mode = stat.S_IMODE(probe.stat().st_mode)
+        capture.main()
+    finally:
+        os.umask(previous_umask)
+    assert published_modes == [expected_mode]
+    assert stat.S_IMODE(capture_run.out.stat().st_mode) == expected_mode
+
+
+@pytest.mark.parametrize("previous_set", [True, False])
+def test_interrupt_after_publish_reports_completed_commit(capture_run, monkeypatch, previous_set):
+    if not previous_set:
+        for path in capture_run.out.iterdir():
+            path.unlink()
+        capture_run.out.rmdir()
+    rename = Path.rename
+
+    def publish_then_interrupt(path, target):
+        result = rename(path, target)
+        if path.name.startswith(".images-stage-"):
+            raise KeyboardInterrupt()
+        return result
+
+    monkeypatch.setattr(
+        capture, "_capture_scene", lambda scene, display, staged: _stage_fake_frame(scene, staged)
+    )
+    monkeypatch.setattr(Path, "rename", publish_then_interrupt)
+    with pytest.raises(RuntimeError) as error:
+        capture.main()
+    assert str(error.value).startswith("capture output committed;")
+    manifest = json.loads((capture_run.out / "manifest.json").read_text())
+    assert [Path(record["png"]).stem for record in manifest["images"]] == [
+        scene.stem for scene in (*capture.SCENES, capture.HERO)
+    ]
+    names = {"manifest.json", "README.md"}
+    for record in manifest["images"]:
+        names.update((record["png"], record["transcript"]))
+        assert capture.sha256_file(capture_run.out / record["png"]) == record["sha256"]
+        assert (
+            capture.sha256_file(capture_run.out / record["transcript"])
+            == record["transcript_sha256"]
+        )
+    assert set(_tree_bytes(capture_run.out)) == names
+    assert all(
+        f"### {record['png']}" in (capture_run.out / "README.md").read_text()
+        for record in manifest["images"]
+    )
+    backups = list(capture_run.out.parent.glob(".images-backup-*"))
+    if previous_set:
+        assert len(backups) == 1
+        assert f"backup retained: {backups[0].name}" in str(error.value)
+        assert _tree_bytes(backups[0]) == capture_run.before
+    else:
+        assert backups == []
+        assert "no backup to clean up" in str(error.value)
+    assert list(capture_run.out.parent.glob(".images-stage-*")) == []
+    assert list((capture_run.demo / "tmp").iterdir()) == []
+    assert len(capture_run.stopped) == 1
 
 
 def test_capture_scene_writes_only_to_staging(capture_run, monkeypatch, tmp_path):

@@ -16,6 +16,7 @@ import json
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -845,6 +846,16 @@ def _commit_outputs(staged: Path, records: list[dict], manifest: dict) -> None:
         )
         _write_readme(records, prepared)
 
+        if OUT.exists():
+            mode = stat.S_IMODE(OUT.stat().st_mode)
+        else:
+            # Observe plain mkdir's mode without changing the process umask.
+            probe = prepared / ".mode-probe"
+            probe.mkdir()
+            mode = stat.S_IMODE(probe.stat().st_mode)
+            probe.rmdir()
+        prepared.chmod(mode)
+
         backup = Path(tempfile.mkdtemp(prefix=".images-backup-", dir=OUT.parent))
         backup.rmdir()
         try:
@@ -852,6 +863,13 @@ def _commit_outputs(staged: Path, records: list[dict], manifest: dict) -> None:
                 OUT.rename(backup)
             prepared.rename(OUT)
         except BaseException as error:
+            if not prepared.exists() and OUT.exists():
+                detail = (
+                    f"backup retained: {backup.name}"
+                    if backup.exists()
+                    else "no backup to clean up"
+                )
+                raise RuntimeError(f"capture output committed; {detail}") from error
             try:
                 if backup.exists() and not OUT.exists():
                     backup.rename(OUT)

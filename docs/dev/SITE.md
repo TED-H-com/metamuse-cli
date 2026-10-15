@@ -69,11 +69,16 @@ scenes, including the hero, succeed and the capture processes stop.
 record, and then writes the new manifest and README there. It renames the old
 directory to a unique `.images-backup-*` sibling, then renames the complete new
 directory to `images`. This replaces the entire set, including obsolete frames.
+Before the renames, the prepared directory gets the old `images` directory's
+permission bits. On initial publication, a plain `mkdir` probe determines the
+mode under the current umask; the capture process does not change its umask.
 A caught failure between renames restores the backup; if restoration also fails,
 the error names the retained backup for manual recovery. No mixed directory or
 manifest pointing at missing frames is published. After successful publication,
 the old backup is deleted; a cleanup failure is reported with the new complete
 set still in place.
+An interruption just after the second rename is reported as committed and names
+the retained backup; an initial publication reports that there is no backup.
 
 The two renames are individually atomic, but their pair is not: readers can
 briefly see `images` absent. An uncatchable interruption (such as SIGKILL or power
