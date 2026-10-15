@@ -537,6 +537,11 @@ ordinary WebSocket routing; it is not the popup or socket boundary.
 
 A Facebook proxy byte cutoff immediately shuts down both client and upstream
 sockets for all active tunnels and refuses subsequent dials/registrations.
+Captured observations remain candidates until their post-capture usage checkpoint,
+barrier classification and byte check complete. Records, final counts, exhaustion,
+controls and snapshot provenance advance together only on admission. A cutoff
+rejects the candidate conservatively and retains the last admitted page and all
+previously accumulated records; rejected metadata cannot invent coverage conflicts.
 Upstream candidates are registered before connect can block; teardown closes
 them before waiting for the dial barrier, so pending connects are included. A
 50 ms browser-loop watcher reacts to byte cutoff and latched socket/guard

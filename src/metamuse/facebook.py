@@ -4125,19 +4125,19 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
         )
         browser_sandbox = getattr(session, "browser_sandbox", "unverified")
         checkpoint_usage()
-        obs = session.goto_post(permalink.fetch_url)
-        egress.check_browser_route(obs.url, is_navigation=True)
+        candidate_obs = session.goto_post(permalink.fetch_url)
+        egress.check_browser_route(candidate_obs.url, is_navigation=True)
         if permalink.is_share:
             resolved = egress.authorized_permalink
             if resolved is None or resolved.is_share:
                 raise _unsupported_resolution()
             permalink = replace(resolved, original_url=url_input.url)
             saved["resolved_permalink"] = permalink.canonical_url
-        observation_bytes += len(obs.html.encode("utf-8"))
+        observation_bytes += len(candidate_obs.html.encode("utf-8"))
         bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
         checkpoint_usage()
-        parsed = classify_and_parse_observation(
-            obs,
+        candidate = classify_and_parse_observation(
+            candidate_obs,
             permalink=permalink,
             require_comments_section=require_comments,
         )
@@ -4147,8 +4147,10 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                 "Facebook page response exceeded max_bytes budget",
                 next_action="Increase limits.max_bytes or narrow the requested resources",
             )
-
-        accumulate_page(parsed, obs.html)
+        # Classification must precede the cutoff (fatal barriers still win),
+        # but records and final page state share one admission boundary.
+        accumulate_page(candidate, candidate_obs.html)
+        parsed, obs = candidate, candidate_obs
         while require_comments and parsed.expand_controls:
             step.guard()
             elapsed = time.monotonic() - started
@@ -4167,13 +4169,13 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
             ctrl = parsed.expand_controls[0]
             expansions_used += 1
             checkpoint_usage()  # Charge before the click, including a failed/crashed click.
-            obs = session.expand_next(ctrl.control_id)
-            egress.check_browser_route(obs.url, is_navigation=True)
-            observation_bytes += len(obs.html.encode("utf-8"))
+            candidate_obs = session.expand_next(ctrl.control_id)
+            egress.check_browser_route(candidate_obs.url, is_navigation=True)
+            observation_bytes += len(candidate_obs.html.encode("utf-8"))
             bytes_used = previous_bytes + max(egress.bytes_relayed, observation_bytes)
             checkpoint_usage()
-            parsed = classify_and_parse_observation(
-                obs,
+            candidate = classify_and_parse_observation(
+                candidate_obs,
                 permalink=permalink,
                 require_comments_section=require_comments,
             )
@@ -4183,7 +4185,8 @@ def run_facebook_post(step: StepContext) -> m.JobResult:
                     "Facebook page response exceeded max_bytes budget",
                     next_action="Increase limits.max_bytes or narrow the requested resources",
                 )
-            accumulate_page(parsed, obs.html)
+            accumulate_page(candidate, candidate_obs.html)
+            parsed, obs = candidate, candidate_obs
             if obs.expansion_failed:
                 halt = "expansion_failed"
                 break
