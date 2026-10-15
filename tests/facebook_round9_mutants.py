@@ -57,6 +57,23 @@ def apply(monkeypatch, name):
             "classify_and_parse_observation",
             [("    except m.CoreError:\n        raise\n", "")],
         )
+    elif name == "R9_MARKER_VOCABULARY":
+        import facebook_parity
+
+        monkeypatch.delitem(facebook_parity.MARKER_VALUES, "data-fb-state")
+    elif name == "R9_ACCEPT_TEMPLATE_WRAPPER":
+        rewrite(
+            monkeypatch,
+            cap.FixtureTree,
+            "handle_starttag",
+            [
+                (
+                    '(parent["kind"] != 9 and parent["tag"] != "html")',
+                    'parent["tag"] not in {"", "html"}',
+                )
+            ],
+            module=cap,
+        )
     elif name == "R9_NATIVE_VOID":
         monkeypatch.setattr(cap, "FIXTURE_HIDDEN_HTML", cap.FIXTURE_HIDDEN_HTML - {"area"})
     elif name == "R9_SVG_OPAQUE":

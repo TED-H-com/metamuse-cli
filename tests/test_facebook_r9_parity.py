@@ -1,11 +1,15 @@
 """The fixture accepts only inputs whose capture agrees with Chromium."""
 
+import ast
+import inspect
 import json
 import os
+import re
 from pathlib import Path
 
 from browser_deadline import browser_deadline
 from facebook_parity import (
+    MARKER_VALUES,
     as_document,
     capture_session,
     class_corpus,
@@ -16,11 +20,26 @@ from facebook_parity import (
 from test_facebook_round6 import reset_seams  # noqa: F401
 
 from metamuse import _facebook_capture as capture
+from metamuse import facebook
 from metamuse import models as m
 
 
 @browser_deadline
 def test_r9_fixture_differential_corpus(tmp_path, monkeypatch):
+    # The vocabulary check lives in this independently executed browser audit,
+    # so adding an extractor marker without a generator sample cannot pass CI.
+    sources = (facebook._DOMExtractor, capture.controls, facebook.classify_and_parse_observation)
+    required = {
+        node.value
+        for source in sources
+        for node in ast.walk(ast.parse(inspect.getsource(source)))
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and (
+            re.fullmatch(r"data-[a-z][a-z0-9-]*", node.value) or node.value in {"role", "id", "alt"}
+        )
+    }
+    assert required <= MARKER_VALUES.keys(), required - MARKER_VALUES.keys()
     recorded = {
         json.loads(line)
         for line in (Path(os.environ["METAMUSE_FACEBOOK_PARITY_INPUTS"]) / "inputs.jsonl")

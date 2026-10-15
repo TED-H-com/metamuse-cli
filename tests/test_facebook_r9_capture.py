@@ -451,3 +451,13 @@ def test_r9_fixture_refuses_unmodelled_native_rendering(markup):
         capture.fixture_capture(markup)
     assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
     assert caught.value.detail.message == "Facebook structured capture could not be completed"
+
+
+@pytest.mark.parametrize("wrapper", ["head", "body"])
+def test_r9_fixture_refuses_document_wrappers_in_template(wrapper):
+    with pytest.raises(m.CoreError) as caught:
+        capture.fixture_capture(
+            f'<template><{wrapper} data-checkpoint="true"></{wrapper}></template>'
+        )
+    assert caught.value.detail.code == m.ErrorCode.SELECTOR_DRIFT
+    assert caught.value.detail.message == "Facebook structured capture could not be completed"

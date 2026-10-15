@@ -675,7 +675,8 @@ measured in AT-039, not excluded by assumption. JSON text keeps its existing rul
 `FixtureTree` is a static test double accepting a balanced subset, not a general
 HTML5 parser. Its HTML tag vocabulary is explicit (`HTML_TAGS`); foreign SVG and
 MathML vocabularies exclude HTML breakout and integration-point rules. Fragments
-use a body-fragment context. Documents retain explicit html/head/body context.
+use a body-fragment context. Explicit head/body wrappers require the document
+root or its html element; a template fragment cannot admit them. Documents retain explicit html/head/body context.
 It models scripting-on HTML `noscript`, the serializer's exact 18 HTML-only void
 tags, inline declaration order and `!important`, hidden/display overrides, content
 visibility, details and inherited visibility. Unsupported parser modes, unbalanced
@@ -702,7 +703,9 @@ corpus even when the admitted vocabulary is narrowed.
 
 The differential corpus includes committed HTML literals/files, runtime fixture
 inputs recorded by the suite, reviewer-provided markup and a seeded depth-five
-generator. Accepted inputs must agree with sandboxed Chromium on node kind, tag,
+generator. Its marker/role vocabulary is checked against AST literals from the
+extractor, control traversal and DOM parse; every marker also has a deterministic
+sample independent of random selection. Accepted inputs must agree with sandboxed Chromium on node kind, tag,
 namespace, attributes, text, rendered flag, light-parent relation and composed
 order. Normalisation removes document/fragment/doctype/comment records and empty
 html/head/body scaffolding; it preserves evidence nodes and their parent/order.

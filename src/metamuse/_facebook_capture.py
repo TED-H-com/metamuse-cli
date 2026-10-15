@@ -469,7 +469,9 @@ class FixtureTree(HTMLParser):
                 raise failure()
             if tag == "html" and self.stack != [0]:
                 raise failure()
-            if tag in {"head", "body"} and (parent["tag"] not in {"", "html"} or tag in tags):
+            if tag in {"head", "body"} and (
+                (parent["kind"] != 9 and parent["tag"] != "html") or tag in tags
+            ):
                 raise failure()
         node = dict(
             kind=1, tag=tag, ns=ns, attrs=attrs, text="", rendered=False, children=[], composed=[]

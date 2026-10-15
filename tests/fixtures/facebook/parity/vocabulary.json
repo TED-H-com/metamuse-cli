@@ -4630,5 +4630,13 @@
   {
     "label": "html:cross:wbr:table-column-group",
     "markup": "<wbr style=\"display:table-column-group\">"
+  },
+  {
+    "label": "template:document-wrapper:head",
+    "markup": "<template><head data-checkpoint=\"true\"></head></template>"
+  },
+  {
+    "label": "template:document-wrapper:body",
+    "markup": "<template><body data-checkpoint=\"true\"></body></template>"
   }
 ]

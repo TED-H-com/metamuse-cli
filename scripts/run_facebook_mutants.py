@@ -131,6 +131,12 @@ REVIEWER_CASES = {
     ],
 }
 ROUND9_CASES = {
+    "R9_ACCEPT_TEMPLATE_WRAPPER": [
+        "tests/test_facebook_r9_capture.py",
+        "-k",
+        "document_wrappers_in_template",
+    ],
+    "R9_MARKER_VOCABULARY": ["tests/test_facebook_r9_parity.py"],
     **{
         name: [
             "tests/test_facebook_r9_capture.py",
