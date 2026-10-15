@@ -315,6 +315,15 @@ The MCP server keeps serving diagnostics even if its attached worker fails at st
 The start handoff waits at most 2 seconds for ready, then serves with `starting` if
 ownership has not committed. Ready is also signaled on the first short busy attempt,
 lock-busy or failure. Availability stays false until committed ownership.
+The integration journey explicitly polls inspect before its initial flow and restart
+flow, using the remaining time in its existing 600-second shared test deadline.
+Only `starting` with `worker_available:false` is transitional; it still requires
+`running` with `worker_available:true` before proceeding. Failed, disabled,
+lock-busy, stopped or inconsistent states fail immediately with the full inspect
+state; deadline diagnostics retain the last full state. This wait is opt-in at
+those journey prerequisites, not part of the generic MCP server context: tests of
+disabled workers, lock ownership and queued acceptance continue to observe those
+states directly. It does not change production readiness or promise background work.
 Doctor uses these fields when an attached-worker status provider is present; a separate
 CLI process observes current OS-lock availability, not another process's failure memory.
 
