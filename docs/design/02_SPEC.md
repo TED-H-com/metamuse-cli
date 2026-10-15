@@ -503,3 +503,8 @@ objects before an error; an independent candidate swallowed as string content is
 not lost. Lexical ends and container outcomes are memoized once, so late failures
 and candidate recovery remain linear. Any sensitive repeated name marks every
 value in that object private, without overwriting an earlier sensitivity decision.
+
+Within an HTML/XML element, a sensitive name attribute makes all value and
+content attributes private; type=password makes value private. Attribute order,
+quoting and encoding do not alter this rule. Username and description fields
+remain ordinary public attributes.

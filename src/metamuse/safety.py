@@ -2661,16 +2661,16 @@ def _jwt_spans(text):
 
 
 def _pem_spans(text, syntax):
-    label_pattern = r"(?P<label>(?:[A-Z0-9]+ ){0,6}PRIVATE KEY(?: BLOCK)?)"
-    begin = re.compile(r"-----BEGIN " + label_pattern + r"-----", re.I)
+    label_pattern = r"(?P<label>(?:[A-Z0-9]+[ +]){0,6}PRIVATE[ +]KEY(?:[ +]BLOCK)?)"
+    begin = re.compile(r"-----BEGIN[ +]" + label_pattern + r"-----", re.I)
     end_lines = {}
-    for match in re.finditer(r"-----END " + label_pattern + r"-----", text, re.I):
-        end_lines.setdefault(match["label"].upper(), []).append(match)
+    for match in re.finditer(r"-----END[ +]" + label_pattern + r"-----", text, re.I):
+        end_lines.setdefault(match["label"].replace("+", " ").upper(), []).append(match)
     cursors = {}
     position = 0
     while match := begin.search(text, position):
         level = syntax.layer(match.start(), match.end())
-        label = match["label"].upper()
+        label = match["label"].replace("+", " ").upper()
         ends = end_lines.get(label, [])
         index = cursors.get(label, 0)
         while index < len(ends) and (
@@ -2726,6 +2726,46 @@ def _xml_spans(text, syntax):
         if redaction_sensitive_value(key.rsplit(":", 1)[-1], value):
             position = ends[index].end() if index < len(ends) else end
             yield value_start, end, "sensitive_field", _REDACTED
+
+
+def _html_spans(text, syntax):
+    """An element's name/type attributes classify its value/content attributes."""
+    tags = re.compile(r"<([A-Za-z][A-Za-z0-9_:.\-]*+)(?=[\s/>])")
+    attributes = re.compile(r"(?P<name>[A-Za-z_:][A-Za-z0-9_:.-]*+)\s*+=\s*+")
+    unquoted = re.compile(r"[^\s>]*+")
+    position = 0
+    while tag := tags.search(text, position):
+        cursor = tag.end()
+        private = password_type = False
+        values = []
+        while cursor < len(text):
+            if text[cursor] == ">":
+                cursor += 1
+                break
+            match = attributes.match(text, cursor)
+            if match is None:
+                cursor += 1
+                continue
+            start = match.end()
+            quoted_end = syntax.quoted_end(text, start)
+            if quoted_end is not None:
+                begin, end, cursor = start + 1, quoted_end - 1, quoted_end
+            else:
+                found = unquoted.match(text, start)
+                begin, end, cursor = start, found.end(), max(found.end(), match.end())
+            key = match["name"].lower().rsplit(":", 1)[-1]
+            if key == "name" and end - begin <= 128:
+                private |= redaction_sensitive_key(text[begin:end])
+            elif key == "type":
+                password_type |= text[begin:end].lower() == "password"
+            elif key in {"value", "content"}:
+                values.append((begin, end, key))
+        position = max(cursor, tag.end())
+        for begin, end, key in values:
+            if (private or password_type and key == "value") and redaction_sensitive_value(
+                "password", text[begin:end]
+            ):
+                yield begin, end, "sensitive_field", _REDACTED
 
 
 def _curl_spans(text, syntax):
@@ -3200,6 +3240,7 @@ def _view_spans(text, encoded_positions, syntax):
             _pem_spans(text, syntax),
             _putty_spans(text, syntax),
             _xml_spans(text, syntax),
+            _html_spans(text, syntax),
             _curl_spans(text, syntax),
             _command_spans(text, syntax),
             _path_spans(text),
@@ -3237,7 +3278,7 @@ def _close_bearer_spans(text, spans):
         yield start, end, kind, replacement
 
 
-def _form_ranges(text):
+def _form_ranges(text, depths=None):
     """Only a complete form body or an actual URL query gives '+' space syntax.
 
     Packet records and pasted captures contain independent form-body lines. A
@@ -3254,18 +3295,27 @@ def _form_ranges(text):
                 yield line.start() + begin, line.end(), "form", ""
 
     def quoted_bodies():
-        opening = None
-        for match in re.finditer(r"\\[\s\S]|[\"']", text):
+        opening = {}
+        for match in re.finditer(r"\\[\s\S]|[\"'`]", text):
             if match[0].startswith("\\"):
                 continue
-            if opening is None:
-                opening = (match[0], match.start())
-            elif match[0] == opening[0]:
-                start = opening[1] + 1
+            level = depths[match.start()] if depths is not None else 0
+            channel = match[0], level
+            prior = opening.pop(channel, None)
+            if prior is None:
+                opening[channel] = match.start()
+            else:
+                start = prior + 1
                 value = text[start : match.start()]
                 if form.fullmatch(value) or encoded_form.fullmatch(value):
                     yield start, match.start(), "form", ""
-                opening = None
+                elif depths is not None and re.match(_NAME + "=", value):
+                    # Whitespace revealed below the operator's layer is data.
+                    if all(
+                        not char.isspace() or depths[start + i] > level
+                        for i, char in enumerate(value)
+                    ):
+                        yield start, match.start(), "form", ""
 
     def queries():
         for match in re.finditer(
@@ -3305,7 +3355,7 @@ def _decoded_ranges(ranges, edits):
 
 def _layered_form_ranges(text, depths, known):
     """Nested form prefixes get their own layer, bounded by the parent field."""
-    discovered = list(_form_ranges(text))
+    discovered = list(_form_ranges(text, depths))
     scopes = _merge_spans(
         [
             [(a, b, "form", "") for a, b in known],

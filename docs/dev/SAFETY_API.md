@@ -502,3 +502,9 @@ objects before an error; an independent candidate swallowed as string content is
 not lost. Lexical ends and container outcomes are memoized once, so late failures
 and candidate recovery remain linear. Any sensitive repeated name marks every
 value in that object private, without overwriting an earlier sensitivity decision.
+
+Private-key block labels accept space, form plus and percent-encoded space at
+every supported layer. Quotes in PuTTY comments shorten the block only when
+proved to close an enclosing string; otherwise it extends through Private-MAC.
+Quoted form-body discovery pairs quotes per decoding layer, and decoded-only
+whitespace remains form value data.
