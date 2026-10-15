@@ -1,0 +1,22 @@
+[
+  {
+    "name": "unrendered_post_inside_visible_post",
+    "markup": "<article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101outer\" data-actor=\"outer.actor\" data-author=\"Outer Author\"><div data-fb-role=\"post-body\">OUTER_BODY <article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101inner\" data-actor=\"inner.actor\" data-author=\"Inner Author\" style=\"visibility:hidden\"><div data-fb-role=\"post-body\">HIDDEN_INNER <span style=\"visibility:visible\">VISIBLE_LEAF_IN_UNRENDERED_POST</span></div></article> AFTER_INNER</div></article>"
+  },
+  {
+    "name": "visible_post_inside_unrendered_post",
+    "markup": "<article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101outer\" data-actor=\"outer.actor\" data-author=\"Outer Author\" style=\"visibility:hidden\"><div data-fb-role=\"post-body\">HIDDEN_OUTER</div><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101inner\" data-actor=\"inner.actor\" data-author=\"Inner Author\" style=\"visibility:visible\"><div data-fb-role=\"post-body\">VISIBLE_INNER_BODY</div></article></article>"
+  },
+  {
+    "name": "unrendered_comment_with_visible_leaf_inside_visible_comment",
+    "markup": "<!DOCTYPE html><html><head></head><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">POST</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_outer\" data-author=\"Outer\"><div data-fb-role=\"comment-body\">OUTER_START <article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_inner_hidden\" data-author=\"InnerHidden\" style=\"visibility:hidden\"><div data-fb-role=\"comment-body\">HIDDEN_TEXT <span style=\"visibility:visible\">VISIBLE_SPAN_INSIDE_UNRENDERED_COMMENT</span></div></article> OUTER_END</div></article></section></body></html>"
+  },
+  {
+    "name": "visible_comment_inside_unrendered_comment",
+    "markup": "<!DOCTYPE html><html><head></head><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">POST</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_outer_hidden\" data-author=\"OuterHidden\" style=\"visibility:hidden\"><div data-fb-role=\"comment-body\">HIDDEN_OUTER <article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_inner_vis\" data-author=\"InnerVis\" style=\"visibility:visible\"><div data-fb-role=\"comment-body\">VISIBLE_INNER_COMMENT</div></article></div></article></section></body></html>"
+  },
+  {
+    "name": "unrendered_comments_section_with_visible_comment",
+    "markup": "<!DOCTYPE html><html><head></head><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">POST</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\" style=\"visibility:hidden\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_vis\" data-author=\"VisAuthor\" style=\"visibility:visible\"><div data-fb-role=\"comment-body\">VISIBLE_COMMENT_IN_HIDDEN_SECTION</div></article></section></body></html>"
+  }
+]
