@@ -751,7 +751,7 @@ def _retry_after(headers: Mapping[str, str]) -> float:
     for key, value in headers.items():
         if str(key).lower() != "retry-after":
             continue
-        if isinstance(value, str) and len(value) <= 6 and value.isdigit():
+        if isinstance(value, str) and len(value) <= 6 and value.isascii() and value.isdigit():
             return float(int(value))
         return 0
     return 0
