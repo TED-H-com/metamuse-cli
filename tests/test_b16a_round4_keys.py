@@ -27,3 +27,14 @@ def test_r311_three_json_escape_layers():
 def test_r311_slack_documented_lengths(prefix, digits, groups, body):
     value = "xox" + prefix + "-" + ("1" * digits + "-") * groups + "A" * body
     assert_private("key " + value, value)
+
+
+def test_r311_header_consumes_one_complete_value():
+    from metamuse import safety
+
+    value = marker()
+    text = "Set-Cookie: Set-Cookie: " + value
+    assert list(safety._header_spans(text, safety._Syntax(text))) == [
+        (len("Set-Cookie: "), len(text), "cookie", "[REDACTED]")
+    ]
+    assert safety.redact_text(text) == ("Set-Cookie: [REDACTED]", [{"kind": "cookie", "count": 1}])
