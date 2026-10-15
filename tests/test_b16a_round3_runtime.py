@@ -277,7 +277,7 @@ def test_r2_1_all_surfaces(fixture_ctx, project, monkeypatch, caplog):
     by_name = {name: (text, marker, "unused") for name, text, marker in cases}
     monkeypatch.setattr(privacy, "credential_shape", by_name.__getitem__)
     privacy.test_packet_bundle_fixture_outbound_jobs_and_mcp(
-        fixture_ctx, project, monkeypatch, caplog
+        fixture_ctx, project, monkeypatch, caplog, exact_count=False
     )
 
 

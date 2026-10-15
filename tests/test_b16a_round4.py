@@ -32,6 +32,27 @@ def test_r4_short_values_are_credentials(name):
     assert_private(f"{name}={value}", value)
 
 
+def test_r4_prose_values_after_sensitive_names_are_credentials():
+    value = f"{'Two'} {'Words'}{42}!"
+    assert_private('password="' + value + '"', value)
+
+
+def test_r4_bearer_closure_covers_intersecting_display_masks():
+    text = "Bearer /home/" + "synthetic" + "/file;other"
+    assert safety.redact_text(text) == (
+        "Bearer [REDACTED]",
+        [{"kind": "local_path", "count": 1}],
+    )
+
+
+@pytest.mark.parametrize(
+    "text", ["prompt='Password: '", "def getpass(prompt='Password: ', stream=None):"]
+)
+def test_r4_empty_value_before_enclosing_quote_is_exempt(text):
+    assert safety.redact_text(text) == (text, [])
+    _check_question(text)
+
+
 def test_r4_query_sentinel_is_only_exempt_as_a_whole_value():
     value = marker()
     assert_private("https://example.invalid/?token=[REDACTED]" + value + "&format=json", value)
