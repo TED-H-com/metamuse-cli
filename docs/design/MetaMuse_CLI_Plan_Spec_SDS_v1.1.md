@@ -245,7 +245,10 @@ Netscape jars and HAR cookies contexts. Sensitive names remain private independe
 
 URL passwords in every scheme extend from the first userinfo colon to the last @ in
 the WHATWG authority. The authority ends at /, ?, #, whitespace, or a backslash for
-special schemes; those raw terminators cannot occur inside a URL password. Sensitive
+special schemes; those raw terminators cannot occur inside a URL password. A candidate
+also ends at the next scheme:// or an enclosing quote/bracket at its layer or a
+shallower one. Every scheme gets its own scan, even after a candidate without userinfo.
+Unenclosed commas, semicolons and brackets remain password data. Sensitive
 query values end at &, #, whitespace, encoded ?, or an enclosing URL quote/bracket;
 a literal ? remains data. A decoded delimiter ends a value only at the operator's
 layer or a shallower layer; deeper percent/JSON/form-plus characters are value data.
@@ -937,7 +940,10 @@ Netscape jars and HAR cookies contexts. Sensitive names remain private independe
 
 URL passwords in every scheme extend from the first userinfo colon to the last @ in
 the WHATWG authority. The authority ends at /, ?, #, whitespace, or a backslash for
-special schemes; those raw terminators cannot occur inside a URL password. Sensitive
+special schemes; those raw terminators cannot occur inside a URL password. A candidate
+also ends at the next scheme:// or an enclosing quote/bracket at its layer or a
+shallower one. Every scheme gets its own scan, even after a candidate without userinfo.
+Unenclosed commas, semicolons and brackets remain password data. Sensitive
 query values end at &, #, whitespace, encoded ?, or an enclosing URL quote/bracket;
 a literal ? remains data. A decoded delimiter ends a value only at the operator's
 layer or a shallower layer; deeper percent/JSON/form-plus characters are value data.

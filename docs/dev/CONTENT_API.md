@@ -266,3 +266,7 @@ sensitive values are replaced whole regardless of type; HAR name/value objects a
 cookies, CDATA/namespaced XML, flags, subscript keys and private-key formats follow
 [SPEC FR-019](../design/02_SPEC.md). The layer rule treats deeper decoded delimiters
 as value data, and original spans are never discarded for containing percent escapes.
+
+URL authority candidates end at their enclosing quote/bracket at the same or a shallower
+decoding layer, or the next scheme://. Each scheme is scanned independently; a root
+URL never consumes a later URL. Unenclosed punctuation remains userinfo data.

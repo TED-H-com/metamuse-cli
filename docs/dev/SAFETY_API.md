@@ -403,3 +403,7 @@ one-call fixpoint bound and out-of-scope grammars are normative in
 [SPEC FR-019](../design/02_SPEC.md). `redact_display` returns the display-safe string;
 redact_text already masks the entire output on instability, including for legacy
 callers that discard findings. Packets/bundles additionally refuse the finding.
+
+URL authority candidates end at their enclosing quote/bracket at the same or a shallower
+decoding layer, or the next scheme://. Each scheme is scanned independently; a root
+URL never consumes a later URL. Unenclosed punctuation remains userinfo data.

@@ -2235,35 +2235,47 @@ def _userinfo_spans(text, syntax):
             return self.current
 
     def boundaries(level, special):
-        for boundary in re.finditer(r"[/\?#\\\s]", text):
-            if syntax.depth(boundary.start()) <= level and (boundary[0] != "\\" or special):
-                yield boundary.start()
+        for boundary in re.finditer(r"[/\?#\\\s\"'()\[\]{}]", text):
+            pos = boundary.start()
+            enclosing = min(syntax.closings.get(pos, pos), syntax.quote_closings.get(pos, pos))
+            if syntax.depth(pos) <= level and (
+                boundary[0] in "/?#"
+                or boundary[0].isspace()
+                or (boundary[0] == "\\" and special)
+                or enclosing < pos
+            ):
+                yield pos
 
     ends = {}
     ats = Positions(m.start() for m in re.finditer("@", text))
-    position = 0
-    while match := scheme.search(text, position):
+    candidates = iter(scheme.finditer(text))
+    match = next(candidates, None)
+    while match is not None:
+        following = next(candidates, None)
         position = match.end()
-        level = syntax.depth(match.end() - 1)
+        level = syntax.depth(position - 1)
         special = match[0].split(":", 1)[0].lower() in {"http", "https", "ftp", "file", "ws", "wss"}
         key = (level, special)
         if key not in ends:
             ends[key] = Positions(boundaries(level, special))
         end = ends[key].first(position)
+        while (
+            end < len(text)
+            and text[end] in "\"'()[]{}"
+            and min(syntax.closings.get(end, end), syntax.quote_closings.get(end, end))
+            >= match.start()
+        ):
+            end = ends[key].first(end + 1)
+        end = min(end, following.start() if following else len(text))
         first_at = ats.first(position)
-        if first_at >= end:
-            position = end
-            continue
-        colon = text.find(":", position, first_at)
-        if colon < 0:
-            position = end
-            continue
-        at = first_at
-        while ats.first(at + 1) < end:
-            at = ats.current
-        position = end
-        if redaction_sensitive_value("password", text[colon + 1 : at]):
-            yield colon + 1, at, "url_token", _REDACTED
+        if first_at < end:
+            colon = text.find(":", position, first_at)
+            at = first_at
+            while ats.first(at + 1) < end:
+                at = ats.current
+            if colon >= 0 and redaction_sensitive_value("password", text[colon + 1 : at]):
+                yield colon + 1, at, "url_token", _REDACTED
+        match = following
 
 
 def _cookie_spans(text, syntax):
