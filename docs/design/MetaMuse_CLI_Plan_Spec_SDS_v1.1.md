@@ -527,6 +527,11 @@ or, without that line, to its enclosing delimiter or end of input. Raw, JSON-esc
 and percent-encoded line breaks share this behaviour. PEM and PGP begin markers
 have no line-start anchor; their existing matching-end/unterminated rule remains.
 
+A whole-value exemption applies to that outer value only. Assignment scanning
+continues after its key/operator to inspect nested assignments. Balanced shell
+placeholder extents use the precomputed delimiter index, avoiding repeated suffix
+parsing when defaults nest.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -1099,6 +1104,11 @@ including inline labels and JSON/form captures. The mask extends through Private
 or, without that line, to its enclosing delimiter or end of input. Raw, JSON-escaped
 and percent-encoded line breaks share this behaviour. PEM and PGP begin markers
 have no line-start anchor; their existing matching-end/unterminated rule remains.
+
+A whole-value exemption applies to that outer value only. Assignment scanning
+continues after its key/operator to inspect nested assignments. Balanced shell
+placeholder extents use the precomputed delimiter index, avoiding repeated suffix
+parsing when defaults nest.
 
 ---
 

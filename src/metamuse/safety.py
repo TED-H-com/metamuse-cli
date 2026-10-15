@@ -1991,6 +1991,16 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
         ):
             end = start  # Empty value in a string such as prompt='Password: '.
         quoted = yaml_end is None and text[start : start + 1] in {'"', "'"} and start in syntax.ends
+        # Balanced shell placeholders have a precomputed whole-value extent.
+        # Do not copy/reparse every enclosing suffix in deeply nested defaults.
+        inner_start = start + int(quoted)
+        inner_end = end - int(quoted and text[end - 1 : end] == text[start])
+        if (
+            not include_exempt
+            and text.startswith("${", inner_start)
+            and syntax.ends.get(inner_start + 1) == inner_end
+        ):
+            continue
         nested = (
             trailing_assignment.search(text, max(start, end - 134), end) if not quoted else None
         )
@@ -2036,8 +2046,8 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
             end = syntax.line_ends[line_index] if line_index < len(syntax.line_ends) else len(text)
         value = text[start:end]
         closed_quote = quoted and len(value) > 1 and value[-1] == value[0]
-        position = max(position, end - int(closed_quote))
         if include_exempt or redaction_sensitive_value(key, value):
+            position = max(position, end - int(closed_quote))
             kind = (
                 "local_path"
                 if _credential_name(key) == "localpath"
