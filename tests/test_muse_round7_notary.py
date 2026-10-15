@@ -76,6 +76,22 @@ def test_bad_json_has_no_hint():
     assert muse._notary_stale("one.two." + segment, 100) is False
 
 
+def test_non_string_restrictions_are_not_coerced(monkeypatch):
+    # Spy on this module's string conversion only, preserving isinstance semantics.
+    # JSON-native nonstrings have no matching textual timeout prefix, but the
+    # contract requires skipping them without conversion, not merely equal output.
+    class StringKind(type):
+        def __instancecheck__(cls, value):
+            return isinstance(value, str)
+
+    class Strings(metaclass=StringKind):
+        def __new__(cls, value):
+            assert isinstance(value, str), "non-string hint was coerced"
+            return value
+
+    token = notary({"restrictions": [1, True, None, {"timeout": 1}, ["timeout:1"], "timeout:1"]})
+    monkeypatch.setattr(muse, "str", Strings, raising=False)
+    assert muse._notary_stale(token, 100)
 
 
 class MintSequence(FakeHttp):
