@@ -6,12 +6,15 @@ import os
 import shlex
 import subprocess
 import sys
-from contextlib import asynccontextmanager
+import time
+from contextlib import asynccontextmanager, contextmanager
 from pathlib import Path
 
 import anyio
 from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+
+from metamuse import store as core
 
 SECRET = "SYNTHETIC_JOURNEY_SECRET"
 COOKIE = "hatch_sess=" + SECRET
@@ -35,15 +38,56 @@ class Entrypoints:
         self.transcript = []
         self.diagnostics = []
         self.server_number = 0
+        self.deadline = time.monotonic() + 600
+        self.last_job = None
+        self.last_worker = None
+        self._mcp_command = "metamuse mcp"
+
+    def deadline_error(self, command):
+        detail = json.dumps(self.last_job, ensure_ascii=False)
+        worker = json.dumps(self.last_worker, ensure_ascii=False)
+        return AssertionError(
+            "Test deadline exceeded: "
+            + command
+            + "; last job: "
+            + detail
+            + "; last worker: "
+            + worker
+        )
+
+    def remaining(self, command):
+        remaining = self.deadline - time.monotonic()
+        if remaining <= 0:
+            raise self.deadline_error(command)
+        return remaining
+
+    @contextmanager
+    def waiting(self, command):
+        try:
+            label = command() if callable(command) else command
+            with anyio.fail_after(self.remaining(label)):
+                yield
+        except TimeoutError:
+            label = command() if callable(command) else command
+            raise self.deadline_error(label) from None
 
     def cli(self, *args, operator=False, code=0, stdin=None):
         command = [str(self.command), "--workspace", str(self.workspace), "--json"]
         if not operator:
             command.append("--non-interactive")
         command.extend(str(arg) for arg in args)
-        result = subprocess.run(
-            command, input=stdin, capture_output=True, text=True, timeout=60, check=False
-        )
+        label = shlex.join(command)
+        try:
+            result = subprocess.run(
+                command,
+                input=stdin,
+                capture_output=True,
+                text=True,
+                timeout=self.remaining(label),
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            raise self.deadline_error(label) from None
         assert result.returncode == code, (result.stdout, result.stderr)
         envelope = json.loads(result.stdout)
         self.transcript.append(
@@ -59,7 +103,7 @@ class Entrypoints:
         return envelope
 
     def configure(self):
-        assert self.cli("init")["data"]["schema_version"] == 4
+        assert self.cli("init")["data"]["schema_version"] == core.SCHEMA_VERSION
         path = self.workspace / "metamuse.toml"
         path.write_text(
             path.read_text()
@@ -98,7 +142,10 @@ class Entrypoints:
             args[args.index("--exact-digest") + 1] = digest
         envelope = self.cli(*args, *extra, operator=operator, code=code)
         if operator and code == 0:
-            assert preview["summary"] in self.diagnostics[-1]
+            review = self.diagnostics[-1]
+            assert all("  | " + line in review for line in preview["summary"].split("\n"))
+            assert "\nApproval binding:\n" in review
+            assert "\nAction digest: " + preview["action_digest"] + "\n" in review
             for value in (preview["destination"], preview["action_digest"]):
                 assert value in preview["summary"]
             if preview["question"] is not None:
@@ -110,28 +157,39 @@ class Entrypoints:
     async def server(self, *extra, env=None):
         self.server_number += 1
         log = self.root / f"mcp-{self.server_number}.log"
+        self._mcp_command = "metamuse mcp " + " ".join(extra)
         params = StdioServerParameters(
             command=str(self.command),
             args=["--workspace", str(self.workspace), "--non-interactive", "mcp", *extra],
             env={
-                **os.environ,
-                "PYTHONPATH": os.environ.get(
-                    "PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src")
-                ),
+                "PYTHONDONTWRITEBYTECODE": "1",
+                **({"PYTHONPATH": os.environ["PYTHONPATH"]} if "PYTHONPATH" in os.environ else {}),
                 **(env or {}),
             },
         )
-        with log.open("w+") as errlog:
+        with (
+            log.open("w+") as errlog,
+            self.waiting(lambda: self._mcp_command),
+        ):
             async with stdio_client(params, errlog=errlog) as (read, write):
                 async with ClientSession(read, write) as session:
-                    with anyio.fail_after(60):
-                        await session.initialize()
+                    self._mcp_command = "MCP initialize"
+                    with self.waiting("MCP initialize"):
+                        try:
+                            await session.initialize()
+                        except TimeoutError:
+                            raise self.deadline_error("MCP initialize") from None
                     yield session
         self.diagnostics.append(log.read_text())
 
     async def call(self, session, tool, request, *, error=False):
-        with anyio.fail_after(60):
-            result = await session.call_tool("metamuse_" + tool, request)
+        label = "MCP metamuse_" + tool
+        self._mcp_command = label
+        try:
+            with anyio.fail_after(self.remaining(label)):
+                result = await session.call_tool("metamuse_" + tool, request)
+        except TimeoutError:
+            raise self.deadline_error(label) from None
         assert result.is_error is error, json.dumps(result.structured_content, ensure_ascii=False)
         envelope = result.structured_content
         assert json.loads(result.content[0].text) == envelope
@@ -141,10 +199,30 @@ class Entrypoints:
         )
         return envelope
 
+    async def wait_worker_ready(self, session):
+        """Require running before journey work, allowing only the startup handoff.
+
+        Do not put this in server(): lock/disabled-worker callers must observe
+        their unavailable state. Startup consumes the same absolute test deadline.
+        """
+        with self.waiting("MCP attached worker readiness"):
+            while True:
+                worker = (await self.call(session, "inspect", {}))["data"]
+                self.last_worker = worker
+                if worker["attached_worker"] == "running" and worker["worker_available"] is True:
+                    return worker
+                assert (
+                    worker["attached_worker"] == "starting" and worker["worker_available"] is False
+                ), "Attached worker did not become ready: " + json.dumps(worker, ensure_ascii=False)
+                await anyio.sleep(0.05)
+
     async def terminal(self, session, job_id):
-        with anyio.fail_after(60):
+        self.last_job = {"job": {"id": job_id, "state": "not_yet_observed"}, "steps": []}
+        next_worker_check = time.monotonic() + 1
+        with self.waiting("MCP metamuse_job_get " + job_id):
             while True:
                 data = (await self.call(session, "job_get", {"job_id": job_id}))["data"]
+                self.last_job = data
                 if data["job"]["state"] in (
                     "succeeded",
                     "partial",
@@ -156,6 +234,14 @@ class Entrypoints:
                         data, ensure_ascii=False
                     )
                     return data
+                if time.monotonic() >= next_worker_check:
+                    worker = (await self.call(session, "inspect", {}))["data"]
+                    if not worker["worker_available"]:
+                        raise AssertionError(
+                            "Attached worker stopped before terminal job: "
+                            + json.dumps({"last_job": data, "worker": worker}, ensure_ascii=False)
+                        )
+                    next_worker_check = time.monotonic() + 1
                 await anyio.sleep(0.05)
 
     async def approved_call(self, session, operation, request, key):
@@ -243,7 +329,7 @@ def test_mcp_only_journey_followup_restart_and_export(tmp_path):
         observations = []
         job_snapshots = {}
         async with entry.server() as session:
-            inspected = (await entry.call(session, "inspect", {}))["data"]
+            inspected = await entry.wait_worker_ready(session)
             assert (
                 inspected["worker_available"] is True and inspected["attached_worker"] == "running"
             )
@@ -267,7 +353,7 @@ def test_mcp_only_journey_followup_restart_and_export(tmp_path):
                         "max_urls": 10,
                         "max_items": 500,
                         "max_bytes": 1048576,
-                        "wall_clock_seconds": 60,
+                        "wall_clock_seconds": 300,
                     },
                     "access_grant_id": None,
                     "request_key": "collect",
@@ -395,6 +481,7 @@ def test_mcp_only_journey_followup_restart_and_export(tmp_path):
                 for exchange in exchanges
             ]
         async with entry.server() as session:
+            await entry.wait_worker_ready(session)
             for exchange, prior in zip(exchanges, before_restart, strict=True):
                 restored = (await entry.call(session, "muse_read", {"exchange_id": exchange}))[
                     "data"

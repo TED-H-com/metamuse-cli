@@ -1,6 +1,7 @@
 """Instrument every redactor binding during recovery and remote errors."""
 
 import contextlib
+import json
 import time
 import traceback
 
@@ -29,17 +30,16 @@ def instrument_locks(ctx, monkeypatch):
                 depth["n"] -= 1
 
     monkeypatch.setattr(ctx.store, "transaction", tracked)
-    real = safety.redact_text
 
-    def make(binding):
-        def wrapped(text):
+    def make(binding, real):
+        def wrapped(text, *args, **kwargs):
             started = time.process_time()
-            result = real(text)
+            result = real(text, *args, **kwargs)
             frames = [f.name for f in traceback.extract_stack(limit=12)[:-1]]
             calls.append(
                 {
                     "binding": binding,
-                    "chars": len(text),
+                    "chars": len(text) if isinstance(text, (str, bytes)) else 0,
                     "in_write_txn": depth["n"] > 0,
                     "cpu": round(time.process_time() - started, 6),
                     "stack": frames[-6:],
@@ -56,8 +56,11 @@ def instrument_locks(ctx, monkeypatch):
         (_muse_redact, "muse_redact"),
         (muse, "muse"),
     ):
-        if hasattr(module, "redact_text"):
-            monkeypatch.setattr(module, "redact_text", make(name))
+        for function in ("redact_text", "sanitize_document"):
+            if hasattr(module, function):
+                monkeypatch.setattr(
+                    module, function, make(name + "." + function, getattr(module, function))
+                )
     return calls
 
 
@@ -108,10 +111,14 @@ def test_r7_no_redaction_inside_write_transaction(fixture_ctx, project, monkeypa
     summary = {
         "flow": flow,
         "calls": len(calls),
+        "document_calls": sum(c["binding"].endswith("sanitize_document") for c in calls),
         "in_lock_calls": len(in_lock),
         "in_lock_max_chars": max((c["chars"] for c in in_lock), default=0),
         "in_lock_sites": sorted({" > ".join(c["stack"][-3:]) for c in in_lock}),
         "max_chars_any": max((c["chars"] for c in calls), default=0),
         "max_cpu_in_lock": max((c["cpu"] for c in in_lock), default=0),
     }
+    print("LOCK_REDACTION " + json.dumps(summary, sort_keys=True), flush=True)
+    assert calls, "The instrumentation must observe real redaction calls"
+    assert any(c["binding"].endswith("sanitize_document") for c in calls), summary
     assert summary["in_lock_calls"] == 0, summary

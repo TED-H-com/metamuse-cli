@@ -162,8 +162,9 @@ def test_mcp_stdio_unexpected_exception_does_not_log_markers(tmp_path: Path) -> 
                 "mcp",
             ],
             env={
-                **os.environ,
                 "PYTHONUNBUFFERED": "1",
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "PATH": os.environ.get("PATH", ""),
                 "PYTHONPATH": os.environ.get(
                     "PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src")
                 ),

@@ -69,7 +69,9 @@ def test_operator_confirmation_expiry_replay_and_secret_redaction(tmp_path):
                     proc.wait(timeout=10)
         grant = json.loads(stdout)["data"]
         review = log.read_text()
-        assert preview["summary"] in review
+        assert all("  | " + line in review for line in preview["summary"].split("\n"))
+        assert "Approval binding:\n" in review
+        assert "\nAction digest: " + preview["action_digest"] + "\n" in review
         assert f"Expires at (UTC): {grant['expires_at']} (remaining: " in review
         assert "Max uses: 1\n" in review
         assert review.index("Expires at (UTC):") < review.index("Type yes:")

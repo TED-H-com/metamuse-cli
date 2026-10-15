@@ -582,6 +582,7 @@ class TranscriptSegment(Model):
     method: Literal["provided", "auto", "asr", "manual"]
     review: str = "unreviewed"
     overlap: bool = False
+    removed: bool = False
 
     @model_validator(mode="after")
     def anchored_and_ordered(self) -> TranscriptSegment:
@@ -589,6 +590,8 @@ class TranscriptSegment(Model):
             raise ValueError("transcript segment needs an asset, item, or source")
         if self.end_ms < self.start_ms:
             raise ValueError("end_ms must be >= start_ms")
+        if self.removed and (self.text != "" or self.revision < 2):
+            raise ValueError("transcript removal needs empty text and revision >= 2")
         return self
 
 

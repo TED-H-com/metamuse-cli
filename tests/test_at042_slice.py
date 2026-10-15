@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import anyio
@@ -14,6 +15,7 @@ from mcp.client.session import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from metamuse import models as m
+from metamuse import store as core
 
 CORPUS = Path(__file__).parent / "fixtures/corpus/import/comments_tree.jsonl"
 SECRET = "SYNTHETIC_SLICE_SECRET"
@@ -105,6 +107,7 @@ def verify_export(workspace, data, observation):
 
 class Journey:
     def __init__(self, tmp_path):
+        self.deadline = time.monotonic() + 900
         self.workspace = tmp_path / "workspace"
         self.inputs = tmp_path / "inputs"
         self.inputs.mkdir()
@@ -123,7 +126,11 @@ class Journey:
         if not operator:
             command.append("--non-interactive")
         command.extend(str(arg) for arg in args)
-        result = subprocess.run(command, capture_output=True, text=True, timeout=60, check=False)
+        remaining = self.deadline - time.monotonic()
+        assert remaining > 0, "Journey deadline exhausted"
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=remaining, check=False
+        )
         assert result.returncode == exit_code, (args, result.stdout, result.stderr)
         envelope = json.loads(result.stdout)
         m.Envelope.model_validate(envelope)
@@ -250,7 +257,7 @@ class Journey:
 
 def test_at042_cli_and_mcp_stdio_journey(tmp_path):
     journey = Journey(tmp_path)
-    assert journey.cli("init")["data"]["schema_version"] == 4
+    assert journey.cli("init")["data"]["schema_version"] == core.SCHEMA_VERSION
     config = journey.workspace / "metamuse.toml"
     config.write_text(
         config.read_text()
@@ -437,7 +444,7 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
     async def mcp_half():
         params = StdioServerParameters(
             env={
-                **os.environ,
+                "PYTHONDONTWRITEBYTECODE": "1",
                 "PYTHONPATH": os.environ.get(
                     "PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src")
                 ),
@@ -467,7 +474,13 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
                     assert {
                         k: v
                         for k, v in inspected["data"].items()
-                        if k not in ("attached_worker", "worker_next_action")
+                        if k
+                        not in (
+                            "attached_worker",
+                            "worker_next_action",
+                            "storage_busy_retries",
+                            "worker_error_code",
+                        )
                     } == journey.cli("doctor")["data"]
                     opened = (await call("muse_open", journey.open_request(project, "mcp-open")))[
                         "data"
@@ -558,7 +571,11 @@ def test_at042_cli_and_mcp_stdio_journey(tmp_path):
                         )
         journey.stderr.append(log.read_text())
 
-    anyio.run(mcp_half)
+    async def bounded_mcp_half():
+        with anyio.fail_after(max(0, journey.deadline - time.monotonic())):
+            await mcp_half()
+
+    anyio.run(bounded_mcp_half)
     for directory in (journey.workspace / "exports", journey.workspace / "logs"):
         if directory.exists():
             for path in directory.rglob("*"):

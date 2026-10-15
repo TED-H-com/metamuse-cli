@@ -2,7 +2,9 @@
 
 Accepted file bytes are pinned by size and SHA-256. A later run that sees different
 bytes records E_DATA_STALE for that input and still commits the other inputs.
-Remote URL collection stays unsupported until B12/B13.
+URL inputs that request only media metadata, subtitles, or a media file are
+handled by collect.remote_media. Approved Facebook post/comment requests use
+collect.facebook_post; other URL/resource shapes stay unsupported.
 
 The same reliable id twice in one batch is applied in order. Identical text writes
 nothing new; different text appends a revision. A disagreeing kind, a self-parent,
@@ -26,7 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from metamuse import jobs, safety
+from metamuse import jobs, remote_media, safety
 from metamuse import media as media_mod
 from metamuse import models as m
 from metamuse.app import Config
@@ -87,29 +89,80 @@ log = logging.getLogger(__name__)
 
 
 def capability_status(ctx: Any) -> dict[str, dict[str, str]]:
-    """Local import is fixture-tested. ffprobe is optional and does not change this."""
+    """Local import stays ready. ffprobe does not change that row.
 
-    del ctx
+    ``metamuse_collect.remote_media`` reports the yt-dlp extra. Its permission
+    is ``granted_scope`` only when the workspace is live and
+    ``remote_media.approvals`` is non-empty. Each collection still needs its
+    own ``collect.remote`` permit at submit. This row is not that permit.
+    """
+
+    from metamuse import facebook, remote_media
+    from metamuse.config import load_config
+
+    remote_environment = "ready" if remote_media.dependency_available() else "missing_dependency"
+    permission = "not_configured"
+    if ctx is not None:
+        workspace = load_config(ctx.store.paths.root)
+        if workspace.app.network_mode != "offline" and workspace.remote_media.approvals:
+            permission = "granted_scope"
     return {
         "metamuse_collect": {
             "verification": "fixture_passed",
             "environment": "ready",
             "permission": "granted_scope",
-        }
+        },
+        "metamuse_collect.remote_media": {
+            "verification": "fixture_passed",
+            "environment": remote_environment,
+            "permission": permission,
+        },
+        **facebook.capability_status(ctx),
     }
 
 
-def register_operations(registry: dict[jobs.Operation] | None = None) -> None:
-    target = jobs.OPERATIONS if registry is None else registry
-    if OPERATION in target:
-        return
-    jobs.register_operation(
-        OPERATION,
-        run_import,
-        "none",
-        request_model=m.CollectRequest,
-        registry=target,
+def _remote_media_request(request: m.CollectRequest) -> bool:
+    """URL inputs whose resources are only remote media. Other URL shapes stay unsupported."""
+
+    return (
+        bool(request.inputs)
+        and all(item.kind == "url" for item in request.inputs)
+        and set(request.resources) <= {"media_metadata", "subtitles", "media_file"}
     )
+
+
+# Facebook approval uses the human permit-create command; this preview is B12-only.
+_REMOTE_APPROVAL_ROUTES = {remote_media.OPERATION: remote_media.preview_remote_media}
+
+
+def _remote_route(request: m.CollectRequest) -> str | None:
+    return remote_media.OPERATION if _remote_media_request(request) else None
+
+
+def _remote_approval_preview(ctx: Any, request: m.CollectRequest) -> m.ApprovalPreview:
+    callback = _REMOTE_APPROVAL_ROUTES.get(_remote_route(request))
+    if callback is None:
+        raise m.CoreError(m.ErrorCode.UNSUPPORTED, "This collection route has no remote approval")
+    return callback(ctx, request)
+
+
+def register_operations(registry: dict[jobs.Operation] | None = None) -> None:
+    from metamuse import facebook
+
+    safety.register_approval_preview(
+        "collect.remote", _remote_approval_preview, request_model=m.CollectRequest
+    )
+    remote_media.register_operations(registry)
+    target = jobs.OPERATIONS if registry is None else registry
+    if OPERATION not in target:
+        jobs.register_operation(
+            OPERATION,
+            run_import,
+            "none",
+            request_model=m.CollectRequest,
+            registry=target,
+        )
+    facebook.register_operations(target)
 
 
 def _note_batch(step: StepContext) -> None:
@@ -2274,7 +2327,15 @@ def _check_request(ctx: Any, request: m.CollectRequest) -> None:
 
 
 def submit_collect(ctx: Any, request: m.CollectRequest) -> m.Envelope:
+    from metamuse import facebook
+
     register_operations()
+    if _remote_media_request(request):
+        from metamuse import remote_media
+
+        return remote_media.submit_remote_media(ctx, request)
+    if facebook.is_facebook_post_request(request):
+        return facebook.submit_facebook_collect(ctx, request)
     _check_request(ctx, request)
     roots = list(ctx.policy.app.import_roots)
     if any(item.kind == "local_file" for item in request.inputs) and not roots:

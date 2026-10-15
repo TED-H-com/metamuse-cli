@@ -17,6 +17,7 @@ party on first use, not at import time.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import ipaddress
 import json
@@ -27,7 +28,7 @@ import time
 import urllib.parse
 import uuid
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -60,13 +61,16 @@ from metamuse._muse_associate import (
     user_echo,
 )
 from metamuse._muse_codec import Header, ProtocolMismatch, json_depth, redact
+from metamuse._muse_components import compact, confidential_marker
 from metamuse._muse_http import (
     AUTH_RESPONSE_MAX_BYTES,
+    SESSION_RESPONSE_MAX_BYTES,
     Connector,
     CurlConnector,
     CurlHttp,
     HttpClient,
     HttpResponse,
+    UpgradeFailure,
 )
 from metamuse._muse_link import (
     DEFAULT_COLLECT_TIMEOUT_S,
@@ -75,9 +79,12 @@ from metamuse._muse_link import (
     ReceiveLoop,
     SendUncertain,
 )
-from metamuse._muse_noise import NoiseParty, handshake_initiator
+from metamuse._muse_noise import NoiseParty, handshake_standard
+from metamuse._muse_redact import sensitive_key
+from metamuse._muse_trust import SelectedVM, StoreMuseTrust, protocol_stop, storage_stop
 from metamuse.models import CoreError, ErrorCode
-from metamuse.safety import CheckedURL, action_digest, redact_text
+from metamuse.safety import CheckedURL, action_digest
+from metamuse.store import Store, _muse_fixed_storage
 
 if TYPE_CHECKING:
     from metamuse.app import AppContext
@@ -144,10 +151,34 @@ _QUESTION_KEYS = ("question", "text")
 _PACKET_KEYS = ("packet_text", "rendered_text")
 
 _VM_ID = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
+# Legacy opaque alphabet and s0 envelope: docs/dev/MUSE_SPIKE.md §9.1.
+# Dotted legacy credentials are undocumented; access grammar is separate.
+_HATCH_LEGACY = re.compile(r"^[A-Za-z0-9_~+/=-]{1,4096}$")
 _TOKEN = re.compile(r"^[A-Za-z0-9._~+/=-]{1,4096}$")
 _MARKER = re.compile(r"^[A-Za-z0-9._~-]{1,128}$")
 _HTTP_TIMEOUT_S = 20.0
 _JSON_DEPTH = 32
+_VM_STATES = frozenset(
+    {
+        "UNKNOWN",
+        "CREATING",
+        "RUNNING",
+        "STOPPED",
+        "DELETING",
+        "ERROR",
+        "SUSPENDED",
+        "UPDATING",
+        "DISABLED",
+    }
+)
+_REPLACEMENT_KEYS = (
+    "replace_attempt_id",
+    "replacement_context",
+    "replacement",
+    "provisioning_pins",
+)
+_CONNECT_MAX_REDIALS = 20
+_CONNECT_MAX_SECONDS = 240.0
 _MUTATING = frozenset({"session.start", "chat.stream"})
 
 
@@ -180,7 +211,7 @@ class MuseStateUnknown(CoreError):
 
 
 class MuseNotSubmitted(CoreError):
-    """Affirmative accounting: connect failed before any gateway request frame."""
+    """Affirmative accounting: refusal before any gateway request frame."""
 
     bytes_handed_off = False
 
@@ -189,8 +220,12 @@ class MuseNotSubmitted(CoreError):
             super().__init__(ErrorCode.NETWORK_TIMEOUT, "Muse request failed before frame handoff")
         else:
             super().__init__(
-                error.detail.code, error.detail.message, next_action=error.detail.next_action
+                error.detail.code,
+                error.detail.message,
+                next_action=error.detail.next_action,
+                retry_after=error.retry_after,
             )
+            self.detail.retry_class = error.detail.retry_class
 
 
 class MuseProtocolStop(CoreError):
@@ -365,26 +400,44 @@ def _check_body_limits(body: bytes, joined: str | None = None) -> None:
     _walk_limits(parsed, 0, joined)
 
 
+class _JSONPairs(dict):
+    """Normal consumers see a dict, but evidence scanning retains every pair."""
+
+    def __init__(self, pairs):
+        super().__init__(pairs)
+        self.pairs = pairs
+        self.duplicate = len(self) != len(pairs)
+
+
+def _pairs(value):
+    return value.pairs if isinstance(value, _JSONPairs) else value.items()
+
+
+def _duplicate_json(value):
+    stack = [value]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if isinstance(node, _JSONPairs) and node.duplicate:
+                return True
+            stack.extend(child for _, child in _pairs(node))
+        elif isinstance(node, list):
+            stack.extend(node)
+    return False
+
+
 def _json_value(body: bytes) -> Any:
-    if json_depth(body, limit=_JSON_DEPTH) > _JSON_DEPTH:
-        raise _error(
-            ErrorCode.PROTOCOL_MISMATCH,
-            "Muse JSON nesting is too deep",
-            next_action="Stop. Do not retry a damaged payload.",
-        )
     try:
-        return json.loads(body)
-    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError, ValueError, OverflowError):
-        failure = _error(
-            ErrorCode.PROTOCOL_MISMATCH,
-            "Muse payload was not JSON",
-            next_action="Stop. Do not retry a damaged payload.",
-        )
-    else:
-        failure = None
-    if failure is not None:
-        raise failure
-    return None
+        text = body.decode("utf-8", errors="strict")
+        if (
+            text.startswith("\ufeff")
+            or json_depth(text.encode("utf-8"), limit=_JSON_DEPTH) > _JSON_DEPTH
+        ):
+            raise ValueError
+        return json.loads(text, object_pairs_hook=_JSONPairs)
+    except (UnicodeError, RecursionError, ValueError, OverflowError):
+        failure = protocol_stop()
+    raise failure
 
 
 @dataclass(frozen=True)
@@ -400,9 +453,9 @@ class PreparedMuseRequest:
     verb: str
     path: str
     marker: str
-    body: bytes
-    target: Mapping[str, Any]
-    payload: Mapping[str, Any]
+    body: bytes = field(repr=False)
+    target: Mapping[str, Any] = field(repr=False)
+    payload: Mapping[str, Any] = field(repr=False)
 
     def __post_init__(self) -> None:
         spec = ROUTES.get(self.route)
@@ -505,11 +558,9 @@ class _Secrets:
 
     def text(self, value: str) -> str:
         # A bracketed placeholder makes B08's assignment matcher drop the closer.
-        for secret in self._values:
-            if secret and secret in value:
-                value = value.replace(secret, "redacted")
-        cleaned, _findings = redact_text(value)
-        return cleaned
+        from metamuse._muse_redact import sanitize_text
+
+        return sanitize_text(value, tuple(self._values))
 
     def body(self, raw: bytes) -> bytes:
         try:
@@ -547,6 +598,29 @@ def _raise_if(error: CoreError | None) -> None:
 # error is re-raised as one of these, outside the handler, so its text and
 # traceback chain are not the public error.
 _PUBLIC_ERRORS: dict[str, tuple[ErrorCode, str]] = {
+    "Muse connection context changed": (
+        ErrorCode.STORAGE,
+        "Retry the connection with a fresh authenticated context",
+    ),
+    "Muse security-state Store is not configured": (
+        ErrorCode.STORAGE,
+        "Bind this transport to the workspace Store before reconnecting",
+    ),
+    "Muse session response exceeded the size cap": (
+        ErrorCode.LIMIT_REACHED,
+        "Stop. Do not parse an oversized session response.",
+    ),
+    "Muse confidentiality could not be recorded": (
+        ErrorCode.STORAGE,
+        (
+            "Repair the security-state store before reconnecting; "
+            "confidentiality could not be recorded"
+        ),
+    ),
+    "Muse minted credentials remain stale": (
+        ErrorCode.RESOURCE_UNAVAILABLE,
+        "Retry the connection later; minted credentials remain stale",
+    ),
     "Outbound peer was rejected": (
         ErrorCode.SCOPE_REQUIRED,
         "Do not accept a response from an address outside the pin.",
@@ -602,6 +676,21 @@ _PUBLIC_ERRORS: dict[str, tuple[ErrorCode, str]] = {
 }
 
 _PUBLIC_CODES: dict[ErrorCode, tuple[str, str]] = {
+    ErrorCode.STORAGE: (
+        "Muse security state is unavailable or damaged",
+        (
+            "Repair the security-state store; restore only a verified backup, "
+            "which loses expectations recorded after that backup"
+        ),
+    ),
+    ErrorCode.RESOURCE_UNAVAILABLE: (
+        "Muse VM is not running yet",
+        "The VM is not running yet; retry later",
+    ),
+    ErrorCode.RATE_LIMITED: (
+        "Muse rate limit",
+        "Wait before reconnecting; do not resend a handed-off chat",
+    ),
     ErrorCode.DEPENDENCY_MISSING: (
         "A Muse dependency is not available",
         "Install the pinned curl_cffi and noiseprotocol packages.",
@@ -631,6 +720,11 @@ _PUBLIC_CODES: dict[ErrorCode, tuple[str, str]] = {
 
 def _sanitize_transport_error(exc: CoreError) -> CoreError:
     """Fixed public error. The provider text is not copied."""
+    if (
+        exc.detail.code == ErrorCode.STORAGE
+        and exc.detail.message != "Muse security-state Store is not configured"
+    ):
+        return _muse_fixed_storage(exc)
     known = _PUBLIC_ERRORS.get(exc.detail.message)
     if known is not None:
         code, action = known
@@ -661,26 +755,32 @@ def _retry_after(headers: Mapping[str, str]) -> float:
     for key, value in headers.items():
         if str(key).lower() != "retry-after":
             continue
-        if isinstance(value, str) and len(value) <= 6 and value.isdigit():
+        if isinstance(value, str) and len(value) <= 6 and value.isascii() and value.isdigit():
             return float(int(value))
         return 0
     return 0
 
 
-def _json_object(body: bytes) -> dict[str, Any]:
-    if len(body) > AUTH_RESPONSE_MAX_BYTES:
+def _json_object(body: bytes, *, session: bool = False, kind: str = "auth") -> dict[str, Any]:
+    if len(body) > (SESSION_RESPONSE_MAX_BYTES if session else AUTH_RESPONSE_MAX_BYTES):
         raise _error(
             ErrorCode.LIMIT_REACHED,
-            "Muse auth response exceeded the size cap",
-            next_action="Stop. Do not parse an oversized auth response.",
+            "Muse session response exceeded the size cap"
+            if session
+            else "Muse auth response exceeded the size cap",
+            next_action="Stop. Do not parse an oversized session response."
+            if session
+            else "Stop. Do not parse an oversized auth response.",
         )
     value = _json_value(body)
     if not isinstance(value, dict):
         raise _error(
             ErrorCode.PROTOCOL_MISMATCH,
             "Muse HTTPS response was not an object",
-            next_action="Stop. Do not retry a damaged auth response.",
+            next_action=f"Stop. Do not retry a damaged {kind} response.",
         )
+    if not session and _duplicate_json(value):
+        raise protocol_stop()
     return value
 
 
@@ -696,10 +796,79 @@ def _budget(timeout_s: float) -> float:
     return float(timeout_s)
 
 
-def _wss_url(vm_id: str, token: str) -> str:
-    quoted_vm = urllib.parse.quote(vm_id, safe="")
-    quoted = urllib.parse.quote(token, safe="")
-    return f"{HATCH_WSS_BASE}?vm_id={quoted_vm}&auth_token={quoted}"
+def _wss_url(vm_id: str, token: str, notary: str | None = None) -> str:
+    query = {"vm_id": vm_id, "auth_token": token}
+    if notary:
+        query["notary_token"] = notary
+    query.update(app_id="hatch-web", request_id=str(uuid.uuid4()))
+    return HATCH_WSS_BASE + "?" + urllib.parse.urlencode(query)
+
+
+def _credential_shape(value: Any) -> None:
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if trimmed.lower().startswith(("delegation.", "endorsement.")):
+            raise protocol_stop()
+        if trimmed.lower().startswith("s0:") and (
+            len(value) > 4096
+            or re.fullmatch(r"s0:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", value) is None
+        ):
+            raise protocol_stop()
+
+
+def _hatch_token(value: Any) -> bool:
+    _credential_shape(value)
+    if not isinstance(value, str) or len(value) > 4096:
+        return False
+    if value.startswith("s0:"):
+        return re.fullmatch(r"s0:[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+", value) is not None
+    return _HATCH_LEGACY.fullmatch(value) is not None
+
+
+def _notary_token(value: Any) -> str | None:
+    _credential_shape(value)
+    if value is None:
+        return None
+    if (
+        not isinstance(value, str)
+        or len(value) > 4096
+        or any(ord(c) < 32 or ord(c) >= 127 for c in value)
+    ):
+        raise protocol_stop()
+    value = value.strip()
+    if not value:
+        return None
+    if (
+        value.lower().startswith(("delegation.", "endorsement.", "s0:"))
+        or re.fullmatch(r"(?:[A-Za-z0-9_-]+\.){5}[A-Za-z0-9_-]+", value) is None
+    ):
+        raise protocol_stop()
+    return value
+
+
+def _notary_stale(value: str | None, now: float) -> bool:
+    if value is None:
+        return False
+    try:
+        segment = value.split(".")[2]
+        document = json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
+    except (ValueError, TypeError, AttributeError, UnicodeError, IndexError):
+        return False
+    if not isinstance(document, dict):
+        return False
+    restrictions = document.get("restrictions")
+    if not isinstance(restrictions, list):
+        return False
+    for item in restrictions:
+        if not isinstance(item, str) or not item.startswith("timeout:"):
+            continue
+        try:
+            expiry = float(item[len("timeout:") :].strip())
+        except ValueError:
+            continue
+        if math.isfinite(expiry) and expiry > 0:
+            return expiry <= now + 60
+    return False
 
 
 def _apply_query(path: str, query: Mapping[str, Any]) -> str:
@@ -728,6 +897,48 @@ def _exchange_for(
     return Exchange(session_id="", baseline_seq=0, sent_text=text, request_marker=marker)
 
 
+class _CandidateInvalidated(Exception):
+    """A notification invalidated a pipe before application handoff."""
+
+
+class _ConnectCandidate(OwnedLink):
+    """An owned handshake pipe whose expected invalidation is distinct from failure."""
+
+    def __init__(self, raw: Any) -> None:
+        super().__init__(raw)
+        self.invalidated = False
+
+    def invalidate(self) -> None:
+        self.invalidated = True
+        self.close()
+
+    def check(self) -> None:
+        if self.invalidated:
+            raise _CandidateInvalidated()
+
+    def _io(self, operation: Callable[..., Any], *args: Any) -> Any:
+        self.check()
+        try:
+            return operation(*args)
+        except CoreError as exc:
+            # Storage, verification and guard failures must never become retries.
+            if exc.detail.code == ErrorCode.NETWORK_TIMEOUT:
+                self.check()
+            raise
+        except Exception:
+            self.check()
+            raise
+
+    def send(self, data: bytes) -> None:
+        self._io(super().send, data)
+
+    def recv(self, timeout: float) -> bytes | None:
+        data = self._io(super().recv, timeout)
+        if not data:
+            self.check()
+        return data
+
+
 class MuseTransport:
     """One gateway connection. One receive loop. Serial unary calls.
 
@@ -748,6 +959,10 @@ class MuseTransport:
         http: HttpClient | None = None,
         connector: Connector | None = None,
         proxy: str | None = None,
+        store: Store | None = None,
+        trust: StoreMuseTrust | None = None,
+        sleep: Callable[[float], None] | None = None,
+        wall_clock: Callable[[], float] | None = None,
     ) -> None:
         if proxy is not None:
             raise _error(
@@ -759,12 +974,24 @@ class MuseTransport:
         self._credentials = credentials
         self._guard = guard
         self._clock = clock or time.monotonic
+        self._sleep = sleep or time.sleep
+        self._wall_clock = wall_clock or time.time
+        binding = getattr(credentials, "binding", None)
+        self._trust = trust or (
+            StoreMuseTrust(store, binding.provider, binding.account)
+            if store is not None and binding is not None
+            else None
+        )
+        self._snapshot = None
+        self._trust_invalidated = False
         self._network_mode = network_mode
         self._http = http if http is not None else CurlHttp()
         self._connector = connector if connector is not None else CurlConnector()
         self._lock = threading.Lock()
         self._loop: ReceiveLoop | None = None
+        self._pending_link: _ConnectCandidate | None = None
         self._secrets = _Secrets()
+        self._connection_secrets: tuple[str, ...] = ()
 
     def __repr__(self) -> str:
         return (
@@ -786,8 +1013,14 @@ class MuseTransport:
             self._lock.release()
 
     def _close_locked(self) -> None:
+        pending = self._pending_link
+        if pending is not None:
+            pending.close()
+            if self._pending_link is pending:
+                self._pending_link = None
         loop = self._loop
         self._loop = None
+        self._connection_secrets = ()
         if loop is None:
             return
         loop.__exit__(None, None, None)
@@ -892,22 +1125,16 @@ class MuseTransport:
         if not self._lock.acquire(blocking=False):
             raise ProtocolMismatch("concurrent collection")
         self._secrets = _Secrets()
+        for secret in self._connection_secrets:
+            self._secrets.add(secret)
         try:
             connect_error = None
             try:
-                self._connect()
+                connect_attempts_left = self._connect()
             except CoreError as exc:
                 connect_error = exc
-            if connect_error is not None and spec.mutating:
-                if route == "chat.stream":
-                    from dataclasses import replace
-
-                    return replace(
-                        self._never_sent(marker, raw), error_code=connect_error.detail.code.value
-                    )
-                raise MuseNotSubmitted(connect_error)
             if connect_error is not None:
-                raise connect_error
+                return _emit(self._before_send_failure(route, connect_error, marker, raw))
             return self._unary(
                 route,
                 spec,
@@ -921,6 +1148,7 @@ class MuseTransport:
                 events=events,
                 marker=marker,
                 payload=payload,
+                connect_attempts_left=connect_attempts_left,
             )
         finally:
             self._secrets.clear()
@@ -973,6 +1201,18 @@ class MuseTransport:
 
     def _remember(self, value: object) -> None:
         self._secrets.add(value)
+        if isinstance(value, str) and len(value) in (32, 36):
+            try:
+                identifier = uuid.UUID(value)
+            except ValueError:
+                return
+            for variant in (
+                str(identifier),
+                str(identifier).upper(),
+                identifier.hex,
+                identifier.hex.upper(),
+            ):
+                self._secrets.add(variant)
 
     def _cookie_jar(self) -> str:
         provider = self._credentials
@@ -1041,6 +1281,12 @@ class MuseTransport:
             or checked.port != req_port
             or canonical.scheme != requested.scheme
             or (canonical.hostname or "").lower() != req_host
+            or (canonical.port or 443) != req_port
+            or canonical.path != requested.path
+            or canonical.query != requested.query
+            or canonical.fragment
+            or canonical.username
+            or canonical.password
         ):
             raise _error(
                 ErrorCode.SCOPE_REQUIRED,
@@ -1090,6 +1336,8 @@ class MuseTransport:
         body: bytes | None,
         purpose: str,
         bearer: str | None = None,
+        timeout: float = _HTTP_TIMEOUT_S,
+        connect_deadline: float | None = None,
     ) -> dict[str, Any]:
         url = MUSE_ORIGIN + path
         checked = self._check_url(url, purpose)
@@ -1107,6 +1355,8 @@ class MuseTransport:
             headers["Authorization"] = f"Bearer {bearer}"
         failure: CoreError | None = None
         response: HttpResponse | None = None
+        if connect_deadline is not None:
+            timeout = self._remaining_connect_budget(connect_deadline, timeout)
         try:
             response = self._http.request(
                 method,
@@ -1114,7 +1364,7 @@ class MuseTransport:
                 headers=headers,
                 body=body,
                 checked=checked,
-                timeout=_HTTP_TIMEOUT_S,
+                timeout=timeout,
             )
         except CoreError as exc:
             failure = _sanitize_transport_error(exc)
@@ -1148,126 +1398,471 @@ class MuseTransport:
                 next_action="Wait and retry this read. Do not resend a handed-off chat.",
                 retry_after=_retry_after(response.headers),
             )
-        if status in (401, 403) or status != 200 and status < 500:
+        if status in (401, 403):
             raise _error(
                 ErrorCode.AUTH_REQUIRED,
                 "Muse authentication failed",
                 next_action="Refresh the operator cookie jar for this auth_ref",
             )
-        if status == 503 or status >= 500:
+        if status >= 500 or (
+            status in (404, 409, 410)
+            and path in ("/api/session?vm_state=live", "/api/hatch/vm/wake")
+        ):
             raise _error(
                 ErrorCode.RESOURCE_UNAVAILABLE,
                 "The Muse HTTPS endpoint is unavailable",
                 next_action="Retry later. This is not an authentication failure.",
             )
-        if status != 200:
-            raise _error(
-                ErrorCode.AUTH_REQUIRED,
-                "Muse authentication failed",
-                next_action="Refresh the operator cookie jar for this auth_ref",
-            )
-        payload = _json_object(response.body)
-        if path == "/api/session":
-            return self._session_payload(payload)
+        # Success: docs/dev/MUSE_SPIKE.md §2/§5 (bootstrap 200), §9.1
+        # (wake 200 observed in an operator LIVE probe; evidence outside this repository).
+        # Wake 202/204 are explicitly admitted by the round-2 operator contract;
+        # they indicate accepted/no-content activation, not a running VM.
+        accepted = {200, 202, 204} if path == "/api/hatch/vm/wake" else {200}
+        if status not in accepted:
+            raise protocol_stop()
+        if path == "/api/hatch/vm/wake":
+            return {}
+        payload = _json_object(
+            response.body,
+            session=path == "/api/session?vm_state=live",
+            kind="session"
+            if path == "/api/session?vm_state=live"
+            else "hatch"
+            if path == "/api/hatch/token"
+            else "auth",
+        )
+        if path == "/api/session?vm_state=live":
+            return payload
         if path == "/api/auth/check":
             token = payload.get("access_token")
-            if not isinstance(token, str) or _TOKEN.fullmatch(token) is None:
-                raise _error(
-                    ErrorCode.AUTH_REQUIRED,
-                    "Muse authentication response did not include a usable token",
-                    next_action="Refresh the operator cookie jar for this auth_ref",
-                )
+            if payload.get("ok") is False:
+                raise _error(ErrorCode.AUTH_REQUIRED, "Muse authentication failed")
+            if (
+                payload.get("ok") is not True
+                or not isinstance(token, str)
+                or _TOKEN.fullmatch(token) is None
+            ):
+                raise protocol_stop()
             self._remember(token)
-            return {"access_token": token}
+            context = {}
+            for key in ("viewer_id", "session_binding_id"):
+                value = payload.get(key)
+                if (
+                    not isinstance(value, str)
+                    or not 1 <= len(value) <= 4096
+                    or any(ord(c) < 33 or ord(c) >= 127 for c in value)
+                ):
+                    raise protocol_stop()
+                self._remember(value)
+                context[key] = value
+            return {"access_token": token, **context}
         if path == "/api/hatch/token":
+            fields = ("token", "notary_token", "notaryToken", "noiseNotaryToken", "endorsement")
+            for key in fields:
+                if key in payload:
+                    self._remember(payload[key])
+                    _credential_shape(payload[key])
             token = payload.get("token")
-            if not isinstance(token, str) or _TOKEN.fullmatch(token) is None:
-                raise _error(
-                    ErrorCode.AUTH_REQUIRED,
-                    "Muse hatch response did not include a usable token",
-                    next_action="Refresh the operator cookie jar for this auth_ref",
-                )
-            self._remember(token)
-            return {"token": token}
+            if not _hatch_token(token):
+                raise protocol_stop()
+            aliases = [_notary_token(payload[key]) for key in fields[1:] if key in payload]
+            present = {value for value in aliases if value is not None}
+            if len(present) > 1:
+                raise protocol_stop()
+            return {"token": token, "notary_token": next(iter(present), None)}
         raise MuseProgrammingError("unexpected Muse HTTPS path")
 
-    def _session_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
-        if "vm_id" not in payload:
+    def _session_payload(self, payload: dict[str, Any], auth: dict[str, Any]) -> dict[str, Any]:
+        rows = payload.get("vms")
+
+        def identities(item):
+            return [value for key, value in _pairs(item) if compact(key) == "vmid"]
+
+        def usable_identities(item):
+            return {
+                value.strip().lower()
+                for value in identities(item)
+                if isinstance(value, str) and _VM_ID.fullmatch(value.strip())
+            }
+
+        def identity(item):
+            values = identities(item)
+            normalized = usable_identities(item)
+            if (
+                "vm_id" not in item
+                or not values
+                or len(normalized) != 1
+                or any(
+                    not isinstance(value, str) or not _VM_ID.fullmatch(value.strip())
+                    for value in values
+                )
+            ):
+                raise protocol_stop()
+            return next(iter(normalized))
+
+        def truthy(value):
+            return bool(value) and not (
+                isinstance(value, str) and compact(value) in {"false", "no", "0", "none"}
+            )
+
+        # Preserve every enclosing identity scope. Credential strings are opaque,
+        # but objects below a credential key can still contain attestation hints.
+        usable, marked = set(), set()
+        outside_marker = False
+        confidential = False
+        stack = [(payload, 0, (), False)]
+        while stack:
+            node, depth, scopes, opaque = stack.pop()
+            if depth > _JSON_DEPTH:
+                raise protocol_stop()
+            if isinstance(node, dict):
+                node_ids = usable_identities(node)
+                usable.update(node_ids)
+                if identities(node):
+                    scopes = (*scopes, (node is payload, node_ids))
+                for key, value in _pairs(node):
+                    sensitive = sensitive_key(key)
+                    marker = confidential_marker(key) and truthy(value)
+                    if marker or (
+                        isinstance(value, str) and not sensitive and confidential_marker(value)
+                    ):
+                        confidential = True
+                        if not scopes or scopes[-1][0]:
+                            outside_marker = True
+                        else:
+                            marked.update(identity for _, ids in scopes for identity in ids)
+                    if isinstance(value, (dict, list)):
+                        stack.append((value, depth + 1, scopes, sensitive))
+            elif isinstance(node, list):
+                stack.extend((child, depth + 1, scopes, opaque) for child in node)
+            elif isinstance(node, str) and not opaque and confidential_marker(node):
+                confidential = True
+                if not scopes or scopes[-1][0]:
+                    outside_marker = True
+                else:
+                    marked.update(identity for _, ids in scopes for identity in ids)
+        if confidential:
+            ids = tuple(sorted(usable if outside_marker else marked))
+            self._trust.store.muse_freeze(
+                provider=self._trust.provider,
+                account=self._trust.account,
+                vm_id=ids[0] if ids else None,
+                viewer_id=auth["viewer_id"],
+                session_binding_id=auth["session_binding_id"],
+                confidential=True,
+                confidential_vm_ids=ids,
+            )
+            raise protocol_stop()
+        if _duplicate_json(payload):
+            raise protocol_stop()
+        if identities(payload) and "vm_id" not in payload:
+            raise protocol_stop()
+        vm_id = payload.get("vm_id")
+        if payload.get("status") == "unavailable" or vm_id is None:
             raise _error(
                 ErrorCode.RESOURCE_UNAVAILABLE,
                 "The Muse VM is unavailable",
-                next_action="Retry later. Do not treat this as an authentication failure.",
+                next_action="Retry later",
             )
-        vm_id = payload.get("vm_id")
-        if not isinstance(vm_id, str) or _VM_ID.fullmatch(vm_id) is None:
-            raise _error(
-                ErrorCode.PROTOCOL_MISMATCH,
-                "Muse session vm_id was not usable",
-                next_action="Stop. Do not dial a host derived from vm_id.",
+        if payload.get("status") != "assigned":
+            raise protocol_stop()
+        normalized = identity(payload)
+        row = payload
+        if rows is not None:
+            if not isinstance(rows, list) or any(not isinstance(item, dict) for item in rows):
+                raise protocol_stop()
+            matches = [item for item in rows if identity(item) == normalized]
+            if len(matches) != 1:
+                raise protocol_stop()
+            row = matches[0]
+        # Retain exact server ID on the wire; equality uses its normalized identity.
+        if rows is not None:
+            for key in ("vm_type", "vm_state", "endpoint_url"):
+                if key in payload and key in row and payload[key] != row[key]:
+                    raise protocol_stop()
+        name = row.get("name", row.get("vm_name"))
+        if (
+            "name" in row
+            and "vm_name" in row
+            and (
+                not isinstance(row["name"], str)
+                or not isinstance(row["vm_name"], str)
+                or row["name"].strip().lower() != row["vm_name"].strip().lower()
             )
-        return {"vm_id": vm_id}
+        ):
+            raise protocol_stop()
+        if "vm_name" in payload and (
+            not isinstance(payload["vm_name"], str)
+            or not isinstance(name, str)
+            or payload["vm_name"].strip().lower() != name.strip().lower()
+        ):
+            raise protocol_stop()
+        endpoint = row.get("endpoint_url")
+        vm_type, state = row.get("vm_type"), row.get("vm_state")
+        if (
+            not isinstance(name, str)
+            or name.strip().lower() != normalized
+            or not isinstance(endpoint, str)
+            or endpoint.lower() != VM_ADDRESS_TEMPLATE.format(vm_id=normalized)
+            or vm_type not in ("hatch_vm", "hatch_cvm")
+            or not isinstance(state, str)
+            or (state not in _VM_STATES and not state.startswith("CVM_"))
+            or payload.get("vm_resolution_issue")
+        ):
+            raise protocol_stop()
+        replacement = any(item.get(key) for item in (payload, row) for key in _REPLACEMENT_KEYS)
+        return {
+            "selected": SelectedVM(
+                vm_id, name, endpoint, vm_type, state, replacement, identity=normalized
+            )
+        }
 
-    def _connect(self) -> None:
+    def _remaining_connect_budget(self, deadline: float, cap: float) -> float:
+        remaining = deadline - self._clock()
+        if remaining <= 0:
+            raise UpgradeFailure(503)
+        return min(cap, remaining)
+
+    def _remember_nonce(self, nonce: bytes) -> None:
+        for value in (
+            nonce.hex(),
+            nonce.hex().upper(),
+            base64.b64encode(nonce).decode(),
+            base64.b64encode(nonce).decode().rstrip("="),
+            base64.urlsafe_b64encode(nonce).decode(),
+            base64.urlsafe_b64encode(nonce).decode().rstrip("="),
+        ):
+            self._remember(value)
+
+    def _wake(
+        self,
+        selected: SelectedVM,
+        jar: str,
+        access: str,
+        retry: int,
+        timeout: float,
+        *,
+        deadline: float,
+    ) -> None:
+        document = {"vm_id": selected.vm_id, "retry_count": retry}
+        if retry:
+            document["connect_attempt_id"] = str(uuid.uuid4())
+            self._remember(document["connect_attempt_id"])
+        body = m.canonical_json(document)
+        self._remember(body.decode())
+        self._https(
+            "POST",
+            "/api/hatch/vm/wake",
+            cookies=jar,
+            body=body,
+            purpose="hatch.wake",
+            connect_deadline=deadline,
+            bearer=access,
+            timeout=timeout,
+        )
+
+    def _mint(self, selected: SelectedVM, jar: str, access: str) -> dict[str, Any]:
+        for _ in range(2):
+            hatch = self._https(
+                "POST",
+                "/api/hatch/token",
+                cookies=jar,
+                body=m.canonical_json(
+                    {"vmAddress": selected.endpoint_url, "vmName": selected.name}
+                ),
+                purpose="hatch.token",
+                bearer=access,
+            )
+            if not _notary_stale(hatch.get("notary_token"), self._wall_clock()):
+                return hatch
+        # docs/dev/MUSE_SPIKE.md §9.1 documents one remint then stop.
+        # Resource-unavailable/retry-later is an inference: no evidence establishes
+        # that session refresh repairs a twice-stale notary.
+        raise _error(
+            ErrorCode.RESOURCE_UNAVAILABLE,
+            "Muse minted credentials remain stale",
+            next_action="Retry the connection later; minted credentials remain stale",
+        )
+
+    def _invalidate_trust(self) -> None:
+        self._trust_invalidated = True
+        self._connection_secrets = ()
+        # Read pending first: promotion publishes the loop before clearing pending.
+        # Do not take the transport lock; freeze can notify in the calling thread.
+        pending = self._pending_link
+        loop = self._loop
+        if pending is not None:
+            pending.invalidate()
+        if loop is not None:
+            loop.link.close()
+
+    def _connect(self, *, attempts: int = 3) -> int:
+        for remaining in reversed(range(attempts)):
+            self._connect_once()
+            # A notification may precede publication of the loop, or arrive during
+            # its final durable check. Neither socket may carry an application frame.
+            if not self._trust_invalidated:
+                return remaining
+            self._close_locked()
+        message, action = _PUBLIC_CODES[ErrorCode.NETWORK_TIMEOUT]
+        raise _error(ErrorCode.NETWORK_TIMEOUT, message, next_action=action)
+
+    def _connect_once(self) -> None:
         if self._loop is not None:
-            return
+            try:
+                self._trust.assert_current(self._snapshot)
+            except CoreError:
+                self._close_locked()
+                raise
+            if self._trust_invalidated:
+                self._close_locked()
+            else:
+                return
         jar = self._cookie_jar()
+        if self._trust is None:
+            raise storage_stop()
         auth = self._https("POST", "/api/auth/check", cookies=jar, body=b"", purpose="auth.check")
         access = auth["access_token"]
-        session = self._https("GET", "/api/session", cookies=jar, body=None, purpose="session")
-        vm_id = session["vm_id"]
-        hatch_body = m.canonical_json(
-            {"vmAddress": VM_ADDRESS_TEMPLATE.format(vm_id=vm_id), "vmName": vm_id}
+        session = self._https(
+            "GET", "/api/session?vm_state=live", cookies=jar, body=None, purpose="session"
         )
-        hatch = self._https(
-            "POST",
-            "/api/hatch/token",
-            cookies=jar,
-            body=hatch_body,
-            purpose="hatch.token",
-            bearer=access,
+        selected = self._session_payload(session, auth)["selected"]
+        snapshot = self._trust.freeze(auth, selected)
+        # The first freeze can notify this label itself. Subscribe after it, but
+        # before mint/wake/dial, and never erase a notification at publication.
+        self._trust_invalidated = False
+        self._trust.store.muse_watch(snapshot, self._invalidate_trust)
+        if snapshot.confidential_required or selected.replacement:
+            raise protocol_stop()
+        if selected.vm_state in ("DISABLED", "DELETING", "ERROR"):
+            raise _error(
+                ErrorCode.RESOURCE_UNAVAILABLE,
+                "The Muse VM is unavailable",
+                next_action="The VM is not running; retry later",
+            )
+        self._trust.assert_current(snapshot)
+        hatch = self._mint(selected, jar, access)
+        deadline = self._clock() + _CONNECT_MAX_SECONDS
+        self._wake(
+            selected,
+            jar,
+            access,
+            0,
+            self._remaining_connect_budget(deadline, _HTTP_TIMEOUT_S),
+            deadline=deadline,
         )
-        url = _wss_url(vm_id, hatch["token"])
-        checked = self._check_url(url, "wss.noise")
         raw: Any = None
+        owned: _ConnectCandidate | None = None
         loop: ReceiveLoop | None = None
         failure: CoreError | None = None
+        invalidated = False
+        connected = False
         try:
-            raw = self._connector.connect(checked.url, checked=checked, timeout=_HTTP_TIMEOUT_S)
+            for attempt in range(_CONNECT_MAX_REDIALS + 1):
+                self._trust.assert_current(snapshot)
+                if self._clock() >= deadline:
+                    raise UpgradeFailure(503)
+                url = _wss_url(selected.vm_id, hatch["token"], hatch.get("notary_token"))
+                self._remember(
+                    urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)["request_id"][0]
+                )
+                checked = self._check_url(url, "wss.noise")
+                upgrade = None
+                try:
+                    raw = self._connector.connect(
+                        checked.url,
+                        checked=checked,
+                        timeout=self._remaining_connect_budget(deadline, _HTTP_TIMEOUT_S),
+                    )
+                except UpgradeFailure as exc:
+                    upgrade = exc
+                if upgrade is None:
+                    owned = _ConnectCandidate(raw)
+                    self._pending_link = owned
+                    # A notification can precede ownership, even inside connect().
+                    if self._trust_invalidated:
+                        owned.invalidate()
+                    if self._clock() >= deadline:
+                        raise UpgradeFailure(503)
+                    break
+                if upgrade.status not in (502, 503, 504):
+                    raise upgrade
+                n = attempt + 1
+                delay = max(2.0, min(0.2 * 1.5 ** (n - 1), 8.0))
+                if attempt >= _CONNECT_MAX_REDIALS or self._clock() + delay >= deadline:
+                    raise UpgradeFailure(upgrade.status)
+                self._trust.assert_current(snapshot)
+                self._wake(
+                    selected,
+                    jar,
+                    access,
+                    n,
+                    self._remaining_connect_budget(deadline, _HTTP_TIMEOUT_S),
+                    deadline=deadline,
+                )
+                if self._clock() + delay >= deadline:
+                    raise UpgradeFailure(upgrade.status)
+                self._sleep(delay)
             self._verify_peer(checked, str(getattr(raw, "peer_address", "")))
+            assert owned is not None
+            # Preserve a real peer refusal even when notification already closed it.
+            owned.check()
             party = NoiseParty("initiator")
-            owned = OwnedLink(raw)
             loop = ReceiveLoop(owned, noise=party, clock=self._clock)
             loop.__enter__()
-            handshake_initiator(
+            handshake_standard(
                 party,
                 owned,
-                timeout=DEFAULT_COLLECT_TIMEOUT_S,
+                timeout=self._remaining_connect_budget(deadline, DEFAULT_COLLECT_TIMEOUT_S),
+                remember_nonce=self._remember_nonce,
                 clock=self._clock,
+                confidential=lambda: self._trust.confidential(snapshot),
+                standard_handoff=lambda handoff: self._trust.standard_handoff(snapshot, handoff),
             )
+            self._connection_secrets = tuple(self._secrets._values)
+            self._loop, self._snapshot = loop, snapshot
+            self._trust.assert_current(snapshot)
+        except _CandidateInvalidated:
+            invalidated = True
         except IncompleteBody:
-            failure = _error(
-                ErrorCode.NETWORK_TIMEOUT,
-                "Muse handshake timed out",
-                next_action="Retry the connection. No gateway request frame was sent.",
+            failure = (
+                UpgradeFailure(503)
+                if self._clock() >= deadline
+                else _error(
+                    ErrorCode.NETWORK_TIMEOUT,
+                    "Muse handshake timed out",
+                    next_action="Retry the connection; no application frame was sent",
+                )
             )
         except ProtocolMismatch:
-            failure = _error(
-                ErrorCode.PROTOCOL_MISMATCH,
-                "Muse handshake failed",
-                next_action="Stop. Do not retry this handshake or weaken TLS.",
-            )
+            failure = protocol_stop()
         except CoreError as exc:
             failure = _sanitize_transport_error(exc)
         except Exception:
             failure = _error(
                 ErrorCode.NETWORK_TIMEOUT,
-                "Muse handshake failed",
-                next_action="Retry the connection. No gateway request frame was sent.",
+                "Muse connection failed",
+                next_action="Retry the connection; no application frame was sent",
             )
         else:
-            self._loop = loop
+            connected = True
+        finally:
+            try:
+                if not connected:
+                    if self._loop is loop:
+                        self._loop = None
+                    self._drop(loop, raw)
+            finally:
+                # Retain notification coverage until promotion or actual closure.
+                # Cleanup belongs to this attempt, never to a later candidate.
+                if owned is not None and self._pending_link is owned:
+                    self._pending_link = None
+        if connected:
             return
-        self._drop(loop, raw)
+        if invalidated:
+            # Close-induced I/O failure must not skip the old snapshot's refusal.
+            self._trust.assert_current(snapshot)
+            return
         _raise_if(failure)
 
     def _drop(self, loop: ReceiveLoop | None, raw: Any) -> None:
@@ -1276,7 +1871,10 @@ class MuseTransport:
             loop.link.close()
             return
         if raw is not None:
-            raw.close()
+            try:
+                raw.close()
+            except Exception:
+                pass
 
     def _unary(
         self,
@@ -1291,49 +1889,66 @@ class MuseTransport:
         events: list[dict[str, Any]] | None,
         marker: str,
         payload: Mapping[str, Any] | None,
+        connect_attempts_left: int,
     ) -> GatewayResult | StreamAttempt:
-        headers = [Header("x-request-id", marker)]
+        headers = [Header("x-request-id", marker), Header("accept-encoding", "identity")]
         if raw:
             headers.append(Header("content-type", "application/json"))
         loop = self._loop
         if loop is None:
             raise MuseProgrammingError("gateway connection is not open")
         stream_id: int | None = None
+        handoff_started = False
         result: GatewayResult | StreamAttempt | BaseException
         try:
-            stream_id = loop.open_request(verb=verb, path=path, body=raw, headers=headers)
+            while True:
+                loop = self._loop
+                if loop is None:
+                    raise MuseProgrammingError("gateway connection is not open")
+
+                def handoff(loop: ReceiveLoop = loop) -> None:
+                    nonlocal stream_id, handoff_started
+                    # The Store trust boundary excludes writes/notifications until send.
+                    if self._trust_invalidated:
+                        raise _CandidateInvalidated()
+                    handoff_started = True
+                    stream_id = loop.open_request(verb=verb, path=path, body=raw, headers=headers)
+
+                try:
+                    self._trust.application_handoff(self._snapshot, handoff)
+                except _CandidateInvalidated:
+                    self._close_locked()
+                    connect_attempts_left = self._connect(attempts=connect_attempts_left)
+                    continue
+                break
+            assert stream_id is not None
             status, response_body = loop.collect(stream_id, timeout_s=timeout_s)
-        except IncompleteBody as exc:
-            self._abandon(loop)
-            result = self._incomplete(route, exc, loop, marker, raw, payload, exchange, events)
-        except ProtocolMismatch:
-            self._abandon(loop)
-            result = self._from_code(
-                route,
-                ErrorCode.PROTOCOL_MISMATCH,
-                loop.handed_off,
-                loop,
-                marker,
-                raw,
-                payload,
-                exchange,
-                events,
-            )
         except SendUncertain:
             self._abandon(loop)
             result = self._after_uncertain_send(route, loop, marker, raw, payload, exchange, events)
         except CoreError as exc:
             code = exc.detail.code
-            handed = loop.handed_off
-            self._abandon(loop)
-            result = self._from_code(
-                route, code, handed, loop, marker, raw, payload, exchange, events
-            )
+            handed = handoff_started and loop.handed_off
+            if not handed:
+                self._close_locked()
+                result = self._before_send_failure(
+                    route, _sanitize_transport_error(exc), marker, raw
+                )
+            else:
+                self._abandon(loop)
+                result = self._from_code(
+                    route, code, handed, loop, marker, raw, payload, exchange, events
+                )
         except Exception:
-            handed = loop.handed_off
+            handed = handoff_started and loop.handed_off
             self._abandon(loop)
-            if route == "chat.stream" and not handed:
-                result = self._never_sent(marker, raw)
+            if not handed and route in _MUTATING:
+                result = self._before_send_failure(
+                    route,
+                    _error(ErrorCode.NETWORK_TIMEOUT, "Muse request failed before frame handoff"),
+                    marker,
+                    raw,
+                )
             elif handed and route in _MUTATING:
                 result = self._from_code(
                     route,
@@ -1379,6 +1994,17 @@ class MuseTransport:
                     bytes_handed_off=True,
                 )
         return _emit(result)
+
+    def _before_send_failure(
+        self, route: str, error: CoreError, marker: str, raw: bytes
+    ) -> StreamAttempt | CoreError:
+        if route == "chat.stream":
+            from dataclasses import replace
+
+            return replace(self._never_sent(marker, raw), error_code=error.detail.code.value)
+        if route in _MUTATING:
+            return MuseNotSubmitted(error)
+        return error
 
     def _abandon(self, loop: ReceiveLoop) -> None:
         if loop.failed:

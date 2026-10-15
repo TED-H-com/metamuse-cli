@@ -94,8 +94,20 @@ def test_lock_contention_and_no_worker_do_not_claim_execution(tmp_path):
     assert entry.cli("doctor")["data"]["worker_available"] is False
 
 
-@pytest.mark.parametrize("stop", ["EOF", "SIGTERM", "SIGINT", "SIGKILL"])
-def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop):
+@pytest.mark.parametrize("stop", ["EOF", "EOF_FORCED", "SIGTERM", "SIGINT", "SIGKILL"])
+def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop, monkeypatch):
+    import mcp.client.stdio as stdio
+
+    escalated = set()
+    original_terminate = stdio._terminate_process_tree
+
+    async def observe_termination(process):
+        # Observe the official client's real escalation, without changing its
+        # grace period or replacing any shutdown/kill behavior.
+        escalated.add(process.pid)
+        await original_terminate(process)
+
+    monkeypatch.setattr(stdio, "_terminate_process_tree", observe_termination)
     entry = Entrypoints(tmp_path)
     entry.configure()
     hook = tmp_path / "hook"
@@ -138,8 +150,13 @@ def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop):
         "    entered.write_text(json.dumps({'pid': os.getpid(), 'job_id': step.job.id}))\n"
         "    deadline = time.monotonic() + 45\n"
         "    while not release.exists() and time.monotonic() < deadline: time.sleep(.02)\n"
-        "lifecycle._save_send = save\n"
+        # Force the same client escalation that slow disk commits can trigger.
+        # The official client kills this process; the test never sleeps 30 seconds.
+        + ("    time.sleep(30)\n" if stop == "EOF_FORCED" else "")
+        + "lifecycle._save_send = save\n"
     )
+    # This test exercises shutdown/recovery, not a 60-second import budget.
+    # Slow FULL-sync commits must still fit the finite shared test deadline.
     env = {"PYTHONPATH": str(hook) + os.pathsep + os.environ.get("PYTHONPATH", "")}
 
     async def scenario():
@@ -161,7 +178,7 @@ def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop):
                             "max_urls": 10,
                             "max_items": 500,
                             "max_bytes": 1024,
-                            "wall_clock_seconds": 60,
+                            "wall_clock_seconds": 300,
                         },
                         "access_grant_id": None,
                         "request_key": "collect",
@@ -206,9 +223,17 @@ def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop):
                     "approve-send",
                 )
             )["data"]
-            with anyio.fail_after(30):
+            claim_state = None
+            with anyio.move_on_after(min(120, entry.remaining("MCP worker handoff"))) as wait:
                 while not entered.exists():
+                    claim_state = (
+                        await entry.call(session, "job_get", {"job_id": sent["job_id"]})
+                    )["data"]
                     await anyio.sleep(0.02)
+            if wait.cancel_called:
+                pytest.fail(
+                    "Worker handoff timed out; job state and steps: " + json.dumps(claim_state)
+                )
             state = (await entry.call(session, "job_get", {"job_id": sent["job_id"]}))["data"]
             assert state["job"]["state"] == "running" and state["steps"][0]["state"] == "submitting"
             queued = (
@@ -225,7 +250,7 @@ def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop):
                             "max_urls": 10,
                             "max_items": 500,
                             "max_bytes": 1024,
-                            "wall_clock_seconds": 60,
+                            "wall_clock_seconds": 300,
                         },
                         "access_grant_id": None,
                         "request_key": "after-shutdown",
@@ -233,14 +258,14 @@ def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop):
                 )
             )["data"]
             pid = json.loads(entered.read_text())["pid"]
-            if stop == "EOF":
+            if stop in ("EOF", "EOF_FORCED"):
                 # Official stdio_client closes stdin on context exit; release the paused
                 # step shortly afterward so EOF teardown must drain it before unlocking.
                 timer = threading.Timer(0.2, release.touch)
                 timer.start()
             else:
                 os.kill(pid, getattr(signal, stop))
-            if stop not in ("SIGKILL", "EOF"):
+            if stop not in ("SIGKILL", "EOF", "EOF_FORCED"):
                 await anyio.sleep(0.1)
                 # Graceful shutdown still owns the lock while the bounded step drains.
                 assert entry.cli("doctor")["data"]["worker_available"] is True
@@ -254,8 +279,18 @@ def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop):
         async with entry.server(env=env) as session:
             await entry.terminal(session, queued["job_id"])
             state = (await entry.call(session, "job_get", {"job_id": sent["job_id"]}))["data"]
-            if stop == "SIGKILL":
+            if stop == "EOF_FORCED":
+                assert pid in escalated
                 assert state["job"]["state"] == "awaiting_user"
+            # Closing stdin is graceful only until the client's finite grace
+            # period expires. Under load, a real forced kill must reconcile just
+            # like SIGKILL. Without observed escalation success is still required.
+            uncertain = stop == "SIGKILL" or (
+                pid in escalated and state["job"]["state"] == "awaiting_user"
+            )
+            if uncertain:
+                assert state["job"]["state"] == "awaiting_user"
+                assert state["job"]["error"]["code"] == "E_EXTERNAL_STATE_UNKNOWN"
                 assert state["steps"][0]["state"] == "send_uncertain"
                 denied = await entry.call(
                     session,

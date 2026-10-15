@@ -611,7 +611,9 @@ def test_bound_cookie_format_and_peer_snapshot_are_strict(tmp_path):
     calls = []
     guard = MuseURLGuard(lambda host: calls.append(host) or ("8.8.8.8",))
     checked = guard.check(
-        "wss://hatch.metaaivm.com/v1/noise?auth_token=SYNTHETIC", purpose="wss.noise"
+        "wss://hatch.metaaivm.com/v1/noise?vm_id=vm1&auth_token=SYNTHETIC"
+        "&app_id=hatch-web&request_id=00000000-0000-4000-8000-000000000001",
+        purpose="wss.noise",
     )
     assert checked.url.startswith("wss:")
     guard.verify_peer(checked, "8.8.8.8")
@@ -880,3 +882,74 @@ def test_live_baseline_refuses_unknown_history_before_any_send(fixture_ctx, proj
         _history_baseline(ctx.store, discussion.model_copy(update={"backend": "live"}))
     assert caught.value.detail.code == m.ErrorCode.EXTERNAL_STATE_UNKNOWN
     assert [route for route, _ in ctx.muse_gateway.calls] == ["session.start"]
+
+
+def test_r2_lifecycle_factory_wires_store_and_reaches_currentness(ctx, monkeypatch):
+    from types import SimpleNamespace
+
+    from test_muse_transport import PEER, Credentials, FakeHttp, Guard
+
+    from metamuse import _muse_lifecycle as lifecycle
+    from metamuse.models import CoreError, ErrorCode
+    from metamuse.muse import MuseTransport
+
+    policy = SimpleNamespace(
+        muse=SimpleNamespace(enabled=True), app=SimpleNamespace(network_mode="live")
+    )
+    monkeypatch.setattr(lifecycle, "load_config", lambda root: policy)
+    monkeypatch.setattr(lifecycle, "BoundMuseCredentials", lambda *args: Credentials())
+    monkeypatch.setattr(lifecycle, "MuseURLGuard", lambda *args: Guard(addresses=(PEER,)))
+    http = FakeHttp()
+
+    class Connector:
+        def connect(self, *args, **kwargs):
+            pytest.fail("currentness must stop before dial")
+
+    def transport_factory(**kwargs):
+        return MuseTransport(**kwargs, http=http, connector=Connector())
+
+    monkeypatch.setattr(lifecycle, "MuseTransport", transport_factory)
+    checks = []
+
+    def stop_at_currentness(snapshot):
+        checks.append(snapshot)
+        raise CoreError(ErrorCode.STORAGE, "synthetic stale context")
+
+    monkeypatch.setattr(ctx.store, "muse_assert_current", stop_at_currentness)
+    step = SimpleNamespace(store=ctx.store, executor=SimpleNamespace(muse_gateway=None))
+    discussion = SimpleNamespace(
+        backend="live", provider="synthetic", account="synthetic", auth_ref="auth_" + "a" * 32
+    )
+    transport = lifecycle._gateway(step, discussion)
+    assert transport._trust.store is ctx.store
+    with pytest.raises(CoreError) as exc:
+        transport.sessions_list()
+    assert exc.value.detail.code == ErrorCode.STORAGE
+    assert len(checks) == 1 and len(http.calls) == 2
+
+
+def test_live_transport_without_store_refuses_before_any_request():
+    from test_muse_transport import Credentials, FakeHttp, Guard
+
+    from metamuse.models import CoreError, ErrorCode
+    from metamuse.muse import MuseTransport
+
+    http = FakeHttp()
+
+    class Connector:
+        def connect(self, *args, **kwargs):
+            pytest.fail("unbound transport must stop before dial")
+
+    transport = MuseTransport(
+        network_mode="live",
+        auth_ref="synthetic-auth-ref",
+        credentials=Credentials(),
+        guard=Guard(),
+        http=http,
+        connector=Connector(),
+    )
+    with pytest.raises(CoreError) as caught:
+        transport.sessions_list()
+    assert caught.value.detail.code == ErrorCode.STORAGE
+    assert caught.value.detail.retry_class == "never"
+    assert not http.calls

@@ -21,6 +21,12 @@ dependencies = [
 [project.scripts]
 metamuse = "metamuse.cli:main"
 
+[project.optional-dependencies]
+remote = ["yt-dlp==2026.8.19"]
+facebook = [
+    "playwright==1.63.0",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/metamuse"]
 
@@ -36,8 +42,10 @@ testpaths = ["tests"]
 [dependency-groups]
 dev = [
     "jsonschema>=4.26.0",
+    "playwright==1.63.0",
     "pytest>=9.1.1",
     "ruff>=0.17.0",
+    "yt-dlp==2026.8.19",
 ]
 
 [tool.hatch.build.targets.wheel.force-include]

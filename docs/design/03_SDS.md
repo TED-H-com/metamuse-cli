@@ -73,6 +73,20 @@ handlers只做parse/render，domain結果不print。所有mutations有request_ke
 
 每workspace一個權威SQLite，JSONL/CSV只是進出格式。foreign_keys=ON、recursive_triggers=ON、local WAL、synchronous=FULL、有界busy_timeout；這不是硬體級絕對耐久性保證。不得多機直接共享live WAL DB。所有連線設定一致，外部等待不在transaction內。
 
+Connection timeout為30秒，busy_timeout=30000 ms，共用一個internal constant。MEASURE：
+suite load下90秒548次Store.transaction，p50 12.16 ms、p99 1781.87 ms、max 6903.15 ms；
+commit至context exit的max 6901.59 ms。30秒提供超過觀測stall的餘裕，不保證更長stall不發生。
+一般CLI同步等待每個SQLite operation，不印progress；逾時回固定E_STORAGE／exit 7。
+30秒是每個write transaction的等待上限，不是整個CLI command的deadline；同命令可有多個transaction。
+既有workspace先read檢查active content.cursor，存在就不開provisioning write transaction，
+doctor、jobs get/list及search不取得write lock；首次provision在write transaction內重查以避免race。
+WAL reader不取得write lock；同Store的短connection仍受process內RLock序列化。
+每次writable open設journal_mode=WAL；已是WAL時SQLite視為no-op，不取write lock，
+持有另一writer的真實測試亦通過。實際mode切換仍可能SQLITE_BUSY，走相同分類。
+Store按sqlite_errorcode的primary byte分類SQLITE_BUSY／SQLITE_LOCKED，保留extended code於
+internal _StorageBusy(CoreError)。public仍E_STORAGE／retry_class=never；其他SQLite錯誤
+（含corruption、I/O、缺code）不重試，不按message判斷，不輸出SQL／path／row內容。
+
 | Table | 主鍵／內容／約束 |
 |---|---|
 | projects | id、name、revision、created_at。 |
@@ -84,7 +98,7 @@ handlers只做parse/render，domain結果不print。所有mutations有request_ke
 | assets | sha256 UNIQUE、mime、actual bytes、duration、object path、state。 |
 | item_assets | item revision→asset、relation；保留各來源。 |
 | source_assets | source、project、asset、relation。直接匯入的媒體沒有貼文時仍有專案範圍的來源關係。 |
-| transcript_segments | project、可空 asset、可空 item/source、cue_index、overlap、start_ms/end_ms、text、language、method、review；end≥start≥0。至少要有 asset、item 或 source 之一。相同 bytes 的字幕不跨 project 可見。 |
+| transcript_segments | project、可空 asset、可空 item/source、cue_index、overlap、start_ms/end_ms、text、language、method、review、removed（default false；移除列text空、revision≥2）；end≥start≥0。至少要有 asset、item 或 source 之一。相同 bytes 的字幕不跨 project 可見。 |
 | packets | project、exact selection、rendered_text、redactions、coverage、digest、created。 |
 | permits | kind/scope、issuer、issued/expiry、max_uses/used、revoked、exact digest（需要時）。 |
 | discussions | project/provider/auth_ref、remote_session nullable、open attempt state、last_seq、state。 |
@@ -101,17 +115,50 @@ P1才加actions/action_attempts、metric_snapshots，不預建campaign/voice/for
 
 必須有FK及project一致性：跨project item/source/parent/packet引用拒絕。asset bytes可共用，但可見範圍依item_assets與source_assets，不因hash相同洩露別project。字幕的 project_id 是衍生文字的擁有者，可沒有 asset；共用 bytes 不共用字幕。transcript (id, revision) 只追加，不 UPDATE，也不能以 REPLACE、INSERT OR REPLACE 或 ON CONFLICT DO UPDATE 覆蓋既有主鍵。source_assets 整列不可更新，既有主鍵不可 REPLACE。兩表都沒有次要 UNIQUE；非唯一索引不是身分。單則字幕文字超過 1,000,000 字元是該列錯誤。
 
-native IDs為opaque字串，不自行解碼。可靠ID用(platform,scope,id)識別；無ID保持弱識別，不以文字hash假裝同留言。parent不得自我／循環。revision追加，不原地抹掉舊來源；修正同transaction標記派生stale。
+native IDs為opaque字串，不自行解碼。可靠ID用(platform,scope,id)識別；無ID保持弱識別，不以文字hash假裝同留言。parent不得自我／循環。revision追加，不原地抹掉舊來源；修正同transaction標記派生stale。移除cue追加removed=true/text=""的較新revision，需同id/project的前一文字列，拒絕double removal；舊文字明示引用仍可讀且stale，移除列不能解析為證據。
 
 ## 5. 工作提交与executor
 
 先驗輸入／scope→transaction查request_key→建立job/steps/event→commit→回accepted/job_id/worker_available。收到job並不等於開始。
 
-worker run、預設MCP附帶worker、CLI --run都搶相同OS lock。MCP --no-worker明示停用附帶executor；鎖被占用仍服務，回worker_available:false及next action，本次server不重試取得鎖。附帶worker只是同Executor的一個thread，沒有第二個scheduler或store。inspect附attached_worker狀態；CLI doctor由owner及Linux FLOCK觀測實際持鎖。同workspace只有一個owner；其他入口只排隊。舊heartbeat過期但OS lock仍被持有時不能直接接管；由操作者確認終止owned process及退出後才開新worker。不得殺不明browser程序。
+worker run、預設MCP附帶worker、CLI --run都搶相同OS lock。MCP --no-worker明示停用附帶executor；鎖被占用仍服務，回worker_available:false及next action，本次server不重試取得鎖。附帶worker只是同Executor的一個thread，沒有第二個scheduler或權威database。inspect附attached_worker狀態；CLI doctor由owner及Linux FLOCK觀測實際持鎖。同workspace只有一個owner；其他入口只排隊。舊heartbeat過期但OS lock仍被持有時不能直接接管；由操作者確認終止owned process及退出後才開新worker。不得殺不明browser程序。
 
 取得鎖後遞增epoch，短transaction claim queued step；外部動作前再驗epoch、job state、permit和target。epoch防舊callback寫回，但不能讓遠端服務獲得它不支援的fencing或exactly-once。
 
-共用Store instance以process內RLock序列化短connection生命週期，避免附worker與MCP thread的自身WAL／writer contention；跨process仍依SQLite及maintenance／worker OS lock。網路下載／模型等待不持有長transaction或connection lock。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
+附worker在自己的thread建立同paths／clock／migrations／schema version的sibling Store，
+有獨立RLock；MCP tools保留ctx.store，因此WAL read不排在worker的SQLite wait後。
+Store建立也走unclaimed retry。writer如跨process一般由SQLite仲裁，同一database及maintenance／worker OS lock不變。網路下載／模型等待不持有長transaction或connection lock。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
+
+未claim step時（startup epoch/recovery、heartbeat、atomic claim/cancel sweep、idle及
+safe-read已requeue後的等待維護）只對_StorageBusy重試。transaction先rollback，exponential
+backoff加jitter：25–50 ms起，倍增至1–2秒，每次wait最多2秒，stop喚醒且不再開始下一次。
+每個unclaimed action以scoped thread-local override將connect及busy_timeout（含read-only
+version probe）限為1秒，其他caller與claimed transaction仍為30秒。原MEASURE的548次中
+531次（96.9%）在1秒內，p50 12.16 ms；tail stall留給可stop的外層重試。
+exit metadata cleanup同樣限1秒，只略過busy；其他錯誤先釋放OS lock再傳出。
+未claim的stop最多一個1秒attempt加1秒cleanup，即2秒SQLite lock wait；不涵蓋fsync、
+filesystem／OS maintenance lock或任意handler的執行時間。run_once與run共用此維護行為。
+已claim須先到handler邊界；其後finalization最多30秒加fallback 30秒，fallback若逾時就傳出。
+zero-handoff另有settlement 30秒及failure-event 30秒，最多四個連續wait即120秒，再加1秒cleanup。
+pre-handler guard及handler各checkpoint／boundary transaction各自仍有30秒；I/O另受自身timeout。
+MCP shutdown join worker thread以避免遺棄已claim的step或OS lock。
+storage_busy_retries累計並飽和於2**31−1，既有attached status／inspect／同context doctor可見。
+startup contention為starting且不可用，ownership commit後才running；非busy失敗為failed，
+worker_error_code只含固定code（unexpected internal exception同tool failure慣例為E_STORAGE），
+不含message或path。兩種failure皆以log_safe_exception記mcp.attached_worker及固定code，
+僅class與去path的basename／line／function frames；startup stop直接starting→stopped，不短暫running。
+startup failure後新提交仍accepted/queued且worker_available:false。
+startup worker失敗亦保留MCP server供查診斷，不因worker失敗終止stdio服務。
+ready handoff最多2秒，未完成ownership則以starting開始服務；首次短busy、lock_busy或failure亦設ready。
+另一CLI doctor只觀察OS lock可用性，不讀另一process的失敗記憶。
+
+已claim的handler不套busy重試：none／safe_read保留既有失敗規則；external_submit未越過
+committed submitting boundary可failed/not_submitted，越過則uncertain，絕不自動重送。
+_fail／_finish_step等保存若busy則rollback；fallback寫入也busy時傳出錯誤，保留durable
+running/submitting供原有restart recovery，不捏造succeeded或failed_before_send。
+shutdown清owner metadata若busy可留stale metadata；釋放OS lock才是availability權威。
+同PID另須完整owner nonce存在process-local live registry；ownership commit後才加入，
+exit不論cleanup結果皆移除。新的同PID Executor不會借用舊nonce；其他PID仍以Linux FLOCK觀測。
 
 ### 重啟恢復
 
@@ -154,6 +201,65 @@ Browser context一個控制者，原生登入／2FA由人類處理。人接手�
 只採上游授權允許的必要auth/session/send/history與descriptors，依賴標準Noise／TLS庫。來源commit、原path與license記notice，不移植raw escape hatch。不是自己的模型API，也不替換Muse harness。
 
 同Gateway一個receive consumer；以stream ID管理response，限制buffer／frame／body大小。P0 serial requests，不做多consumer subscriptions。完整reassembly未支援的frame回不相容，不能把半包當成功。不得關閉TLS驗證或自造握手來「相容」。token可能出現在WSS query，diagnostic不得外洩。
+
+
+
+2026-10-14 primary standard transport：authenticated session以GET /api/session?vm_state=live
+選唯一一致hatch_vm row，mint body用row endpoint_url及name；WSS query固定vm_id/auth_token/
+optional non-delegation notary_token/app_id=hatch-web/fresh request UUID4，Origin固定Muse。
+access/hatch token grammar分開；legacy hatch不含dot；s0 opaque不改寫、不冒稱驗signature。每個
+token/notary_token/notaryToken/noiseNotaryToken/endorsement alias先驗；case-insensitive delegation./
+endorsement.及malformed s0回protocol/never，不silent drop。
+payload/全部vms先normalize VM id、scan hatch_cvm/CVM_*/truthy cvm_required/cvmReplacementEnabled，
+即使unassigned/ambiguous/invalid也先record sticky，再stop；無VM id只record account。wire保留server
+exact id，與storage id只可差case/外側whitespace。msg1帶fresh 32-byte challenge；握手varint minimal
+uint64；RV field 1必須nonempty bytes。bounded authenticated msg2見canonical field-2/varint tag即先
+record permanent confidential，再拒絕malformed/unsupported state/fields/chip；無reset tool。
+只有strict NON_TEE subset（outer field 2，optional explicit platform=0，nested key/nonce各32 bytes）
+且key等於成熟Noise responder static、nonce等於本attempt challenge才可empty msg3/split。
+unknown/malformed/evidence/CVM、bad AEAD/low-order DH或不等式回E_PROTOCOL_MISMATCH（never）。
+不關tier、不略過適用pins/context checks；standard不做SNP/TCB/notary-signature claim。
+
+wake是account-side power-state request，只在已grant Muse operation觸發的live-mode connect內：
+DISABLED/DELETING/ERROR在wake前停止，CVM_*或hatch_cvm先record sticky再停止；其餘activation
+POST /api/hatch/vm/wake {vm_id,retry_count:0}後dial。upgrade 502/503/504在每次redial前wake
+{vm_id,retry_count:n,connect_attempt_id:UUID4}，delay=max(2s,min(0.2s×1.5^(n−1),8s))，最多20
+redials或mint後啟動的240s wake/dial/handshake budget，超界E_RESOURCE_UNAVAILABLE並請操作者VM尚未running、稍後再試。
+401/403→E_AUTH_REQUIRED；429→E_RATE_LIMITED；connect/DNS/TLS→E_NETWORK_TIMEOUT，guard refusal
+→E_SCOPE_REQUIRED。bootstrap只收200（spike§2/5）；wake 200（operator LIVE probe，evidence在repository之外）或operator round-2
+contract的202/204（非本task LIVE observation）不要求JSON。session/wake 404/409/410 unavailable，
+其他unexpected 2xx/4xx protocol，只有401/403 auth。每次wake/dial/handshake前重查remaining budget；
+耗盡回resource unavailable、不傳nonpositive curl timeout、不send msg1。offline/fixture gateway
+不wake、不network；不call lease/reset/chip-selection/
+enrollment/recovery/fallback-notary/capability registration。upgrade URL/query/body不入exception/log。
+request選identity encoding；duplicate/unsupported response encoding拒絕，single consumer和完整性caps
+不變。握手／token失敗不改B10先前handoff的不明送達、不重送、不false failed_before_send。
+
+2026-10-14 B09 authoritative trust補充（round 3）：005未merge，原地amend、無006。
+固定MUSE_ORIGIN/HATCH_WSS_BASE只有一個trust domain；provider/account是local binding label，
+不partition remote expectation。label-bound account/VM row保存selection/session/generation；
+label-independent muse_trust_observations以viewer_hash/normalized VM id保存authenticated observation，
+empty VM id只表示owner evidence，不是wire identity。owner↔VM associations形成graph；recursive SQL
+closure把confidential owner傳至全部VM、confidential VM傳至全部owner，transitive且monotonic。
+21 guards、3 indexes及transaction-local propagation barrier作set-wise更新；超過1000 rows不增加
+trigger depth、不因size丟record。hint bind在單一transaction先barrier、bulk observation/VM insert、
+materialize closure一次、三table set-wise update、remove barrier後commit；不逐id算closure。committed barrier、changed schema/corruption阻擋connection。
+CVM hints在owner binding/status/selection拒絕前獨立commit全部usable VM ids；RV msg2在stale或
+changed binding也以remote identity commit、不用generation CAS。write失敗停止msg3並明示無法record。
+standard handoff才做currentness/generation CAS；effective confidential先於generation檢查，回protocol/never。
+trust-domain/per-account locks跨msg3，maintenance及transaction在network前release。stale context回
+E_STORAGE/never並請重connect；integrity/schema才建議repair/verified restore，明示older backup（含v4
+rollback）會丟backup後的confidential expectations。無in-place reset。schema一次verify、每boundary比signature。
+msg2 decrypt上限65535、先full RV discriminator再standard 8192 cap；session cap 1 MiB，超界不record也不dial。
+HTTP 200 missing/malformed fields是protocol/never；explicit ok:false或401/403才auth；twice-stale
+notary依公開MUSE_SPIKE §9.1 one-remint後stop；resource/retry-later是inference，無session refresh修復證據。
+
+Notary freshness is only a cache hint, not local signature/expiry verification.
+Missing or undecodable third-segment JSON, a non-object document or non-list restrictions
+means no hint. Skip non-strings, non-timeout prefixes and entries whose stripped timeout:
+remainder fails Python float(), is non-finite or is <= 0. The first positive finite
+value decides stale iff expiry <= now + 60 seconds; ignore later entries. None usable
+means not stale. Mint at most twice; a twice-stale remint stops before wake or dial.
 
 ### Session建立
 
@@ -361,7 +467,7 @@ or created; cleanup of files from older development builds remains an operator t
 Schema-2 transcript visibility uses authoritative project_id, with nullable asset/item/source
 anchors. Migration 002 copies a v1 transcript only when its asset links to exactly one
 project; unlinked or ambiguous ownership aborts and retains the original data. New
-transcript revisions mark directly derived records stale; B07/B11 also checks transitive
+transcript revisions, including removal revisions, mark directly derived records stale; B07/B11 also checks transitive
 staleness at use. Fresh v2 databases and restored/upgraded v1 databases must have the
 same canonical schema. Both 002 tables retain their guard names, use rowid-aware INSERT
 guards and whole-row UPDATE freezes, and have no secondary UNIQUE indexes. These
@@ -797,3 +903,691 @@ quoted defaults cannot jump over a proven enclosing JSON close. Raw special-sche
 backslash barriers exclude serialization backslashes and Unicode-escape data.
 Netscape jar fields remain recognizable after a surrounding context prefix and
 retain CR/LF line endings. These rules preserve the existing four-application bound.
+Round 4 storage mapping: SQLITE_BUSY/LOCKED past busy_timeout returns E_STORAGE / safe_read, “Muse security state is busy; retry”. READONLY identifies a read-only workspace and FULL a full disk, both user_action. Recording failures retain “Muse confidentiality could not be recorded” with the same fixed environment guidance, and stop before msg3. Integrity/schema failures alone advise verified restore with the later-expectations loss warning.
+
+A committed muse_trust_propagating marker is always invalid and has a specific E_STORAGE message. Safe human repair, after stopping Muse connections: acquire exclusive maintenance.lock, BEGIN IMMEDIATE, retain the barrier, rerun the recursive owner/VM closure and the three set-wise flag updates across the whole workspace, DELETE the marker, then COMMIT. This retains every observation and expectation; no restore is needed. There is no automatic repair/reset command.
+
+HTTP 200 session: status=unavailable或完全沒有identity key回resource；alias-only vmid回protocol；其他非assigned status（含missing/type/case drift）回protocol/never。non-object response action標session/hatch/auth path。
+
+Confidential write（new confidential account/VM/observation row，或任何0→1 flag含SQL
+propagation及inherited edge）commit後notify全部workspace live listeners，跨local labels
+立即close sockets。non-direct freeze沒有confidential write不broadcast；binding/generation
+change仍只notify自己的label。下一call先重查durable state；refusal在任何HTTPS/WSS前stop。
+若仍current但socket被broadcast關閉，同一call完成fresh auth/session/freeze/mint/wake/handshake
+後才開application frame，不回假的E_STORAGE。freeze回來後立即清invalidation並註冊listener，
+在mint/wake/socket之前；同transport/key註冊deduplicate。註冊後application handoff
+尚未贏trust boundary時，任何workspace confidential或own-label notification（含publish前及final durable check期間）都在同一call先fresh connect；
+publish並assert_current後重查invalidation，每call最多3次connect。耗盡回固定retryable
+E_NETWORK_TIMEOUT/safe_read「Muse connection failed」，action「Retry the connection.
+No gateway request frame was sent.」；mutation經MuseNotSubmitted或chat.stream
+failed_before_send回never-sent。mutation只consume一次。
+每call（含existing loop）以muse_application_handoff在既有trust-domain/account boundary
+重查OLD snapshot，再清除SQLite transaction及maintenance.lock，持trust locks跨
+invalidation check及open_request/send；不更新msg3 provenance。trust write/notify先贏則
+current context先fresh connect，changed/confidential/refused context在新HTTP/WSS及app frame前stop。
+connect與application前recovery共用上述3次上限，authorization只consume一次；真正pre-send
+refusal回MuseNotSubmitted/session.start或FAILED_BEFORE_SEND/chat.stream。handoff先贏則
+較晚的notification屬in-flight，不能撤回已handoff bytes，不replay；response collect不持trust lock。
+callback不取transport lock；callback的SendUncertain/protocol exception不改成storage failure。
+in-flight socket關閉不replay：incomplete read回E_NETWORK_TIMEOUT；handoff後chat.stream保留
+uncertain/partial evidence，session.start回MuseStateUnknown/reconcile；protocol failure仍never。
+下一call只重連，不重送之前的mutation。
+240s不是whole-connect deadline：auth/session及最多兩次mint在其前，claimed Muse trust
+transaction仍各用30s SQLite busy timeout；currentness亦以BEGIN IMMEDIATE取writer。
+持續held WAL writer會在第一個freeze/currentness wait逾時即stop，不進三次invalidation retry。
+clock內trust wait可overrun，final check亦在handshake後。stable WAL、adapter遵守timeout時，
+保守budget accounting每fresh connect為80s bootstrap HTTP+60s pre-budget trust+270s
+（240s phase及最多30s check）=410s；三次1230s，加initial cached check最多30s為1260s。
+這不是wall-clock上限：file/RLocks、fsync、schema work、DNS/guard與host scheduling另有等待。
+
+
+
+Round 4 amends unreleased migration 005 again, with no 006: muse_trust_accounts now checks lower-case hexadecimal viewer/session hashes and normalized nonempty active VM ids, or NULL only with confidentiality set. The same constraints are verified on fresh v5, v4→v5 and confidential backup→restore. Noncanonical development v5 databases still fail schema verification.
+
+Round 4 provenance design: source and observed_at are frozen once an observation or label VM row has confidential_required=1, including later direct evidence. A direct hint/RV may stamp a prior cr=0 observation during its transition to 1; a standard freeze never restamps a cr=1 row. Inherited propagation retains the association’s prior provenance, rather than claiming direct CVM evidence. Existing immutable guards enforce this metadata rule; no first-cause column is needed because nothing overwrites confidential provenance.
+
+
+Session and selected-row keys whose compact form is `vmid` must all be valid and
+normalize to one VM identity, independently of key order. Name, endpoint and the
+persistent trust key use that identity. The exact server `vm_id` may be retained
+on the wire only after that agreement check (case and surrounding whitespace
+are the only permitted differences). A confidential hint records every usable
+identity alias before any disagreement is refused, before mint, wake or dial.
+
+Muse sanitization includes the codec's cookie, bearer and credential-pair
+shapes, and treats Authorization and Proxy-Authorization scheme plus credential
+as one value. Known secrets are matched in both raw text and up to two decoded
+percent-encoding layers; their coordinate-mapped span union is merged before
+one output join. A literal percent next to a hex nonce or UUID cannot hide it.
+
+Muse credential keys and confidential markers share one Unicode component helper:
+remove Cf and Default_Ignorable_Code_Point, apply NFKC, split non-alphanumerics,
+letter/digit, lower/upper and acronym boundaries, then casefold. Credential keys
+match any nonce/token/proof/secret/notary/recovery/psk/passwd component (also plural),
+ordered noise…key, attempt…id, request…id, rv…key, wake…body or access…key pairs
+(second component may be plural), exact extra keys, or the shared core classifier.
+Pairs need not be adjacent. Association keys session_id/request_marker/x-request-id/
+client_request_id, vm_id/discussion_id/job_id and documented usage token counts
+(including the usage prefix, such as usage.prompt_tokens) are exempt by compact spelling.
+Arbitrary credential prefixes such as secret.prompt_tokens are still sensitive. Known secret values
+remain scrubbed under every key. Tokenizer, secretary, proofread, awake, handshake_ms
+and wake_time contain no family component and remain visible; core policy stays sensitive.
+
+Effective Muse trust and SQL inherit guards seed a recursive component at the
+requested owner and VM. Every traversal uses indexed owner/VM edges, including
+active selections, historical label VMs and label-independent observations.
+All six AFTER propagation triggers and the bulk bind seed the same indexed
+component recursion from the new remote owner/VM. Bulk bind materializes that
+component once after inserting all observations, under the transaction barrier.
+Small confidential writes and unrelated standard handoffs do not enumerate other
+components. Only explicit human barrier repair computes the whole-workspace closure.
+Raw-SQL inherit/retention/monotonic guards remain. Unreleased migration 005 is
+amended in place again; no 006. Fresh v5, v4→v5 and backup/restore use this schema.
+
+Muse trust failures classify SQLite primary codes (including extended codes):
+IOERR/CANTOPEN/PERM/NOLFS/READONLY/FULL are environment/user_action;
+BUSY/LOCKED/PROTOCOL/NOMEM/INTERRUPT are transient/safe_read;
+CORRUPT/NOTADB/SCHEMA/CONSTRAINT and invalid stored types are damage/never.
+Unclassified codes and Python exceptions return a fixed internal failure and
+report action, without restore or permissions advice. Recording retains its
+honest failure prefix and the underlying guidance. A committed barrier uses
+closure-only human repair. Unreleased 005 enforces integer generation/flags,
+text identities/hashes and nonempty text timestamps, also on upgrade and restore.
+
+Hint matching walks every object/list to depth 32. A normalized component that
+starts with cvm or contains confidential is a marker. Marker keys count only
+with truthy values (excluding false/0/null/empty values and compact false/no/0/none).
+String marker values count regardless of key, except opaque credential strings
+and strings in lists directly under sensitive keys. Objects under sensitive keys
+are still walked, including their keys and values under non-sensitive keys.
+This retains hatch_cvm, hatchCvm, CVM_RUNNING, cvm1, confidential, negated
+non-confidential/nonconfidential/not cvm/no-cvm, full-width, compatibility and
+ignorable-separated forms. C V M, c_v_m, c-vm and hatchcvm/HATCHCVM no longer match.
+It avoids cross-word Public VM/basic vm and opaque xQ7cVm2R false positives.
+Evidence records the union of every enclosing identity-bearing object's usable
+VM ids, including the session and selected row. If the innermost scope is the
+session or no scope exists, persist owner evidence and all usable body ids.
+Duplicate JSON pairs are retained for this scan, including every identity value;
+record evidence first, then refuse any duplicate key at any depth. All Muse HTTPS
+JSON bodies require strict UTF-8, reject leading U+FEFF, and pass the depth check
+before parsing; UTF-16/32 and malformed UTF-8 record nothing. Alias-only vmid in
+the session or selected row is protocol drift, before unavailable checks. Only
+no identity key at all, or status=unavailable, remains resource unavailable.
+Every observation commits before refusal even on owner mismatch or invalid selection.
+False positives permanently refuse the connected standard tier, with no reset tool;
+this intentionally errs toward confidentiality.
+
+Owned Muse redaction scans key+separator occurrences once, inspecting a value
+only for sensitive keys and resuming after it. Unquoted values stop at quotes;
+JSON-text pairs embedded in plain text, including Unicode-escaped keys, are covered.
+Quoted keys scan plain runs between escapes. Classification caches retain only keys
+of at most 256 characters, so large authenticated keys cannot accumulate across connections. Authorization consumes a whole
+run on failure and redacts scheme-less and scheme-plus-credential values. Every
+codec-hidden value must also be hidden by text/body sanitization (seeded 5,000-case
+compositions). Known raw and twice-decoded percent-coordinate spans are unioned,
+merged, and rendered with one join; bodies are never truncated before redaction.
+CPU doubling tests cover k:, k=>, a=1;, k:v|, ;p=1 and authorization:, raw and in
+JSON string wrappers, 128 KiB–1 MiB, for owned scanning and public text/body paths.
+The B16a integration carries the linear core scanner and converts the five
+inherited core-growth xfails into ordinary tests, at the standard 128 KiB, 256 KiB,
+512 KiB and 1 MiB sizes. Each size retains three CPU samples and two calls per
+sample (the existing authorization family retains four calls). The slope limit
+remains 1.25, the endpoint ratio limit remains 12, and the 1 MiB CPU ceiling
+remains 12 s for the adversarial Muse grammars. The bare-cookie AT-042 regression
+is also an ordinary passing test. Focused measurements do not certify the full
+integrated application or replace exact-source hosted integration gates.
+
+
+B12's target includes the complete canonical remote-media approval table: extractor key,
+normalized sorted hosts, and opaque auth_ref or null. Preparation preserves configured
+extractor priority and orders entries within each key canonically; selected first-hop
+keys are also bound. The preview identifies first-hop and later-hop entries, hosts and
+cookie labels/accounts. Execution selects hops only from the bound entries. A change
+to any entry, including an unrelated approval, invalidates the grant before use or
+egress and requires a fresh preview. No network-derived resolved URL enters the digest.
+
+B12 preparation computes one ASCII-only canonical URL: lower-case scheme and
+IDNA2003/punycode host, non-default port only, UTF-8 percent-encoded non-ASCII path/query.
+Decode unreserved escapes, upper-case remaining escapes, and pre-encode ASCII outside
+the pinned yt-dlp/curl_cffi safe-set intersection. Only m.facebook.com maps to www;
+host approval checks www. Refuse IDNA deviation characters ß/ς and mapped trailing dots.
+The digest, preview, request echo and operator stderr bind that string. The extractor
+receives exactly the displayed URL. The transport sends exactly each URL the checker
+approved, without requoting or dot-segment removal (quote=False, PATH_AS_IS and an explicit
+REQUEST_TARGET, preserving escape hex case too). Extractors
+may derive further requests, e.g. FacebookReel watch URLs, added query parameters or
+API endpoints; each is checked against bound approval entries before any dial. Wire
+tests prove that the first page request bytes equal the display for the fixture
+extractor and FacebookIE watch, video and story URLs. The job request and original_url
+provenance retain the original input. Refuse fragments (even empty #), shared url_token
+query keys, invalid escapes, dot segments (including escapes and parameters), duplicate
+canonical query keys and structural redaction, with fixed E_INPUT_INVALID, no preview
+or URL echo. At preview and before extraction, assert the pinned-library fixed point:
+display == requote_uri(normalize_url(display)); drift fails closed. Signed extractor-hop
+URLs retain existing redaction; credential-bearing page URLs are outside B12 inputs.
+B12 preparation checks metadata for all bound cookie references without reading secret
+bytes: existence and provider/account must match, otherwise E_AUTH_REQUIRED without a
+preview. Execution resolves and parses every bound secret before permit consumption,
+including unused later-hop bindings. Parsed cookies are scoped to bound entries.
+
+B12 receipt lookup precedes permit verification: an identical request including its grant
+returns its original job after consumption or workspace-cap edits. Any changed payload
+is E_IDEMPOTENCY_CONFLICT. Workspace caps stay outside target and job identity, but the four displayed caps
+(safe_read_retries, read_timeout_seconds, media_max_bytes, text_max_bytes) enter the
+action digest payload. Any edit before grant submission requires new approval.
+Atomic acceptance stores exactly the reviewed values in the B12-owned step checkpoint
+`remote_media_caps`. Execution recomputes the digest from that snapshot.
+
+At the B12 boundary each workspace cap is min(reviewed snapshot, current value).
+Lower caps apply to queued jobs; increases cannot exceed the reviewed snapshot.
+Request limits remain digest-bound and are checked against current workspace limits.
+Retries above the effective B12 cap stop before consumption or egress, even if the
+core executor schedules another local attempt. That terminal local guard preserves
+the original read error code/message, sets retry_class=never, and explains the accepted
+retry cap in next_action.
+
+B12 preparation enforces the shared 8192-byte UTF-8 URL bound and cheap HTTP(S)
+syntax checks before redaction, display, digest, preview or job creation. One byte
+over the bound returns the same outbound-policy error as the dial-time guard,
+without a preview. The ASCII canonical URL must also fit this outbound bound.
+URLInput still needs a core-owned schema/validation bound.
+
+Remote configuration labels that are invalid or credential-shaped return fixed
+E_INPUT_INVALID naming only the setting. Approval callback Exceptions preserve the
+original refusal without a preview; logging contains only a fixed line and type.
+Challenge normalization scans every response body in overlapping 32 KiB blocks,
+checking the step cancellation/wall deadline once per block and retaining the existing
+timeout error on expiry. Measured CPU costs per 512 MiB are documented in COLLECT.md.
+Login forms keep the first duplicate attribute value. Only the first base with an
+href counts; an unparsable first href uses the document URL, ignoring later bases.
+Unparsable actions are skipped while later forms are checked.
+Challenge token __rd_verify matches case-insensitively with or without a preceding
+slash, after HTML entities, one percent-decoding, JavaScript \u005f/\x5f underscore
+escapes and NFKC folding. Split JavaScript string literals are not detected.
+Cookie domains require at least two labels and cannot normalize to IP literals;
+multi-label public suffix detection needs a public-suffix list.
+
+B12 durable canonical URLs are reviewable bound-host displays selected in webpage_url,
+extract_url, reviewed order, with canonical_basis in use_basis and revision evidence.
+Signed hop/resource URLs never persist. Changed subtitle files atomically append new
+cues and removed=true/empty-text revisions for omitted prior indexes; source basis
+records zero-cue replacements too. Search excludes latest removals, resolution and
+exports refuse removal refs without text, and historical text-bearing refs stay stale.
+Migration `006_transcript_removal.sql` upgrades schema 5→6 after Muse trust
+migration 005; its additive checked column preserves existing rows, triggers and indexes.
+Listing omissions alone remain B18, not source-removal proof.
+Subtitle/media final HTML responses (type or BOM/whitespace/opening-tag sniff) are
+parsed for login forms over the full body, retaining original context across redirects;
+E_AUTH_REQUIRED stops before later requests or resource writes. Page requests remain
+extractor-classified. Challenge/login block scans share a cheap deadline on every block
+and durable guard pacing: first, at most every 250 ms, and after last.
+### B13 browser boundary clarifications
+
+Facebook uses a nonempty exact host allowlist validated at configuration load.
+Wildcard, IP, local, invalid and empty entries fail with a fixed E_INPUT_INVALID
+without reflecting the operator value; B08's generic optional allowlist is unchanged.
+Entries must be bare hostnames: URL query/fragment delimiters are invalid, never
+parsed away before validation.
+
+B13 egress diagnostics expose fixed reason/purpose counts only; denied destination
+strings never enter job results, checkpoints, events or errors (AT-028).
+
+Authorized post identity requires exact, case-sensitive actor and post-token equality.
+Primary-host aliases and accepted permalink syntaxes with those same tokens are
+equivalent; numeric story_fbid and pfbid tokens are never inferred equivalent.
+Main-frame routes, every observed main-frame navigation and the final URL are checked
+before extraction; extracted actor/id mismatch stops with E_REFERENCE_INVALID.
+New document requests are aborted where Playwright routing (or the plaintext
+fixture proxy) exposes them. HTTPS 302 paths inside CONNECT can already have been
+requested before Playwright observes the final navigation; no data, source or item
+from that document is stored or reported. Script/meta navigation is route-blocked.
+
+Page WebSockets and WebSocketStream are refused by Chromium per-URL offline
+network rules for ws/wss and all ports. Network.setBlockedURLs alone is insufficient;
+context.route_web_socket is supplemental. Any observed handshake response yields a
+fixed E_PROTOCOL_MISMATCH before import; native creation and handshake events stop with the same fixed error; attempts count websocket_blocked.
+Workers are verified debugger-paused, then destroyed without resuming.
+CONNECT host/IP checks remain a separate boundary.
+
+Proxy policy/resolution waits are bounded by the read timeout and interruptible on
+close. Closure fences dialing and socket registration; once close returns, no
+upstream connection can occur later. Python cannot cancel an in-flight NSS lookup;
+abandoned daemon resolution tasks have no dialing capability and a process-wide
+16-slot bound, released only when their lookup returns. Capacity exhaustion refuses
+requests. An already entered dial is bounded by the socket timeout and closure waits
+for it before closing every registered socket.
+
+Facebook checkpoints final wire-byte consumption after transport shutdown, even
+when navigation stops at a barrier before returning a DOM observation. Resume
+allocates only the original budget minus all recorded session consumption.
+
+B13 also closes ordinary page sockets with Playwright routing; the network rules
+cover native bypasses. Dedicated/shared workers are terminated at CDP’s pre-script pause.
+The protocol/worker controls are installed before navigation; worker-dependent
+Facebook rendering remains unverified until AT-039.
+
+Malformed storage-state origin entries, missing/non-string origins, non-HTTPS schemes,
+invalid/out-of-range/non-443 ports, credentials, path/query/fragment or malformed
+authority fail with fixed
+E_AUTH_REQUIRED: Invalid Facebook storage-state origin. Capability inspection still
+returns the normal needs_auth row; no raw origin value enters diagnostics.
+
+CONNECT port strings are bounded to five ASCII digits before integer conversion.
+Numeric and other parser failures produce a fixed 403 protocol refusal, recorded
+as classification/count only; malformed input never emits a worker traceback.
+
+B13 Chromium launches require chromium_sandbox=True. Failure is E_DEPENDENCY_MISSING
+with AppArmor userns and explicit operator opt-in remedies; no automatic downgrade.
+Only [facebook] allow_unsandboxed_browser=true authorizes a disabled/unverified mode.
+Results/checkpoints record the running observation; inspect/doctor warn on the exception.
+A bounded cached headless blank-page launch without navigation/state verifies command-line
+and Linux renderer Seccomp state; an unavailable sandbox never yields environment=ready without the opt-in.
+The risk and generic AppArmor template are in docs/dev/FACEBOOK.md. Renderer compromise
+under the opt-in has operator UID access, so separate OS isolation is recommended.
+
+B13 share resolution never widens a permit: target/action payload bind the normalized
+share URL while browser navigation/extraction bind its first observed main-frame single-post
+actor/token. A resumed session compares against the persisted resolved identity
+before import; no numeric-token/pfbid or actor-alias equivalence is inferred.
+requested_locator and resolved_permalink use existing freeform result/provenance
+fields; no core model, migration or schema extension is required.
+
+B13 associates each accumulated Record with its observation SHA-256, without using
+text/position for identity. It compares the latest state per reliable native key, so
+reversions remain revisions. The existing Book receives each contributing hash; its
+frozen revisions retain those hashes and verified observation provenance. New Source
+use_basis identifies the first contributing snapshot, not the attempt’s final DOM.
+
+
+A present but unparseable Facebook comment count adds comment_count_unparsed to post and job gaps; affirmative exhaustion never converts that uncertainty into scope_satisfied.
+
+
+Facebook counts and remaining hints accept only nonnegative integers or 1–18 ASCII decimal digits. Other present forms add fixed *_count_unparsed gaps; Unicode digits and oversized decimals never reach an unchecked int conversion.
+
+
+Facebook parent identifiers are stripped and validated against [A-Za-z0-9._:-]{1,128} in both DOM and JSON. Invalid/empty reply parents are unknown and add parent_comment to the item and job, independently of unresolved_parent.
+
+
+Facebook comment identifiers use the same stripped nonempty ASCII token validation as parents. An invalid token is absent/weak; distinct weak records are never merged by text or position.
+
+
+Facebook weak-identity resume suppression begins only after an accepted batch has committed. A usage-only checkpoint from a login wall does not suppress a first import of weak comments; cumulative byte/expansion usage still survives.
+
+
+Facebook blocks ws:/wss: at Chromium’s network layer with Network.emulateNetworkConditionsByRule offline rules matching both schemes and all ports. setBlockedURLs alone is insufficient. Page WebSocket routing is supplemental. Workers are verified paused before their first script and destroyed without any resume command. Each observed attempt has the fixed websocket_blocked reason; any native socket creation or observed handshake response fails E_PROTOCOL_MISMATCH before import, including events drained at close.
+
+
+Facebook navigation failures use only the main-document request/redirect chain and its uncompleted CONNECT authorities. Refusals of WebSockets, workers, subresources or already-responded document authorities do not choose that error. Resolver capacity/timeouts use E_NETWORK_TIMEOUT with DNS-oriented advice, never a permit/policy denial.
+
+
+Only DOM progress authorizes expansion progress: a new relevant comment/reply
+node or changed identified content within the read deadline. Requests, response
+statuses, counts and disappearing controls are neither progress nor failure evidence.
+The page defines request meaning, and delegated listeners and async scheduling
+cannot establish reliable request ownership; GraphQL errors may also use HTTP 200.
+No owned CDP session enables the Debugger domain or async stack depth. The AST
+source-constant audit test_r10_no_debugger_or_expansion_network_authority rejects
+Debugger commands across the session and capture modules and checks compiled
+session constants too, so a runtime wrapper cannot evade the audit.
+Network.enable remains for socket guards.
+
+A click that cannot be performed records expansion_failed: identity revalidation,
+scroll, usable-quad retrieval, hit lookup, node resolution, composed hit check or
+CDP mouseMoved, mousePressed or mouseReleased fails before mouseReleased completes.
+After a completed click, no relevant DOM progress by the read deadline records
+expansion_progress_timeout, partial coverage and comments_empty=false. Both outcomes
+retain observed data; document and guard stops keep their existing precedence.
+Known limitation (async_hidden_500): DOM evidence is page content. A page that
+renders comments and claims exhaustion before its own request fails cannot be
+distinguished from a truthful page. LIVE exhaustion mappings remain unverified.
+
+
+Facebook navigation barriers, page shapes and identity adoption apply only to the main frame. All network subframe document requests are aborted with blocked_subframe without setting navigation_error. A share identity is adopted only from the main frame.
+
+
+Facebook sandbox state is observed from Browser.getBrowserCommandLine and, on Linux, renderer /proc/<pid>/status Seccomp: 2. No --no-sandbox is allowed for enabled. Failed observation is unverified and refused without the operator exception. The production executable environment override is removed; tests inject an executable through a seam. Capability launch checks verify this running state, not exit status alone.
+
+
+Facebook cookie path/expiry/boolean/sameSite/name/value shapes are validated before launch; expiry is -1 or finite Unix seconds through 253402300799, and path starts with /. Invalid state returns fixed E_AUTH_REQUIRED and needs_auth. Context/state failures suggest auth repair. Only an actual required sandbox launch failure offers the unsandboxed exception.
+
+
+After a Facebook post identity is bound, a main-frame navigation to an unknown non-post shape returns E_CHECKPOINT_REQUIRED with the distinct message “Facebook navigation left the approved post” and browser-session review advice. Unsupported operator inputs retain E_UNSUPPORTED. Share destinations before any post is bound retain the separately documented resolution-type refusal.
+
+
+Facebook rendered text includes inline image alt text (including emoji) and follows the structured capture/rendering contract below. JSON text remains unchanged.
+
+Structural JSON scripts require both data-fb-post-payload and application/json MIME
+type. Every other script is excluded from body text, even if it carries that marker.
+
+Embedded JSON integer tokens over 128 characters stay lexical for field validation.
+Oversized counts add their fixed *_count_unparsed gap and retain the observed post;
+they do not turn a valid JSON document into a malformed-payload error.
+
+
+Facebook captures the main HTML document through CDP in an isolated world, never
+through main-world evaluation. An explicit-stack read-only walker uses pristine
+DOM getters, `checkVisibility()` and computed styles. It creates no elements,
+clones no document and writes no attributes, so capture cannot invoke custom-element
+constructors, attribute reactions or mutation observers. CDP discovers closed shadow
+roots and resolves their handles into that world. The same isolated world is scoped
+to the current navigation/frame. Iframe documents are not post evidence.
+
+Every evaluated DOM function captures its complete accessor table before touching
+the tree. WebIDL getters come from prototype descriptors and methods from their
+prototypes, invoked with captured `Reflect.apply`; Window global methods use their
+own descriptors. This defeats form/document named-property clobbering even across
+isolated worlds. The table covers Document, Node, Element, Text, Attr, template,
+slot, shadow-root, Range, DOM collections and computed-style access. HTML template
+content and slot assignment are used only in the XHTML namespace.
+
+`test_r9_no_direct_dom_members` tokenises the narrow observation JavaScript dialect
+(including strings/comments), checks postfix chains and rejects direct, indexed or
+optional member access on platform handles or DOM-valued accessor results. DOM
+handles use `n_*`; aliases cannot become plain-data locals. The permitted `v_*`
+collections/primitives and `r_node` records are built by the walker itself, and
+record fields have an explicit allowlist. Unknown receivers are rejected. Negative
+alias/chain tests enforce that boundary. `test_r9_evaluated_function_inventory`
+uses Python ASTs to enumerate every evaluation payload: only the checked walker,
+hit test and blank-page popup probe may access DOM objects. The remaining payloads
+only store/resolve isolated-world handles, close paused workers or evaluate zero.
+The clobbering corpus derives its names from this table and the global-method
+table, with six element patterns in barrier and painted-comment contexts.
+
+The observation is a flat structured node list: kind, namespace, tag, ordinary
+attributes, text, light-tree children, composed-tree children and a rendered boolean.
+Expand controls also carry a CDP backend node identity. There is no reserved HTML
+attribute channel or trusted-HTML flag; every page-authored `data-metamuse-*`
+attribute is ordinary markup, regardless of case, namespace or creation method.
+Chromium observations are never HTML-reparsed. Progress compares structured comment
+identities/text and immediately classifies new barrier evidence during polling. CDP clicks the exact captured rendered control, including when
+another hidden control has the same identifier. Serialized structured data supplies
+the observation digest and byte accounting; it is not parsed as HTML.
+
+| Content | Rendered evidence |
+| --- | --- |
+| Ordinary laid-out content | yes |
+| Open, declarative and closed shadow content | yes |
+| Light children assigned to a slot | yes |
+| Opacity zero, off-screen, zero-size or clipped | yes; painted-but-not-seen limit |
+| Off-screen `content-visibility:auto` descendants | yes, even without layout nodes |
+| `aria-hidden=true` | yes; accessibility does not determine painting |
+| `hidden` with a CSS display override | yes, by the cascade |
+| `display:none`, or `hidden` without an override | no |
+| `hidden=until-found` | no |
+| `content-visibility:hidden` descendants | no where computed display supports containment; otherwise yes |
+| Closed details content other than its first summary | no |
+| Scripting-on `noscript`, and template content | no |
+| Unslotted light children of a shadow host | no |
+| `visibility:hidden` or `collapse` | no; descendants may restore `visible` |
+| Text, including through `display:contents` | its text box and inherited visible state; skipped auto content remains eligible |
+
+
+An element's composed parent is its assigned slot, otherwise its parent element,
+otherwise its shadow root's host. A `display:none` composed ancestor blocks every
+composed descendant, including slotted `display:contents` children. Visibility can
+be restored by descendants, but an unrendered container never establishes a post,
+comments-section or comment identity. Extractor stack frames restore exactly the
+state opened at entry. `display:contents` suppresses replaced elements and controls:
+img, input, textarea, select, video, audio, canvas, iframe, embed, object, br, wbr,
+meter, progress, frame and frameset. Look-through never climbs out of these nodes.
+
+The locked Chromium build computes `display:block` for `frame` and `frameset`
+even with authored `display:contents`; the Appendix B differential checks record
+this exception. They are refused by fixtures. The other listed replaced/form
+elements are unrendered with computed `display:contents`.
+
+One `capture.controls` traversal assigns rendered controls in composed order to
+both the extractor queue and the CDP identity map. IDs use `data-expand-id` or
+`expand_N`; the first rendered duplicate wins. The hit test follows assigned slots,
+parents and shadow hosts through cached accessors, accepting labels inside a
+control's shadow root or assigned through a slot. An overlay, removed control or
+unusable quad fails expansion without clicking a substitute node.
+
+Default `checkVisibility()` preserves auto-skipped content. Text-range boxes exclude
+non-painting direct text in closed details; looking through `display:contents`
+preserves text whose immediate parent has no box. Opacity, clipping, size and viewport
+position do not filter evidence. Possible painted `aria-hidden` duplicates must be
+measured in AT-039, not excluded by assumption. JSON text keeps its existing rules.
+
+`FixtureTree` is a static test double accepting a balanced subset, not a general
+HTML5 parser. Its HTML tag vocabulary is explicit (`HTML_TAGS`); foreign SVG and
+MathML vocabularies exclude HTML breakout and integration-point rules. Fragments
+use a body-fragment context. Explicit documents require all three html/head/body wrappers in order; a template
+fragment cannot admit them.
+It models scripting-on HTML `noscript`, the serializer's exact 18 HTML-only void
+tags, inline declaration order and `!important`, hidden/display overrides, content
+visibility, details and inherited visibility. Unsupported parser modes, unbalanced
+or implied end tags, nested form/a/button corrections, foster parenting and
+implicit table sections refuse with the fixed capture failure. Rawtext/RCDATA/
+script-data/PLAINTEXT elements other than inert script/style and HTML noscript are
+refused: xmp, iframe, noembed, noframes, plaintext, textarea and title. Foreign HTML
+names (including noscript/template/slot), dialog, popover and declarative shadow DOM
+are refused. Executable scripts, event handlers, stylesheets, external stylesheet
+links, refresh metadata and unsupported inline rendering declarations also refuse;
+fixtures do not simulate execution, resources or the external CSS cascade. Inert script payloads admit application/json, application/ld+json and text/plain; other non-empty script bodies refuse. Legacy executable-script and embed examples remain real Chromium regressions, with explicit fixture refusals.
+
+
+A vocabulary audit also checks native defaults and valid parent contexts, including
+all admitted tags and inline display/visibility values. `area` and `basefont` are
+non-rendered by default; standalone `source` and `track` remain eligible under the
+capture rule. Their display overrides refuse. SVG fixtures admit only svg/g
+containers, text/tspan text contexts and empty geometric leaves; defs, symbol and
+use refuse. A tspan outside text/tspan and any element child of a geometric leaf
+refuse. Foreign inline display values other than none, and HTML table-column or
+table-column-group display values, refuse because their used display or descendant
+box suppression requires layout. These frozen audit inputs remain in the parity
+corpus even when the admitted vocabulary is narrowed.
+
+The differential corpus includes committed HTML literals/files, runtime fixture
+inputs recorded by the suite, reviewer-provided markup and a seeded depth-five
+generator. Its marker/role vocabulary is checked against AST literals from the
+extractor, control traversal and DOM parse; every marker also has a deterministic
+sample independent of random selection. Accepted inputs must agree with sandboxed Chromium on node kind, tag,
+namespace, attributes, text, rendered flag, light-parent relation and composed
+order. Normalisation removes document/fragment/doctype/comment records and empty
+html/head/body scaffolding; it preserves evidence nodes and their parent/order.
+Unsupported inputs are counted as refusals. The capture-only audit opens one sandboxed, policy-proxied loopback session
+without a job store, permit setup or TLS key generation. It waits for static load
+and flushes DOM events before each capture; job-level parity is checked separately.
+The default Chromium audit has an
+independent 90-second deadline; the job/browser budgets remain 300 seconds.
+Potentially rendered whitespace-only text nodes are refused: their boxes depend
+on layout and whitespace collapse. Mixed text keeps its source whitespace. MathML
+text-integration-point element children, paragraph-implying block starts and
+foreign-content foster parenting also refuse. HTML5 `</br>` creates a `br` node.
+Literal NULs, foreign CDATA/conditional declarations, processing instructions and
+ambiguous legacy character references in start tags are refused. Exact named
+references ending in semicolons retain the HTML5 decoding; text is never decoded
+a second time. These lexical refusals cover differences in the standard-library
+parser rather than claiming it is a full HTML5 tokenizer.
+Metadata display overrides are refused rather than approximated. Display inheritance (`inherit`) also refuses; its resolved value is not the inline token. The tested `revert` and `revert-layer` behavior remains supported. Implicit HTML,
+head and body nodes are materialised before bounds checking, so the document
+scaffold is charged exactly like Chromium; misplaced explicit wrappers refuse.
+
+The fixture-only raw UTF-8 markup precheck is 8 MiB; every parity input is below it.
+
+Capture permits at most 65,536 nodes and 8 MiB of UTF-8 text plus attribute names and
+values, independently of the operator-selected `limits.max_bytes`. The existing
+HTML/observation and proxy-byte budget remains binding; these additional structural
+bounds also cover a tiny script that creates a large DOM. Flat records add overhead
+beyond equivalent HTML, and their serialized bytes count against the same job budget. Bounds, unsupported non-HTML main MIME
+types (XHTML/XML/SVG), and capture failures refuse with fixed Facebook-specific
+`E_SELECTOR_DRIFT`, without page text or `E_STORAGE`. Inaccessible closed roots add
+`closed_shadow_capture_unavailable` and force partial coverage. Subtree insertions or shadow-root attachments observed
+across CDP discovery/capture commands add `capture_changed_during_observation`, so
+a closed root created during handle discovery cannot be silently omitted. Incomplete captures
+never claim `scope_satisfied`.
+
+Stop markers (`data-fb-state`, `data-page-state`, `data-checkpoint`, login/checkpoint
+form IDs, head/meta states) are inspected across the whole light DOM, unslotted
+children, templates and shadow roots, regardless of rendering. Completeness evidence
+such as `data-comments-exhausted` counts only when rendered. Text retains the existing
+single decode, image-alt, newline and edge-whitespace contract.
+
+
+Facebook browser routes validate the destination through the shared URL policy
+(scheme, credentials, port, exact host allowlist and all resolved IPs) before
+classifying login/checkpoint or off-post navigation. Denied destinations return
+`E_SCOPE_DENIED` with the fixed message “Facebook browser destination is denied
+by egress policy”. Production requires HTTPS. Chromium route DNS checks share
+the proxy's bounded resolver slots/deadline; DNS capacity and timeout failures
+retain `E_NETWORK_TIMEOUT`. The proxy still independently checks every dial/hop.
+
+
+Facebook guard failures fail closed with fixed `E_PROTOCOL_MISMATCH`: a failed
+close/cancel/abort is ignored only if the target or request is provably gone;
+missing liveness evidence is failure. Worker attachments must report
+`waitingForDebugger=true`, and `Target.getTargets` must confirm destruction. No
+worker resume command exists. The redundant per-worker network-rule step is
+removed: no untrusted worker source executes, including nested worker creation.
+Dedicated workers need a fixed CDP `Runtime.evaluate("self.close()")` in their
+paused realm because `Target.closeTarget` alone leaves them alive in this build.
+Shared and service workers use `Target.closeTarget`. Success, refusal and lost
+close replies all enter the same pending-target set: destruction is asynchronous.
+Verification runs after callbacks return, before import, with a bounded five-second
+wait, including dedicated workers already sent the fixed `self.close()`. The verifier
+iterates a copy and discards targets only after proving disappearance. Attachments
+delivered while checking are included in that same five-second deadline; new targets
+never extend it. Unexpected verification exceptions become the fixed guard failure. A browser
+disconnect is never disappearance evidence; a target still listed past the bound
+fails closed. No worker resume or detach-to-run command is sent. Popups,
+downloads, route aborts and session teardown use the same fail-closed rule.
+
+
+Facebook requires Chromium `--block-new-web-contents`: renderer popup creation
+returns null, including URL/blank `window.open`, target=_blank links/forms,
+noopener, pristine iframe open and nested popup attempts. Before init scripts or
+navigation, the same sandbox verification blank page tests native and fresh
+iframe open; the proxy is bound but closed (not listening) and Chromium DNS is
+disabled. A failed or inconclusive check returns fixed `E_DEPENDENCY_MISSING`
+“Facebook browser popup creation control is unavailable”, with no operator opt-out.
+CDP `Page.windowOpen` counts refused attempts as `popup_blocked`; refusal alone
+permits success. Browser-level auto-attach pauses foreign page/iframe targets
+before their first script, installs network event detection and closes them.
+Native WebSocket creation or handshake responses in any attached target stop
+with the existing fixed `E_PROTOCOL_MISMATCH` before import. Workers never resume.
+The `WebSocketStream` init shim is defense in depth alongside Playwright's
+ordinary WebSocket routing; it is not the popup or socket boundary.
+
+
+A Facebook proxy byte cutoff immediately shuts down both client and upstream
+sockets for all active tunnels and refuses subsequent dials/registrations.
+Upstream candidates are registered before connect can block; teardown closes
+them before waiting for the dial barrier, so pending connects are included. A
+50 ms browser-loop watcher reacts to byte cutoff and latched socket/guard
+failures, closing the affected page to interrupt in-flight
+navigation, click and expansion operations, instead of waiting for the full
+`read_timeout_seconds`. Only navigation/socket/wait interruptions caused by the
+cutoff become `E_LIMIT_REACHED` with partial coverage. Existing fatal errors are
+never rewritten merely because the byte latch is set. Error precedence is guard
+failure or unverified target shutdown, denied destination (`E_SCOPE_DENIED`),
+login/checkpoint/challenge/rate-limit barrier, off-post navigation (including share-link
+`E_UNSUPPORTED` and `E_DATA_STALE`), then the byte budget. Every other CoreError also
+outranks the cutoff. Only the named aborted-navigation, closed-socket and interrupted-wait
+errors caused by the cutoff may be dropped. Error recording retains the strongest
+stop, including at close after the final observation with no expansion. When HTML has been observed, barrier classification runs before the byte
+budget decision. Fatal stops preserve their normal job state, error, records and
+next action. Every operation checks guard state first, and close always verifies
+pending target destruction before tearing down CDP, including after a cutoff.
+Already pinned authorities are revalidated synchronously through the complete URL
+policy using their pinned addresses, without resolving or dialing, even after a
+cutoff. This permits completed observations to reach barrier classification before
+the budget decision while preserving destination checks. For unpinned URLs, all
+DNS-free syntax, scheme, credential, hostname/IP-literal and port checks run before
+the latch; port validation therefore precedes DNS. Allowlisted navigation paths are
+then classified, so an allowlisted login URL retains its login barrier. DNS-free
+proxy refusals enter the same audit counters exactly once as later policy refusals.
+Only the remaining DNS-requiring allow path is interruptible by the latch. Its wait remains bounded. The watcher uses the pinned Playwright
+implementation loop, as does the existing async WebSocket close adapter. Tests
+bound hangs at an independent 90-second subprocess deadline, with 300-second read
+and job budgets.
+
+
+Route validation pins its validated address set by authority for this bounded
+Facebook session. Every later URL still passes the shared scheme/credential/port/
+host/IP policy, using that pinned set through the proxy dial and peer check. The
+proxy does not resolve a different address between the browser check and its
+validated dial. Redirect destinations on new authorities get independent checks.
+
+
+A disconnected browser transport is not proof that a route, download or browser
+process is gone. A failed route action is ignorable only with an observed request
+failure or a closed page observed while the browser remains connected. Failed download cancellation and context/browser teardown therefore
+fail closed even when CDP is disconnected; a page close exception may be ignored
+only when the page's closed event proves that target has already disappeared.
+
+
+The byte-limit latch also interrupts bounded route/proxy policy and DNS waits
+within the existing 50 ms polling interval, without waiting for resolution or the
+read deadline. Abandoned resolver tasks cannot dial, remain slot-bounded, and
+release their slot when the underlying lookup returns. A sandboxed streaming
+regression trips the byte budget while another URL is waiting on DNS.
+
+
+Stop evidence is monotonic: both state attributes are examined independently,
+and a later benign state cannot erase a barrier or form marker. When multiple
+recognized stop states coexist, the parser uses the existing classification
+order: rate limit, checkpoint/challenge, login wall, then access denial.
+
+
+Round 10 fixture insertion-mode contract: fixtures are either body-context fragments
+with no html/head/body tags, or explicit html/head/body documents in that order.
+Nothing but whitespace may follow head before body, or follow body/html; unsupported
+structural repairs refuse. Script content containing <!-- refuses, including inert
+JSON scripts, because HTML5 script-data escape states differ from rawtext. Style
+is rawtext and has no script escape states (non-empty stylesheets still refuse).
+The seeded parity corpus covers every insertion boundary and implied-end-tag or
+parser-inserted-element class. The comparator retains head/body/none container
+identity and has negative tests for tag, namespace, attributes, text, rendering,
+order and container. Fixture-only raw UTF-8 prechecks remain 8 MiB; all parity
+inputs are below that bound.
+
+All Python consumers of captured tag names use capture.html_tag: only XHTML-
+namespace nodes have HTML form/script/void/block semantics. Foreign nodes remain
+generic containers. test_r10_namespace_tag_table derives its SVG and MathML rows
+from the extractor's HTML_TAGS table; broad attribute stop markers still apply
+regardless of namespace or rendering.
+
+An unrendered post/comment/reply/comments-section identity isolates its subtree:
+painted descendants cannot attach to an enclosing or sibling identity. A rendered
+nested identity owns its own content. Painted text without such an identity is
+dropped and adds unattributed_rendered_text, making coverage partial. The same
+isolation applies to image alt text and derived block boundaries. Each extractor
+stack frame saves and restores this isolation state as well as body/comment state.
+
+Before WALK and HIT_TEST, one shared bounded helper indexes assignedNodes from
+every discovered slot, including closed roots, without flattening. Composed parent
+uses that reverse map when Element/Text assignedSlot returns null for a closed
+root. Both consumers use the same captured accessors and the same 65,536-node
+bound. Slotted text and labels therefore retain their shadow ancestors for both
+rendering and click validation.
+
+Content-visibility skipping is decided from Chromium's computed display, proved
+by test_r10_content_visibility_display_oracle against an independent child-span
+checkVisibility() and getClientRects().length oracle, plus direct text. The pinned
+build skips hidden contents for block, inline-block, flow-root, flex, inline-flex,
+grid, inline-grid, list-item and table-cell. It does not skip for inline, contents,
+table, inline-table, row/group/caption table boxes, ruby or ruby-text. Column boxes
+already suppress their children. Unsupported ruby-* declarations compute to block.
+This measured table-cell result differs from a blanket exclusion of internal table
+boxes. Fixture content-visibility is accepted only for independently proved display
+values; unmodelled/unsupported display values refuse with the fixed capture error.
+Auto-skipped content remains eligible.
+
+A trusted click moves the pointer to the quad first, then resolves and checks
+the hit node through its composed ancestors, and immediately sends mousePressed
+and mouseReleased. Hover-revealed overlays therefore fail the hit check without
+receiving a click; the observed data remains with expansion_failed/partial.
+
+Read-only clobbering, foreign-template/slot and barrier-location rows share one
+sandboxed capture session per group. Each row replaces the document and flushes
+pending DOM events before capture; no row relies on a previous row's DOM. Click
+and expansion regressions retain separate browser sessions and stores, preventing
+state, navigation, listener or budget leakage between state-changing cases.
+Normalisation preserves each evidence node's head/body/none container as well as
+the previously compared dimensions.
+
+The explicit-document fixture form also refuses leading non-whitespace text,
+duplicate doctypes and doctype-bearing fragments. Those trigger HTML5 document
+insertion rather than the documented body-fragment context. The expanded
+insertion-mode corpus and container comparison expose these placements.

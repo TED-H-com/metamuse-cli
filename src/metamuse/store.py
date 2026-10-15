@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import fcntl
 import hashlib
 import json
@@ -14,11 +15,12 @@ import stat
 import tempfile
 import threading
 import warnings
+import weakref
 from collections.abc import Callable, Iterator
-from contextlib import closing, contextmanager
+from contextlib import ExitStack, closing, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from functools import lru_cache
+from functools import lru_cache, wraps
 from pathlib import Path
 from typing import Any, BinaryIO, Literal, TypeVar
 
@@ -28,13 +30,15 @@ from metamuse import models as m
 from metamuse.config import load_config
 from metamuse.paths import WorkspacePaths, private_dir, private_file
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 6
 DATA = Path(__file__).parent / "data"
 MIGRATIONS = {
     1: DATA / "migrations" / "001_initial.sql",
     2: DATA / "migrations" / "002_collect_media.sql",
     3: DATA / "migrations" / "003_muse_lifecycle.sql",
     4: DATA / "migrations" / "004_muse_evidence.sql",
+    5: DATA / "migrations" / "005_muse_trust.sql",
+    6: DATA / "migrations" / "006_transcript_removal.sql",
 }
 CONTENT_CURSOR_KEY = "content.cursor"
 
@@ -62,6 +66,232 @@ class WorkspaceKey:
     key_material: bytes = field(repr=False)
     created_at: str
     status: str
+
+
+@dataclass(frozen=True)
+class MuseTrustSnapshot:
+    """Private frozen owner/session/selection context; no auth_ref or keys."""
+
+    provider: str
+    account: str
+    vm_id: str | None
+    viewer_hash: str = field(repr=False)
+    session_hash: str = field(repr=False)
+    generation: int
+    confidential_required: bool
+
+
+_MUSE_LISTENERS: dict[tuple[str, str, str], list[weakref.WeakMethod]] = {}
+_MUSE_LISTENERS_LOCK = threading.Lock()
+
+
+_MUSE_STORAGE_ACTIONS = {
+    "Muse security state internal failure": "Report this internal Muse security-state failure",
+    "Muse security state could not be accessed": (
+        "Check workspace availability and permissions before reconnecting"
+    ),
+    "Muse security state has a committed propagation barrier": (
+        "Stop Muse connections; in one maintenance transaction create the barrier if absent, "
+        "rerun the owner/VM closure over the whole workspace, "
+        "then remove the marker and commit; no restore is needed"
+    ),
+    "Muse connection context changed": "Retry the connection with a fresh authenticated context",
+    "Muse security state is unavailable or damaged": (
+        "Repair the security-state store; restore only a verified backup, "
+        "which loses expectations recorded after that backup"
+    ),
+    "Muse confidentiality could not be recorded": (
+        "Repair the security-state store before reconnecting; confidentiality could not be recorded"
+    ),
+}
+
+
+class _MuseNotificationFailure(m.CoreError):
+    """The write committed, but at least one socket invalidator failed."""
+
+    def __init__(self):
+        message = "Muse security state internal failure"
+        super().__init__(m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message])
+
+
+def _muse_storage_error(*, stale=False) -> m.CoreError:
+    message = (
+        "Muse connection context changed"
+        if stale
+        else "Muse security state is unavailable or damaged"
+    )
+    return m.CoreError(m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message])
+
+
+_MUSE_COMPONENT_CTE = """
+WITH RECURSIVE component(kind,identity) AS (
+ SELECT 'owner', ?
+ UNION SELECT 'vm', ? WHERE ? IS NOT NULL AND ?!=''
+ UNION SELECT 'vm',a.active_vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner'
+    AND a.viewer_hash=r.identity WHERE a.active_vm_id IS NOT NULL
+ UNION SELECT 'vm',v.vm_id FROM component r JOIN muse_trust_accounts a ON r.kind='owner' AND
+    a.viewer_hash=r.identity JOIN muse_trust_vms v USING(provider,account)
+ UNION SELECT 'vm',o.vm_id FROM component r JOIN muse_trust_observations o ON r.kind='owner' AND
+    o.viewer_hash=r.identity WHERE o.vm_id!=''
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_accounts a ON r.kind='vm'
+    AND a.active_vm_id=r.identity
+ UNION SELECT 'owner',a.viewer_hash FROM component r JOIN muse_trust_vms v ON r.kind='vm' AND
+    v.vm_id=r.identity JOIN muse_trust_accounts a USING(provider,account)
+ UNION SELECT 'owner',o.viewer_hash FROM component r JOIN muse_trust_observations o ON
+    r.kind='vm' AND o.vm_id=r.identity WHERE o.vm_id!=''
+)
+"""
+_MUSE_COMPONENT_SQL = (
+    _MUSE_COMPONENT_CTE
+    + """
+SELECT 1 FROM component r WHERE
+ (r.kind='owner' AND (EXISTS(SELECT 1 FROM muse_trust_accounts a WHERE a.viewer_hash=r.identity
+    AND a.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE
+    o.viewer_hash=r.identity AND o.confidential_required=1)))
+ OR (r.kind='vm' AND (EXISTS(SELECT 1 FROM muse_trust_vms v WHERE v.vm_id=r.identity AND
+    v.confidential_required=1) OR EXISTS(SELECT 1 FROM muse_trust_observations o WHERE
+    o.vm_id=r.identity AND o.confidential_required=1))) LIMIT 1
+"""
+)
+
+
+_MUSE_ENVIRONMENT = {
+    sqlite3.SQLITE_IOERR: (
+        "Muse security state could not be accessed",
+        "Check workspace availability and permissions before reconnecting",
+        "user_action",
+    ),
+    sqlite3.SQLITE_CANTOPEN: (
+        "Muse security state could not be accessed",
+        "Check workspace availability and permissions before reconnecting",
+        "user_action",
+    ),
+    sqlite3.SQLITE_PERM: (
+        "Muse security state could not be accessed",
+        "Check workspace availability and permissions before reconnecting",
+        "user_action",
+    ),
+    sqlite3.SQLITE_BUSY: (
+        "Muse security state is busy; retry",
+        "Retry the connection after the workspace writer finishes",
+        "safe_read",
+    ),
+    sqlite3.SQLITE_LOCKED: (
+        "Muse security state is busy; retry",
+        "Retry the connection after the workspace writer finishes",
+        "safe_read",
+    ),
+    sqlite3.SQLITE_READONLY: (
+        "Muse security state workspace is read-only",
+        "Make the workspace writable before reconnecting",
+        "user_action",
+    ),
+    sqlite3.SQLITE_FULL: (
+        "Muse security state disk is full",
+        "Free disk space before reconnecting",
+        "user_action",
+    ),
+}
+
+# SQLite extended result codes are classified by their primary low byte.
+for _code in (sqlite3.SQLITE_PROTOCOL, sqlite3.SQLITE_NOMEM, sqlite3.SQLITE_INTERRUPT):
+    _MUSE_ENVIRONMENT[_code] = (
+        "Muse security state temporarily unavailable; retry",
+        "Retry the connection after the transient security-state failure",
+        "safe_read",
+    )
+_MUSE_ENVIRONMENT[sqlite3.SQLITE_NOLFS] = _MUSE_ENVIRONMENT[sqlite3.SQLITE_IOERR]
+
+
+def _muse_fixed_storage(exc):
+    if isinstance(exc, _MuseNotificationFailure):
+        # Preserve the post-commit classification and the first listener's cause.
+        return exc
+    # Inspect error codes only: SQLite text can contain private SQL or filenames.
+    cause = exc
+    environment = None
+    integrity = (
+        exc.detail.code in (m.ErrorCode.PROTOCOL_MISMATCH, m.ErrorCode.REFERENCE_INVALID)
+        or exc.detail.message == "Canonical migration schema is unavailable"
+    )
+    for _ in range(8):
+        code = getattr(cause, "sqlite_errorcode", 0) & 0xFF
+        integrity = integrity or code in (
+            sqlite3.SQLITE_CORRUPT,
+            sqlite3.SQLITE_NOTADB,
+            sqlite3.SQLITE_SCHEMA,
+            sqlite3.SQLITE_CONSTRAINT,
+        )
+        os_reason = {
+            errno.ENOSPC: sqlite3.SQLITE_FULL,
+            errno.EROFS: sqlite3.SQLITE_READONLY,
+            errno.EACCES: sqlite3.SQLITE_CANTOPEN,
+            errno.EPERM: sqlite3.SQLITE_PERM,
+            errno.EIO: sqlite3.SQLITE_IOERR,
+            errno.ENOENT: sqlite3.SQLITE_CANTOPEN,
+        }.get(getattr(cause, "errno", None))
+        if os_reason is not None:
+            code = os_reason
+        if code in _MUSE_ENVIRONMENT:
+            environment = _MUSE_ENVIRONMENT[code]
+            break
+        cause = cause.__cause__ or cause.__context__
+        if cause is None:
+            break
+    if environment is None:
+        environment = next(
+            (entry for entry in _MUSE_ENVIRONMENT.values() if entry[0] == exc.detail.message), None
+        )
+    if environment is not None:
+        message, action, retry = environment
+        result = m.CoreError(m.ErrorCode.STORAGE, message, next_action=action)
+        result.detail.retry_class = retry
+        return result
+    if exc.detail.message == "Muse confidentiality could not be recorded":
+        # Recording retains its honest failure message and a fixed environment action.
+        permitted = {entry[1]: entry[2] for entry in _MUSE_ENVIRONMENT.values()}
+        for action in _MUSE_STORAGE_ACTIONS.values():
+            permitted.setdefault(action, "never")
+        permitted[
+            _MUSE_STORAGE_ACTIONS["Muse security state has a committed propagation barrier"]
+        ] = "never"
+        action = exc.detail.next_action
+        result = m.CoreError(
+            m.ErrorCode.STORAGE,
+            exc.detail.message,
+            next_action=action
+            if action in permitted
+            else _MUSE_STORAGE_ACTIONS[exc.detail.message],
+        )
+        result.detail.retry_class = permitted.get(action, "never")
+        return result
+    if exc.detail.message in _MUSE_STORAGE_ACTIONS:
+        return m.CoreError(
+            m.ErrorCode.STORAGE,
+            exc.detail.message,
+            next_action=_MUSE_STORAGE_ACTIONS[exc.detail.message],
+        )
+    if integrity:
+        return _muse_storage_error()
+    message = "Muse security state internal failure"
+    return m.CoreError(m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message])
+
+
+def _muse_safe(fn):
+    """Raise storage failures outside context-manager exception state, without raw causes."""
+
+    @wraps(fn)
+    def run(*args, **kwargs):
+        failure = None
+        try:
+            return fn(*args, **kwargs)
+        except m.CoreError as exc:
+            if exc.detail.code != m.ErrorCode.STORAGE:
+                raise
+            failure = _muse_fixed_storage(exc)
+        raise failure
+
+    return run
 
 
 TABLE_MODELS = {
@@ -117,6 +347,7 @@ JSON_FIELDS = {
     "raw_event",
 }
 BOOL_FIELDS = {
+    "removed",
     "cancel_requested",
     "complete",
     "stale",
@@ -204,7 +435,44 @@ def _statements(script: str) -> Iterator[str]:
         raise ValueError("Incomplete migration statement")
 
 
+_BUSY_TIMEOUT_SECONDS = 30
+_BUSY_TIMEOUT_OVERRIDE = threading.local()
+
+
+def _busy_timeout_seconds() -> float:
+    return getattr(_BUSY_TIMEOUT_OVERRIDE, "seconds", _BUSY_TIMEOUT_SECONDS)
+
+
+class _StorageBusy(m.CoreError):
+    """Internal lock contention marker; the public contract remains E_STORAGE/never."""
+
+    def __init__(self, sqlite_errorcode: int):
+        super().__init__(m.ErrorCode.STORAGE, "SQLite write lock is busy")
+        self.sqlite_errorcode = sqlite_errorcode  # retain extended codes, never SQL or values
+
+
+def _storage_error(exc: sqlite3.Error, message: str) -> m.CoreError:
+    code = getattr(exc, "sqlite_errorcode", None)
+    if isinstance(code, int) and code & 0xFF in (sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED):
+        return _StorageBusy(code)
+    return m.CoreError(m.ErrorCode.STORAGE, message)
+
+
 class Store:
+    @staticmethod
+    @contextmanager
+    def _busy_timeout(seconds: float) -> Iterator[None]:
+        """Scope connection waits to this thread; restore even on failed attempts."""
+        previous = getattr(_BUSY_TIMEOUT_OVERRIDE, "seconds", None)
+        _BUSY_TIMEOUT_OVERRIDE.seconds = seconds
+        try:
+            yield
+        finally:
+            if previous is None:
+                del _BUSY_TIMEOUT_OVERRIDE.seconds
+            else:
+                _BUSY_TIMEOUT_OVERRIDE.seconds = previous
+
     def __init__(
         self,
         paths: WorkspacePaths,
@@ -222,17 +490,27 @@ class Store:
             )
         self.paths = WorkspacePaths.resolve(paths.root)
         self.clock = clock
-        # CLI/MCP and an attached Executor share this Store across threads. Serialize
-        # short connection lifetimes so WAL/configuration and snapshot reads do not
-        # contend with our own writer; external waits stay outside Store contexts.
+        # Serialize connection lifetimes within this instance. The attached worker
+        # opens a sibling so its SQLite waits never hold the MCP tools' RLock.
         self._connections = threading.RLock()
         self._restore_in_progress = _restore_in_progress
         self.open_warnings: list[str] = []
         self.schema_version = SCHEMA_VERSION if schema_version is None else schema_version
         self._migrations = migrations or MIGRATIONS
+        self._muse_schema_signature = None
         self.paths.initialize()
         self.migrate(self._migrations)
         self._provision_workspace_keys()
+
+    def _sibling(self) -> Store:
+        """Independent connection lock, same workspace and validation settings."""
+        return Store(
+            self.paths,
+            clock=self.clock,
+            migrations=self._migrations,
+            schema_version=self.schema_version,
+            _restore_in_progress=self._restore_in_progress,
+        )
 
     def _open_database(self) -> sqlite3.Connection:
         # Check live files before SQLite can follow a link or mutate its sidecars.
@@ -251,7 +529,11 @@ class Store:
         # Check version before applying writable pragmas; older builds must not write newer DBs.
         if self.paths.database.exists():
             with closing(
-                sqlite3.connect(f"{self.paths.database.as_uri()}?mode=ro", uri=True)
+                sqlite3.connect(
+                    f"{self.paths.database.as_uri()}?mode=ro",
+                    uri=True,
+                    timeout=_busy_timeout_seconds(),
+                )
             ) as probe:
                 _configure(probe, writable=False)
                 version = probe.execute("PRAGMA user_version").fetchone()[0]
@@ -260,7 +542,9 @@ class Store:
                     m.ErrorCode.PROTOCOL_MISMATCH, "Database schema is newer than this build"
                 )
         private_file(self.paths.database)
-        conn = sqlite3.connect(self.paths.database, timeout=5, isolation_level=None)
+        conn = sqlite3.connect(
+            self.paths.database, timeout=_busy_timeout_seconds(), isolation_level=None
+        )
         try:
             _configure(conn)
             conn.create_function("metamuse_now", 0, lambda: self.clock())
@@ -272,8 +556,8 @@ class Store:
     def _open(self) -> sqlite3.Connection:
         try:
             return self._open_database()
-        except sqlite3.Error:
-            raise m.CoreError(m.ErrorCode.STORAGE, "Cannot open workspace database") from None
+        except sqlite3.Error as exc:
+            raise _storage_error(exc, "Cannot open workspace database") from None
 
     @contextmanager
     def connection(self) -> Iterator[sqlite3.Connection]:
@@ -285,8 +569,8 @@ class Store:
                 if conn.execute("PRAGMA user_version").fetchone()[0] != self.schema_version:
                     raise m.CoreError(m.ErrorCode.PROTOCOL_MISMATCH, "Database requires migration")
                 yield conn
-            except sqlite3.Error:
-                raise m.CoreError(m.ErrorCode.STORAGE, "SQLite operation failed") from None
+            except sqlite3.Error as exc:
+                raise _storage_error(exc, "SQLite operation failed") from None
             finally:
                 conn.close()
 
@@ -356,12 +640,624 @@ class Store:
                         raise
                     finally:
                         conn.execute("PRAGMA foreign_keys=ON")
-            except (sqlite3.Error, ValueError):
+            except sqlite3.Error as exc:
+                raise _storage_error(exc, "Migration failed; original data retained") from None
+            except ValueError:
                 raise m.CoreError(
                     m.ErrorCode.STORAGE, "Migration failed; original data retained"
                 ) from None
             finally:
                 conn.close()
+
+    @contextmanager
+    def _muse_boundary(self, provider: str, account: str):
+        """Trust writes, msg3 and application handoff share locks across Store instances."""
+        digest = m.payload_digest([provider, account])
+        failure = None
+        validated = False
+        try:
+            if not self.paths.database.is_file():
+                raise _muse_storage_error()
+            with (
+                file_lock(self.paths.runtime / "muse-trust-domain.lock"),
+                file_lock(self.paths.runtime / f"muse-trust-{digest}.lock"),
+                ExitStack() as maintenance,
+            ):
+                maintenance.enter_context(
+                    file_lock(self.paths.runtime / "maintenance.lock", exclusive=False)
+                )
+                self._check_restore_marker()
+                if not self.paths.database.is_file():
+                    raise _muse_storage_error()
+                with self.connection() as conn:
+                    if self._muse_schema_signature is None:
+                        _verify_schema(conn, self.schema_version, self._migrations)
+                        self._muse_schema_signature = _schema_signature(conn)
+                    elif _schema_signature(conn) != self._muse_schema_signature:
+                        raise _muse_storage_error()
+                    if conn.execute("SELECT 1 FROM muse_trust_propagating").fetchone():
+                        message = "Muse security state has a committed propagation barrier"
+                        raise m.CoreError(
+                            m.ErrorCode.STORAGE, message, next_action=_MUSE_STORAGE_ACTIONS[message]
+                        )
+                validated = True
+                yield maintenance.close
+        except m.CoreError as exc:
+            failure = (
+                exc
+                if validated and exc.detail.code == m.ErrorCode.PROTOCOL_MISMATCH
+                else _muse_fixed_storage(exc)
+            )
+        except Exception as exc:
+            unknown = m.CoreError(m.ErrorCode.STORAGE, "Muse storage access failed")
+            unknown.__cause__ = exc
+            failure = _muse_fixed_storage(unknown)
+        if failure is not None:
+            raise failure
+
+    def _muse_notify(self, provider: str, account: str, *, confidential=False) -> None:
+        root = str(self.paths.root)
+        with _MUSE_LISTENERS_LOCK:
+            listeners = []
+            for key, refs in _MUSE_LISTENERS.items():
+                if key[0] == root and (confidential or key[1:] == (provider, account)):
+                    alive = [ref for ref in refs if ref() is not None]
+                    _MUSE_LISTENERS[key] = alive
+                    listeners.extend(alive)
+        failure = None
+        for ref in listeners:
+            callback = ref()
+            if callback is not None:
+                try:
+                    callback()
+                except BaseException as exc:
+                    # Finish invalidating every socket, then report the first failure.
+                    if failure is None:
+                        failure = exc
+        if failure is not None:
+            raise _MuseNotificationFailure() from failure
+
+    def muse_watch(self, snapshot: MuseTrustSnapshot, callback: Callable[[], None]) -> None:
+        """One weak invalidator per callback/key; recheck after registration."""
+        key = (str(self.paths.root), snapshot.provider, snapshot.account)
+        with _MUSE_LISTENERS_LOCK:
+            refs = _MUSE_LISTENERS.setdefault(key, [])
+            refs[:] = [ref for ref in refs if ref() is not None]
+            candidate = weakref.WeakMethod(callback)
+            if candidate not in refs:
+                refs.append(candidate)
+
+    @staticmethod
+    def _muse_check_types(row):
+        for key in row.keys():
+            value = row[key]
+            expected = int if key in {"version", "generation", "confidential_required"} else str
+            if key == "active_vm_id" and value is None:
+                continue
+            if type(value) is not expected or (key in {"updated_at", "observed_at"} and not value):
+                raise _muse_storage_error()
+
+    @staticmethod
+    def _muse_rows(conn, provider, account, vm_id):
+        owner = conn.execute(
+            "SELECT * FROM muse_trust_accounts WHERE provider=? AND account=?", (provider, account)
+        ).fetchone()
+        vm = conn.execute(
+            "SELECT * FROM muse_trust_vms WHERE provider=? AND account=? AND vm_id=?",
+            (provider, account, vm_id),
+        ).fetchone()
+        for row in (owner, vm):
+            if row is not None:
+                Store._muse_check_types(row)
+        for row in (owner, vm):
+            if row is not None and (
+                row["version"] != 1 or row["confidential_required"] not in (0, 1)
+            ):
+                raise _muse_storage_error()
+        if owner is not None and (
+            not re.fullmatch(r"[0-9a-f]{64}", owner["viewer_hash"])
+            or not re.fullmatch(r"[0-9a-f]{64}", owner["session_hash"])
+            or owner["generation"] < 1
+            or (owner["active_vm_id"] is None and not owner["confidential_required"])
+            or not owner["updated_at"]
+        ):
+            raise _muse_storage_error()
+        if owner is not None and owner["active_vm_id"] is not None:
+            active = conn.execute(
+                "SELECT version, source, observed_at, confidential_required FROM muse_trust_vms "
+                "WHERE provider=? AND account=? AND vm_id=?",
+                (provider, account, owner["active_vm_id"]),
+            ).fetchone()
+            if (
+                active is None
+                or active["version"] != 1
+                or not active["observed_at"]
+                or active["source"] not in ("authenticated_assignment", "noise_message_2")
+                or active["confidential_required"] not in (0, 1)
+            ):
+                raise _muse_storage_error()
+            if active["confidential_required"] and not owner["confidential_required"]:
+                raise _muse_storage_error()
+        if vm is not None and (
+            vm["source"] not in ("authenticated_assignment", "noise_message_2")
+            or not vm["observed_at"]
+        ):
+            raise _muse_storage_error()
+        return owner, vm
+
+    @staticmethod
+    def _muse_effective(conn, provider, account, viewer_hash, vm_id):
+        # Read matching expectations inside the freeze/currentness/CAS transaction.
+        owners = conn.execute(
+            "SELECT * FROM muse_trust_accounts WHERE viewer_hash=?",
+            (viewer_hash,),
+        ).fetchall()
+        vms = conn.execute("SELECT * FROM muse_trust_vms WHERE vm_id=?", (vm_id,)).fetchall()
+        for row in (*owners, *vms):
+            Store._muse_check_types(row)
+        for row in (*owners, *vms):
+            if row["version"] != 1 or row["confidential_required"] not in (0, 1):
+                raise _muse_storage_error()
+        for row in owners:
+            if (
+                not re.fullmatch(r"[0-9a-f]{64}", row["viewer_hash"])
+                or not re.fullmatch(r"[0-9a-f]{64}", row["session_hash"])
+                or row["generation"] < 1
+                or not row["updated_at"]
+                or (row["active_vm_id"] is None and not row["confidential_required"])
+            ):
+                raise _muse_storage_error()
+        for row in vms:
+            if (
+                row["source"] not in ("authenticated_assignment", "noise_message_2")
+                or not row["observed_at"]
+            ):
+                raise _muse_storage_error()
+        observations = conn.execute(
+            "SELECT * FROM muse_trust_observations WHERE viewer_hash=? OR (vm_id=? AND vm_id!='')",
+            (viewer_hash, vm_id),
+        ).fetchall()
+        for row in observations:
+            Store._muse_check_types(row)
+            if (
+                row["version"] != 1
+                or row["confidential_required"] not in (0, 1)
+                or row["source"] not in ("authenticated_assignment", "noise_message_2")
+                or not row["observed_at"]
+            ):
+                raise _muse_storage_error()
+        return (
+            conn.execute(_MUSE_COMPONENT_SQL, (viewer_hash, vm_id, vm_id, vm_id)).fetchone()
+            is not None
+        )
+
+    @_muse_safe
+    def muse_freeze(
+        self,
+        *,
+        provider: str,
+        account: str,
+        vm_id: str | None,
+        viewer_id: str,
+        session_binding_id: str,
+        confidential: bool = False,
+        confidential_vm_ids: tuple[str, ...] = (),
+    ) -> MuseTrustSnapshot:
+        """Bind owner, inherit remote-owner/VM expectations, and freeze one generation."""
+        if any(
+            not isinstance(value, str)
+            or not value
+            or len(value) > 4096
+            or any(ord(c) < 32 for c in value)
+            for value in (provider, account, viewer_id, session_binding_id)
+        ):
+            raise _muse_storage_error()
+        if vm_id is not None:
+            if not isinstance(vm_id, str):
+                raise _muse_storage_error()
+            vm_id = vm_id.strip().lower()
+            if re.fullmatch(r"[a-z0-9._-]{1,128}", vm_id) is None:
+                raise _muse_storage_error()
+        elif not confidential:
+            raise _muse_storage_error()
+        vm_ids = {vm_id} if vm_id is not None else set()
+        for value in confidential_vm_ids:
+            if (
+                not confidential
+                or not isinstance(value, str)
+                or re.fullmatch(r"[a-z0-9._-]{1,128}", value.strip().lower()) is None
+            ):
+                raise _muse_storage_error()
+            vm_ids.add(value.strip().lower())
+        viewer_hash = hashlib.sha256(viewer_id.encode()).hexdigest()
+        session_hash = hashlib.sha256(session_binding_id.encode()).hexdigest()
+        if confidential:
+            # This commit precedes label checks, which may refuse a different owner.
+            self._muse_record_observation(
+                provider,
+                account,
+                viewer_hash,
+                vm_ids,
+                source="authenticated_assignment",
+                binding=(session_hash, vm_id),
+            )
+        changed = False
+        confidential_written = False
+        with self._muse_boundary(provider, account):
+            with self.transaction() as conn:
+                owner, vm = self._muse_rows(conn, provider, account, vm_id)
+                if confidential:
+                    # The one set-wise bind has committed before this label verification.
+                    if owner is not None and owner["viewer_hash"] != viewer_hash:
+                        raise m.CoreError(
+                            m.ErrorCode.PROTOCOL_MISMATCH,
+                            "Muse authenticated owner changed",
+                            next_action="Correct the operator account binding before reconnecting",
+                        )
+                    if owner is None or owner["session_hash"] != session_hash:
+                        raise _muse_storage_error(stale=True)
+                    return MuseTrustSnapshot(
+                        provider,
+                        account,
+                        vm_id,
+                        viewer_hash,
+                        session_hash,
+                        owner["generation"],
+                        True,
+                    )
+                required = confidential or self._muse_effective(
+                    conn, provider, account, viewer_hash, vm_id
+                )
+                if owner is None:
+                    if vm is not None:
+                        raise _muse_storage_error()
+                    generation = 1
+                    before = conn.total_changes
+                    conn.execute(
+                        "INSERT INTO muse_trust_accounts VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?)",
+                        (
+                            provider,
+                            account,
+                            viewer_hash,
+                            session_hash,
+                            vm_id,
+                            generation,
+                            int(required),
+                            self.clock(),
+                        ),
+                    )
+                    confidential_written = required and conn.total_changes > before
+                else:
+                    if owner["viewer_hash"] != viewer_hash:
+                        raise m.CoreError(
+                            m.ErrorCode.PROTOCOL_MISMATCH,
+                            "Muse authenticated owner changed",
+                            next_action="Correct the operator account binding before reconnecting",
+                        )
+                    if vm_id is not None and owner["active_vm_id"] != vm_id and not required:
+                        raise m.CoreError(
+                            m.ErrorCode.PROTOCOL_MISMATCH,
+                            "Muse active VM selection changed",
+                            next_action="Resolve the operator VM selection before reconnecting",
+                        )
+                    selected_vm = owner["active_vm_id"] or vm_id
+                    changed = (
+                        owner["session_hash"] != session_hash
+                        or owner["active_vm_id"] != selected_vm
+                        or owner["confidential_required"] != int(required)
+                    )
+                    generation = owner["generation"] + int(changed)
+                    update = (
+                        "UPDATE muse_trust_accounts SET session_hash=?, active_vm_id=?, "
+                        "generation=?, "
+                        "confidential_required=?, updated_at=? WHERE provider=? "
+                        "AND account=? AND generation=?"
+                    )
+                    values = (
+                        session_hash,
+                        selected_vm,
+                        generation,
+                        int(required),
+                        self.clock(),
+                        provider,
+                        account,
+                        owner["generation"],
+                    )
+                    # Count flag transitions (including trigger writes) separately
+                    # from session/timestamp updates that do not change confidentiality.
+                    before = conn.total_changes
+                    result = conn.execute(
+                        update + " AND confidential_required!=?", (*values, int(required))
+                    )
+                    confidential_written = required and conn.total_changes > before
+                    if result.rowcount == 0:
+                        result = conn.execute(update, values)
+                    if result.rowcount != 1:
+                        raise _muse_storage_error()
+                before = conn.total_changes
+                self._muse_observe(
+                    conn,
+                    viewer_hash,
+                    vm_ids,
+                    confidential=required,
+                    source="authenticated_assignment",
+                )
+                confidential_written |= required and conn.total_changes > before
+                identities = ([vm_id] if vm_id is not None else []) + sorted(vm_ids - {vm_id})
+                for identity in identities:
+                    _, existing = (
+                        self._muse_rows(conn, provider, account, identity)
+                        if identity != vm_id
+                        else (owner, vm)
+                    )
+                    inherited = required or self._muse_effective(
+                        conn, provider, account, viewer_hash, identity
+                    )
+                    before = conn.total_changes
+                    if existing is None:
+                        conn.execute(
+                            "INSERT INTO muse_trust_vms VALUES (?, ?, ?, 1, ?, ?, ?)",
+                            (
+                                provider,
+                                account,
+                                identity,
+                                int(inherited),
+                                "authenticated_assignment",
+                                self.clock(),
+                            ),
+                        )
+                    elif confidential:
+                        conn.execute(
+                            "UPDATE muse_trust_vms SET confidential_required=1, "
+                            "source='authenticated_assignment', "
+                            "observed_at=? WHERE provider=? AND account=? AND vm_id=?",
+                            (self.clock(), provider, account, identity),
+                        )
+                    confidential_written |= inherited and conn.total_changes > before
+                # SQL propagation may also have raised this account's expectation/generation.
+                owner = conn.execute(
+                    "SELECT * FROM muse_trust_accounts WHERE provider=? AND account=?",
+                    (provider, account),
+                ).fetchone()
+                required = self._muse_effective(conn, provider, account, viewer_hash, vm_id)
+                snapshot = MuseTrustSnapshot(
+                    provider,
+                    account,
+                    vm_id,
+                    viewer_hash,
+                    session_hash,
+                    owner["generation"],
+                    required,
+                )
+            if confidential_written:
+                self._muse_notify(provider, account, confidential=True)
+            elif changed:
+                self._muse_notify(provider, account)
+        return snapshot
+
+    def _muse_current(self, conn, snapshot: MuseTrustSnapshot, *, standard: bool):
+        if standard and self._muse_effective(
+            conn, snapshot.provider, snapshot.account, snapshot.viewer_hash, snapshot.vm_id
+        ):
+            raise m.CoreError(
+                m.ErrorCode.PROTOCOL_MISMATCH,
+                "Muse confidential expectation forbids standard",
+                next_action="Use a supported confidential verifier; do not reset trust on retry",
+            )
+        owner, vm = self._muse_rows(conn, snapshot.provider, snapshot.account, snapshot.vm_id)
+        if owner is None or owner["viewer_hash"] != snapshot.viewer_hash:
+            raise _muse_storage_error(stale=True)
+        if (
+            vm is None
+            or owner["generation"] != snapshot.generation
+            or owner["session_hash"] != snapshot.session_hash
+            or owner["active_vm_id"] != snapshot.vm_id
+        ):
+            raise _muse_storage_error(stale=True)
+        return owner, vm
+
+    @_muse_safe
+    def muse_assert_current(self, snapshot: MuseTrustSnapshot) -> None:
+        with self._muse_boundary(snapshot.provider, snapshot.account), self.transaction() as conn:
+            self._muse_current(conn, snapshot, standard=True)
+
+    @staticmethod
+    def _muse_close_bind(conn, viewer_hash=None):
+        """Close only this bind component; no argument is explicit whole-store repair."""
+        conn.execute(
+            "CREATE TEMP TABLE muse_bind_required(kind, identity, "
+            "PRIMARY KEY(kind, identity)) WITHOUT ROWID"
+        )
+        if viewer_hash is None:
+            conn.execute("INSERT INTO muse_bind_required SELECT * FROM muse_trust_confidential")
+        else:
+            conn.execute(
+                "INSERT INTO muse_bind_required "
+                + _MUSE_COMPONENT_CTE
+                + " SELECT kind,identity FROM component",
+                (viewer_hash, None, None, None),
+            )
+        conn.execute(
+            "UPDATE muse_trust_accounts SET confidential_required=1, "
+            "generation=generation+1 WHERE confidential_required=0 AND viewer_hash IN "
+            "(SELECT identity FROM muse_bind_required WHERE kind='owner')"
+        )
+        conn.execute(
+            "UPDATE muse_trust_vms SET confidential_required=1 "
+            "WHERE confidential_required=0 AND vm_id IN "
+            "(SELECT identity FROM muse_bind_required WHERE kind='vm')"
+        )
+        conn.execute(
+            "UPDATE muse_trust_observations SET confidential_required=1 "
+            "WHERE confidential_required=0 AND viewer_hash IN "
+            "(SELECT identity FROM muse_bind_required WHERE kind='owner')"
+        )
+        conn.execute("DROP TABLE muse_bind_required")
+        conn.execute("DELETE FROM muse_trust_propagating")
+
+    def _muse_observe(self, conn, viewer_hash, vm_ids, *, confidential, source):
+        """Bulk remote evidence without consulting label currentness or a generation CAS."""
+        existing = {
+            row["vm_id"]: row
+            for row in conn.execute(
+                "SELECT vm_id,confidential_required FROM muse_trust_observations "
+                "WHERE viewer_hash=?",
+                (viewer_hash,),
+            )
+        }
+        identities = sorted(vm_ids) or [""]
+        observed = self.clock()
+        conn.executemany(
+            "INSERT INTO muse_trust_observations VALUES (?,?,1,?,?,?)",
+            (
+                (viewer_hash, identity, int(confidential), source, observed)
+                for identity in identities
+                if identity not in existing
+            ),
+        )
+        if confidential:
+            conn.executemany(
+                "UPDATE muse_trust_observations SET confidential_required=1, "
+                "source=?,observed_at=? WHERE viewer_hash=? AND vm_id=? "
+                "AND confidential_required=0",
+                (
+                    (source, observed, viewer_hash, identity)
+                    for identity in identities
+                    if identity in existing
+                ),
+            )
+
+    def _muse_bind_label(self, conn, provider, account, viewer_hash, vm_ids, binding):
+        session_hash, vm_id = binding
+        try:
+            owner, _vm = self._muse_rows(conn, provider, account, vm_id)
+        except m.CoreError:
+            # A corrupt/refused label must not roll back authenticated remote evidence.
+            return
+        if owner is not None and owner["viewer_hash"] != viewer_hash:
+            return
+        if owner is None:
+            conn.execute(
+                "INSERT INTO muse_trust_accounts VALUES (?,?,1,?,?,?,1,1,?)",
+                (provider, account, viewer_hash, session_hash, vm_id, self.clock()),
+            )
+        else:
+            selected = owner["active_vm_id"] or vm_id
+            changed = (
+                owner["session_hash"] != session_hash
+                or owner["active_vm_id"] != selected
+                or not owner["confidential_required"]
+            )
+            conn.execute(
+                "UPDATE muse_trust_accounts SET session_hash=?,active_vm_id=?, "
+                "generation=generation+?,confidential_required=1,updated_at=? "
+                "WHERE provider=? AND account=?",
+                (session_hash, selected, int(changed), self.clock(), provider, account),
+            )
+        existing = {
+            row["vm_id"]
+            for row in conn.execute(
+                "SELECT vm_id FROM muse_trust_vms WHERE provider=? AND account=?",
+                (provider, account),
+            )
+        }
+        observed = self.clock()
+        conn.executemany(
+            "INSERT INTO muse_trust_vms VALUES (?,?,?,1,1,?,?)",
+            (
+                (provider, account, identity, "authenticated_assignment", observed)
+                for identity in sorted(vm_ids)
+                if identity not in existing
+            ),
+        )
+        conn.executemany(
+            "UPDATE muse_trust_vms SET confidential_required=1, "
+            "source='authenticated_assignment',observed_at=? "
+            "WHERE provider=? AND account=? AND vm_id=? AND confidential_required=0",
+            (
+                (observed, provider, account, identity)
+                for identity in sorted(vm_ids)
+                if identity in existing
+            ),
+        )
+
+    def _muse_record_observation(
+        self, provider, account, viewer_hash, vm_ids, *, source, binding=None
+    ):
+        failure = None
+        try:
+            with self._muse_boundary(provider, account):
+                with self.transaction() as conn:
+                    conn.execute("INSERT INTO muse_trust_propagating VALUES (1)")
+                    self._muse_observe(conn, viewer_hash, vm_ids, confidential=True, source=source)
+                    if binding is not None:
+                        self._muse_bind_label(conn, provider, account, viewer_hash, vm_ids, binding)
+                    self._muse_close_bind(conn, viewer_hash)
+                self._muse_notify(provider, account, confidential=True)
+        except m.CoreError as exc:
+            if isinstance(exc, _MuseNotificationFailure):
+                failure = exc
+            else:
+                fixed = _muse_fixed_storage(exc)
+                failure = m.CoreError(
+                    m.ErrorCode.STORAGE,
+                    "Muse confidentiality could not be recorded",
+                    next_action=fixed.detail.next_action,
+                )
+                failure.detail.retry_class = fixed.detail.retry_class
+        if failure is not None:
+            raise failure
+
+    def muse_record_confidential(self, snapshot: MuseTrustSnapshot) -> None:
+        self._muse_record_observation(
+            snapshot.provider,
+            snapshot.account,
+            snapshot.viewer_hash,
+            {snapshot.vm_id} if snapshot.vm_id is not None else set(),
+            source="noise_message_2",
+        )
+
+    @_muse_safe
+    def muse_standard_handoff(
+        self, snapshot: MuseTrustSnapshot, handoff: Callable[[], None]
+    ) -> None:
+        """Commit CAS before msg3; serialize handoff against selection changes."""
+        with self._muse_boundary(snapshot.provider, snapshot.account) as release_maintenance:
+            with self.transaction() as conn:
+                self._muse_current(conn, snapshot, standard=True)
+                result = conn.execute(
+                    "UPDATE muse_trust_vms SET source='noise_message_2', observed_at=? "
+                    "WHERE provider=? AND account=? AND vm_id=? AND confidential_required=0",
+                    (self.clock(), snapshot.provider, snapshot.account, snapshot.vm_id),
+                )
+                if result.rowcount != 1:
+                    raise _muse_storage_error()
+            release_maintenance()
+            handoff_error = None
+            try:
+                handoff()
+            except Exception as exc:
+                handoff_error = exc
+        if handoff_error is not None:
+            raise handoff_error
+
+    def muse_application_handoff(
+        self, snapshot: MuseTrustSnapshot, handoff: Callable[[], None]
+    ) -> None:
+        """Check the old context and serialize one application send with trust writes."""
+        handoff_error = None
+        with self._muse_boundary(snapshot.provider, snapshot.account) as release_maintenance:
+            with self.transaction() as conn:
+                self._muse_current(conn, snapshot, standard=True)
+            # Keep the existing trust locks, never SQLite or maintenance, over I/O.
+            release_maintenance()
+            try:
+                handoff()
+            except BaseException as exc:
+                handoff_error = exc
+        # Callback failures are transport failures, outside the storage wrapper.
+        if handoff_error is not None:
+            raise handoff_error
 
     @staticmethod
     def _key_name(name: str) -> None:
@@ -429,6 +1325,15 @@ class Store:
             return self.get_or_create_workspace_key(name, conn=conn)
 
     def _provision_workspace_keys(self) -> None:
+        # Existing workspaces, including read-only CLI tools, need no writer.
+        with self.connection() as conn:
+            if conn.execute(
+                "SELECT 1 FROM workspace_keys WHERE name=? AND status='active'",
+                (CONTENT_CURSOR_KEY,),
+            ).fetchone():
+                return
+        # Another first opener may have provisioned it since our read. The helper
+        # rechecks under BEGIN IMMEDIATE before generating or inserting a key.
         with self.transaction() as conn:
             self.get_or_create_workspace_key(CONTENT_CURSOR_KEY, conn=conn)
 
@@ -469,6 +1374,23 @@ class Store:
             # Derived text is owned by project_id. The asset must already be
             # visible there; shared bytes are not themselves the owner.
             self.require_project_asset(record.project_id, record.asset_id, conn=conn)
+        if isinstance(record, m.TranscriptSegment) and record.removed:
+            prior = conn.execute(
+                "SELECT revision,removed FROM transcript_segments WHERE id=? AND project_id=? "
+                "ORDER BY revision DESC LIMIT 1",
+                (record.id, record.project_id),
+            ).fetchone()
+            if (
+                record.text != ""
+                or record.revision < 2
+                or prior is None
+                or prior["removed"]
+                or prior["revision"] >= record.revision
+            ):
+                raise m.CoreError(
+                    m.ErrorCode.REFERENCE_INVALID,
+                    "Transcript removal requires an earlier text-bearing revision",
+                )
         columns = list(data)
         values = [
             m.canonical_json(data[c]).decode()
@@ -1494,8 +2416,10 @@ def _configure(conn: sqlite3.Connection, *, writable: bool = True) -> None:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
     conn.execute("PRAGMA recursive_triggers=ON")
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute(f"PRAGMA busy_timeout={int(_busy_timeout_seconds() * 1000)}")
     if writable:
+        # Already-WAL is a lock-free no-op, even with a competing writer. A real
+        # mode transition can be busy and is classified by _open.
         conn.execute("PRAGMA journal_mode=WAL")
     else:
         conn.execute("PRAGMA journal_mode")  # inspect only; never modify a newer schema

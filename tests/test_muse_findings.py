@@ -82,8 +82,24 @@ def _no_chain(exc: BaseException) -> None:
 
 
 def _review_http() -> object:
-    body = json.dumps({"access_token": REVIEW}).encode()
-    session = json.dumps({"vm_id": "vm1"}).encode()
+    body = json.dumps(
+        {
+            "ok": True,
+            "access_token": REVIEW,
+            "viewer_id": "viewer-fixture",
+            "session_binding_id": "binding-fixture",
+        }
+    ).encode()
+    session = json.dumps(
+        {
+            "status": "assigned",
+            "vm_id": "vm1",
+            "vm_name": "vm1",
+            "endpoint_url": "wss://vm1.metaaivm.com/",
+            "vm_type": "hatch_vm",
+            "vm_state": "RUNNING",
+        }
+    ).encode()
     hatch = json.dumps({"token": REVIEW}).encode()
     return H.FakeHttp(
         {
@@ -465,7 +481,7 @@ def test_m5_ca_bundle_ignores_environment_overrides(monkeypatch):
     assert last(CurlOpt.SSL_VERIFYHOST) == 2
     rendered = " ".join(str(value) for _opt, value in recorded)
     assert "muse.ai:443:203.0.113.10" in rendered
-    assert "muse.ai:443:[2001:db8::1]" in rendered
+    assert "muse.ai:443:203.0.113.10,[2001:db8::1]" in rendered
     assert "hatch.metaaivm.com:443:203.0.113.10" in rendered
 
 
@@ -646,7 +662,7 @@ def test_m2_malformed_wire_json_and_noise_are_protocol_errors():
         transport.sessions_list()
     assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
     assert caught.value.detail.retry_class == "never"
-    assert caught.value.detail.message == "Muse handshake failed"
+    assert caught.value.detail.message == "Muse standard verification refused this context"
     _no_chain(caught.value)
     with pytest.raises(ProtocolMismatch):
         NoiseParty("initiator").encrypt(b"x")

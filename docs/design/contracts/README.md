@@ -44,7 +44,8 @@ B16a human CLI auth contracts (shared Envelope, no new MCP tool):
   `config_bound` (boolean for the current Muse config). No secret values or paths.
 - `auth revoke --auth-ref REF`: `data` contains `auth_ref`, `revoked=true`,
   `config_bound` and nullable `next_action`. A remaining binding requires import and
-  rebind. Symlinks/non-regular files are refused. Resolving after revocation returns
+  rebind. Symlinks are unlinked without following their target; FIFO/directory
+  entries receive fixed manual cleanup guidance. Resolving after revocation returns
   fixed `E_AUTH_REQUIRED` with an empty cause/context chain.
 - Both commands require human interaction; `--non-interactive` returns
   `E_SCOPE_REQUIRED` before storage access. Unsafe directories return fixed
@@ -56,6 +57,21 @@ fixed `E_INPUT_INVALID`; accepted prose/paths stay exact in preview and wire.
 
 B16a auth-list partial contract: `status=partial`, `data.references` contains valid
 metadata; `data.unavailable` contains only opaque `auth_ref`, a fixed `reason`, and
-`next_action="metamuse auth revoke --auth-ref REF"`. `data.next_action` names the
-revoke commands. Corrupt values/content and directory paths are never returned.
+a working revoke `next_action` (including `--workspace` when supplied), or fixed
+manual cleanup guidance for non-revocable entries. `data.next_action` names the
+applicable cleanup actions. Corrupt values/content and directory paths are never returned.
 Strict backend SecretStore.list/resolve failures retain fixed detached E_AUTH_REQUIRED.
+B13 backend data uses existing open JSON result/provenance fields, documented in
+[Facebook collection](../../dev/FACEBOOK.md): step data includes browser_sandbox,
+requested_locator and resolved_permalink; Source.use_basis includes both locators.
+Capability retains its existing three status fields. The unsandboxed-operator
+warning belongs to Envelope.warnings, never a new Capability schema field.
+
+B13 revision evidence additionally carries requested_locator, resolved_permalink,
+permit_id, account and input_sha256 for the contributing snapshot. Source.use_basis
+input_sha256 refers to its first contributing snapshot. These are additive entries
+in existing free-form dictionaries; core schemas are unchanged.
+
+B13 browser_sandbox is an observed value: enabled, disabled_by_operator or unverified.
+Requested scope initially says unverified and carries browser_sandbox_requested
+(required or operator_exception) separately. No core schema field is added.

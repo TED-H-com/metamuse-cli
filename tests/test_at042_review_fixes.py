@@ -399,7 +399,12 @@ async def mcp_calls(ctx, calls, errlog):
     executable = Path(sys.executable).with_name("metamuse")
     params = StdioServerParameters(
         env={
-            **os.environ,
+            "PYTHONDONTWRITEBYTECODE": "1",
+            **(
+                {"B16A_IMPORT_EVIDENCE": os.environ["B16A_IMPORT_EVIDENCE"]}
+                if "B16A_IMPORT_EVIDENCE" in os.environ
+                else {}
+            ),
             "PYTHONPATH": os.environ.get(
                 "PYTHONPATH", str(Path(__file__).resolve().parents[1] / "src")
             ),

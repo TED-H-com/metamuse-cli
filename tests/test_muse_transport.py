@@ -4,12 +4,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import queue
 import subprocess
 import sys
 import threading
 import time
+import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlparse, urlsplit
 
 import pytest
@@ -19,6 +22,8 @@ from metamuse._muse_codec import (
     ApplicationRequest,
     NoiseTransportFrame,
     ServiceFrame,
+    _bytes_field,
+    _iter_fields,
     decode_server_frame,
     encode_client_frame,
     encode_noise_transport_frame,
@@ -55,7 +60,9 @@ from metamuse.muse import (
     prepare_muse_request,
     register_operations,
 )
+from metamuse.paths import WorkspacePaths
 from metamuse.safety import CheckedURL
+from metamuse.store import Store
 
 SECRET = "supersecret"
 REVIEW_SECRET = "synthetic-review-secret-42"
@@ -117,8 +124,10 @@ class MemoryEndpoint:
             raise RuntimeError("pipe has no peer")
         self.peer.queue.put(data)
 
-    def recv(self, timeout: float = 0.0) -> bytes | None:
+    def recv(self, timeout: float | None = 0.0) -> bytes | None:
         try:
+            if timeout is None:
+                return self.queue.get()
             if timeout <= 0:
                 return self.queue.get_nowait()
             return self.queue.get(timeout=timeout)
@@ -149,19 +158,21 @@ def serve(link: MemoryEndpoint, handler, errors: list[BaseException]) -> None:
 
     try:
         party = NoiseParty("responder")
-        first = link.recv(5)
+        first = link.recv(None)
         if not first:
             return
-        if party.read(first) != b"":
-            return
-        link.send(party.write(b""))
-        third = link.recv(5)
+        challenge = dict((number, value) for number, wire, value in _iter_fields(party.read(first)))
+        nonce = challenge[1]
+        key = party.conn.noise_protocol.handshake_state.s.public_bytes
+        bundle = _bytes_field(2, _bytes_field(1, key) + _bytes_field(2, nonce))
+        link.send(party.write(bundle))
+        third = link.recv(None)
         if not third:
             return
         if party.read(third) != b"":
             return
         while True:
-            raw = link.recv(5)
+            raw = link.recv(None)
             if not raw:
                 return
             _service, frame = decode_client_frame(party.decrypt(raw))
@@ -178,6 +189,7 @@ def serve(link: MemoryEndpoint, handler, errors: list[BaseException]) -> None:
 class Credentials:
     def __init__(self, jar: str | None = COOKIE) -> None:
         self.jar = jar
+        self.binding = SimpleNamespace(provider="synthetic", account="synthetic")
         self.refs: list[str] = []
 
     def cookies(self, auth_ref: str) -> str:
@@ -254,11 +266,39 @@ class FakeHttp:
         if path in self.responses:
             return self.responses[path]
         if path == "/api/auth/check":
-            return HttpResponse(200, json.dumps({"access_token": SECRET}).encode(), {}, PEER)
+            return HttpResponse(
+                200,
+                json.dumps(
+                    {
+                        "ok": True,
+                        "access_token": SECRET,
+                        "viewer_id": "viewer-fixture",
+                        "session_binding_id": "binding-fixture",
+                    }
+                ).encode(),
+                {},
+                PEER,
+            )
         if path == "/api/session":
-            return HttpResponse(200, json.dumps({"vm_id": "vm1"}).encode(), {}, PEER)
+            return HttpResponse(
+                200,
+                json.dumps(
+                    {
+                        "status": "assigned",
+                        "vm_id": "vm1",
+                        "vm_name": "vm1",
+                        "endpoint_url": "wss://vm1.metaaivm.com/",
+                        "vm_type": "hatch_vm",
+                        "vm_state": "RUNNING",
+                    }
+                ).encode(),
+                {},
+                PEER,
+            )
         if path == "/api/hatch/token":
             return HttpResponse(200, json.dumps({"token": SECRET}).encode(), {}, PEER)
+        if path == "/api/hatch/vm/wake":
+            return HttpResponse(200, b"{}", {}, PEER)
         raise AssertionError(path)
 
 
@@ -326,7 +366,15 @@ def build(*, handler, http=None, guard=None, connector=None, **kwargs):
     http = http if http is not None else FakeHttp(log=log)
     guard = guard if guard is not None else Guard(log=log)
     connector = connector if connector is not None else FakeConnector(handler, log=log)
+    store = kwargs.pop("store", None)
+    if store is None:
+        store = Store(
+            WorkspacePaths.resolve(Path(os.environ["METAMUSE_TEST_STORE_ROOT"]) / str(uuid.uuid4()))
+        )
     transport = MuseTransport(
+        store=store,
+        sleep=kwargs.pop("sleep", None),
+        wall_clock=kwargs.pop("wall_clock", None),
         auth_ref=kwargs.pop("auth_ref", "auth-ref"),
         credentials=kwargs.pop("credentials", Credentials()),
         guard=guard,
@@ -477,6 +525,7 @@ def test_handshake_and_serial_calls_use_monotonic_stream_ids():
         "auth.check",
         "session",
         "hatch.token",
+        "hatch.wake",
         "wss.noise",
     ]
     assert log == [
@@ -486,6 +535,8 @@ def test_handshake_and_serial_calls_use_monotonic_stream_ids():
         "http:/api/session",
         "guard:hatch.token",
         "http:/api/hatch/token",
+        "guard:hatch.wake",
+        "http:/api/hatch/vm/wake",
         "guard:wss.noise",
         "ws",
     ]
@@ -500,7 +551,7 @@ def test_handshake_and_serial_calls_use_monotonic_stream_ids():
     assert hatch["vmAddress"] == VM_ADDRESS_TEMPLATE.format(vm_id="vm1")
     assert connector.urls[0].startswith(HATCH_WSS_BASE + "?vm_id=vm1&auth_token=")
     assert "vm1.metaaivm.com" not in connector.urls[0]
-    assert len(http.calls) == 3
+    assert len(http.calls) == 4
     blob = repr(transport) + repr(started) + repr(sent) + repr(again)
     assert_clean(blob)
     assert SECRET not in started.body.decode()
@@ -810,7 +861,17 @@ def test_vm_unavailable_is_not_an_auth_failure():
     http = FakeHttp(
         {
             "/api/auth/check": HttpResponse(
-                200, json.dumps({"access_token": SECRET}).encode(), {}, PEER
+                200,
+                json.dumps(
+                    {
+                        "ok": True,
+                        "access_token": SECRET,
+                        "viewer_id": "viewer-fixture",
+                        "session_binding_id": "binding-fixture",
+                    }
+                ).encode(),
+                {},
+                PEER,
             ),
             "/api/session": HttpResponse(200, body, {}, PEER),
         }
@@ -868,9 +929,19 @@ def test_auth_rate_limit_redirect_and_bad_vm_id():
     http = FakeHttp(
         {
             "/api/auth/check": HttpResponse(
-                200, json.dumps({"access_token": SECRET}).encode(), {}, PEER
+                200,
+                json.dumps(
+                    {
+                        "ok": True,
+                        "access_token": SECRET,
+                        "viewer_id": "viewer-fixture",
+                        "session_binding_id": "binding-fixture",
+                    }
+                ).encode(),
+                {},
+                PEER,
             ),
-            "/api/session": HttpResponse(200, b'{"vm_id":"../evil"}', {}, PEER),
+            "/api/session": HttpResponse(200, b'{"status":"assigned","vm_id":"../evil"}', {}, PEER),
         }
     )
     transport, _http, _guard, connector = build(handler=ok_frames([]), http=http)

@@ -8,6 +8,7 @@ import logging
 import math
 import sys
 import tomllib
+import unicodedata
 from collections.abc import Sequence
 from contextlib import ExitStack, nullcontext, redirect_stdout
 from datetime import UTC, datetime
@@ -29,6 +30,38 @@ class Parser(argparse.ArgumentParser):
             "Invalid command arguments",
             next_action="Run metamuse --help for command syntax",
         )
+
+
+def _terminal_text(text: str, *, multiline: bool = False) -> str:
+    """Make terminal controls visible without changing stored or JSON data."""
+    result = []
+    for char in text:
+        if char == "\n" and multiline:
+            result.append(char)
+        elif unicodedata.category(char) in {"Cc", "Cf", "Cs", "Zl", "Zp"}:
+            code = ord(char)
+            result.append(f"\\u{code:04x}" if code <= 0xFFFF else f"\\U{code:08x}")
+        else:
+            result.append(char)
+    return "".join(result)
+
+
+def _approval_review(preview: m.ApprovalPreview) -> str:
+    # Callback summaries can contain source/model text, including forged labels.
+    # Keep every such line quoted; authoritative binding fields follow outside it.
+    details = _terminal_text(preview.summary, multiline=True)
+    lines = ["Request details:", *("  | " + line for line in details.split("\n"))]
+    lines.append("Approval binding:")
+    for label, value in (
+        ("Operation", preview.operation),
+        ("Destination", preview.destination),
+        ("Provider", preview.provider),
+        ("Account", preview.account),
+        ("Project", preview.project_id),
+    ):
+        lines.append(label + ": " + _terminal_text(json.dumps(value, ensure_ascii=False)))
+    lines.append("Action digest: " + preview.action_digest)
+    return "\n".join(lines) + "\n"
 
 
 def _request_key(parser: Any) -> None:
@@ -511,8 +544,7 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
                 remaining = datetime.fromisoformat(expires_at) - datetime.fromisoformat(ctx.clock())
                 utc_expiry = datetime.fromisoformat(expires_at).astimezone(UTC).isoformat()
                 sys.stderr.write(
-                    preview.summary
-                    + "\n"
+                    _approval_review(preview)
                     + f"Expires at (UTC): {utc_expiry}"
                     + f" (remaining: {remaining})\nMax uses: {args.max_uses}\n"
                 )
@@ -570,15 +602,18 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
 
 def render(result: m.Envelope, *, as_json: bool) -> None:
     for warning in result.warnings:
-        print(f"Warning: {warning}", file=sys.stderr)
+        print(f"Warning: {_terminal_text(warning)}", file=sys.stderr)
     if as_json:
         print(m.canonical_json(result).decode(), file=sys.stdout)
     elif result.error:
-        print(f"{result.error.code.value}: {result.error.message}", file=sys.stderr)
+        print(f"{result.error.code.value}: {_terminal_text(result.error.message)}", file=sys.stderr)
         if result.error.next_action:
-            print(result.error.next_action, file=sys.stderr)
+            print(_terminal_text(result.error.next_action), file=sys.stderr)
     else:
-        print(json.dumps(result.data, ensure_ascii=False, indent=2), file=sys.stdout)
+        print(
+            _terminal_text(json.dumps(result.data, ensure_ascii=False, indent=2), multiline=True),
+            file=sys.stdout,
+        )
 
 
 def _cli_operation(args: argparse.Namespace | None) -> str:

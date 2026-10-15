@@ -1,6 +1,6 @@
 # M0 Muse spike — protocol notes and offline client
 
-LIVE status: **blocked: no authorized test account**. Nothing in this pass opened a socket to muse.ai, `hatch.metaaivm.com`, or any other Muse host. There was no login and no cookie. The spike’s tests fail if the spike modules name those hosts or import a network client.
+Historical spike status (2026-10-13): **blocked: no authorized test account**. The 2026-10-14 update is in §9.1. Nothing in this pass opened a socket to muse.ai, `hatch.metaaivm.com`, or any other Muse host. There was no login and no cookie. The spike’s tests fail if the spike modules name those hosts or import a network client.
 
 Pinned source: [nikships/muse-cli](https://github.com/nikships/muse-cli) commit `ebcb6310432ad2d39927bcb59e686330b0538310` (2026-10-03T11:59:33-04:00), package version 0.3.2. Protocol write-up: `docs/PROTOCOL.md` at that commit. Implementation read beside it: `src/muse_cli/gateway.py`, `cli.py`, `chat.py`, `routes.json`, `desc0.bin`, `desc1.bin`. MIT, `Copyright (c) 2026 Nik Ships`. The spike reimplements the framing. It does not copy `gateway.py` and it does not vendor the descriptor binaries.
 
@@ -254,11 +254,89 @@ The fake gateway is `FakeGateway` on `InProcessLink`. It never listens on a port
 6. Server limits on frame size, body size, and `limit`.
 7. Hatch-token lifetime and what a mid-socket expiry looks like (close, reset code, HTTP status).
 8. Whether two sessions with the same title are always distinguished by `session_id` in `sessions.list`, and whether `session.start` returns `session_id` or `id` in current responses.
-9. Whether any account still negotiates the attested Noise mode. If it does, B09 stops with `E_PROTOCOL_MISMATCH` rather than implementing attestation.
+9. Historical question (2026-10-13): whether nonempty msg2 always means attested mode. Superseded for the documented standard subset by §9.1; RV/CVM still stops with `E_PROTOCOL_MISMATCH`.
 10. Whether the Chrome TLS fingerprint is still required, and which `curl_cffi` impersonation string the edge accepts.
 11. Rate-limit responses and `Retry-After` on auth and on `chat.stream`. Safe-read retries must not resend a chat.
 
-## 10. Concrete inputs for B09
+
+### 9.1 Standard transport update, 2026-10-14
+
+The original spike above remains a historical record. An operator LIVE probe (evidence kept outside this repository) confirmed msg1 nonce field 1 (32 bytes), msg2 outer bytes field 2 (68 bytes),
+and exactly nested fields 1/2 (32 bytes each): key equals responder Noise static and nonce
+equals this attempt's fresh challenge. Msg3 and application frames were not sent. This is
+one observation, not LIVE lifecycle acceptance. The independently documented protocol facts
+come from the round-2 interoperability review; no proprietary schema/parser/code is adopted.
+
+B09 now supports only that strict standard subset using the same pinned mature Noise/TLS.
+Optional explicit platform=0 is the proto3 default. Duplicate/wrong-wire/unknown/evidence,
+missing nonce, wrong key/nonce, malformed RV/chip binding and oversize fail closed. Valid RV
+records sticky confidential expectation then stops. CVM assignment and CVM_* state also
+persist confidentiality before refusal, including contradictory selected CVM metadata. No CVM/delegation verification is invented. Empty
+msg3 follows committed owner/session/selection-generation validation and both equalities;
+standard has no enrollment-health or capabilities registration gate. Identity encoding and
+existing serial frame/completeness budgets remain enforced.
+
+The browser standard branch does not validate nested key/nonce; these comparisons and
+persistent downgrade refusal are stricter local policy. Staging applicability is respected,
+not disabled. Standard does not claim attestation, SNP/TCB or notary signature verification.
+Private schema-5 Store trust is keyed by remote owner and normalized VM, across all local
+labels. It survives restart/auth_ref rotation and refuses stale CAS/corrupt state.
+Confidential writes invalidate all live workspace listeners, including cross-label sockets.
+Connect/retry does not reselect a VM or clear security state. An account file lock serializes
+committed observation and msg3 against context changes; generation changes invalidate sockets.
+
+The operator probe also exposed two adapter defects: curl RESOLVE now has one comma-joined host:port entry
+with bracketed IPv6, preserving checked-address order; upgrade errors now distinguish
+401/403, 429, 5xx and transport failures without leaking URL/query/body. Session reads use
+`?vm_state=live`. Connect performs one activation wake and at most 20 bounded redials/240s
+for 502/503/504, with a fresh UUID attempt ID and capped schedule documented in MUSE.md.
+Wake requests account power state only inside an already-granted live-mode operation.
+No lease/reset/chip-selection/enrollment/registration endpoint is called. Fixtures use
+injected HTTP, clock and an in-process mature-Noise responder; no test opens a network socket.
+
+WSS query is exactly VM ID, opaque route token (legacy or s0 envelope), optional six-segment
+non-delegation notary, `app_id=hatch-web` and fresh request UUID; fixed Muse Origin is sent.
+Hatch body takes validated row endpoint/name. The local legacy hatch grammar permits only
+ASCII letters/digits and `_~+/=-`, with no dot; this is strict implementation policy,
+not a claim that undocumented token formats are safe. New connection credentials are memory-only;
+known stale timeout hints allow one remint then stop. Redaction includes raw/encoded tokens,
+nonce/proof, connect attempt IDs and wake bodies. Original B10 application handoff,
+uncertainty, no-resend and no-refund rules remain binding. New connect failures cannot turn
+an earlier handed-off submission into `failed_before_send`.
+
+OFFLINE/FIXTURE results establish implementation behavior only. AT-038 and AT-043 stay
+unproven until the orchestrator's authorized full connect/read, exchange/echo/reply/follow-up
+and source-to-Muse-to-draft/export runs. Questions 1–8, 10–11 above remain LIVE questions.
+
+### 9.2 Independent-review corrections (2026-10-14)
+
+Round 2 supersedes §9.1's narrower persistence description without rewriting that history.
+Remote viewer hash and normalized VM identity join expectations across local labels.
+Migration 005 is amended before merge with inherited/propagated confidentiality and guards;
+owner-only hints are persistent even without a usable VM. Every authenticated session row
+is scanned before assignment/uniqueness checks, including CVM replacement indicators.
+Storage identity is trimmed/lowercased; the exact server ID is retained on the wire.
+
+A canonical field-2/varint tag identifies Noise-authenticated RV-shaped msg2; persist the
+permanent confidential tier before refusing even malformed/unsupported RV fields. All
+accepted handshake varints are minimal uint64 and RV attestation is nonempty bytes. Both
+standard equalities and mature Noise/TLS remain mandatory. No reset tool exists.
+
+All credential aliases are validated. Case-insensitive delegation/endorsement prefixes,
+malformed/oversized s0 and conflicting notary aliases refuse with protocol/never; legacy
+opaque tokens no longer admit dots. Nonpositive budgets stop before wake/dial/msg1. Only
+endpoint-specific success statuses are admitted: bootstrap 200 from the spike contract,
+wake 200 observed in an operator LIVE probe (evidence outside this repository), plus operator-authorized 202/204 (not LIVE observed here).
+
+Shared maintenance.lock ends at commit before msg3 I/O; provider/account trust locks remain.
+Confidential expectation precedes generation equality. Actual schema signatures are compared
+without replaying migrations at every check. Lifecycle Store wiring is now applied.
+Raw/encoded query/JSON aliases, embedded wakes, nonce encodings, request IDs and dataclass
+reprs are scrubbed. Regressions cover all five currentness boundaries, cross-process changes,
+SQL replacement/rowid/deletion, backup/restore and cross-label refusal; mutation evidence is
+recorded in the task report. OFFLINE/FIXTURE only; AT-038/AT-043 remain unproven LIVE.
+
+## 10. Historical inputs for B09 (2026-10-13; current handshake/wake in §9.1)
 
 - Pin `noiseprotocol==0.3.1` and use `cryptography` only through it. Pattern `Noise_XX_25519_AESGCM_SHA256`, empty handshake payloads, `verify=True`, Chrome impersonation via `curl_cffi==0.16.3`. Do not add the `websockets` package for this gateway.
 - One receive loop per gateway connection, owned by the connection. A second loop on the same link, `collect` without that ownership, and a second `collect` while one is running are protocol errors. P0 is serial unary calls. Do not subscribe while a unary read is in progress.
@@ -269,3 +347,23 @@ The fake gateway is `FakeGateway` on `InProcessLink`. It never listens on a port
 - Redact query tokens before any log, exception string, or event row.
 - Keep the route allowlist in §7. A method outside it is a programming error, not a `raw` escape hatch.
 - LIVE remains blocked until an operator authorizes an account. Fixture plus `blocked` is the honest result until then.
+
+### 9.3 Round-3 verification changes (2026-10-14)
+
+The fixed-upstream standard transport now keys durable trust on authenticated remote owners and normalized VMs, independent of operator labels. It commits all hints and RV observations before refusal, including stale or changed bindings, and propagates owner↔VM components set-wise. The 1 MiB session cap and full-Noise RV discriminator precede standard-only limits. Shape drift, secret encodings and deadline tests are expanded. Evidence remains OFFLINE/FIXTURE; AT-038 and AT-043 LIVE have not run. CVM remains unsupported. Earlier spike findings and limits above are history, not new LIVE evidence.
+
+
+### 9.4 Round-4 verification changes (2026-10-14)
+
+The authenticated hint bind now bulk-inserts all observation/VM rows under one barrier,
+materializes the owner/VM closure once, updates the three tables and removes the barrier
+before commit. The exact 1 MiB fixture records 52,420 ids without dialing; the final warm
+measurement is 0.575 s CPU and 1.642 s elapsed, with a 1.529 s bulk domain-lock hold.
+These measured fixture values are not a wall-time guarantee. Busy/locked storage is retryable;
+read-only/full and other operational I/O failures give environment guidance, while integrity
+and schema failures alone advise verified restore. A committed barrier has a human maintenance
+repair that recomputes the whole closure before removing it, without discarding expectations.
+Confidential writes invalidate all workspace listeners. Nested hints use a bounded compact
+key/value scan; false positives remain permanently sticky. Confidential provenance freezes
+in place, and redaction merges decoded known spans and covers the tested alias grammar.
+Evidence is OFFLINE/FIXTURE (timings MEASURE); AT-038 and AT-043 LIVE remain unrun, CVM unsupported.

@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
 SERVER_NAME = "metamuse"
 SERVER_VERSION = "0.1.0.dev0"
+_WORKER_START_HANDOFF_SECONDS = 2.0
 
 
 def _load_schema_resource(filename: str) -> dict[str, Any]:
@@ -226,12 +227,13 @@ class _AttachedWorker:
         self.stopping = threading.Event()
         self.state = "starting" if enabled else "disabled"
         self.thread = threading.Thread(target=self._run, name="metamuse-worker")
-        self.start_error: BaseException | None = None
+        self.error_code: m.ErrorCode | None = None
 
     def status(self) -> dict[str, Any]:
         available = (
             self.executor is not None
             and self.executor.handle is not None
+            and self.executor.epoch is not None
             and self.thread.is_alive()
             and self.state == "running"
             and not self.stopping.is_set()
@@ -239,11 +241,17 @@ class _AttachedWorker:
         return {
             "worker_available": available,
             "attached_worker": self.state,
+            "storage_busy_retries": self.executor.storage_busy_retries if self.executor else 0,
+            "worker_error_code": self.error_code.value if self.error_code else None,
             "worker_next_action": (
                 "Restart metamuse mcp without --no-worker or run metamuse worker run"
                 if not self.enabled
+                else "Waiting for SQLite writer; keep this MCP server open"
+                if self.state == "starting"
                 else "Keep this MCP server open; poll job_get for terminal state"
                 if available
+                else "Inspect worker_error_code and restart metamuse mcp or run metamuse worker run"
+                if self.state == "failed"
                 else "Restart metamuse mcp after the other owner exits, "
                 "or run metamuse worker run; "
                 "this server does not retry lock acquisition"
@@ -252,30 +260,53 @@ class _AttachedWorker:
 
     def _run(self) -> None:
         try:
-            with Executor(
+            executor = Executor(
                 self.ctx.store,
                 non_interactive=True,
                 muse_gateway=self.ctx.muse_gateway,
                 secret_store=self.ctx.secret_store,
                 muse_resolver=self.ctx.muse_resolver,
-            ) as executor:
-                self.executor = executor
-                self.state = "running"
+            )
+            self.executor = executor
+            executor._busy_observer = self.ready.set
+            if self.stopping.is_set():
+                executor.request_stop()
+            # Bootstrap uses ctx.store only for configuration and the scoped retry
+            # helper. All worker connections use a sibling constructed here.
+            worker_store = executor._retry_unclaimed(self.ctx.store._sibling)
+            if worker_store is None:
+                return
+            executor.store = worker_store
+            with executor:
+                if executor.epoch is not None and not executor._stop.is_set():
+                    self.state = "running"
                 self.ready.set()
                 if self.stopping.is_set():
                     executor.request_stop()
                 executor.run()
         except m.CoreError as exc:
-            if exc.detail.code == m.ErrorCode.JOB_BUSY:
+            if exc.detail.code == m.ErrorCode.JOB_BUSY and self.state == "starting":
                 self.state = "lock_busy"
             else:
-                self.start_error = exc
+                self.error_code = exc.detail.code
                 self.state = "failed"
+                log_safe_exception(
+                    self.ctx.logger,
+                    exc,
+                    operation="mcp.attached_worker",
+                    code=self.error_code.value,
+                )
         except BaseException as exc:
-            self.start_error = exc
+            self.error_code = m.ErrorCode.STORAGE
             self.state = "failed"
+            log_safe_exception(
+                self.ctx.logger,
+                exc,
+                operation="mcp.attached_worker",
+                code=self.error_code.value,
+            )
         finally:
-            if self.state == "running":
+            if self.state in ("starting", "running"):
                 self.state = "stopped"
             self.ready.set()
 
@@ -314,9 +345,9 @@ async def _serve_stdio(
                     try:
                         if worker:
                             attached.thread.start()
-                            await anyio.to_thread.run_sync(attached.ready.wait)
-                            if attached.start_error is not None:
-                                raise attached.start_error
+                            await anyio.to_thread.run_sync(
+                                lambda: attached.ready.wait(_WORKER_START_HANDOFF_SECONDS)
+                            )
                         await server.run(read_stream, write_stream, init_options)
                     finally:
                         attached.stop()

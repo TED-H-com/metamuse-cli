@@ -18,10 +18,14 @@ from __future__ import annotations
 
 import ipaddress
 import select
+import socket
+import threading
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from typing import Any, Protocol
+from urllib.parse import urlsplit
 
 from metamuse._muse_link import ByteLink, SendUncertain
 from metamuse.models import CoreError, ErrorCode
@@ -30,6 +34,7 @@ from metamuse.safety import CheckedURL
 # Auth JSON is a token plus a vm id. 64 KiB is the decompressed cap, including
 # a body that arrives without Content-Length. Larger responses are not parsed.
 AUTH_RESPONSE_MAX_BYTES = 64 * 1024
+SESSION_RESPONSE_MAX_BYTES = 1024 * 1024
 _WS_MESSAGE_MAX_BYTES = 65535
 _WS_PIECE_MAX = 64
 
@@ -37,8 +42,8 @@ _WS_PIECE_MAX = 64
 @dataclass(frozen=True)
 class HttpResponse:
     status: int
-    body: bytes
-    headers: Mapping[str, str]
+    body: bytes = field(repr=False)
+    headers: Mapping[str, str] = field(repr=False)
     peer: str
 
 
@@ -144,7 +149,7 @@ def resolve_entries(checked: CheckedURL) -> list[str]:
             "Pinned addresses were empty",
             next_action="Return at least one address from the outbound guard",
         )
-    entries: list[str] = []
+    addresses: list[str] = []
     for address in checked.addresses:
         if not isinstance(address, str) or not address or "/" in address:
             raise CoreError(
@@ -152,9 +157,15 @@ def resolve_entries(checked: CheckedURL) -> list[str]:
                 "Pinned addresses were empty",
                 next_action="Return IP addresses from the outbound guard",
             )
-        rendered = f"[{address}]" if ":" in address and not address.startswith("[") else address
-        entries.append(f"{host}:{checked.port}:{rendered}")
-    return entries
+        try:
+            parsed = ipaddress.ip_address(address)
+        except ValueError:
+            failure = CoreError(ErrorCode.SCOPE_REQUIRED, "Pinned addresses were empty")
+        else:
+            failure = None
+        _raise_if(failure)
+        addresses.append(f"[{address}]" if parsed.version == 6 else address)
+    return [f"{host}:{checked.port}:{','.join(addresses)}"]
 
 
 def _options(curl_opt: Any, checked: CheckedURL) -> dict[Any, Any]:
@@ -189,11 +200,63 @@ def _https_failed() -> CoreError:
     )
 
 
-def _auth_too_large() -> CoreError:
+class UpgradeFailure(CoreError):
+    """Only an integer status escapes curl; no URL, body, query or raw exception."""
+
+    def __init__(self, status: int):
+        self.status = status
+        if status in (401, 403):
+            code, message, action = (
+                ErrorCode.AUTH_REQUIRED,
+                "Muse upgrade authentication failed",
+                "Refresh the operator credentials",
+            )
+        elif status == 429:
+            code, message, action = (
+                ErrorCode.RATE_LIMITED,
+                "Muse upgrade rate limited",
+                "Wait before reconnecting; do not resend a handed-off chat",
+            )
+        elif 500 <= status <= 599:
+            code, message, action = (
+                ErrorCode.RESOURCE_UNAVAILABLE,
+                "Muse VM is not running yet",
+                "The VM is not running yet; retry later",
+            )
+        else:
+            code, message, action = (
+                ErrorCode.PROTOCOL_MISMATCH,
+                "Muse upgrade was refused",
+                "Stop for protocol review",
+            )
+        super().__init__(code, message, next_action=action)
+
+
+def _upgrade_failed(ws: Any) -> CoreError:
+    from curl_cffi.const import CurlInfo
+
+    try:
+        status = int(ws.curl.getinfo(CurlInfo.RESPONSE_CODE))
+    except Exception:
+        status = 0
+    if status >= 300:
+        return UpgradeFailure(status)
+    return CoreError(
+        ErrorCode.NETWORK_TIMEOUT,
+        "Muse connection failed",
+        next_action="Retry the connection; no application frame was sent",
+    )
+
+
+def _auth_too_large(session: bool = False) -> CoreError:
     return CoreError(
         ErrorCode.LIMIT_REACHED,
-        "Muse auth response exceeded the size cap",
-        next_action="Stop. Do not parse an oversized auth response.",
+        "Muse session response exceeded the size cap"
+        if session
+        else "Muse auth response exceeded the size cap",
+        next_action="Stop. Do not parse an oversized session response."
+        if session
+        else "Stop. Do not parse an oversized auth response.",
     )
 
 
@@ -245,7 +308,10 @@ class CurlHttp:
         else:
             failure = None
         _raise_if(failure)
-        writer = AuthBodyBuffer()
+        is_session = urlsplit(url).path == "/api/session"
+        writer = AuthBodyBuffer(
+            SESSION_RESPONSE_MAX_BYTES if is_session else AUTH_RESPONSE_MAX_BYTES
+        )
         response = None
         try:
             kwargs: dict[str, Any] = {
@@ -263,7 +329,7 @@ class CurlHttp:
             except (TypeError, AttributeError):
                 failure = _api_mismatch()
             except Exception:
-                failure = _auth_too_large() if writer.overflow else _https_failed()
+                failure = _auth_too_large(is_session) if writer.overflow else _https_failed()
         finally:
             if session is not None:
                 closer = getattr(session, "close", None)
@@ -273,8 +339,8 @@ class CurlHttp:
                     except Exception:
                         pass
         _raise_if(failure)
-        if writer.overflow or len(writer.data) > AUTH_RESPONSE_MAX_BYTES:
-            raise _auth_too_large()
+        if writer.overflow or len(writer.data) > writer.limit:
+            raise _auth_too_large(is_session)
         peer = _peer_text(getattr(response, "primary_ip", ""))
         raw_headers = getattr(response, "headers", {}) or {}
         copied = {str(key): str(value) for key, value in dict(raw_headers).items()}
@@ -282,26 +348,111 @@ class CurlHttp:
 
 
 class CurlSocket:
-    """Byte pipe over one curl WebSocket. ``recv`` stops at ``timeout``."""
+    """Serial curl ownership with a separately owned socket cancellation handle."""
 
     def __init__(self, ws: Any, peer_address: str) -> None:
         self._ws = ws
         self.peer_address = peer_address
         self._closed = False
+        self._cleaned = False
+        self._active = False
+        self._operation_lock = threading.Lock()
+        self._state_lock = threading.Lock()
+        self._interrupt: socket.socket | None = None
+        # Cache on the connector/owner thread, before this pipe can be notified.
+        # A duplicate pins the socket identity even if curl releases its own fd.
+        # Never getinfo, close or otherwise use curl concurrently with an operation:
+        # https://curl.se/libcurl/c/threadsafe.html (Handles).
+        curl = getattr(ws, "curl", None)
+        if curl is not None:
+            from curl_cffi.const import CurlInfo
+            from curl_cffi.requests.websockets import CURL_SOCKET_BAD
+
+            try:
+                fd = curl.getinfo(CurlInfo.ACTIVESOCKET)
+                if type(fd) is not int or fd < 0 or fd == CURL_SOCKET_BAD:
+                    raise ValueError("no socket")
+                # Use the native descriptor duplicator, not socket.socket.dup():
+                # that method calls settimeout and changes curl's shared O_NONBLOCK.
+                duplicate = socket.dup(fd)
+                try:
+                    self._interrupt = socket.socket(fileno=duplicate)
+                except BaseException:
+                    socket.close(duplicate)
+                    raise
+            except (TypeError, AttributeError):
+                failure = _api_mismatch()
+            except Exception:
+                failure = CoreError(
+                    ErrorCode.NETWORK_TIMEOUT,
+                    "Muse socket has no file descriptor",
+                    next_action="Retry the connection.",
+                )
+            else:
+                failure = None
+            if failure is not None:
+                self.close()
+                raise failure
+            # A peer close is handled below by the owner. Avoid the backend's
+            # ordinary close-frame send/cleanup path during cancellation.
+            ws.autoclose = False
+
+    @contextmanager
+    def _operation(self):
+        with self._operation_lock:
+            with self._state_lock:
+                self._active = True
+            try:
+                yield
+            finally:
+                with self._state_lock:
+                    self._active = False
+                    cleanup = self._closed
+                if cleanup:
+                    self._cleanup()
+
+    def _cleanup(self) -> None:
+        # No native operation is active. Claim exactly once before touching curl.
+        with self._state_lock:
+            if self._cleaned:
+                return
+            self._cleaned = True
+            interrupt, self._interrupt = self._interrupt, None
+        try:
+            # close() sends a WebSocket close frame; cancellation must not send.
+            # terminate() only cleans up. Descriptor-less test doubles may expose
+            # only close(), which is safe here after their operation has unwound.
+            closer = None
+            if not getattr(self._ws, "closed", False):
+                closer = getattr(self._ws, "terminate", None) or getattr(self._ws, "close", None)
+            if closer is not None:
+                closer()
+        except Exception:
+            pass
+        finally:
+            if interrupt is not None:
+                interrupt.close()
 
     def send(self, data: bytes) -> None:
         failed = False
-        try:
-            self._ws.send_bytes(data)
-        except Exception:
-            failed = True
+        with self._operation():
+            if self._closed:
+                failed = True
+            else:
+                try:
+                    self._ws.send_bytes(data)
+                except Exception:
+                    failed = True
         if failed:
             _send_uncertain()
 
     def recv(self, timeout: float) -> bytes | None:
-        from curl_cffi.const import CurlECode, CurlInfo, CurlWsFlag
+        with self._operation():
+            return self._recv(timeout)
+
+    def _recv(self, timeout: float) -> bytes | None:
+        from curl_cffi.const import CurlECode, CurlWsFlag
         from curl_cffi.curl import CurlError
-        from curl_cffi.requests.websockets import CURL_SOCKET_BAD
 
         if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
             raise CoreError(
@@ -320,6 +471,8 @@ class CurlSocket:
         total = 0
         pieces = 0
         while True:
+            if self._closed:
+                return None
             if time.monotonic() >= deadline:
                 return None
             if pieces >= _WS_PIECE_MAX:
@@ -355,25 +508,16 @@ class CurlSocket:
                 again = False
             if failure is not None:
                 raise failure
+            if self._closed:
+                return None
             if again:
                 if time.monotonic() >= deadline:
                     return None
                 remaining = deadline - time.monotonic()
-                try:
-                    sock = self._ws.curl.getinfo(CurlInfo.ACTIVESOCKET)
-                except (TypeError, AttributeError):
-                    sock_failure = _api_mismatch()
-                else:
-                    sock_failure = None
-                if sock_failure is not None:
-                    raise sock_failure
-                if sock == CURL_SOCKET_BAD:
-                    raise CoreError(
-                        ErrorCode.NETWORK_TIMEOUT,
-                        "Muse socket has no file descriptor",
-                        next_action="Retry the connection.",
-                    )
-                select.select([sock], [], [], min(remaining, 0.5))
+                if self._interrupt is None:
+                    # Descriptor-less fakes work until they request socket I/O.
+                    raise _api_mismatch()
+                select.select([self._interrupt], [], [], min(remaining, 0.5))
                 if time.monotonic() >= deadline:
                     return None
                 continue
@@ -383,6 +527,7 @@ class CurlSocket:
             if frame.flags & (CurlWsFlag.PING | CurlWsFlag.PONG):
                 continue
             if frame.flags & CurlWsFlag.CLOSE:
+                self.close()
                 return None
             piece = bytes(chunk)
             if total + len(piece) > _WS_MESSAGE_MAX_BYTES:
@@ -400,15 +545,21 @@ class CurlSocket:
                 return b"".join(chunks)
 
     def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        closer = getattr(self._ws, "close", None)
-        if closer is not None:
-            try:
-                closer()
-            except Exception:
+        with self._state_lock:
+            if self._closed:
                 return
+            self._closed = True
+            if self._interrupt is not None:
+                try:
+                    self._interrupt.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass  # Already disconnected; the owner still cleans up.
+            cleanup = not self._active
+        # Never wait for recv/send or a transport lock in a notification. An
+        # active operation cleans up in its finally; an idle handle can safely
+        # transfer to this thread without simultaneous libcurl access.
+        if cleanup:
+            self._cleanup()
 
 
 class CurlConnector:
@@ -455,14 +606,15 @@ class CurlConnector:
                 allow_redirects=False,
                 timeout=timeout,
                 quote=False,
+                headers={"Origin": "https://muse.ai"},
                 curl_options=options,
             )
         except (TypeError, AttributeError):
             failure = _api_mismatch()
         except CoreError:
-            failure = _https_failed()
+            failure = _upgrade_failed(ws)
         except Exception:
-            failure = _https_failed()
+            failure = _upgrade_failed(ws)
         else:
             failure = None
         if failure is not None:

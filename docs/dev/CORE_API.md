@@ -1,4 +1,4 @@
-# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 4)
+# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 6)
 
 B02–B04 owns `app.py`, `cli.py`, `models.py`, `store.py`, `jobs.py`, migration SQL and
 generated schemas. Other tasks must build against these APIs without editing them.
@@ -13,9 +13,11 @@ contracts, `paths.py` owns private paths, and `schemas.py` regenerates contracts
 `collect.py`, `media.py`, `muse.py`, `content.py`, `safety.py`, `mcp.py` contain the
 typed feature seams. B07/B11 implements the five content functions; see
 [CONTENT_API.md](CONTENT_API.md). `collect.py` implements local `submit_collect` for
-files and pasted text and declares `metamuse_collect`. Remote URL collection stays
-`E_UNSUPPORTED` until B12/B13. `media.py` provides local media and subtitle helpers and
-registers no operation. `safety.py` owns the local input reader that collect uses.
+files and pasted text and declares `metamuse_collect`. URL inputs that request only
+media metadata, subtitles, or a media file go to `remote_media.py` (`collect.remote_media`).
+Posts, comments, and mixed URL inputs stay `E_UNSUPPORTED` until B13. `media.py` provides
+local media and subtitle helpers and registers no operation. `safety.py` owns the local
+input reader and the outbound URL policy that remote media calls.
 Record formats are in `docs/dev/COLLECT.md`. `muse.py` implements the B10 lifecycle;
 see [MUSE.md](MUSE.md).
 
@@ -38,7 +40,7 @@ No Windows executor support is claimed: this build uses `fcntl` on Linux/WSL2.
 `ctx.store` is the only database owner. `ctx.clock` and `ctx.store.clock` are callables
 returning UTC ISO timestamps; `AppContext.open(clock=...)` sets both. `ctx.logger` is
 a Python logger. `ctx.limits` is `models.Limits`; `ctx.policy` is the complete typed
-`Config` (`app`, `worker`, `limits`, `muse`, `publishing`). `app.import_roots` lists
+`Config` (`app`, `worker`, `limits`, `muse`, `publishing`, `remote_media`). `app.import_roots` lists
 directories a local import may read; an empty list refuses every local file. Offline
 mode, disabled telemetry, disabled Muse/publishing and one executor are defaults. The
 TOML is one workspace configuration, not separate CLI/MCP settings. Higher limits
@@ -49,8 +51,10 @@ never grant scope.
 All fifteen SDS functions exist. Core implements `inspect_capabilities`, `create_project`,
 `get_job`, `list_jobs`, `control_job`; B07/B11 implements `search_evidence`, `prepare_packet`,
 `save_draft`, `preview_draft`, `export_objects`. Local `submit_collect` accepts files and
-pasted text. Remote URLs stay `E_UNSUPPORTED` until B12/B13, and `next_action` names those
-tasks and LIVE. The four Muse functions use the B10 durable lifecycle and explicit
+pasted text. URL inputs for media metadata, subtitles, or a media file are B12
+`collect.remote_media` and require an allowlist plus a `collect.remote` permit.
+Posts, comments, and mixed URL inputs stay `E_UNSUPPORTED`; `next_action` names
+B12/B13 and LIVE. The four Muse functions use the B10 durable lifecycle and explicit
 fixture/live binding. `TOOL_FUNCTIONS` maps the fifteen
 contract names to their functions; MCP should use it rather than shelling out.
 
@@ -270,6 +274,73 @@ it does not kill an uncooperative remote call. Results always retain coverage_st
 requested/observed scope, stop_reason and missing_fields; multi-step coverage uses the
 least confident status and preserves per-step results.
 
+SQLite contention is retried only while no step is claimed: epoch/recovery startup,
+heartbeat, atomic claim/cancel sweep, idle checks, and heartbeat/cancellation during
+an already requeued safe-read delay. `Executor.run_once()` uses the same maintenance
+retry path as `run()`. Only internal `_StorageBusy` errors qualify. Each failed
+transaction rolls back before a jittered exponential wait (initial range 25–50 ms,
+doubling to a 1–2 second range). Each backoff wait is at most 2 seconds and wakes on
+`request_stop()`; no further attempt begins after stop. Every unclaimed action uses a scoped thread-local 1-second connection/busy timeout,
+including the read-only version probe. `unavailable_operations()` owns this retry
+path even when called after `run()`; after stop it returns `False` without a query. The default remains 30 seconds elsewhere.
+The loaded 548-transaction sample put 531 (96.9%) within one second; the 12.16 ms
+median fits easily, while tail stalls are retried instead of lengthening each attempt.
+Exit metadata cleanup also uses one second, skips only busy errors, and releases the
+OS lock before propagating any other cleanup failure.
+
+With no step claimed, SQLite contention delays stop by at most one 1-second attempt
+plus one 1-second cleanup (2 seconds). Backoff wakes immediately. These are lock-wait
+bounds, not deadlines on fsync, filesystem/OS maintenance locks or arbitrary handlers.
+A claimed handler reaches its boundary first. After it returns, finalization can wait
+30 seconds and its fallback another 30; if the fallback times out, durable state is
+left for recovery. Zero-handoff processing can additionally wait 30 in settlement
+and 30 in its failure-event write: at most four successive waits (120 seconds), plus
+the 1-second exit cleanup. The pre-handler guard and each handler checkpoint/boundary
+transaction independently retain 30 seconds. Handler I/O has its own bounds. MCP
+shutdown joins the worker thread so it cannot abandon a claimed step or its OS lock.
+
+`storage_busy_retries` is a cumulative, saturating counter (maximum 2**31−1).
+The existing attached-worker status/inspect/doctor data exposes it together with
+`attached_worker` and nullable `worker_error_code`. Startup contention remains
+`starting` and unavailable until ownership metadata commits; an established worker
+retains its OS lock while retrying. Non-busy failure reports `failed` and only a fixed
+error code, never exception text or paths. E_STORAGE also covers unexpected internal
+worker failures, following the existing unexpected-tool-failure convention. Both
+CoreError and unexpected failures call log_safe_exception with operation
+mcp.attached_worker and the fixed code; logs contain only class names and sanitized
+basename/line/function frames. Startup failure leaves the server serving, and later
+job acceptance stays queued with worker_available false. A stopped startup goes
+directly from starting to stopped, without reporting running before ownership.
+The MCP server keeps serving diagnostics even if its attached worker fails at startup.
+The start handoff waits at most 2 seconds for ready, then serves with `starting` if
+ownership has not committed. Ready is also signaled on the first short busy attempt,
+lock-busy or failure. Availability stays false until committed ownership.
+The integration journey explicitly polls inspect before its initial flow and restart
+flow, using the remaining time in its existing 600-second shared test deadline.
+Only `starting` with `worker_available:false` is transitional; it still requires
+`running` with `worker_available:true` before proceeding. Failed, disabled,
+lock-busy, stopped or inconsistent states fail immediately with the full inspect
+state; deadline diagnostics retain the last full state. This wait is opt-in at
+those journey prerequisites, not part of the generic MCP server context: tests of
+disabled workers, lock ownership and queued acceptance continue to observe those
+states directly. It does not change production readiness or promise background work.
+Doctor uses these fields when an attached-worker status provider is present; a separate
+CLI process observes current OS-lock availability, not another process's failure memory.
+
+Once a step is claimed, busy never wraps or replays the handler. `none`/`safe_read`
+retain their failure policies (E_STORAGE has public retry_class `never`); an external
+step before the committed submitting boundary can fail as not_submitted, while one
+past that boundary becomes uncertain. A busy failure while saving a result/error
+rolls back the transaction. If the fallback failure/uncertainty write is also busy,
+the error propagates and the durable running/submitting state remains for existing
+restart recovery; it cannot become a fabricated success or failed_before_send.
+Entered external work is never automatically resent. On shutdown a busy owner-metadata
+cleanup may leave stale metadata; OS-lock release remains authoritative for availability.
+For this process, availability also requires the complete owner nonce in the live
+registry, added only after ownership commits and removed even if exit cleanup fails.
+A later Executor in the same PID cannot make an old row look available. Other PIDs
+continue to require matching Linux FLOCK evidence.
+
 ## Store and objects
 
 ```python
@@ -290,8 +361,31 @@ source = ctx.store.get(Source, "src_fixture")
 ```
 
 `connection()` gives a short read connection. `transaction()` uses BEGIN IMMEDIATE,
-commit/rollback and bounded 5-second busy timeout. All writable connections use foreign
-keys, recursive_triggers ON, WAL and synchronous FULL. Read-only schema probes inspect journal mode and never
+commit/rollback and a bounded 30-second busy timeout. `sqlite3.connect(timeout=30)`
+and `PRAGMA busy_timeout=30000` share one internal constant. A 90-second sample under
+suite load measured 548 transactions: p50 12.16 ms, p99 1781.87 ms, max 6903.15 ms;
+commit-to-context-exit max was 6901.59 ms. Thirty seconds gives margin above that
+observed stall; it is not a host-wide deadline or a guarantee against longer stalls.
+A CLI caller waits synchronously, without progress output, for each contended SQLite
+operation; exhaustion returns a sanitized E_STORAGE (exit 7). The 30-second limit is
+per contended write transaction, not per CLI command: commands can perform several
+transactions in sequence. Existing-workspace doctor, jobs get/list and search open
+without taking the write lock. Foreground workers
+instead keep retrying unclaimed maintenance until stopped. WAL readers do not take
+the write lock, although one Store instance still serializes its short connection
+lifetimes with its process-local RLock.
+
+Store classifies SQLITE_BUSY and SQLITE_LOCKED by `sqlite_errorcode`'s primary byte,
+retaining the full extended code on internal `_StorageBusy(CoreError)`. The same
+classification applies to schema verification and migration BEGIN/commit failures. Both it and
+other SQLite errors expose only E_STORAGE/never publicly; corruption, I/O errors,
+and missing codes do not qualify for busy retry. No SQL, paths or values enter error
+messages. Existing transaction constraint errors retain E_REFERENCE_INVALID.
+All writable connections use foreign keys, recursive_triggers ON, WAL and synchronous
+FULL. Writable opens issue journal_mode=WAL: SQLite treats an already-WAL database as a
+no-op without taking the write lock, including with a held writer. A real WAL
+transition can return SQLITE_BUSY and uses the same classification. Read-only
+schema probes inspect journal mode and never
 change a newer DB. Both contexts close their connection and hold a shared maintenance
 lock. Pass `conn=conn` when already inside a transaction. Always use parameters for
 values and known table/column names for SQL. Do not retain a connection across download,
@@ -329,7 +423,9 @@ points), format plain_text/markdown, scope this_draft. The content-owner/core-ow
 explicitly authorizes these additive contracts; generated schemas come from models.py.
 See [CONTENT_API.md](CONTENT_API.md) for content resolution budgets and replay behavior.
 `workspace_keys` holds internal 32-byte signing material. Store initialization provisions
-`content.cursor` before any search. `get_workspace_key(name, version=None)` reads the
+`content.cursor` before any search. Existing workspaces check for the active key with
+a read connection and open no provisioning transaction when it exists. First opens
+recheck under the write transaction, so racing opens create exactly one active key. `get_workspace_key(name, version=None)` reads the
 active or exact retained version; `workspace_verification_keys(name)` reads all versions.
 `get_or_create_workspace_key(name, conn=None)` is for initialization/mutation boundaries;
 read-only tools must use the read methods. `rotate_workspace_key(name)` atomically retires
@@ -489,7 +585,8 @@ are documented above and domain records are typed. Future feature owners must re
 specific typed output additions from core rather than hand-editing generated JSON.
 Dependencies are uv-locked. MCP uses its SDK; Muse imports its curl/Noise dependencies
 lazily. See `THIRD_PARTY_NOTICES.md` for their licenses and native components. B10 adds
-no dependency.
+no dependency. `yt-dlp==2026.8.19` is the optional `remote` extra and a dev-group pin,
+imported lazily by `remote_media.py`. Playwright is not a dependency.
 
 ## Feature seam and core change requests
 
@@ -543,6 +640,14 @@ An optional backend or page type reports its own row named `<declared tool>.<bac
 `metamuse_collect.browser_post`. Backend rows follow the fifteen tool rows in name order.
 A missing browser, extra or login therefore never marks the tool's local function
 unavailable (SPEC §2: missing Muse or browser does not block local features).
+Collect reports `metamuse_collect.remote_media` for the optional yt-dlp extra. Its
+environment is `missing_dependency` without the pinned import and `ready` when
+`yt-dlp==2026.8.19` imports. Permission is `not_configured` while the workspace
+is offline or `remote_media.approvals` is empty, and `granted_scope` when the
+workspace is live and an approval is configured. Each collection still needs
+its own `collect.remote` permit at submit. The capability row is not that permit.
+An approval may set optional `auth_ref` (`auth_` and 32 hex digits). That field
+is configuration only. `CollectRequest` has no `auth_ref`.
 Hooks never make network calls. Use the idempotent `register_operations` example above;
 operation names must be unique and preserve side-effect/recovery semantics on restart.
 
@@ -663,7 +768,7 @@ B08 owns verification and atomic consumption on the verifier's supplied connecti
 adds no competing permit API. New scope/expiry/use budgets require a new human grant.
 Ready object reads/inserts verify SHA-256; put_object can repair a corrupt occupant only
 with newly measured/hash-verified bytes and rejects a conflicting MIME classification.
-Failed backups remove only their newly created partial destination. Schema is 4;
+Failed backups remove only their newly created partial destination. Schema is 5;
 001 and 002 are amended pre-release. Canonical v1 workspaces upgrade through 002;
 older development workspaces missing amendments in 001 must be recreated.
 Core still owns all migrations and generated schemas.
@@ -760,15 +865,281 @@ and use the identical target/payload in PermitUse and external_action_verifier. 
 callbacks cannot register the same operation with different implementations: coordinate
 that dispatcher with core. Do not accept account labels/digests/approved flags from model
 text. Register previews before returning grant errors, enforce current permit and target
-again at the step boundary, and retain B08 egress/retry rules. This base has no remote
-collector; every grant-requiring route here is covered by Muse open/send/read registration.
+again at the step boundary, and retain B08 egress/retry rules. `collect.register_operations`
+registers the sole dispatcher with `CollectRequest`; `_remote_route` selects the fixed
+`_REMOTE_APPROVAL_ROUTES` table. Today `collect.remote_media` calls
+`remote_media.preview_remote_media`, using `prepare_remote_media` at all three boundaries.
+B13 adds its route to that selector/table rather than registering another callback.
+
+B12's target binds the whole canonical configured approval table (extractor key,
+normalized sorted hosts and opaque auth_ref or null), including all possible hop
+entries. Any edit requires a fresh preview before consumption/egress. Preparation
+checks binding metadata only; the step resolves/parses all bound secrets before use.
+Exact request receipts, including the grant ID, replay before permit verification.
+Workspace caps stay outside target and job identity, enter the approval digest payload,
+and are checkpointed exactly as reviewed at acceptance. Execution applies min(snapshot, current). Request limits remain bound
+and are checked against current workspace limits. Preparation bounds URL UTF-8 bytes
+at 8192 and checks cheap syntax before redaction, display or digest. The resulting
+ASCII canonical URL must also fit the same outbound bound.
+
+B12 computes one ASCII-only canonical URL: lower-case scheme and
+IDNA2003/punycode host, non-default port only, UTF-8 percent-encoded non-ASCII path/query.
+Decode unreserved escapes, upper-case remaining escapes, and pre-encode ASCII outside
+the pinned yt-dlp/curl_cffi safe-set intersection. Only m.facebook.com maps to www;
+host approval checks www. Refuse IDNA deviation characters ß/ς and mapped trailing dots.
+The digest, preview, request echo and operator stderr bind that string. The extractor
+receives exactly the displayed URL. The transport sends exactly each URL the checker
+approved, without requoting or dot-segment removal (quote=False, PATH_AS_IS and an explicit
+REQUEST_TARGET, preserving escape hex case too). Extractors
+may derive further requests, e.g. FacebookReel watch URLs, added query parameters or
+API endpoints; each is checked against bound approval entries before any dial. Wire
+tests prove that the first page request bytes equal the display for the fixture
+extractor and FacebookIE watch, video and story URLs. The job request and original_url
+provenance retain the original input. Refuse fragments (even empty #), shared url_token
+query keys, invalid escapes, dot segments (including escapes and parameters), duplicate
+canonical query keys and structural redaction, with fixed E_INPUT_INVALID, no preview
+or URL echo. At preview and before extraction, assert the pinned-library fixed point:
+display == requote_uri(normalize_url(display)); drift fails closed. Signed extractor-hop
+URLs retain existing redaction; credential-bearing page URLs are outside B12 inputs. All four displayed workspace caps enter the action digest
+payload; a pre-submission edit requires new approval. At execution, rebuild the digest
+from the reviewed acceptance snapshot and enforce min(snapshot, current caps).
 
 AppContext.worker_status is an optional process-owned callback installed by MCP startup.
 Shared wrappers replace worker availability fields with attached-worker truth there;
 CLI contexts use the existing Linux FLOCK observation. No feature sets this callback.
 
-The shared Store serializes short connection contexts with a per-instance threading
-RLock. MCP tool threads and its attached Executor use the same Store instance; this
-prevents their own WAL/configuration/writer contention. Network waits never hold that
-lock or a transaction. Cross-process ownership still uses existing maintenance/worker
-OS locks and SQLite; this introduces no scheduler, store or migration.
+Each Store serializes connection contexts with its own threading RLock. The attached
+worker constructs a sibling Store inside its thread, retaining the workspace paths,
+clock, migration map and schema version, with independent connection serialization.
+Its construction is an unclaimed retry too. MCP tools keep ctx.store: their WAL reads
+do not queue behind worker SQLite writer waits. Writers contend in SQLite, as across
+processes; the database, maintenance/worker locks and scheduler remain shared.
+Builtin operation handlers use the step Store. The lazy fixture Muse gateway uses
+that same worker Store. An explicitly injected fixture gateway retains its supplied
+Store and mutable fixture state; its database access is read-only. Credentials use
+the secret store, and the resolver does DNS; neither uses the workspace database.
+Network waits never hold a connection lock or transaction.
+
+## B09 standard transport trust (schema 5)
+
+Unreleased migration `005_muse_trust.sql` is amended in place again for round 3;
+there is no 006. Public models/contracts do not change. The upstream is fixed by
+`MUSE_ORIGIN`/`HATCH_WSS_BASE`, so one trust domain and one `muse-trust-domain.lock`
+cover every provider/account label in the workspace. Those labels identify frozen
+connection bindings, never separate security expectations.
+
+`muse_trust_accounts` retains `(provider, account)` currentness: authenticated
+viewer/session hashes, active selection, generation and an inherited sticky flag.
+`muse_trust_vms` retains label-bound selection provenance. `muse_trust_observations`
+is the label-independent record keyed by `(viewer_hash, normalized vm_id)`; an empty
+VM id represents owner-only evidence. No cookies, auth_ref, tokens or raw keys are stored.
+VM storage IDs are ASCII, trimmed and lowercase; the exact server ID on the wire may
+differ only in case and surrounding whitespace.
+
+Every observed owner↔VM association forms an edge. The recursive
+`muse_trust_confidential` view computes the closure of confidential seeds across all
+labels and observations. A confidential owner raises all observed VMs; a confidential
+VM raises every observed owner, transitively. New rows inherit that effective flag;
+standard never clears it. The 21 named SQL guards retain identities, refuse replacement,
+upsert/rowid reuse, downgrade and zero rows beside a required identity, and propagate
+account, VM and observation flags set-wise. Three explicit indexes support owner/VM
+lookups. `muse_trust_propagating` is a transaction-local recursion barrier, always empty
+at commit; Store boundaries refuse a committed barrier row. A component above 1000 rows
+records without per-row trigger recursion or a confidentiality-recording identity cap.
+
+`Store.muse_freeze(...)` commits every authenticated confidential hint for its observed
+owner and all usable VM IDs **before** any owner binding/status/selection refusal.
+The existing label cannot be rebound silently. A hint with no usable ID records its owner.
+Standard freeze captures one session/selection generation and retains the association.
+`muse_record_confidential(snapshot)` commits Noise-authenticated RV evidence for the
+snapshot's remote owner/VM without checking its label or generation CAS. Even stale or
+changed bindings cannot discard an observation. Unsupported/malformed RV state, fields
+or chip binding still become permanent confidential expectations before refusal.
+Write failure stops before msg3 and says confidentiality could not be recorded.
+
+`muse_assert_current` computes the effective requirement in the same transaction as
+currentness. Confidentiality is E_PROTOCOL_MISMATCH / never before generation checks.
+A stale snapshot/binding is E_STORAGE / never with a fresh-connection retry action.
+`muse_standard_handoff` checks the same state and commits provenance/CAS before empty
+msg3. Trust-domain and per-account locks span handoff; maintenance.lock and the SQLite
+transaction are released before network I/O. Every call rechecks durable state, including
+cross-process writers. After commit, a new confidential account/VM/observation row or
+any 0→1 flag transition (including inherited edges and trigger propagation) notifies
+all live workspace listeners and immediately closes their sockets. A failing listener
+does not stop the others; after all callbacks run, the writer reports
+`Muse security state internal failure` chained from the first exception, with the
+write already committed. A non-direct freeze counts actual confidential SQL writes, including trigger writes, independently of its
+label's binding changes. A no-op freeze does not broadcast; selection-only changes
+notify their own label. On its next call an unaffected, invalidated transport first
+passes the durable recheck, then reconnects through the full bootstrap and handshake
+before any application frame. Immediately after freeze returns, the transport clears
+invalidation and registers `muse_watch`, before mint, wake or opening a socket. The
+registry de-duplicates each bound callback per workspace/label key. Any subsequent
+workspace-confidential or own-label notification that wins before application handoff
+forces a fresh connect in the same call before its first application frame; the transport rechecks invalidation after
+publishing the loop and the final durable assertion. At most three connects per call
+are allowed. The transport tracks an owned candidate from connector return through
+handshake to promotion or actual closure; notifications close it even during a blocked
+msg2 read. A notification before candidate registration closes the returned link before
+handshake use; connector-owned sockets cannot be cancelled before `connect()` returns. Callbacks
+take no transport lock, and cleanup only releases its own attempt. Expected candidate
+closure rechecks the old snapshot before fresh bootstrap; durable refusals and real
+verification/storage failures stop with their original classification and no new requests.
+Exhaustion returns E_NETWORK_TIMEOUT / safe_read, `Muse connection failed`,
+with action `Retry the connection. No gateway request frame was sent.` A mutation
+reports never-sent through `MuseNotSubmitted` or a chat.stream `failed_before_send`
+attempt. An affected context stops before HTTPS or WSS. An
+in-flight interruption retains normal read failure or mutation uncertainty handling;
+no notification replays a mutation. The documented human closure repair runs after
+stopping Muse connections, so it has no live listeners to notify.
+
+`muse_application_handoff(snapshot, handoff)` uses the same trust-domain/account locks
+to check the old snapshot and serialize the first application send against trust writes
+and their notifications. Unlike `muse_standard_handoff`, it does not write msg3
+provenance or repeat its CAS bookkeeping. Its check transaction commits and
+`maintenance.lock` is released before the callback; both trust locks remain held until
+the callback completes. The callback checks invalidation and calls `open_request`/send;
+it must not recursively perform trust writes. Response collection runs after release.
+Callback exceptions, including SendUncertain and protocol failures, are re-raised outside
+the storage error wrapper with their original identity. StoreMuseTrust exposes this as
+`application_handoff`.
+
+If a notification wins before handoff, the old durable snapshot decides refusal before
+any new bootstrap. A current, invalidated socket reconnects in the same call, sharing
+the existing three-attempt budget with handshake recovery and consuming authorization
+once. True pre-send refusal returns MuseNotSubmitted/session.start or
+FAILED_BEFORE_SEND/chat.stream. If handoff wins the boundary first, a later notification
+is an in-flight close and never replays the action; it cannot cancel already handed-off
+bytes. Invalidation callbacks take no transport lock.
+The curl pipe separates cancellation from handle cleanup: its connector thread caches an
+owned duplicate of the active socket without changing native flags or timeout settings
+(including nonblocking mode). Notifications shut that socket down without any
+concurrent curl API call or wait for the active operation. Native send/receive/cleanup are
+serialized; an active operation cleans up after unwinding, while idle cleanup may safely
+transfer threads. Cleanup is claimed once and releases the duplicate without sending a
+close frame. Descriptor reuse cannot redirect cancellation. Earlier accepted bytes keep
+in-flight uncertainty and are never replayed; connector-owned sockets remain outside the
+cancellation guarantee until connect returns.
+
+Canonical schema verification is cached per Store trust boundary; every boundary checks
+the actual schema signature for changed guards. Integrity/schema failures block with
+E_STORAGE and advise repair or a verified restore. Fresh-v5, v4→v5 and backup/restore
+checks cover the amended observations and guards. Older development-v5 schemas are
+noncanonical and have no implicit upgrade. Rollback restores a verified v4 backup into
+a fresh workspace. **Restoring an older backup, including v4 rollback, discards
+confidential expectations recorded after that backup.** No in-place reset tool exists.
+
+2026-10-14 round 4: an authenticated hint bind inserts its transaction-local barrier, bulk-inserts all observation and label VM rows, materializes the recursive closure once, updates the three tables set-wise, removes the barrier and commits. There is no per-id closure or recording cap. A separate small transaction checks the label after this independent evidence commit. Raw-SQL propagation and inherit guards remain active outside that batch.
+
+
+Round 4 storage mapping: SQLITE_BUSY/LOCKED past busy_timeout returns E_STORAGE / safe_read, “Muse security state is busy; retry”. READONLY identifies a read-only workspace and FULL a full disk, both user_action. Recording failures retain “Muse confidentiality could not be recorded” with the same fixed environment guidance, and stop before msg3. Integrity/schema failures alone advise verified restore with the later-expectations loss warning.
+
+A committed muse_trust_propagating marker is always invalid and has a specific E_STORAGE message. Safe human repair, after stopping Muse connections: acquire exclusive maintenance.lock, BEGIN IMMEDIATE, retain the barrier, rerun the recursive owner/VM closure and the three set-wise flag updates across the whole workspace, DELETE the marker, then COMMIT. This retains every observation and expectation; no restore is needed. There is no automatic repair/reset command.
+
+HTTP 200 session: status=unavailable或完全沒有identity key回resource；alias-only vmid回protocol；其他非assigned status（含missing/type/case drift）回protocol/never。non-object response action標session/hatch/auth path。
+
+
+
+Round 4 amends unreleased migration 005 again, with no 006: muse_trust_accounts now checks lower-case hexadecimal viewer/session hashes and normalized nonempty active VM ids, or NULL only with confidentiality set. The same constraints are verified on fresh v5, v4→v5 and confidential backup→restore. Noncanonical development v5 databases still fail schema verification.
+
+Round 4 provenance design: source and observed_at are frozen once an observation or label VM row has confidential_required=1, including later direct evidence. A direct hint/RV may stamp a prior cr=0 observation during its transition to 1; a standard freeze never restamps a cr=1 row. Inherited propagation retains the association’s prior provenance, rather than claiming direct CVM evidence. Existing immutable guards enforce this metadata rule; no first-cause column is needed because nothing overwrites confidential provenance.
+
+
+Session and selected-row keys whose compact form is `vmid` must all be valid and
+normalize to one VM identity, independently of key order. Name, endpoint and the
+persistent trust key use that identity. The exact server `vm_id` may be retained
+on the wire only after that agreement check (case and surrounding whitespace
+are the only permitted differences). A confidential hint records every usable
+identity alias before any disagreement is refused, before mint, wake or dial.
+
+Effective Muse trust and SQL inherit guards seed a recursive component at the
+requested owner and VM. Every traversal uses indexed owner/VM edges, including
+active selections, historical label VMs and label-independent observations.
+All six AFTER propagation triggers and the bulk bind seed the same indexed
+component recursion from the new remote owner/VM. Bulk bind materializes that
+component once after inserting all observations, under the transaction barrier.
+Small confidential writes and unrelated standard handoffs do not enumerate other
+components. Only explicit human barrier repair computes the whole-workspace closure.
+Raw-SQL inherit/retention/monotonic guards remain. Unreleased migration 005 is
+amended in place again; no 006. Fresh v5, v4→v5 and backup/restore use this schema.
+
+Muse trust failures classify SQLite primary codes (including extended codes):
+IOERR/CANTOPEN/PERM/NOLFS/READONLY/FULL are environment/user_action;
+BUSY/LOCKED/PROTOCOL/NOMEM/INTERRUPT are transient/safe_read;
+CORRUPT/NOTADB/SCHEMA/CONSTRAINT and invalid stored types are damage/never.
+Unclassified codes and Python exceptions return a fixed internal failure and
+report action, without restore or permissions advice. Recording retains its
+honest failure prefix and the underlying guidance. A committed barrier uses
+closure-only human repair. Unreleased 005 enforces integer generation/flags,
+text identities/hashes and nonempty text timestamps, also on upgrade and restore.
+
+Hint matching walks every object/list to depth 32. A normalized component that
+starts with cvm or contains confidential is a marker. Marker keys count only
+with truthy values (excluding false/0/null/empty values and compact false/no/0/none).
+String marker values count regardless of key, except opaque credential strings
+and strings in lists directly under sensitive keys. Objects under sensitive keys
+are still walked, including their keys and values under non-sensitive keys.
+This retains hatch_cvm, hatchCvm, CVM_RUNNING, cvm1, confidential, negated
+non-confidential/nonconfidential/not cvm/no-cvm, full-width, compatibility and
+ignorable-separated forms. C V M, c_v_m, c-vm and hatchcvm/HATCHCVM no longer match.
+It avoids cross-word Public VM/basic vm and opaque xQ7cVm2R false positives.
+Evidence records the union of every enclosing identity-bearing object's usable
+VM ids, including the session and selected row. If the innermost scope is the
+session or no scope exists, persist owner evidence and all usable body ids.
+Duplicate JSON pairs are retained for this scan, including every identity value;
+record evidence first, then refuse any duplicate key at any depth. All Muse HTTPS
+JSON bodies require strict UTF-8, reject leading U+FEFF, and pass the depth check
+before parsing; UTF-16/32 and malformed UTF-8 record nothing. Alias-only vmid in
+the session or selected row is protocol drift, before unavailable checks. Only
+no identity key at all, or status=unavailable, remains resource unavailable.
+Every observation commits before refusal even on owner mismatch or invalid selection.
+False positives permanently refuse the connected standard tier, with no reset tool;
+this intentionally errs toward confidentiality.
+
+Owned Muse redaction scans key+separator occurrences once, inspecting a value
+only for sensitive keys and resuming after it. Unquoted values stop at quotes;
+JSON-text pairs embedded in plain text, including Unicode-escaped keys, are covered.
+Quoted keys scan plain runs between escapes. Classification caches retain only keys
+of at most 256 characters, so large authenticated keys cannot accumulate across connections. Authorization consumes a whole
+run on failure and redacts scheme-less and scheme-plus-credential values. Every
+codec-hidden value must also be hidden by text/body sanitization (seeded 5,000-case
+compositions). Known raw and twice-decoded percent-coordinate spans are unioned,
+merged, and rendered with one join; bodies are never truncated before redaction.
+CPU doubling tests cover k:, k=>, a=1;, k:v|, ;p=1 and authorization:, raw and in
+JSON string wrappers, 128 KiB–1 MiB, for owned scanning and public text/body paths.
+The B16a integration carries the linear core scanner and converts the five
+inherited core-growth xfails into ordinary tests, at the standard 128 KiB, 256 KiB,
+512 KiB and 1 MiB sizes. Each size retains three CPU samples and two calls per
+sample (the existing authorization family retains four calls). The slope limit
+remains 1.25, the endpoint ratio limit remains 12, and the 1 MiB CPU ceiling
+remains 12 s for the adversarial Muse grammars. The bare-cookie AT-042 regression
+is also an ordinary passing test. Focused measurements do not certify the full
+integrated application or replace exact-source hosted integration gates.
+
+`approval_failure` preserves the original error when a preview callback raises a
+CoreError or any other Exception. Unexpected exceptions are contained and log only
+`Approval preview callback failed (TYPE)`, without exception text or a traceback.
+No preview or operation side effect is produced by this fallback.
+
+
+### Retiring a transcript cue (B12 / FR-006 / AT-045)
+
+Migration `006_transcript_removal.sql` upgrades schema 5 to 6 after the Muse
+trust migration `005_muse_trust.sql`, preserving its tables and guards.
+
+TranscriptSegment.removed defaults to false. A producer retires an observed cue
+by appending the same id/project at a later revision with removed=true, text="",
+and its prior timing, language and method. Use the same transaction as replacement
+cues and the new source observation. Store.insert refuses missing prior rows,
+out-of-order/removal-at-1, text-bearing removals or double removals with
+E_REFERENCE_INVALID; its existing revision>1 rule marks citing packets/drafts
+stale in that transaction. Never UPDATE or REPLACE historical segments.
+A reappearance appends a normal text-bearing row with the same ID.
+
+Schema migration adds a checked default-0 removed column without rebuilding the
+table or changing append-only triggers/indexes. Search/current listings exclude
+latest removals. Evidence resolution, packet prepare and exports refuse a removal
+revision with E_REFERENCE_INVALID and the last text-bearing revision number, with
+no text; explicit older text-bearing refs still resolve stale=true. Raw Store.get
+remains an internal revision reader so producers/audits can inspect removals.
+A listing omission alone is not a removal (B18).

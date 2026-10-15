@@ -87,6 +87,9 @@ def approval_failure(ctx: AppContext, request: m.Model, error: m.CoreError) -> m
                 preview = approval_preview(ctx, operation, request.model_dump(mode="python"))
             except m.CoreError as refusal:
                 return m.failure(refusal)
+            except Exception as exc:
+                ctx.logger.warning("Approval preview callback failed (%s)", type(exc).__name__)
+                return m.failure(error)
             return m.Envelope(
                 status="error",
                 error=error.detail.model_copy(update={"next_action": preview.next_action}),
@@ -488,6 +491,12 @@ def _hostname(value: str) -> str:
         _url_error()
     literal = _literal_ip(host)
     return str(literal) if literal is not None else host
+
+
+def normalize_hostname(value: str) -> str:
+    """IDNA A-label. One trailing dot is stripped. A second trailing dot is refused."""
+
+    return _hostname(value)
 
 
 def _public_ip(address: _IP, *, fixture_loopback: bool = False) -> bool:

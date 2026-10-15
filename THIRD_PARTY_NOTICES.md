@@ -76,7 +76,7 @@ SOFTWARE.
 | Name | Pin / commit | License | Status |
 |---|---|---|---|
 | nikships/muse-cli | `ebcb6310432ad2d39927bcb59e686330b0538310` (2026-10-03) | MIT. `Copyright (c) 2026 Nik Ships`. Full notice above. | Adopted in spikes/. See the file table above. |
-| tlyu0419/facebook_crawler | `82ec3ec46aa0a324252bbb6274b57cbf29c27e6e` (2025-02-16) | MIT. `Copyright (c) 2021 tlyu0419`. File `LICENSE`. | Not adopted. Patterns for post paging and post fields are recorded for B13. No source copied. |
+| tlyu0419/facebook_crawler | `82ec3ec46aa0a324252bbb6274b57cbf29c27e6e` (2025-02-16) | MIT. `Copyright (c) 2021 tlyu0419`. File `LICENSE`. | Post field checklist (`paser.py` `_parse_edge`) referenced in `src/metamuse/facebook.py`. Full MIT notice included below. No crawler loop or source copied. |
 | boo283/Facebook_comment_crawler | `7900f75e03345e918680296b3f703cfb531c19f1` (2024-10-30) | No LICENSE file found. | Not adopted. No copy and no mechanical translation. |
 | Hao0321/claude-skill-social-post | `e0720ed234085d9d41074735b409f2c17aaa3888` (2026-10-03) | MIT. `Copyright (c) 2026 Hao0321 contributors`. File `LICENSE`. | Not adopted. Revision, explicit approval, and snapshot patterns are recorded. Voice, formulas, and governance files are out of scope. |
 | castle_fb_crawl | not available | private | Not adopted. Experience only, nothing imported. |
@@ -85,8 +85,8 @@ SOFTWARE.
 | platformdirs | 4.13.0 | MIT | Adopted as a runtime dependency. See the Python package dependencies table below. |
 | mcp (official Python SDK) | 2.3.0 | MIT | Adopted as a runtime dependency. See the Python package dependencies table below. Speaks protocol revisions `2024-11-05` through `2026-07-28`. |
 | pydantic, as required by mcp | `>=2.12` (satisfied by 2.14.1) | MIT | Satisfied by the pydantic pin above. |
-| yt-dlp | 2026.8.19 | Unlicense | Planned. Not imported here. |
-| playwright | 1.63.0 | Apache-2.0 | Planned. Browser binaries are an operator install, not part of this repo. |
+| yt-dlp | 2026.8.19 (imported version `2026.08.19`) | Unlicense | Adopted as the optional extra `remote` and a dev-group pin. Imported lazily by `src/metamuse/remote_media.py`. Not vendored. |
+| playwright | 1.63.0 | Apache-2.0 | Adopted as optional extra (`facebook`) and dev dependency. Imported lazily by `src/metamuse/facebook.py`. Browser binaries are an operator install, not part of this repo. |
 | ffmpeg | external binary; this machine has 8.0.1-3ubuntu2, configured `--enable-gpl` and `--enable-libx264` | LGPL-2.1-or-later, or GPL-2.0-or-later when GPL parts are enabled (this binary) | Not bundled. Operator-installed executable only. |
 | noiseprotocol | 0.3.1 | MIT. `Copyright (c) 2017 Piotr Lizończyk`. Full notice above. | Adopted. Imported by `src/metamuse/_muse_noise.py` and `spikes/muse/handshake.py`. Not vendored. |
 | cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause. Wheel `LICENSE` offers either `LICENSE.APACHE` or `LICENSE.BSD`. | Runtime transitive of `noiseprotocol` and `curl_cffi`. The installed wheel reports `OpenSSL 4.0.3 29 Sep 2026` (OpenSSL 3+ is Apache-2.0). Not vendored. |
@@ -153,13 +153,45 @@ Runtime dependencies:
 | starlette | 1.8.0 | BSD-3-Clause | ASGI framework (`mcp` and `sse-starlette` dependency). |
 | truststore | 0.10.5 | MIT | OS trust store certificate verification (`httpcore2` and `httpx2` dependency). |
 | uvicorn | 0.54.0 | BSD-3-Clause | ASGI server implementation (`mcp` dependency). |
+| yt-dlp | 2026.8.19 | Unlicense | Optional extra `remote`. Python API only. Lazy import from `remote_media.py`. |
+| playwright | 1.63.0 | Apache-2.0 | Optional `facebook` extra and dev dependency for bounded single-post Facebook browser collection (`src/metamuse/facebook.py`, imported lazily). Browser binaries are installed separately by the operator. |
+| pyee | 13.0.1 | MIT | Event emitter library (`playwright` dependency). |
+| greenlet | 3.5.6 | MIT AND PSF-2.0 | Lightweight in-process concurrent programming (`playwright` sync API dependency). |
+
+## tlyu0419/facebook_crawler
+
+Commit `82ec3ec46aa0a324252bbb6274b57cbf29c27e6e` (2025-02-16), upstream path `paser.py` (`_parse_edge`). No crawler loop or HTTP code was copied; `src/metamuse/facebook.py` references the post field checklist (`actor`, `creation_time`, message text, post id, permalink, reaction/comment/share counts, attachment URLs) under the MIT license:
+
+```text
+MIT License
+
+Copyright (c) 2021 tlyu0419
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
 
 Development dependencies (not runtime requirements): pytest 9.1.1 (MIT), ruff 0.17.0
-(MIT), jsonschema 4.26.0 (MIT). These provide the requested test runner, lint/format
-checks and independent schema validation. Transitive dev packages: attrs 26.1.0 (MIT),
+(MIT), jsonschema 4.26.0 (MIT), playwright 1.63.0 (Apache-2.0; also optional `facebook` extra). These provide the requested test runner, lint/format
+checks, independent schema validation, and local synthetic browser integration tests. Transitive dev packages: attrs 26.1.0 (MIT),
 iniconfig 2.3.1 (MIT), pluggy 1.6.0 (MIT), jsonschema-specifications 2025.9.1 (MIT),
 referencing 0.37.0 (MIT), rpds-py 2026.9.1 (MIT), packaging 26.3 (Apache-2.0 OR
-BSD-2-Clause), Pygments 2.21.0 (BSD-2-Clause).
+BSD-2-Clause), Pygments 2.21.0 (BSD-2-Clause), pyee 13.0.1 (MIT), greenlet 3.5.6 (MIT AND PSF-2.0).
 
 Licenses/versions above were read from the installed distributions' primary METADATA,
 not inferred from repository names. Hatchling 1.32.4 is the observed isolated build backend
@@ -180,3 +212,35 @@ The standalone capture script uses Pillow 12.1.1 (MIT-CMU), an existing pinned s
 dependency, for X11 framebuffer capture and lossless PNG encoding. Pillow is not
 vendored or added to the product's runtime or development dependency groups.
 Its mature image functions avoid writing a separate capture or PNG encoder.
+
+## yt-dlp Unlicense
+
+The text below is copied from `yt_dlp-2026.8.19.dist-info/licenses/LICENSE` in the
+installed wheel. It is the Unlicense dedication shipped with `yt-dlp==2026.8.19`.
+
+```
+This is free and unencumbered software released into the public domain.
+
+Anyone is free to copy, modify, publish, use, compile, sell, or
+distribute this software, either in source code form or as a compiled
+binary, for any purpose, commercial or non-commercial, and by any
+means.
+
+In jurisdictions that recognize copyright laws, the author or authors
+of this software dedicate any and all copyright interest in the
+software to the public domain. We make this dedication for the benefit
+of the public at large and to the detriment of our heirs and
+successors. We intend this dedication to be an overt act of
+relinquishment in perpetuity of all present and future rights to this
+software under copyright law.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+For more information, please refer to <http://unlicense.org/>
+```

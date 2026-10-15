@@ -1,0 +1,1614 @@
+[
+  {
+    "markup": ");</script></body>",
+    "origins": [
+      "test_r7_h5_precedence.py:literal"
+    ]
+  },
+  {
+    "markup": ");};</script></body>",
+    "origins": [
+      "test_r7_h5_precedence.py:literal"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html>",
+    "origins": [
+      "test_r7_h2b_variants.py:literal",
+      "test_r7_h2c_paint.py:literal"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><details><summary>s</summary><div data-comments-exhausted=\"true\">x</div></details></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><div aria-hidden=\"true\" data-comments-exhausted=\"true\"></div></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:ARIA"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><div hidden=\"until-found\" data-comments-exhausted=\"true\">x</div></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><div style=\"content-visibility:hidden\"><div data-comments-exhausted=\"true\">x</div></div></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><div style=\"display:none\"><noscript></div></noscript><div data-comments-exhausted=\"true\"></div></div></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><div style=\"opacity:0\" data-comments-exhausted=\"true\">x</div></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><div style=\"position:absolute;left:-99999px\" data-comments-exhausted=\"true\">x</div></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><div style=\"visibility:hidden\"><svg><input></input></svg><div data-comments-exhausted=\"true\"></div></div></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><div><template shadowrootmode=\"open\"></template><div data-comments-exhausted=\"true\">x</div></div></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><template><div data-comments-exhausted=\"true\">x</div></template></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><div style=\"display:none\"><math><mtext></div></mtext></math><div data-comments-exhausted=\"true\"></div></div></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><div style=\"display:none\"><svg><desc></div></desc></svg><div data-comments-exhausted=\"true\"></div></div></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><iframe src=\"about:blank\"><div data-comments-exhausted=\"true\">IFRAME_INNER</div></iframe></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><iframe srcdoc=\"<div data-comments-exhausted='true'>SRCDOC</div>\"></iframe></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><math><noscript><article data-fb-role=\"comment\" data-comment-id=\"c_break\"><div data-fb-role=\"comment-body\">M_BREAKOUT</div></article></noscript></math></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><noembed><div data-comments-exhausted=\"true\">NOEMBED</div></noembed></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><noscript><noscript><div data-comments-exhausted=\"true\"></div></noscript><div data-comments-exhausted=\"true\"></div></noscript></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><plaintext><div data-comments-exhausted=\"true\"></div></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><svg><foreignObject><div style=\"display:none\"></svg><div data-comments-exhausted=\"true\"></div></div></foreignObject></svg></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><svg><noscript><div data-comments-exhausted=\"true\">BREAKOUT</div></noscript></svg></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><textarea><div data-comments-exhausted=\"true\">TEXTAREA</div></textarea></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><xmp><article data-fb-role=\"comment\" data-comment-id=\"fake_xmp\"><div data-fb-role=\"comment-body\">XMP_FAKE</div></article><div data-comments-exhausted=\"true\"></div></xmp></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\" aria-hidden=\"true\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:ARIA"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\"><noscript><span data-metamuse-display-none><span></noscript>PAINTED TEXT</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">FABRICATED BY PAGE SCRIPT</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h1_forgery.py:FAKE"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <math><details><mtext>MATH_DETAILS_PAINTED</mtext></details></math></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span aria-hidden=\" TRUE \"> PAINTED</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:ARIA"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span aria-hidden=\"true\"> PAINTED</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:ARIA"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span hidden style=\"display:inline\"> PAINTED</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h3b_hidden_attr.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span style=\"visibility:hidden\"><b style=\"visibility:visible\"><bgsound></b> HIDDEN-TEXT</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span style=\"visibility:hidden\"><svg><input></input></svg> HIDDEN-TEXT</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span><template shadowrootmode=\"open\">SHADOW-PAINTED</template></span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><form id=\"checkpoint_Form\"><input name=\"localName\"></form></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_dom_clobbering_isolated_world"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><form id=\"login_form\"><input name=\"attributes\"></form></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_dom_clobbering_isolated_world"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><form id=\"login_form\"><input name=\"nodeType\"></form></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_dom_clobbering_isolated_world"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><form name=\"createRange\"></form></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_dom_clobbering_isolated_world"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><form><input name=\"checkVisibility\"></form></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_dom_clobbering_isolated_world"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><form><input name=\"childNodes\"><i data-page-state=\"login_wall\"></i></form></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_dom_clobbering_isolated_world"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><img name=\"contentType\"></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_dom_clobbering_isolated_world"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><math><template><mi>x</mi></template></math></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><svg><noscript><g data-page-state=\"login_wall\"></g></noscript></svg></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><svg><slot></slot></svg></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><svg><template><text>T</text></template></svg></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_foreign_and_rawtext_differentials"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><form><input name=\"childNodes\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">PAINTED_IN_FORM</div></article></form></section></body></html>",
+    "origins": [
+      "test_r8_deep_attacks.py:test_dom_clobbering_isolated_world"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><noscript><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"fake1\"><div data-fb-role=\"comment-body\">NEVER PAINTED</div></article><div data-comments-exhausted=\"true\"></div></noscript></section></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">ONE</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c2\" aria-hidden=\"true\"><div data-fb-role=\"comment-body\">TWO</div></article></section></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:ARIA"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">ONE</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c2\" hidden style=\"display:block\"><div data-fb-role=\"comment-body\">TWO</div></article></section></body></html>",
+    "origins": [
+      "test_r7_h3b_hidden_attr.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><div style=\"display:none\"><bgsound></div><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT</div></article></section></body></html>",
+    "origins": [
+      "test_r7_h2_static.py:CASES"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"2\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">ONE</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c2\" aria-hidden=\"true\"><div data-fb-role=\"comment-body\">TWO</div></article></section></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:ARIA"
+    ]
+  },
+  {
+    "markup": "<!DOCTYPE html><html><body><script type=\"application/json\" data-fb-post-payload=\"\">",
+    "origins": [
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": "</article></form></section>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "</article></section>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "</body>",
+    "origins": [
+      "test_r6f1_rerun.py:literal",
+      "test_r7_h1_forgery.py:literal",
+      "test_r7_h1b_ce.py:literal",
+      "test_r7_h1c_isolated.py:literal",
+      "test_r7_h1d_signature.py:literal",
+      "test_r7_h2_static.py:literal",
+      "test_r7_h2b_variants.py:literal",
+      "test_r7_h2c_paint.py:literal",
+      "test_r7_h4_workers.py:literal",
+      "test_r7_h5_precedence.py:literal",
+      "test_r8_deep_attacks.py:literal",
+      "test_r8_deep_attacks_2.py:literal",
+      "test_r8_deep_attacks_3.py:literal",
+      "test_r8_reviewer_kills.py:literal"
+    ]
+  },
+  {
+    "markup": "</button>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "</button></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "</div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "</noscript>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "</script></body>",
+    "origins": [
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": "</script></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": "<article role=\"article\" data-fb-role=\"comment\"",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_hidden\" style=\"visibility:hidden\"><span style=\"visibility:visible\"></span></article><div data-fb-role=\"comment-body\">REAL_C1_BODY</div></article>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"fake1\"><div data-fb-role=\"comment-body\">NEVER PAINTED</div></article><div data-comments-exhausted=\"true\"></div>",
+    "origins": [
+      "test_r7_h2_static.py:FAKE_COMMENT",
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-comment-count=\"0\" style=\"visibility:hidden\"><span style=\"visibility:visible\"></span></article>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<body>",
+    "origins": [
+      "test_r7_h1_forgery.py:literal",
+      "test_r7_h1c_isolated.py:literal",
+      "test_r7_h1d_signature.py:literal",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<br>",
+    "origins": [
+      "test_r8_reviewer_kills.py:literal"
+    ]
+  },
+  {
+    "markup": "<button ",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<button data-expand-id=\"more\" data-expand-kind=\"more_comments\" id=\"first-btn\">First</button><button ",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<details><summary>s</summary><div data-comments-exhausted=\"true\">x</div></details></body>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<details><summary>s</summary><div id=\"t\">x</div></details>",
+    "origins": [
+      "test_r7_h2c_paint.py:CASES",
+      "test_r7_h2c_paint.py:literal"
+    ]
+  },
+  {
+    "markup": "<dialog open><span>TEXT</span></dialog>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<dialog><span>TEXT</span></dialog>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div aria-hidden=\"true\" data-comments-exhausted=\"true\"></div></body>",
+    "origins": [
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": "<div hidden style=\"content-visibility:auto;position:absolute;top:99999px\"><span>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div hidden style=\"display:contents\"><span>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div hidden=\"until-found\" data-comments-exhausted=\"true\">x</div></body>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"behind\" style=\"width:100px;height:100px\"><button style=\"display:block;width:0;height:0;padding:0;border:0;margin:0;overflow:hidden\" ",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"btn\" data-expand-id=\"more\" data-expand-kind=\"more_comments\" style=\"display:inline-block;width:80px;height:30px\"></div>\n            <script>\n            const btn = document.getElementById('btn');\n            const root = btn.attachShadow({mode:'open'});\n            root.innerHTML = '<span style=\"display:block;width:80px;height:30px\">Shadow Label</span>';\n            btn.onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='HOST_CONTROL_CLICKED';\n              btn.remove();\n            };\n            </script></body>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"decoy\" style=\"width:120px;height:40px\">Decoy</div><script>\n            const btn = document.querySelector('button');\n            btn.onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='MOVED_AND_CLICKED';\n              btn.remove();\n            };\n            document.getElementById('decoy').onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='DECOY_CLICKED_WRONG';\n            };\n            </script></body>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"fake-done\" style=\"display:none\" data-comments-exhausted=\"true\"></div></body>",
+    "origins": [
+      "test_r7_h1_forgery.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"h2\"></div><script>document.getElementById(\"h2\").attachShadow({mode:\"closed\"}).innerHTML=\"<i data-comments-exhausted=true></i><span>CLOSED_IN_OPEN</span>\";</script></body>",
+    "origins": [
+      "test_r8_deep_attacks_3.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"overlay\" style=\"position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,0.5)\">OVERLAY</div><script>document.getElementById('overlay').onclick = () => {  document.querySelector('[data-comment-id=\"c1\"] [data-fb-role=\"comment-body\"]').textContent = 'OVERLAY_CLICKED';};</script></body>",
+    "origins": [
+      "test_r8_reviewer_kills.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"overlay\" style=\"position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.5)\"></div>\n            <script>\n            window.overlayClicked = false;\n            document.getElementById('overlay').onclick = () => {\n              window.overlayClicked = true;\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='OVERLAY_CLICKED';\n            };\n            </script></body>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"pop\" popover=\"manual\"><span>TEXT</span></div><script>document.getElementById(\"pop\").showPopover();</script>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"probe-host\">%s</div>",
+    "origins": [
+      "test_r7_h2c_paint.py:BODY",
+      "test_r7_h2c_paint.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"race-host\"></div><div id=\"hidden-exhaust\" hidden data-comments-exhausted=\"true\"></div></body>",
+    "origins": [
+      "test_r8_deep_attacks_3.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"shost\"></div><script>\n            const root = document.getElementById('shost').attachShadow({mode:'closed'});\n            root.innerHTML = '<button data-expand-id=\"more\" data-expand-kind=\"more_comments\">More</button>';\n            root.querySelector('button').onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='CLOSED_SHADOW_CLICKED';\n              root.querySelector('button').remove();\n            };\n            </script></body>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"shost\"><span style=\"display:block;width:80px;height:30px\">Slotted Label</span></div>\n            <script>\n            const host = document.getElementById('shost');\n            const root = host.attachShadow({mode:'open'});\n            root.innerHTML = '<button data-expand-id=\"more\" data-expand-kind=\"more_comments\"><slot></slot></button>';\n            root.querySelector('button').onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='SLOTTED_BUTTON_CLICKED';\n              root.querySelector('button').remove();\n            };\n            </script></body>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"t\" style=\"display:contents\"><span>x</span></div>",
+    "origins": [
+      "test_r7_h2c_paint.py:CASES",
+      "test_r7_h2c_paint.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"t\" style=\"opacity:0\">x</div>",
+    "origins": [
+      "test_r7_h2c_paint.py:CASES",
+      "test_r7_h2c_paint.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"t\" style=\"position:absolute;left:-99999px\">x</div>",
+    "origins": [
+      "test_r7_h2c_paint.py:CASES",
+      "test_r7_h2c_paint.py:literal"
+    ]
+  },
+  {
+    "markup": "<div id=\"uf-host\"></div><script>document.getElementById(\"uf-host\").attachShadow({mode:\"open\"}).innerHTML='<div hidden=\"until-found\"><span>TEXT</span></div>';</script>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div inert><span>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div popover><span>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"clip-path:circle(0)\"><span>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"color:transparent\"><span>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"content-visibility:auto;position:absolute;top:99999px\"><span hidden>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"content-visibility:hidden\"><div data-comments-exhausted=\"true\">x</div></div></body>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"content-visibility:hidden\"><div id=\"t\">x</div></div>",
+    "origins": [
+      "test_r7_h2c_paint.py:CASES",
+      "test_r7_h2c_paint.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"display:contents;visibility:hidden\"><span style=\"visibility:visible\">TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"display:contents;visibility:hidden\"><span>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"display:none\"><math><mtext></div></mtext></math><div data-comments-exhausted=\"true\"></div></div></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"display:none\"><noscript></div></noscript><div data-comments-exhausted=\"true\"></div></div></body>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"display:none\"><svg><desc></div></desc></svg><div data-comments-exhausted=\"true\"></div></div></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"font-size:0\"><span>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"opacity:0\" data-comments-exhausted=\"true\">x</div></body>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"position:absolute;left:-99999px\" data-comments-exhausted=\"true\">x</div></body>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"transform:scale(0)\"><span>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<div style=\"visibility:hidden\"><svg><input></input></svg><div data-comments-exhausted=\"true\"></div></div></body>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<div><template shadowrootmode=\"open\"></template><div data-comments-exhausted=\"true\">x</div></div></body>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<form id=\"checkpoint_Form\"><input name=\"localName\"></form></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<form id=\"login_form\"><input name=\"attributes\"></form></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<form id=\"login_form\"><input name=\"nodeType\"></form></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<form name=\"createRange\"></form></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<form><input name=\"checkVisibility\"></form></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<form><input name=\"childNodes\"><article role=\"article\" data-fb-role=\"comment\"",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<form><input name=\"childNodes\"><i data-page-state=\"login_wall\"></i></form></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<html xmlns=\"http://www.w3.org/1999/xhtml\">",
+    "origins": [
+      "test_r7_h2b_variants.py:literal",
+      "test_r7_h2c_paint.py:literal"
+    ]
+  },
+  {
+    "markup": "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><noscript><div data-comments-exhausted=\"true\">x</div></noscript></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:XHTML_CASES"
+    ]
+  },
+  {
+    "markup": "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\"><![CDATA[CDATA-PAINTED ]]>Lead</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:XHTML_CASES"
+    ]
+  },
+  {
+    "markup": "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span data-MetaMuse-Display-None=\"\"> PAINTED</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:XHTML_CASES"
+    ]
+  },
+  {
+    "markup": "<html xmlns=\"http://www.w3.org/1999/xhtml\"><body><script type=\"application/json\" data-fb-post-payload=\"\">{\"post\": {\"post_id\": \"pfbid0101synth\", \"actor\": \"synth.lab\", \"text\": \"A &amp; B\"}, \"comments\": [], \"comments_exhausted\": true}</script></body></html>",
+    "origins": [
+      "test_r7_h2b_variants.py:XHTML_CASES"
+    ]
+  },
+  {
+    "markup": "<i data-comments-exhausted=\"true\">TEXT</i>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<i></i>",
+    "origins": [
+      "test_r8_deep_attacks_3.py:literal"
+    ]
+  },
+  {
+    "markup": "<iframe src=\"about:blank\"><div data-comments-exhausted=\"true\">IFRAME_INNER</div></iframe></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<iframe srcdoc=\"<div data-comments-exhausted='true'>SRCDOC</div>\"></iframe></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<img name=\"contentType\"></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<img src=\"/hold\"></body>",
+    "origins": [
+      "test_r7_h4_workers.py:literal"
+    ]
+  },
+  {
+    "markup": "<math><noscript><article data-fb-role=\"comment\" data-comment-id=\"c_break\"><div data-fb-role=\"comment-body\">M_BREAKOUT</div></article></noscript></math></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<math><template><mi>x</mi></template></math></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<noembed><div data-comments-exhausted=\"true\">NOEMBED</div></noembed></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<noscript><div data-comments-exhausted=\"true\">x</div></noscript></body>",
+    "origins": [
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": "<noscript><div id=\"t\">x</div></noscript>",
+    "origins": [
+      "test_r7_h2c_paint.py:CASES",
+      "test_r7_h2c_paint.py:literal"
+    ]
+  },
+  {
+    "markup": "<noscript><noscript><div data-comments-exhausted=\"true\"></div></noscript><div data-comments-exhausted=\"true\"></div></noscript></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<plaintext><div data-comments-exhausted=\"true\"></div></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>",
+    "origins": [
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>\n            const btns = document.querySelectorAll('button[data-expand-id=\"more\"]');\n            btns[0].onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='CLICKED_FIRST';\n              btns[0].remove(); btns[1].remove();\n            };\n            btns[1].onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='CLICKED_SECOND_WRONG';\n              btns[0].remove(); btns[1].remove();\n            };\n            </script></body>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>\n            document.getElementById('behind').onclick = (e) => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='CLICKED_' + e.target.tagName + '_' + (e.target.id || '');\n            };\n            </script></body>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>\n            window.replaceControlNow = () => {\n              const btn = document.querySelector('button');\n              if (!btn) return;\n              const decoy = document.createElement('button');\n              decoy.id = 'decoy';\n              decoy.textContent = 'Decoy';\n              decoy.onclick = () => {\n                document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='DECOY_CLICKED_WRONG';\n              };\n              btn.replaceWith(decoy);\n            };\n            </script></body>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>\nclass Hider extends HTMLElement {\n  static get observedAttributes() { return ['data-metamuse-visibility']; }\n  attributeChangedCallback(name, old, value) {\n    if (!this.isConnected && !this.hasAttribute('data-metamuse-display-none'))\n      this.setAttribute('data-metamuse-display-none', '');\n  }\n}\ncustomElements.define('x-hider', Hider);\n</script>",
+    "origins": [
+      "test_r7_h1_forgery.py:CE_ATTR",
+      "test_r7_h1_forgery.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>\nclass Tamper extends HTMLElement {\n  constructor() {\n    super();\n    if (!this.isConnected) {\n      const root = this.getRootNode();\n      %s\n    }\n  }\n}\ncustomElements.define('x-tamper', Tamper);\n</script><x-tamper></x-tamper>",
+    "origins": [
+      "test_r7_h1b_ce.py:CE",
+      "test_r7_h1b_ce.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>\nclass Tamper extends HTMLElement {\n  constructor() {\n    super();\n    if (!this.isConnected) {  // only the detached clone made by the snapshot's cloneNode\n      const root = this.getRootNode();\n      const body = root.querySelector('[data-fb-role=\"post-body\"]');\n      if (body) body.textContent = 'FORGED BY CUSTOM ELEMENT UPGRADE';\n      const c = root.querySelector('[data-comment-id=\"c1\"]');\n      if (c) c.remove();\n      const post = root.querySelector('[data-fb-role=\"post\"]');\n      if (post) post.setAttribute('data-comment-count', '0');\n    }\n  }\n}\ncustomElements.define('x-tamper', Tamper);\n</script><x-tamper></x-tamper>",
+    "origins": [
+      "test_r7_h1_forgery.py:CE_CTOR",
+      "test_r7_h1_forgery.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>\nconst mk = (code) => URL.createObjectURL(new Blob([code], {type: 'text/javascript'}));\nfor (let i = 0; i < 12; i++) {\n  const nested = mk(\"fetch('/escape-nested-\" + i + \"')\");\n  new Worker(mk(\"fetch('/escape-many-\" + i + \"'); new Worker('\" + nested + \"');\"));\n}\nfor (let i = 0; i < 3; i++) new SharedWorker(mk(\"fetch('/escape-shared-\" + i + \"')\"), 'sw' + i);\ntry { navigator.serviceWorker.register('/sw.js').catch(() => fetch('/sw-register-rejected')); } catch (e) {}\n</script>",
+    "origins": [
+      "test_r7_h4_workers.py:MANY",
+      "test_r7_h4_workers.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>\nconst url = URL.createObjectURL(new Blob([\"fetch('/escape-interval')\"], {type: 'text/javascript'}));\nconst started = Date.now();\nconst timer = setInterval(() => { new Worker(url); if (Date.now() - started > %d) clearInterval(timer); }, 10);\n</script>",
+    "origins": [
+      "test_r7_h4_workers.py:SPAWN",
+      "test_r7_h4_workers.py:literal",
+      "test_r7_h4b_fixcheck.py:SPAWN",
+      "test_r7_h4c_baseline.py:SPAWN"
+    ]
+  },
+  {
+    "markup": "<script>\ntry {\n  const innerCode = \"fetch('/escape-inner-worker'); new WebSocketStream('wss://' + location.host + '/escape-inner-ws');\";\n  const outerCode = \"const b = new Blob([\" + JSON.stringify(innerCode) + \"], {type:'text/javascript'}); new Worker(URL.createObjectURL(b)); fetch('/escape-outer-worker');\";\n  new Worker(URL.createObjectURL(new Blob([outerCode], {type: 'text/javascript'})));\n} catch (e) {}\ntry {\n  const swCode = \"onconnect = (e) => { fetch('/escape-sw'); new WebSocketStream('wss://' + location.host + '/escape-sw-ws'); };\";\n  new SharedWorker(URL.createObjectURL(new Blob([swCode], {type: 'text/javascript'})));\n} catch (e) {}\n</script>",
+    "origins": [
+      "test_r7_h4_workers.py:R6F2",
+      "test_r7_h4_workers.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>\n{const o = Element.prototype.removeAttribute;\n Element.prototype.removeAttribute = function (n) {\n   if (String(n).toLowerCase().startsWith('data-metamuse-')) return; return o.call(this, n); };\n const g = window.getComputedStyle;\n window.getComputedStyle = function (el, ...r) {\n   const s = g.call(window, el, ...r);\n   if (el.getAttribute && el.getAttribute('data-comment-id') === 'c1') return {display: 'none', visibility: 'hidden'};\n   return s; };}\nclass Tamper extends HTMLElement { constructor() { super(); if (!this.isConnected) {\n  const b = this.getRootNode().querySelector('[data-fb-role=\"post-body\"]');\n  if (b) b.append(' +CE-UPGRADE-FORGERY'); } } }\ncustomElements.define('x-tamper', Tamper);\nclass Hider extends HTMLElement {\n  static get observedAttributes() { return ['data-metamuse-visibility']; }\n  attributeChangedCallback() { if (!this.isConnected && !this.hasAttribute('data-metamuse-display-none'))\n    this.setAttribute('data-metamuse-display-none', ''); } }\ncustomElements.define('x-hider', Hider);\n</script>",
+    "origins": [
+      "test_r7_h1c_isolated.py:PAGE_SCRIPT",
+      "test_r7_h1c_isolated.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>Object.defineProperty(document, 'contentType', {get: () => 'application/xml'});</script></body>",
+    "origins": [
+      "test_r8_reviewer_kills.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>document.getElementById(\"host\").attachShadow({mode:\"open\"}).innerHTML='<div style=\"display:none\"><slot></slot></div>';</script></body>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>document.getElementById('s').setAttributeNS(null,'DATA-METAMUSE-DISPLAY-NONE','')</script></body>",
+    "origins": [
+      "test_r6f1_rerun.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>document.querySelector('[data-expand-kind]').onclick=()=>{\n            document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='EXPANDED';\n            document.querySelector('[data-expand-kind]').remove();};</script></body>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>document.querySelector('button').onclick = () => setTimeout(() => {const n = document.querySelector('[data-comment-id]');n.querySelector('[data-fb-role=\"comment-body\"]').textContent += '!';document.querySelector('button').remove();}, 1500);</script></body>",
+    "origins": [
+      "test_r7_h4_workers.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>document.querySelector('button').onclick = () => {\n  const list = document.querySelector('[data-comment-id]').parentElement;\n  const c = document.querySelector('[data-comment-id]').cloneNode(true);\n  c.setAttribute('data-comment-id', 'c2');\n  c.querySelector('[data-fb-role=\"comment-body\"]').textContent = 'Second';\n  list.append(c);\n  document.querySelector('[data-fb-role=\"post\"]').setAttribute('data-comment-count', '2');\n  document.querySelector('button').remove();\n  document.body.insertAdjacentHTML('beforeend', '<div data-comments-exhausted=\"true\"></div>');\n};</script>",
+    "origins": [
+      "test_r7_h1d_signature.py:REAL",
+      "test_r7_h1d_signature.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>document.querySelector('button').onclick = () => {};</script>",
+    "origins": [
+      "test_r7_h1d_signature.py:NOOP",
+      "test_r7_h1d_signature.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>document.querySelector('button').onclick=()=>location.replace(",
+    "origins": [
+      "test_r7_h5_precedence.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>document.querySelector('button').onclick=()=>{location.replace('https://denied.example/one');setTimeout(()=>location.replace('https://denied2.example/two'), ",
+    "origins": [
+      "test_r7_h5_precedence.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>{const d = Object.getOwnPropertyDescriptor(Element.prototype, 'outerHTML');\nconst fake = %s;\nObject.defineProperty(Element.prototype, 'outerHTML', {configurable: true, set: d.set,\n  get() { return (this.tagName === 'HTML' && !this.isConnected) ? fake : d.get.call(this); }});\n}</script>",
+    "origins": [
+      "test_r7_h1_forgery.py:OUTER",
+      "test_r7_h1_forgery.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>{const f = Array.from;\nArray.from = function (x, ...r) { return x instanceof NodeList ? [] : f.call(Array, x, ...r); };}\n</script>",
+    "origins": [
+      "test_r7_h1d_signature.py:FORGE_NO_PROGRESS",
+      "test_r7_h1d_signature.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>{const f = Array.from; let n = 0;\nArray.from = function (x, ...r) { const out = f.call(Array, x, ...r);\n  if (x instanceof NodeList) out.push(document.createElement('i')), n++;\n  return out; };\nconst t = Node.prototype; const d = Object.getOwnPropertyDescriptor(t, 'textContent');\nObject.defineProperty(t, 'textContent', {configurable: true, set: d.set,\n  get() { return this.localName === 'i' ? 'forged-' + n : d.get.call(this); }});\n}</script>",
+    "origins": [
+      "test_r7_h1d_signature.py:FORGE_PROGRESS",
+      "test_r7_h1d_signature.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>{const g = window.getComputedStyle;\nwindow.getComputedStyle = function (el, ...rest) {\n  const s = g.call(window, el, ...rest);\n  if (el.getAttribute && el.getAttribute('data-comment-id') === 'c1')\n    return {display: 'none', visibility: 'hidden'};\n  if (el.id === 'fake-done') return {display: 'block', visibility: 'visible'};\n  return s;\n};}</script>",
+    "origins": [
+      "test_r7_h1_forgery.py:GCS",
+      "test_r7_h1_forgery.py:literal"
+    ]
+  },
+  {
+    "markup": "<script>{const o = Element.prototype.removeAttribute;\nElement.prototype.removeAttribute = function (n) {\n  if (String(n).toLowerCase().startsWith('data-metamuse-')) return;\n  return o.call(this, n);\n};}</script>",
+    "origins": [
+      "test_r7_h1_forgery.py:REMOVE_ATTR",
+      "test_r7_h1_forgery.py:literal"
+    ]
+  },
+  {
+    "markup": "<section data-fb-role=\"comments-section\">",
+    "origins": [
+      "test_r7_h2_static.py:literal",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<section data-fb-role=\"comments-section\"><div style=\"display:none\"><bgsound></div>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<section data-fb-role=\"comments-section\"><noscript>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<span id=\"s\"",
+    "origins": [
+      "test_r6f1_rerun.py:literal"
+    ]
+  },
+  {
+    "markup": "<style>.box:has(.flag) { display: none; }</style><div class=\"box\"><i class=\"flag\"></i><span>TEXT</span></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<style>.gen::before{content:\"GEN_BEFORE\"}.gen::after{content:\"GEN_AFTER\"}</style><span class=\"gen\">REAL</span>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<style>@layer a { .x[hidden] { display: inline; } }</style><span class=\"x\" hidden style=\"display:revert-layer\">TEXT</span>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<style>details::details-content{display:block!important;content-visibility:visible!important}</style><details><summary>S</summary><span>TEXT</span></details>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:BEYOND_CASES",
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": "<svg><foreignObject><div style=\"display:none\"></svg><div data-comments-exhausted=\"true\"></div></div></foreignObject></svg></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<svg><noscript><div data-comments-exhausted=\"true\">BREAKOUT</div></noscript></svg></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<svg><noscript><g data-page-state=\"login_wall\"></g></noscript></svg></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<svg><slot></slot></svg></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<svg><template><text>T</text></template></svg></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<template><div data-comments-exhausted=\"true\">x</div></template></body>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": "<textarea><div data-comments-exhausted=\"true\">TEXTAREA</div></textarea></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "<x-tamper></x-tamper><noscript>&lt;b&gt;</noscript></body>",
+    "origins": [
+      "test_r7_h1c_isolated.py:literal"
+    ]
+  },
+  {
+    "markup": "<xmp><article data-fb-role=\"comment\" data-comment-id=\"fake_xmp\"><div data-fb-role=\"comment-body\">XMP_FAKE</div></article><div data-comments-exhausted=\"true\"></div></xmp></body>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": "> VISIBLE</span></div>",
+    "origins": [
+      "test_r6f1_rerun.py:literal"
+    ]
+  },
+  {
+    "markup": "><![CDATA[CDATA-PAINTED ]]>Lead</div>",
+    "origins": [
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": "><noscript><span data-metamuse-display-none><span></noscript>PAINTED TEXT</div>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": ">BODY</div>",
+    "origins": [
+      "test_r6f1_rerun.py:literal",
+      "test_r7_h1_forgery.py:literal",
+      "test_r7_h1c_isolated.py:literal",
+      "test_r7_h2_static.py:literal",
+      "test_r7_h2b_variants.py:literal",
+      "test_r7_h3b_hidden_attr.py:literal",
+      "test_r8_deep_attacks.py:literal",
+      "test_r8_deep_attacks_2.py:literal",
+      "test_r8_reviewer_kills.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead <math><details><mtext>MATH_DETAILS_PAINTED</mtext></details></math></div>",
+    "origins": [
+      "test_r8_deep_attacks.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead <math><mi>MATH-TEXT</mi></math></div>",
+    "origins": [
+      "test_r7_h2b_variants.py:FOREIGN",
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead <span id=\"h1\"></span> <span id=\"h2\"></span></div><script>document.getElementById('h1').attachShadow({mode:'closed'}).textContent='FIRST';document.getElementById('h2').attachShadow({mode:'closed'}).textContent='SECOND';</script>",
+    "origins": [
+      "test_r8_reviewer_kills.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead <span>SPAN-TEXT</span></div>",
+    "origins": [
+      "test_r7_h2b_variants.py:FOREIGN",
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead <svg data-MetaMuse-Display-None=\"\"><text>SVG-TEXT</text></svg></div>",
+    "origins": [
+      "test_r7_h2b_variants.py:FOREIGN",
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead <svg><text>SVG-TEXT</text></svg></div>",
+    "origins": [
+      "test_r7_h2b_variants.py:FOREIGN",
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<div id=\"host\" style=\"content-visibility:auto;position:absolute;top:99999px\"><span style=\"display:contents\"> NEVER_PAINTED_SLOTTED</span><i style=\"display:contents\" data-comments-exhausted=\"true\"></i></div></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<img style=\"display:contents\" alt=\" UNPAINTED_ALT\" src=\"/x.png\"></div>",
+    "origins": [
+      "test_r8_deep_attacks_2.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span ",
+    "origins": [
+      "test_r6f1_rerun.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span aria-hidden=\" TRUE \"> PAINTED</span></div>",
+    "origins": [
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span aria-hidden=\"true\"> PAINTED</span></div>",
+    "origins": [
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span data-MetaMuse-Display-None=\"\"> PAINTED</span></div>",
+    "origins": [
+      "test_r7_h2b_variants.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span data-metamuse-display-none> PAINTED-A</span><x-hider> PAINTED-B</x-hider></div>",
+    "origins": [
+      "test_r7_h1c_isolated.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span data-metamuse-display-none> VISIBLE</span></div>",
+    "origins": [
+      "test_r7_h1_forgery.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span hidden style=\"display:inline\"> PAINTED</span></div>",
+    "origins": [
+      "test_r7_h3b_hidden_attr.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span id=s> VISIBLE</span></div>",
+    "origins": [
+      "test_r6f1_rerun.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span style=\"visibility:hidden\"><b style=\"visibility:visible\"><bgsound></b> HIDDEN-TEXT</span></div>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span style=\"visibility:hidden\"><svg><input></input></svg> HIDDEN-TEXT</span></div>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<span><template shadowrootmode=\"open\">SHADOW-PAINTED</template></span></div>",
+    "origins": [
+      "test_r7_h2_static.py:literal"
+    ]
+  },
+  {
+    "markup": ">Lead<x-hider> PAINTED</x-hider></div>",
+    "origins": [
+      "test_r7_h1_forgery.py:literal"
+    ]
+  },
+  {
+    "markup": ">Prefix<div style=\"visibility:hidden\"><span style=\"visibility:visible\"> CHILD_VISIBLE_IN_CSS</span></div></div>",
+    "origins": [
+      "test_r6f1_rerun.py:literal"
+    ]
+  },
+  {
+    "markup": ">Visible lead<span data-metamuse-invisible> VISIBLE_SECRET_PARAGRAPH</span></div>",
+    "origins": [
+      "test_r6f1_rerun.py:literal"
+    ]
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<div id=\"host\" style=\"content-visibility:auto;position:absolute;top:99999px\"><span style=\"display:contents\"> NEVER_PAINTED_SLOTTED</span><i style=\"display:contents\" data-comments-exhausted=\"true\"></i></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><script>document.getElementById(\"host\").attachShadow({mode:\"open\"}).innerHTML='<div style=\"display:none\"><slot></slot></div>';</script></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<img style=\"display:contents\" alt=\" UNPAINTED_ALT\" src=\"/x.png\"></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-comment-count=\"0\" style=\"visibility:hidden\"><span style=\"visibility:visible\"></span></article><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"5\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">REAL_BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">C1</div></article></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_hidden\" style=\"visibility:hidden\"><span style=\"visibility:visible\"></span></article><div data-fb-role=\"comment-body\">REAL_C1_BODY</div></article></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div style=\"display:contents;visibility:hidden\"><span><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div style=\"display:contents;visibility:hidden\"><span style=\"visibility:visible\"><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div hidden style=\"display:contents\"><span><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div inert><span><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div popover><span><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div id=\"pop\" popover=\"manual\"><span><i data-comments-exhausted=\"true\">TEXT</i></span></div><script>document.getElementById(\"pop\").showPopover();</script></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <dialog><span><i data-comments-exhausted=\"true\">TEXT</i></span></dialog></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <dialog open><span><i data-comments-exhausted=\"true\">TEXT</i></span></dialog></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <style>details::details-content{display:block!important;content-visibility:visible!important}</style><details><summary>S</summary><span><i data-comments-exhausted=\"true\">TEXT</i></span></details></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div id=\"uf-host\"></div><script>document.getElementById(\"uf-host\").attachShadow({mode:\"open\"}).innerHTML='<div hidden=\"until-found\"><span><i data-comments-exhausted=\"true\">TEXT</i></span></div>';</script></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div hidden style=\"content-visibility:auto;position:absolute;top:99999px\"><span><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div style=\"content-visibility:auto;position:absolute;top:99999px\"><span hidden><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <style>@layer a { .x[hidden] { display: inline; } }</style><span class=\"x\" hidden style=\"display:revert-layer\"><i data-comments-exhausted=\"true\">TEXT</i></span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <style>.box:has(.flag) { display: none; }</style><div class=\"box\"><i class=\"flag\"></i><span><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div style=\"transform:scale(0)\"><span><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div style=\"clip-path:circle(0)\"><span><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div style=\"font-size:0\"><span><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <div style=\"color:transparent\"><span><i data-comments-exhausted=\"true\">TEXT</i></span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <style>.gen::before{content:\"GEN_BEFORE\"}.gen::after{content:\"GEN_AFTER\"}</style><span class=\"gen\">REAL</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">INITIAL</div></article><button data-expand-kind=\"more_comments\" >More</button></section><script>document.querySelector('[data-expand-kind]').onclick=()=>{\n            document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='EXPANDED';\n            document.querySelector('[data-expand-kind]').remove();};</script></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">INITIAL</div></article><button data-expand-id=\"more\" data-expand-kind=\"more_comments\" id=\"first-btn\">First</button><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>\n            const btns = document.querySelectorAll('button[data-expand-id=\"more\"]');\n            btns[0].onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='CLICKED_FIRST';\n              btns[0].remove(); btns[1].remove();\n            };\n            btns[1].onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='CLICKED_SECOND_WRONG';\n              btns[0].remove(); btns[1].remove();\n            };\n            </script></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">INITIAL</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><div id=\"overlay\" style=\"position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,0.5)\"></div>\n            <script>\n            window.overlayClicked = false;\n            document.getElementById('overlay').onclick = () => {\n              window.overlayClicked = true;\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='OVERLAY_CLICKED';\n            };\n            </script></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">INITIAL</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><div id=\"decoy\" style=\"width:120px;height:40px\">Decoy</div><script>\n            const btn = document.querySelector('button');\n            btn.onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='MOVED_AND_CLICKED';\n              btn.remove();\n            };\n            document.getElementById('decoy').onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='DECOY_CLICKED_WRONG';\n            };\n            </script></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">INITIAL</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>\n            window.replaceControlNow = () => {\n              const btn = document.querySelector('button');\n              if (!btn) return;\n              const decoy = document.createElement('button');\n              decoy.id = 'decoy';\n              decoy.textContent = 'Decoy';\n              decoy.onclick = () => {\n                document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='DECOY_CLICKED_WRONG';\n              };\n              btn.replaceWith(decoy);\n            };\n            </script></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">INITIAL</div></article></section><div id=\"shost\"></div><script>\n            const root = document.getElementById('shost').attachShadow({mode:'closed'});\n            root.innerHTML = '<button data-expand-id=\"more\" data-expand-kind=\"more_comments\">More</button>';\n            root.querySelector('button').onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='CLOSED_SHADOW_CLICKED';\n              root.querySelector('button').remove();\n            };\n            </script></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">INITIAL</div></article></section><div id=\"btn\" data-expand-id=\"more\" data-expand-kind=\"more_comments\" style=\"display:inline-block;width:80px;height:30px\"></div>\n            <script>\n            const btn = document.getElementById('btn');\n            const root = btn.attachShadow({mode:'open'});\n            root.innerHTML = '<span style=\"display:block;width:80px;height:30px\">Shadow Label</span>';\n            btn.onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='HOST_CONTROL_CLICKED';\n              btn.remove();\n            };\n            </script></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">INITIAL</div></article></section><div id=\"shost\"><span style=\"display:block;width:80px;height:30px\">Slotted Label</span></div>\n            <script>\n            const host = document.getElementById('shost');\n            const root = host.attachShadow({mode:'open'});\n            root.innerHTML = '<button data-expand-id=\"more\" data-expand-kind=\"more_comments\"><slot></slot></button>';\n            root.querySelector('button').onclick = () => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='SLOTTED_BUTTON_CLICKED';\n              root.querySelector('button').remove();\n            };\n            </script></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_2",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">INITIAL</div></article><div id=\"behind\" style=\"width:100px;height:100px\"><button style=\"display:block;width:0;height:0;padding:0;border:0;margin:0;overflow:hidden\" data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></div></section><script>\n            document.getElementById('behind').onclick = (e) => {\n              document.querySelector('[data-comment-id] [data-fb-role=\"comment-body\"]').textContent='CLICKED_' + e.target.tagName + '_' + (e.target.id || '');\n            };\n            </script></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_3",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT_1</div></article></section><div id=\"race-host\"></div><div id=\"hidden-exhaust\" hidden data-comments-exhausted=\"true\"></div></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_3",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_3",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT_1</div></article></section><div id=\"race-host\"></div><div id=\"hidden-exhaust\" hidden data-comments-exhausted=\"true\"></div></body></html>"
+  },
+  {
+    "origin": "test_r8_deep_attacks_3",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">B</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r7_h1_forgery",
+    "markup": "<!DOCTYPE html><html><body><script>{const o = Element.prototype.removeAttribute;\nElement.prototype.removeAttribute = function (n) {\n  if (String(n).toLowerCase().startsWith('data-metamuse-')) return;\n  return o.call(this, n);\n};}</script><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span data-metamuse-display-none> VISIBLE</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT</div></article></section></body></html>"
+  },
+  {
+    "origin": "test_r7_h1_forgery",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT</div></article></section><div id=\"fake-done\" style=\"display:none\" data-comments-exhausted=\"true\"></div></body></html>"
+  },
+  {
+    "origin": "test_r7_h1_forgery",
+    "markup": "<!DOCTYPE html><html><body><script>{const g = window.getComputedStyle;\nwindow.getComputedStyle = function (el, ...rest) {\n  const s = g.call(window, el, ...rest);\n  if (el.getAttribute && el.getAttribute('data-comment-id') === 'c1')\n    return {display: 'none', visibility: 'hidden'};\n  if (el.id === 'fake-done') return {display: 'block', visibility: 'visible'};\n  return s;\n};}</script><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT</div></article></section><div id=\"fake-done\" style=\"display:none\" data-comments-exhausted=\"true\"></div></body></html>"
+  },
+  {
+    "origin": "test_r7_h1_forgery",
+    "markup": "<!DOCTYPE html><html><body><script>{const d = Object.getOwnPropertyDescriptor(Element.prototype, 'outerHTML');\nconst fake = \"<!DOCTYPE html><html><body><article role=\\\"article\\\" data-fb-role=\\\"post\\\" data-post-id=\\\"pfbid0101synth\\\" data-actor=\\\"synth.lab\\\" data-author=\\\"Synthetic Lab\\\" data-created-at=\\\"2026-10-13T12:00:00Z\\\" data-permalink=\\\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\\\" data-reaction-count=\\\"12\\\" data-comment-count=\\\"0\\\" data-comments-exhausted=\\\"true\\\" data-share-count=\\\"1\\\"><div data-fb-role=\\\"post-body\\\">FABRICATED BY PAGE SCRIPT</div><div data-fb-role=\\\"attachment\\\" data-attachment-url=\\\"https://scontent.xx.fbcdn.net/v/synth.jpg\\\" data-attachment-kind=\\\"image\\\"></div></article><section data-fb-role=\\\"comments-section\\\"></section></body></html>\";\nObject.defineProperty(Element.prototype, 'outerHTML', {configurable: true, set: d.set,\n  get() { return (this.tagName === 'HTML' && !this.isConnected) ? fake : d.get.call(this); }});\n}</script><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT</div></article></section></body></html>"
+  },
+  {
+    "origin": "test_r7_h1_forgery",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT</div></article></section><script>\nclass Tamper extends HTMLElement {\n  constructor() {\n    super();\n    if (!this.isConnected) {  // only the detached clone made by the snapshot's cloneNode\n      const root = this.getRootNode();\n      const body = root.querySelector('[data-fb-role=\"post-body\"]');\n      if (body) body.textContent = 'FORGED BY CUSTOM ELEMENT UPGRADE';\n      const c = root.querySelector('[data-comment-id=\"c1\"]');\n      if (c) c.remove();\n      const post = root.querySelector('[data-fb-role=\"post\"]');\n      if (post) post.setAttribute('data-comment-count', '0');\n    }\n  }\n}\ncustomElements.define('x-tamper', Tamper);\n</script><x-tamper></x-tamper></body></html>"
+  },
+  {
+    "origin": "test_r7_h1_forgery",
+    "markup": "<!DOCTYPE html><html><body><script>\nclass Hider extends HTMLElement {\n  static get observedAttributes() { return ['data-metamuse-visibility']; }\n  attributeChangedCallback(name, old, value) {\n    if (!this.isConnected && !this.hasAttribute('data-metamuse-display-none'))\n      this.setAttribute('data-metamuse-display-none', '');\n  }\n}\ncustomElements.define('x-hider', Hider);\n</script><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<x-hider> PAINTED</x-hider></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT</div></article></section></body></html>"
+  },
+  {
+    "origin": "test_r7_h1b_ce",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT</div></article></section><script>\nclass Tamper extends HTMLElement {\n  constructor() {\n    super();\n    if (!this.isConnected) {\n      const root = this.getRootNode();\n      const body = root.querySelector('[data-fb-role=\"post-body\"]');\n      if (body) body.textContent = 'FORGED BY CUSTOM ELEMENT UPGRADE';\n    }\n  }\n}\ncustomElements.define('x-tamper', Tamper);\n</script><x-tamper></x-tamper></body></html>"
+  },
+  {
+    "origin": "test_r7_h1b_ce",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">BODY</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT</div></article></section><script>\nclass Tamper extends HTMLElement {\n  constructor() {\n    super();\n    if (!this.isConnected) {\n      const root = this.getRootNode();\n      const c = root.querySelector('[data-comment-id=\"c1\"]'); if (c) c.remove();\n    }\n  }\n}\ncustomElements.define('x-tamper', Tamper);\n</script><x-tamper></x-tamper></body></html>"
+  },
+  {
+    "origin": "test_r7_h1c_isolated",
+    "markup": "<!DOCTYPE html><html><body><script>\n{const o = Element.prototype.removeAttribute;\n Element.prototype.removeAttribute = function (n) {\n   if (String(n).toLowerCase().startsWith('data-metamuse-')) return; return o.call(this, n); };\n const g = window.getComputedStyle;\n window.getComputedStyle = function (el, ...r) {\n   const s = g.call(window, el, ...r);\n   if (el.getAttribute && el.getAttribute('data-comment-id') === 'c1') return {display: 'none', visibility: 'hidden'};\n   return s; };}\nclass Tamper extends HTMLElement { constructor() { super(); if (!this.isConnected) {\n  const b = this.getRootNode().querySelector('[data-fb-role=\"post-body\"]');\n  if (b) b.append(' +CE-UPGRADE-FORGERY'); } } }\ncustomElements.define('x-tamper', Tamper);\nclass Hider extends HTMLElement {\n  static get observedAttributes() { return ['data-metamuse-visibility']; }\n  attributeChangedCallback() { if (!this.isConnected && !this.hasAttribute('data-metamuse-display-none'))\n    this.setAttribute('data-metamuse-display-none', ''); } }\ncustomElements.define('x-hider', Hider);\n</script><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span data-metamuse-display-none> PAINTED-A</span><x-hider> PAINTED-B</x-hider></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">COMMENT</div></article></section><x-tamper></x-tamper><noscript>&lt;b&gt;</noscript></body></html>"
+  },
+  {
+    "origin": "test_r7_h1d_signature",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"2\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">First</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick = () => {\n  const list = document.querySelector('[data-comment-id]').parentElement;\n  const c = document.querySelector('[data-comment-id]').cloneNode(true);\n  c.setAttribute('data-comment-id', 'c2');\n  c.querySelector('[data-fb-role=\"comment-body\"]').textContent = 'Second';\n  list.append(c);\n  document.querySelector('[data-fb-role=\"post\"]').setAttribute('data-comment-count', '2');\n  document.querySelector('button').remove();\n  document.body.insertAdjacentHTML('beforeend', '<div data-comments-exhausted=\"true\"></div>');\n};</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h1d_signature",
+    "markup": "<!DOCTYPE html><html><body><script>{const f = Array.from;\nArray.from = function (x, ...r) { return x instanceof NodeList ? [] : f.call(Array, x, ...r); };}\n</script><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"2\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">First</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick = () => {\n  const list = document.querySelector('[data-comment-id]').parentElement;\n  const c = document.querySelector('[data-comment-id]').cloneNode(true);\n  c.setAttribute('data-comment-id', 'c2');\n  c.querySelector('[data-fb-role=\"comment-body\"]').textContent = 'Second';\n  list.append(c);\n  document.querySelector('[data-fb-role=\"post\"]').setAttribute('data-comment-count', '2');\n  document.querySelector('button').remove();\n  document.body.insertAdjacentHTML('beforeend', '<div data-comments-exhausted=\"true\"></div>');\n};</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h1d_signature",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"2\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">First</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick = () => {};</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h1d_signature",
+    "markup": "<!DOCTYPE html><html><body><script>{const f = Array.from; let n = 0;\nArray.from = function (x, ...r) { const out = f.call(Array, x, ...r);\n  if (x instanceof NodeList) out.push(document.createElement('i')), n++;\n  return out; };\nconst t = Node.prototype; const d = Object.getOwnPropertyDescriptor(t, 'textContent');\nObject.defineProperty(t, 'textContent', {configurable: true, set: d.set,\n  get() { return this.localName === 'i' ? 'forged-' + n : d.get.call(this); }});\n}</script><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"2\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">First</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick = () => {};</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h2b_variants",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <svg data-MetaMuse-Display-None=\"\"><text>SVG-TEXT</text></svg></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r7_h2b_variants",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <math><mi>MATH-TEXT</mi></math></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><script>document.querySelector('math').setAttribute('DATA-METAMUSE-DISPLAY-NONE','')</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h2b_variants",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <svg><text>SVG-TEXT</text></svg></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><script>document.querySelector('svg').setAttributeNS('urn:x','data-metamuse-display-none','')</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h2b_variants",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <svg><text>SVG-TEXT</text></svg></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><script>document.querySelector('svg').setAttributeNS('urn:x','x:data-metamuse-display-none','')</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h2b_variants",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <span>SPAN-TEXT</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><script>document.querySelector('span').setAttributeNS(null,'DATA-METAMUSE-DISPLAY-NONE','')</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h2b_variants",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead <svg><text>SVG-TEXT</text></svg></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><script>document.querySelector('text').setAttribute('Data-MetaMuse-Visibility','hidden')</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h4_workers",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><script>\ntry {\n  const innerCode = \"fetch('/escape-inner-worker'); new WebSocketStream('wss://' + location.host + '/escape-inner-ws');\";\n  const outerCode = \"const b = new Blob([\" + JSON.stringify(innerCode) + \"], {type:'text/javascript'}); new Worker(URL.createObjectURL(b)); fetch('/escape-outer-worker');\";\n  new Worker(URL.createObjectURL(new Blob([outerCode], {type: 'text/javascript'})));\n} catch (e) {}\ntry {\n  const swCode = \"onconnect = (e) => { fetch('/escape-sw'); new WebSocketStream('wss://' + location.host + '/escape-sw-ws'); };\";\n  new SharedWorker(URL.createObjectURL(new Blob([swCode], {type: 'text/javascript'})));\n} catch (e) {}\n</script><img src=\"/hold\"></body></html>"
+  },
+  {
+    "origin": "test_r7_h4_workers",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><script>\nconst mk = (code) => URL.createObjectURL(new Blob([code], {type: 'text/javascript'}));\nfor (let i = 0; i < 12; i++) {\n  const nested = mk(\"fetch('/escape-nested-\" + i + \"')\");\n  new Worker(mk(\"fetch('/escape-many-\" + i + \"'); new Worker('\" + nested + \"');\"));\n}\nfor (let i = 0; i < 3; i++) new SharedWorker(mk(\"fetch('/escape-shared-\" + i + \"')\"), 'sw' + i);\ntry { navigator.serviceWorker.register('/sw.js').catch(() => fetch('/sw-register-rejected')); } catch (e) {}\n</script><img src=\"/hold\"></body></html>"
+  },
+  {
+    "origin": "test_r7_h4_workers",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">First</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick = () => setTimeout(() => {const n = document.querySelector('[data-comment-id]');n.querySelector('[data-fb-role=\"comment-body\"]').textContent += '!';document.querySelector('button').remove();}, 1500);</script><script>\nconst url = URL.createObjectURL(new Blob([\"fetch('/escape-interval')\"], {type: 'text/javascript'}));\nconst started = Date.now();\nconst timer = setInterval(() => { new Worker(url); if (Date.now() - started > 2500) clearInterval(timer); }, 10);\n</script><img src=\"/hold\"></body></html>"
+  },
+  {
+    "origin": "test_r7_h4_workers",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c1\"><div data-fb-role=\"comment-body\">First</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick = () => setTimeout(() => {const n = document.querySelector('[data-comment-id]');n.querySelector('[data-fb-role=\"comment-body\"]').textContent += '!';document.querySelector('button').remove();}, 1500);</script><script>\nconst url = URL.createObjectURL(new Blob([\"fetch('/escape-interval')\"], {type: 'text/javascript'}));\nconst started = Date.now();\nconst timer = setInterval(() => { new Worker(url); if (Date.now() - started > 7000) clearInterval(timer); }, 10);\n</script><img src=\"/hold\"></body></html>"
+  },
+  {
+    "origin": "test_r7_h5_precedence",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"60\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_0\"><div data-fb-role=\"comment-body\">Reliable 0</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_1\"><div data-fb-role=\"comment-body\">Reliable 1</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_2\"><div data-fb-role=\"comment-body\">Reliable 2</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_3\"><div data-fb-role=\"comment-body\">Reliable 3</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_4\"><div data-fb-role=\"comment-body\">Reliable 4</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_5\"><div data-fb-role=\"comment-body\">Reliable 5</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_6\"><div data-fb-role=\"comment-body\">Reliable 6</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_7\"><div data-fb-role=\"comment-body\">Reliable 7</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_8\"><div data-fb-role=\"comment-body\">Reliable 8</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_9\"><div data-fb-role=\"comment-body\">Reliable 9</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_10\"><div data-fb-role=\"comment-body\">Reliable 10</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_11\"><div data-fb-role=\"comment-body\">Reliable 11</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_12\"><div data-fb-role=\"comment-body\">Reliable 12</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_13\"><div data-fb-role=\"comment-body\">Reliable 13</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_14\"><div data-fb-role=\"comment-body\">Reliable 14</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_15\"><div data-fb-role=\"comment-body\">Reliable 15</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_16\"><div data-fb-role=\"comment-body\">Reliable 16</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_17\"><div data-fb-role=\"comment-body\">Reliable 17</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_18\"><div data-fb-role=\"comment-body\">Reliable 18</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_19\"><div data-fb-role=\"comment-body\">Reliable 19</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_20\"><div data-fb-role=\"comment-body\">Reliable 20</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_21\"><div data-fb-role=\"comment-body\">Reliable 21</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_22\"><div data-fb-role=\"comment-body\">Reliable 22</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_23\"><div data-fb-role=\"comment-body\">Reliable 23</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_24\"><div data-fb-role=\"comment-body\">Reliable 24</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_25\"><div data-fb-role=\"comment-body\">Reliable 25</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_26\"><div data-fb-role=\"comment-body\">Reliable 26</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_27\"><div data-fb-role=\"comment-body\">Reliable 27</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_28\"><div data-fb-role=\"comment-body\">Reliable 28</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_29\"><div data-fb-role=\"comment-body\">Reliable 29</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_30\"><div data-fb-role=\"comment-body\">Reliable 30</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_31\"><div data-fb-role=\"comment-body\">Reliable 31</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_32\"><div data-fb-role=\"comment-body\">Reliable 32</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_33\"><div data-fb-role=\"comment-body\">Reliable 33</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_34\"><div data-fb-role=\"comment-body\">Reliable 34</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_35\"><div data-fb-role=\"comment-body\">Reliable 35</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_36\"><div data-fb-role=\"comment-body\">Reliable 36</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_37\"><div data-fb-role=\"comment-body\">Reliable 37</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_38\"><div data-fb-role=\"comment-body\">Reliable 38</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_39\"><div data-fb-role=\"comment-body\">Reliable 39</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_40\"><div data-fb-role=\"comment-body\">Reliable 40</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_41\"><div data-fb-role=\"comment-body\">Reliable 41</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_42\"><div data-fb-role=\"comment-body\">Reliable 42</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_43\"><div data-fb-role=\"comment-body\">Reliable 43</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_44\"><div data-fb-role=\"comment-body\">Reliable 44</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_45\"><div data-fb-role=\"comment-body\">Reliable 45</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_46\"><div data-fb-role=\"comment-body\">Reliable 46</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_47\"><div data-fb-role=\"comment-body\">Reliable 47</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_48\"><div data-fb-role=\"comment-body\">Reliable 48</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_49\"><div data-fb-role=\"comment-body\">Reliable 49</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_50\"><div data-fb-role=\"comment-body\">Reliable 50</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_51\"><div data-fb-role=\"comment-body\">Reliable 51</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_52\"><div data-fb-role=\"comment-body\">Reliable 52</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_53\"><div data-fb-role=\"comment-body\">Reliable 53</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_54\"><div data-fb-role=\"comment-body\">Reliable 54</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_55\"><div data-fb-role=\"comment-body\">Reliable 55</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_56\"><div data-fb-role=\"comment-body\">Reliable 56</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_57\"><div data-fb-role=\"comment-body\">Reliable 57</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_58\"><div data-fb-role=\"comment-body\">Reliable 58</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_59\"><div data-fb-role=\"comment-body\">Reliable 59</div></article></section></body></html>"
+  },
+  {
+    "origin": "test_r7_h5_precedence",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick=()=>location.replace(\"https://denied.example/somewhere\");</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h5_precedence",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick=()=>location.replace(\"/login/\");</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h5_precedence",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick=()=>location.replace(\"/checkpoint/123/\");</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h5_precedence",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick=()=>location.replace(\"/other.actor/posts/OTHER_POST\");</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h5_precedence",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick=()=>location.replace(\"/watch/\");</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h5_precedence",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick=()=>{location.replace('https://denied.example/one');setTimeout(()=>location.replace('https://denied2.example/two'), 0);};</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h5_precedence",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick=()=>{location.replace('https://denied.example/one');setTimeout(()=>location.replace('https://denied2.example/two'), 5);};</script></body></html>"
+  },
+  {
+    "origin": "test_r7_h5_precedence",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><button data-expand-kind=\"more_comments\" data-expand-id=\"more\">More</button></section><script>document.querySelector('button').onclick=()=>{location.replace('https://denied.example/one');setTimeout(()=>location.replace('https://denied2.example/two'), 20);};</script></body></html>"
+  },
+  {
+    "origin": "test_r6f1_fixture_detail",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"2\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_visible_1\"><div data-fb-role=\"comment-body\">A</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_visible_2\"><div data-fb-role=\"comment-body\">B</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more_1\" data-metamuse-invisible=\"\" data-remaining-count=\"unparseable\">More</button></section></body></html>"
+  },
+  {
+    "origin": "test_r6f1_rerun",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Visible lead<span data-metamuse-invisible> VISIBLE_SECRET_PARAGRAPH</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r6f1_rerun",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"1\" data-comments-exhausted=\"false\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Synthetic announcement post body.</div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\" data-comments-exhausted=\"true\"><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_visible_1\"><div data-fb-role=\"comment-body\">First visible comment</div></article><article role=\"article\" data-fb-role=\"comment\" data-comment-id=\"c_visible_2\" data-metamuse-invisible=\"\"><div data-fb-role=\"comment-body\">Second visible comment hidden by forged attr</div></article><button data-expand-kind=\"more_comments\" data-expand-id=\"more_1\" data-metamuse-invisible=\"\" data-remaining-count=\"unparseable\">More</button></section></body></html>"
+  },
+  {
+    "origin": "test_r6f1_rerun",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Prefix<div style=\"visibility:hidden\"><span style=\"visibility:visible\"> CHILD_VISIBLE_IN_CSS</span></div></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r6f1_rerun",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span data-metamuse-invisible> VISIBLE</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r6f1_rerun",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span data-metamuse-display-none> VISIBLE</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r6f1_rerun",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span data-metamuse-visibility=\"hidden\"> VISIBLE</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r6f1_rerun",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span DATA-METAMUSE-DISPLAY-NONE> VISIBLE</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section></body></html>"
+  },
+  {
+    "origin": "test_r6f1_rerun",
+    "markup": "<!DOCTYPE html><html><body><article role=\"article\" data-fb-role=\"post\" data-post-id=\"pfbid0101synth\" data-actor=\"synth.lab\" data-author=\"Synthetic Lab\" data-created-at=\"2026-10-13T12:00:00Z\" data-permalink=\"https://www.facebook.com/synth.lab/posts/pfbid0101synth\" data-reaction-count=\"12\" data-comment-count=\"0\" data-comments-exhausted=\"true\" data-share-count=\"1\"><div data-fb-role=\"post-body\">Lead<span id=s> VISIBLE</span></div><div data-fb-role=\"attachment\" data-attachment-url=\"https://scontent.xx.fbcdn.net/v/synth.jpg\" data-attachment-kind=\"image\"></div></article><section data-fb-role=\"comments-section\"></section><script>document.getElementById('s').setAttributeNS(null,'DATA-METAMUSE-DISPLAY-NONE','')</script></body></html>"
+  }
+]

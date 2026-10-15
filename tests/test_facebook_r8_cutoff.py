@@ -1,0 +1,425 @@
+"""Only byte-cutoff interruptions may lose to the byte budget."""
+
+# ruff: noqa: E501
+
+import pytest
+from browser_deadline import browser_deadline
+from test_facebook import _setup_fb_env, _synthetic_post_html
+from test_facebook_review import URL, browser_fixture, finish, observation
+from test_facebook_round5 import POST_PATH, rows, submit
+from test_facebook_round6 import reset_seams  # noqa: F401
+
+from metamuse import facebook
+from metamuse import models as m
+from metamuse._browser_egress import BrowserEgressProxy
+
+
+def session_for(guard):
+    session = object.__new__(facebook._PlaywrightSession)
+    session._egress = guard
+    session._closing_targets = set()
+    session._transport_error = session._peer_error = session._proxy = None
+    session._navigation_urls = []
+    session._navigation_responded = set()
+    session._document_status = 200
+    return session
+
+
+@pytest.mark.parametrize(
+    "code",
+    [code.value for code in m.ErrorCode if code != m.ErrorCode.LIMIT_REACHED],
+)
+@pytest.mark.parametrize("order", ["none", "cutoff-first", "fatal-first"])
+def test_r8_fatal_cutoff_outcome_matches_control(tmp_path, code, order):
+    ctx, project, permit, _, _ = _setup_fb_env(tmp_path)
+
+    class Driver(facebook.FixtureBrowserDriver):
+        def open_session(self, state, guard, **kwargs):
+            fixture = super().open_session(state, guard, **kwargs)
+            session = session_for(guard)
+
+            def expand(control):
+                if order == "cutoff-first":
+                    guard.mark_byte_limit_exceeded()
+                error = m.CoreError(
+                    m.ErrorCode(code), "Synthetic fatal condition", next_action="Synthetic action"
+                )
+                if code == "E_PROTOCOL_MISMATCH":
+                    session._transport_error = error
+                else:
+                    guard.navigation_error = error
+                if order == "fatal-first":
+                    guard.mark_byte_limit_exceeded()
+                session._raise_if_byte_limit()
+
+            fixture.expand_next = expand
+            return fixture
+
+    facebook.set_driver_factory(
+        lambda: Driver(observation(_synthetic_post_html(expand_controls=[{"id": "more"}])))
+    )
+    job = finish(ctx, submit(ctx, project, permit))
+    assert (job.get("error") or {}).get("code") == code, job
+    assert job["error"]["next_action"] == "Synthetic action"
+    assert job["state"] == (
+        "awaiting_user"
+        if m.CoreError(m.ErrorCode(code), "Synthetic").detail.retry_class == "user_action"
+        else "failed"
+    )
+    assert rows(ctx) == []
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Browser navigation to Facebook post permalink failed",
+        "Facebook browser socket closed during byte cutoff",
+        "Facebook browser wait interrupted by byte cutoff",
+    ],
+)
+def test_r8_named_cutoff_interruptions(message):
+    guard = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com",), resolver=lambda _: ["93.184.216.34"]
+    )
+    session = session_for(guard)
+    guard.byte_limit_exceeded = True
+    guard.navigation_error = m.CoreError(m.ErrorCode.NETWORK_TIMEOUT, message)
+    with pytest.raises(m.CoreError) as caught:
+        session._raise_if_byte_limit()
+    assert caught.value.detail.code == m.ErrorCode.LIMIT_REACHED
+
+
+@pytest.mark.parametrize("purpose", ["request", "redirect"])
+@pytest.mark.parametrize("pinned", [False, True])
+@pytest.mark.parametrize(
+    "destination,code",
+    [
+        ("https://denied.example/login/", "E_SCOPE_DENIED"),
+        ("https://user:pw@m.facebook.com/x", "E_SCOPE_DENIED"),
+        ("http://m.facebook.com/watch/", "E_SCOPE_DENIED"),
+        ("https://m.facebook.com:8443/x", "E_SCOPE_DENIED"),
+        ("https://127.0.0.1/x", "E_SCOPE_DENIED"),
+        ("https://m.facebook.com/x%0d%0a", "E_SCOPE_DENIED"),
+        ("https://m.facebook.com/login.php", "E_AUTH_REQUIRED"),
+        ("https://m.facebook.com/checkpoint/x", "E_CHECKPOINT_REQUIRED"),
+    ],
+)
+def test_r8_dns_free_policy_before_latch(purpose, pinned, destination, code):
+    calls = []
+    guard = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com", "m.facebook.com"),
+        resolver=lambda host: calls.append(host) or ["93.184.216.34"],
+    )
+    proxy = BrowserEgressProxy(guard, max_bytes=10, start_closed=True)
+    try:
+        if pinned:
+            proxy.check_url_bounded(
+                "https://m.facebook.com/synth.lab/posts/pfbid0101synth", purpose
+            )
+        before = len(calls)
+        proxy._charge_bytes(100)
+        with pytest.raises(m.CoreError) as caught:
+            proxy.check_url_bounded(destination, purpose)
+        assert caught.value.detail.code.value == code
+        assert len(calls) == before
+    finally:
+        proxy.close()
+
+
+@pytest.mark.parametrize("site", ["route", "proxy", "protocol"])
+def test_r8_recorded_fatal_not_overwritten(site):
+    guard = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com",), resolver=lambda _: ["93.184.216.34"]
+    )
+    denial = m.CoreError(m.ErrorCode.SCOPE_DENIED, "First denial")
+    guard.navigation_error = denial
+    guard.last_proxy_error = denial
+    guard.proxy_errors_by_authority[("www.facebook.com", 443)] = denial
+    if site == "route":
+        guard._route_url_checker = lambda *a: (_ for _ in ()).throw(
+            m.CoreError(m.ErrorCode.LIMIT_REACHED, "Cutoff")
+        )
+        with pytest.raises(m.CoreError):
+            guard.check_browser_route(URL, is_navigation=True)
+    elif site == "proxy":
+        guard._checked_destination = lambda *a: (_ for _ in ()).throw(
+            m.CoreError(m.ErrorCode.NETWORK_TIMEOUT, "Temporary DNS")
+        )
+        with pytest.raises(m.CoreError):
+            guard.check_proxy_target(URL, method="CONNECT", is_connect=True, is_navigation=True)
+    else:
+        guard.record_proxy_protocol_refusal(
+            hostname="www.facebook.com", reason="resolution_timeout", url=URL
+        )
+    assert guard.navigation_error is denial
+    assert guard.last_proxy_error is denial
+    assert guard.proxy_errors_by_authority[("www.facebook.com", 443)] is denial
+
+
+@pytest.mark.parametrize("order", ["none", "cutoff-first", "fatal-first"])
+@browser_deadline
+def test_r8_denial_after_final_observation(tmp_path, monkeypatch, order, request):
+    with browser_fixture(
+        tmp_path, monkeypatch, {POST_PATH: _synthetic_post_html()}, unsandboxed=False
+    ) as (ctx, project, permit, _, _, guard, driver):
+        original = driver.open_session
+
+        def opened(*a, **k):
+            session = original(*a, **k)
+            goto = session.goto_post
+
+            def observed(url):
+                result = goto(url)
+                if order == "cutoff-first":
+                    guard.mark_byte_limit_exceeded()
+                try:
+                    guard.check_browser_route("https://denied.example/login/", is_navigation=True)
+                except m.CoreError:
+                    pass
+                if order == "fatal-first":
+                    guard.mark_byte_limit_exceeded()
+                return result
+
+            session.goto_post = observed
+            return session
+
+        monkeypatch.setattr(driver, "open_session", opened)
+        job = finish(ctx, submit(ctx, project, permit))
+        assert (job.get("error") or {}).get("code") == "E_SCOPE_DENIED", job
+        assert job["state"] == "awaiting_user"
+        assert rows(ctx) == []
+
+
+@pytest.mark.parametrize(
+    "condition",
+    [
+        "guard",
+        "denial",
+        "login",
+        "checkpoint",
+        "challenge",
+        "rate",
+        "offpost",
+        "share-nonpost",
+        "share-stale",
+    ],
+)
+@browser_deadline
+def test_r8_chromium_fatal_cutoff_pairs(tmp_path, monkeypatch, condition, request):
+    import json
+
+    codes = {
+        "guard": "E_PROTOCOL_MISMATCH",
+        "denial": "E_SCOPE_DENIED",
+        "login": "E_AUTH_REQUIRED",
+        "checkpoint": "E_CHECKPOINT_REQUIRED",
+        "challenge": "E_CHECKPOINT_REQUIRED",
+        "rate": "E_RATE_LIMITED",
+        "offpost": "E_REFERENCE_INVALID",
+        "share-nonpost": "E_UNSUPPORTED",
+        "share-stale": "E_DATA_STALE",
+    }
+    destinations = {
+        "denial": "https://denied.example/login/",
+        "login": "/login/",
+        "checkpoint": "/checkpoint/x",
+        "offpost": "/other.actor/posts/OTHER",
+    }
+    baseline = None
+    for order in ["none", "cutoff-first", "fatal-first"]:
+        with monkeypatch.context() as patch:
+            markup = _synthetic_post_html(expand_controls=[{"id": "more"}])
+            if condition in destinations:
+                markup = markup.replace(
+                    "</body>",
+                    '<script>document.querySelector("button").onclick=()=>location.replace('
+                    + json.dumps(destinations[condition])
+                    + ");</script></body>",
+                )
+            if condition in {"challenge", "rate"}:
+                state = "challenge" if condition == "challenge" else "rate_limited"
+                markup = markup.replace(
+                    "</body>",
+                    '<script>document.querySelector("button").onclick=()=>{document.body.setAttribute("data-page-state",'
+                    + json.dumps(state)
+                    + ');document.querySelector("button").remove();};</script></body>',
+                )
+            url = URL
+            pages = {POST_PATH: markup}
+            if condition.startswith("share-"):
+                url = "https://www.facebook.com/share/p/SyntheticCode1/"
+                destination = (
+                    "/reel/synthetic/"
+                    if condition == "share-nonpost"
+                    else "/other.actor/posts/OTHER"
+                )
+                pages = {
+                    "/share/p/SyntheticCode1/": (302, destination),
+                    destination: _synthetic_post_html(),
+                }
+            with browser_fixture(
+                tmp_path / order, patch, pages, url=url, unsandboxed=False, read_timeout=300
+            ) as (
+                ctx,
+                project,
+                permit,
+                _,
+                _,
+                guard,
+                driver,
+            ):
+                original = driver.open_session
+                check = guard.check_browser_route
+                classify = facebook._raise_observation_barrier
+                sessions = []
+
+                def latch(sessions=sessions, guard=guard):
+                    # Actual proxy cutoff closes its sockets; the guard marker is
+                    # also read by deterministic post-observation ordering cases.
+                    if sessions:
+                        sessions[-1]._proxy._charge_bytes(10**9)
+                    else:
+                        guard.mark_byte_limit_exceeded()
+
+                def opened(*a, original=original, sessions=sessions, order=order, **k):
+                    session = original(*a, **k)
+                    sessions.append(session)
+                    if condition == "share-stale":
+                        guard.resume_identity = facebook.parse_post_permalink(URL)
+                    if condition == "guard":
+                        expand = session.expand_next
+
+                        def guarded(control):
+                            if order == "cutoff-first":
+                                latch()
+                            session._guard_failed()
+                            if order == "fatal-first":
+                                latch()
+                            return expand(control)
+
+                        session.expand_next = guarded
+                    return session
+
+                def checked(destination, check=check, order=order, **kwargs):
+                    trigger = kwargs.get("is_navigation") and (
+                        (
+                            condition in destinations
+                            and (
+                                destination.endswith(destinations[condition])
+                                if destinations[condition].startswith("/")
+                                else destination == destinations[condition]
+                            )
+                        )
+                        or (condition.startswith("share-") and "/share/" not in destination)
+                    )
+                    if trigger and order == "cutoff-first":
+                        latch()
+                    try:
+                        return check(destination, **kwargs)
+                    except m.CoreError:
+                        if trigger and order == "fatal-first":
+                            latch()
+                        raise
+
+                def classified(status, state, classify=classify, order=order):
+                    trigger = condition in {"challenge", "rate"} and state in {
+                        "challenge",
+                        "rate_limited",
+                    }
+                    if trigger and order == "cutoff-first":
+                        latch()
+                    try:
+                        return classify(status, state)
+                    except m.CoreError:
+                        if trigger and order == "fatal-first":
+                            latch()
+                        raise
+
+                patch.setattr(driver, "open_session", opened)
+                patch.setattr(guard, "check_browser_route", checked)
+                patch.setattr(facebook, "_raise_observation_barrier", classified)
+                job = finish(ctx, submit(ctx, project, permit, url=url))
+                assert (job.get("error") or {}).get("code") == codes[condition], (
+                    order,
+                    condition,
+                    job,
+                )
+                outcome = (job["state"], job["error"], rows(ctx))
+                if order == "none":
+                    baseline = outcome
+                assert outcome == baseline, (order, outcome, baseline)
+
+
+@pytest.mark.parametrize("cutoff", [False, True])
+def test_r8_port_denial_precedes_dns(cutoff):
+    calls = []
+    guard = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com",),
+        resolver=lambda host: calls.append(host) or ["93.184.216.34"],
+    )
+    proxy = BrowserEgressProxy(guard, max_bytes=1, start_closed=True)
+    try:
+        if cutoff:
+            proxy._charge_bytes(2)
+        with pytest.raises(m.CoreError) as caught:
+            proxy.check_url_bounded("https://www.facebook.com:8443/login/", "redirect")
+        assert caught.value.detail.code == m.ErrorCode.SCOPE_DENIED
+        assert calls == []
+    finally:
+        proxy.close()
+
+
+def test_r8_strong_diagnostic_is_not_current_dns_error(monkeypatch):
+    import threading
+
+    from metamuse import _browser_egress
+
+    guard = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com",), resolver=lambda _: ["93.184.216.34"]
+    )
+    denial = m.CoreError(m.ErrorCode.SCOPE_DENIED, "Earlier unrelated subresource denial")
+    guard.last_proxy_error = denial
+    proxy = BrowserEgressProxy(guard, start_closed=True)
+    monkeypatch.setattr(_browser_egress, "_RESOLUTION_SLOTS", threading.BoundedSemaphore(0))
+    try:
+        with pytest.raises(m.CoreError) as caught:
+            proxy.check_url_bounded(URL, "redirect")
+        assert caught.value.detail.code == m.ErrorCode.NETWORK_TIMEOUT
+        assert guard.last_proxy_error is denial
+        assert guard.navigation_error is None
+    finally:
+        proxy.close()
+
+
+@pytest.mark.parametrize("stage", ["preflight", "preflight-cutoff", "resolved-policy"])
+def test_r8_proxy_refusal_is_counted_once(stage):
+    from metamuse._browser_egress import parse_proxy_request
+
+    guard = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com",), resolver=lambda _: ["10.0.0.1"]
+    )
+    host = "denied.example" if stage.startswith("preflight") else "www.facebook.com"
+    parsed = parse_proxy_request(
+        f"CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n".encode(),
+        proxy_port=31280,
+    )
+    proxy = BrowserEgressProxy(guard, max_bytes=1, start_closed=True)
+    try:
+        if stage == "preflight-cutoff":
+            proxy._charge_bytes(2)
+        before = guard.summary()["aborted"]
+        with pytest.raises(m.CoreError) as caught:
+            proxy._check_target_bounded(parsed)
+        assert caught.value.detail.code == m.ErrorCode.SCOPE_DENIED
+        summary = guard.summary()
+        assert summary["aborted"] == before + 1
+        assert (
+            sum(
+                row["count"]
+                for row in summary["aborted_reasons"]
+                if row["reason"] == "E_SCOPE_DENIED"
+            )
+            == 1
+        )
+    finally:
+        proxy.close()

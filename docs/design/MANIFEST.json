@@ -4,18 +4,18 @@
   "files": [
     {
       "path": "01_PLAN.md",
-      "bytes": 6252,
-      "sha256": "27c4458c6b4bf136850450297ebbe3a62e1222d5b17f38767daee33cfb3c17ef"
+      "bytes": 6427,
+      "sha256": "1a3d8c60ff93dbf14c26c4d5a28f83f9c9811e8972ca9a0bf81c25b438a786fe"
     },
     {
       "path": "02_SPEC.md",
-      "bytes": 50072,
-      "sha256": "916c3f2be85993a0c58e67a03901671c213959191cf711eb23b1c49290691459"
+      "bytes": 102769,
+      "sha256": "15bce067e2cb129c572ce0704cd7a69e0e8792ad8a435e147128b0deffa76b35"
     },
     {
       "path": "03_SDS.md",
-      "bytes": 60665,
-      "sha256": "4a4975067790bf909cb4db830f96155272f21f7a6f575fbff07796ea13bfb7e3"
+      "bytes": 122447,
+      "sha256": "2243efbcaf7332a2116c818bd675cd8d0a162d5119457cb114a9294d4589f99b"
     },
     {
       "path": "04_BACKLOG.md",
@@ -45,12 +45,12 @@
     {
       "path": "DESIGN_VALIDATION_REPORT.json",
       "bytes": 674,
-      "sha256": "b98526d105da7915b0e26df902c241d7ce948255785433d647d6117ec3c386ad"
+      "sha256": "3c4a40eae38f224a50fec15284c3444418176e12eea88c23f453f9bf31d86de6"
     },
     {
       "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
-      "bytes": 119854,
-      "sha256": "983263838eca7153ccfb2b836e20c28cf2f710627594091b9438896315121a0c"
+      "bytes": 234508,
+      "sha256": "aa77a5f984973ca0f66ba21b2ef48199284ecf503e269b72233e04efc9461e71"
     },
     {
       "path": "README.md",
@@ -64,8 +64,8 @@
     },
     {
       "path": "contracts/README.md",
-      "bytes": 4616,
-      "sha256": "06415ee9890b5df87f5427c2fa0f48ddf537ed7a127e38f8f541c370065ccde7"
+      "bytes": 5741,
+      "sha256": "ecd9eb5a33cd9f55c82628c77051f6c209af5055a99081585666ad1cb9cfed5e"
     },
     {
       "path": "contracts/acceptance-cases.json",
