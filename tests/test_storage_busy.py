@@ -164,13 +164,13 @@ def test_stop_wakes_backoff_and_prevents_another_attempt(ctx, monkeypatch):
 
 
 def test_stop_during_attached_startup_busy_releases_worker_lock(ctx, monkeypatch):
-    monkeypatch.setattr(store, "_BUSY_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(jobs, "_UNCLAIMED_BUSY_TIMEOUT_SECONDS", 0.2)
     attached = mcp._AttachedWorker(ctx, True)
     with sqlite3.connect(ctx.paths.database, isolation_level=None) as blocker:
         blocker.execute("BEGIN IMMEDIATE")
         attached.thread.start()
         try:
-            assert attached.ready.wait(30)  # first busy makes startup status observable
+            assert attached.ready.wait(2)  # first busy makes startup status observable
             assert attached.state == "starting"
             assert attached.status()["storage_busy_retries"] >= 1
             assert not attached.status()["worker_available"]
@@ -231,25 +231,37 @@ def test_unclaimed_maintenance_busy_rolls_back_and_retries(ctx, monkeypatch, loc
     with ctx.store.transaction() as conn:
         conn.execute("UPDATE jobs SET cancel_requested=1 WHERE id=?", (job_id,))
     with jobs.Executor(ctx.store, registry=operations) as executor:
-        name = {"heartbeat": "_heartbeat", "cancel": "_cancel", "idle": "unavailable_operations"}[
-            location
-        ]
-        original = getattr(executor, name)
         calls = []
-
-        def once(*args):
-            calls.append(True)
-            if len(calls) == 1:
-                raise store._StorageBusy(sqlite3.SQLITE_BUSY)
-            result = original(*args)
-            if location == "idle":
-                executor.request_stop()
-            return result
-
-        monkeypatch.setattr(executor, name, once)
         if location == "idle":
-            executor.run()
+            # unavailable_operations owns its retry. Inject at its connection,
+            # rather than replacing the public method and bypassing that retry.
+            assert not executor.run_once()  # commit the cancellation first
+            monkeypatch.setattr(executor, "_claim", lambda: None)
+            connection = ctx.store.connection
+
+            @contextmanager
+            def query():
+                calls.append(True)
+                if len(calls) == 1:
+                    raise store._StorageBusy(sqlite3.SQLITE_BUSY)
+                with connection() as conn:
+                    yield conn
+                executor.request_stop()
+
+            with monkeypatch.context() as patch:
+                patch.setattr(ctx.store, "connection", query)
+                executor.run()
         else:
+            name = {"heartbeat": "_heartbeat", "cancel": "_cancel"}[location]
+            original = getattr(executor, name)
+
+            def once(*args):
+                calls.append(True)
+                if len(calls) == 1:
+                    raise store._StorageBusy(sqlite3.SQLITE_BUSY)
+                return original(*args)
+
+            monkeypatch.setattr(executor, name, once)
             assert not executor.run_once()
         assert len(calls) == 2
         assert executor.storage_busy_retries == 1

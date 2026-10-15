@@ -369,8 +369,9 @@ other SQLite errors expose only E_STORAGE/never publicly; corruption, I/O errors
 and missing codes do not qualify for busy retry. No SQL, paths or values enter error
 messages. Existing transaction constraint errors retain E_REFERENCE_INVALID.
 All writable connections use foreign keys, recursive_triggers ON, WAL and synchronous
-FULL. Writable opens inspect journal mode and change it only when needed; the WAL
-transition itself can return SQLITE_BUSY and uses the same classification. Read-only
+FULL. Writable opens issue journal_mode=WAL: SQLite treats an already-WAL database as a
+no-op without taking the write lock, including with a held writer. A real WAL
+transition can return SQLITE_BUSY and uses the same classification. Read-only
 schema probes inspect journal mode and never
 change a newer DB. Both contexts close their connection and hold a shared maintenance
 lock. Pass `conn=conn` when already inside a transaction. Always use parameters for

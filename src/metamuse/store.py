@@ -1559,10 +1559,9 @@ def _configure(conn: sqlite3.Connection, *, writable: bool = True) -> None:
     conn.execute("PRAGMA recursive_triggers=ON")
     conn.execute(f"PRAGMA busy_timeout={int(_busy_timeout_seconds() * 1000)}")
     if writable:
-        # Changing journal mode can itself need a write lock. Existing WAL readers
-        # only inspect the mode; a failed transition is classified by _open as busy.
-        if conn.execute("PRAGMA journal_mode").fetchone()[0].lower() != "wal":
-            conn.execute("PRAGMA journal_mode=WAL")
+        # Already-WAL is a lock-free no-op, even with a competing writer. A real
+        # mode transition can be busy and is classified by _open.
+        conn.execute("PRAGMA journal_mode=WAL")
     else:
         conn.execute("PRAGMA journal_mode")  # inspect only; never modify a newer schema
     conn.execute("PRAGMA synchronous=FULL")

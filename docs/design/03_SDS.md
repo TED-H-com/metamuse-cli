@@ -81,7 +81,8 @@ commit至context exit的max 6901.59 ms。30秒提供超過觀測stall的餘裕�
 既有workspace先read檢查active content.cursor，存在就不開provisioning write transaction，
 doctor、jobs get/list及search不取得write lock；首次provision在write transaction內重查以避免race。
 WAL reader不取得write lock；同Store的短connection仍受process內RLock序列化。
-每次writable open先讀journal mode，必要時才切WAL；切換也可能SQLITE_BUSY。
+每次writable open設journal_mode=WAL；已是WAL時SQLite視為no-op，不取write lock，
+持有另一writer的真實測試亦通過。實際mode切換仍可能SQLITE_BUSY，走相同分類。
 Store按sqlite_errorcode的primary byte分類SQLITE_BUSY／SQLITE_LOCKED，保留extended code於
 internal _StorageBusy(CoreError)。public仍E_STORAGE／retry_class=never；其他SQLite錯誤
 （含corruption、I/O、缺code）不重試，不按message判斷，不輸出SQL／path／row內容。
