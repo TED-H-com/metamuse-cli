@@ -163,6 +163,23 @@ def test_r6_6_duplicate_without_marker_refused(ctx, where):
     )
     refuse(ctx, {}, raw=body.encode(), ids=set())
 
+@pytest.mark.parametrize(
+    "encoding",
+    ["utf-16", "utf-16-le", "utf-16-be", "utf-32", "utf-32-le", "utf-32-be", "utf-8-sig"],
+)
+@pytest.mark.parametrize("deep", [False, True])
+def test_r6_7_only_strict_utf8(ctx, encoding, deep):
+    doc = assignment(vm_type="hatch_cvm", a="丢")
+    if deep:
+        node = []
+        for _ in range(40):
+            node = [node]
+        doc["deep"] = node
+    refuse(ctx, {}, raw=json.dumps(doc, ensure_ascii=False).encode(encoding), ids=set())
+
+def test_r6_7_invalid_utf8(ctx):
+    refuse(ctx, {}, raw=b'{"note":"\xff","vm_type":"hatch_cvm"}', ids=set())
+
 @pytest.mark.parametrize("path", ["auth", "hatch"])
 def test_r6_6_other_https_duplicate_keys(ctx, path):
     transport, http, connector = attempt(ctx.store, assignment())
@@ -172,4 +189,20 @@ def test_r6_6_other_https_duplicate_keys(ctx, path):
     with pytest.raises(CoreError) as error:
         transport.sessions_list()
     assert error.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    assert not connector.urls
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-16-le", "utf-32-le"])
+@pytest.mark.parametrize("depth", [0, 1, 30, 31, 32, 33, 40])
+def test_r6_7_public_parser_makes_walk_guard_unreachable(ctx, encoding, depth):
+    node = {"kind": "hatch_cvm"}
+    for _ in range(depth):
+        node = [node]
+    payload = assignment(meta=node, a="丢")
+    body = json.dumps(payload, ensure_ascii=False).encode(encoding)
+    transport, http, connector = attempt(ctx.store, {})
+    http.responses["/api/session"] = HttpResponse(200, body, {}, response({}).peer)
+    with pytest.raises(CoreError):
+        transport.sessions_list()
+    # JSON nesting includes root+meta object; UTF8 must be <=32 before the walk.
+    assert bool(observed(ctx.store)) == (encoding == "utf-8" and depth + 2 <= 32)
     assert not connector.urls

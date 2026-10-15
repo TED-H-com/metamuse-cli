@@ -423,25 +423,17 @@ def _duplicate_json(value):
 
 
 def _json_value(body: bytes) -> Any:
-    if json_depth(body, limit=_JSON_DEPTH) > _JSON_DEPTH:
-        raise _error(
-            ErrorCode.PROTOCOL_MISMATCH,
-            "Muse JSON nesting is too deep",
-            next_action="Stop. Do not retry a damaged payload.",
-        )
     try:
-        return json.loads(body, object_pairs_hook=_JSONPairs)
-    except (json.JSONDecodeError, UnicodeDecodeError, RecursionError, ValueError, OverflowError):
-        failure = _error(
-            ErrorCode.PROTOCOL_MISMATCH,
-            "Muse payload was not JSON",
-            next_action="Stop. Do not retry a damaged payload.",
-        )
-    else:
-        failure = None
-    if failure is not None:
-        raise failure
-    return None
+        text = body.decode("utf-8", errors="strict")
+        if (
+            text.startswith("\ufeff")
+            or json_depth(text.encode("utf-8"), limit=_JSON_DEPTH) > _JSON_DEPTH
+        ):
+            raise ValueError
+        return json.loads(text, object_pairs_hook=_JSONPairs)
+    except (UnicodeError, RecursionError, ValueError, OverflowError):
+        failure = protocol_stop()
+    raise failure
 
 
 @dataclass(frozen=True)
