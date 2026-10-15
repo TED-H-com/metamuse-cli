@@ -685,6 +685,23 @@ records each revision's own file hash. A packet or draft that cites an older
 cue revision is stale. A subtitle HTTP 403 is `E_ACCESS_DENIED` and
 `awaiting_user`, same as a page 403. No later subtitle or media request runs.
 
+One `_stored_url` function decides every durable extractor-derived URL: it returns
+only `_require_reviewable_url`'s display on a host in the job's bound approvals.
+Canonical provenance tries webpage_url, then the extract URL after share resolution,
+then the reviewed input. Store the display and canonical_basis (webpage_url,
+extract_url or reviewed) in source use_basis and item revision evidence. A refused
+candidate is never stored or echoed. Signed media/subtitle/delegation URLs remain
+in memory only. Resolved share provenance is retained only when reviewable too.
+Upstream media IDs, scope IDs and extractor labels use `[A-Za-z0-9_@.:-]{1,256}` and must
+survive shared redaction unchanged; violations are fixed E_INPUT_INVALID without
+an echo. Subtitle language uses `[A-Za-z0-9][A-Za-z0-9_-]{0,34}`; method must be
+provided/auto/asr/manual (at most 8 characters). Invalid labels are refused, never
+mapped to a colliding und identity. A subtitle native ID combines the bounded
+media ID, language and method with fixed separators (at most 310 characters).
+Titles and cue text are bounded and redacted;
+raw timestamp strings must match the bounded numeric timestamp pattern. Internal
+IDs, hashes and counters alone enter durable current/checkpoint resource fields.
+
 An unchanged title does not append an item revision. A changed upstream
 timestamp is recorded on the source `use_basis` (`upstream_timestamp` and
 `fetched_at`) and the original `item_revisions.raw_time` stays. A finite
