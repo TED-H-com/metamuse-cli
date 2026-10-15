@@ -670,3 +670,8 @@ MEASURE: shipped marker predicate, seeded random base64url, 4,000 trials per len
 32 chars 3/4000 (0.075%); 256 4/4000 (0.100%); 1024 24/4000 (0.600%);
 4096 102/4000 (2.550%). These synthetic rates are not predictions for real session
 fields. Credential values are opaque to marker matching.
+
+Before-frame session.start failures preserve the original fixed error code,
+message, next action, retry class and retry delay when wrapped as MuseNotSubmitted.
+SQLite BUSY/LOCKED therefore retains safe_read advice; this is affirmative
+not-submitted accounting and never permits automatic replay of an uncertain send.

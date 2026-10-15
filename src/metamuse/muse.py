@@ -220,8 +220,12 @@ class MuseNotSubmitted(CoreError):
             super().__init__(ErrorCode.NETWORK_TIMEOUT, "Muse request failed before frame handoff")
         else:
             super().__init__(
-                error.detail.code, error.detail.message, next_action=error.detail.next_action
+                error.detail.code,
+                error.detail.message,
+                next_action=error.detail.next_action,
+                retry_after=error.retry_after,
             )
+            self.detail.retry_class = error.detail.retry_class
 
 
 class MuseProtocolStop(CoreError):
