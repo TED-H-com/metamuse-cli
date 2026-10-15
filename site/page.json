@@ -85,7 +85,7 @@
       }
     },
     {
-      "value": "5",
+      "value": "6",
       "label": {
         "en": "SQLite schema after init",
         "zh": "init 之後的 SQLite 綱要"
@@ -568,8 +568,8 @@
             "zh": "工作與草稿"
           },
           {
-            "en": "Schema 5",
-            "zh": "綱要 5"
+            "en": "Schema 6",
+            "zh": "綱要 6"
           }
         ]
       },
@@ -841,7 +841,7 @@
         "en": "SQLite schema",
         "zh": "SQLite 綱要"
       },
-      "value": "5"
+      "value": "6"
     },
     {
       "label": {

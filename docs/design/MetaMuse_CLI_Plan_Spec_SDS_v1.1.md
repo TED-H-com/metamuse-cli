@@ -146,7 +146,7 @@ MUST 必須；SHOULD 應；MAY 可選。數字是工程預設或驗收目標，�
 | Source | platform、native scope/id、原始／正規化 URL、collection_method、取得時間、使用依據引用。 |
 | ItemObservation | project/source、kind(post/comment/reply)、native ID、parent、原文、原始與解析時間、revision、完整性與缺值。 |
 | Asset | SHA-256、MIME、實際 bytes、時長、私有路徑引用、所有來源關係；相同bytes不抹掉不同來源。 |
-| TranscriptSegment | asset、revision、start/end毫秒、語言、原文、provided/auto/asr/manual、校對狀態。 |
+| TranscriptSegment | asset、revision、start/end毫秒、語言、原文、provided/auto/asr/manual、校對狀態；removed預設false。移除是revision≥2且text空字串的追加修正，同transaction標記派生stale；目前搜尋與解析不回已移除cue，明示舊文字版本仍可解析為stale。 |
 | Packet | 固定來源revision／字幕區間、實際送出文本、redactions、來源方式、範圍、digest。 |
 | Discussion/Exchange | project、remote session、question、packet版本、提交意圖／狀態、cursor、raw messages與關聯狀態。 |
 | Draft | 完整文字、revision、platform variants、facts／assets、明示偏好、digest。 |
@@ -553,6 +553,17 @@ escapes and NFKC folding. Split JavaScript string literals are not detected.
 Cookie domains require at least two labels and cannot normalize to IP literals;
 multi-label public suffix detection needs a public-suffix list.
 
+B12 canonical provenance stores only reviewable display URLs on bound approved
+hosts, preferring webpage_url, then extract URL, then reviewed input; canonical_basis
+records the winner. Refused/signed candidates never persist. Subtitle language/method
+and upstream identities are bounded patterns; text is bounded and redacted.
+A 2xx subtitle/media HTML or BOM/whitespace-sniffed HTML login form stops with
+E_AUTH_REQUIRED before later dials or resource rows; page classification stays with
+the extractor. Every body block checks the cheap deadline; durable scan guards are
+paced at 250 ms plus first/last. Changed subtitle bytes retire omitted cue indexes
+atomically, including changed zero-valid-cue replacements. Failed fetches and listing
+omissions do not imply removal. See COLLECT.md for bounds and measured costs.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -655,7 +666,7 @@ internal _StorageBusy(CoreError)。public仍E_STORAGE／retry_class=never；其�
 | assets | sha256 UNIQUE、mime、actual bytes、duration、object path、state。 |
 | item_assets | item revision→asset、relation；保留各來源。 |
 | source_assets | source、project、asset、relation。直接匯入的媒體沒有貼文時仍有專案範圍的來源關係。 |
-| transcript_segments | project、可空 asset、可空 item/source、cue_index、overlap、start_ms/end_ms、text、language、method、review；end≥start≥0。至少要有 asset、item 或 source 之一。相同 bytes 的字幕不跨 project 可見。 |
+| transcript_segments | project、可空 asset、可空 item/source、cue_index、overlap、start_ms/end_ms、text、language、method、review、removed（default false；移除列text空、revision≥2）；end≥start≥0。至少要有 asset、item 或 source 之一。相同 bytes 的字幕不跨 project 可見。 |
 | packets | project、exact selection、rendered_text、redactions、coverage、digest、created。 |
 | permits | kind/scope、issuer、issued/expiry、max_uses/used、revoked、exact digest（需要時）。 |
 | discussions | project/provider/auth_ref、remote_session nullable、open attempt state、last_seq、state。 |
@@ -672,7 +683,7 @@ P1才加actions/action_attempts、metric_snapshots，不預建campaign/voice/for
 
 必須有FK及project一致性：跨project item/source/parent/packet引用拒絕。asset bytes可共用，但可見範圍依item_assets與source_assets，不因hash相同洩露別project。字幕的 project_id 是衍生文字的擁有者，可沒有 asset；共用 bytes 不共用字幕。transcript (id, revision) 只追加，不 UPDATE，也不能以 REPLACE、INSERT OR REPLACE 或 ON CONFLICT DO UPDATE 覆蓋既有主鍵。source_assets 整列不可更新，既有主鍵不可 REPLACE。兩表都沒有次要 UNIQUE；非唯一索引不是身分。單則字幕文字超過 1,000,000 字元是該列錯誤。
 
-native IDs為opaque字串，不自行解碼。可靠ID用(platform,scope,id)識別；無ID保持弱識別，不以文字hash假裝同留言。parent不得自我／循環。revision追加，不原地抹掉舊來源；修正同transaction標記派生stale。
+native IDs為opaque字串，不自行解碼。可靠ID用(platform,scope,id)識別；無ID保持弱識別，不以文字hash假裝同留言。parent不得自我／循環。revision追加，不原地抹掉舊來源；修正同transaction標記派生stale。移除cue追加removed=true/text=""的較新revision，需同id/project的前一文字列，拒絕double removal；舊文字明示引用仍可讀且stale，移除列不能解析為證據。
 
 ## 5. 工作提交与executor
 
@@ -1019,7 +1030,7 @@ or created; cleanup of files from older development builds remains an operator t
 Schema-2 transcript visibility uses authoritative project_id, with nullable asset/item/source
 anchors. Migration 002 copies a v1 transcript only when its asset links to exactly one
 project; unlinked or ambiguous ownership aborts and retains the original data. New
-transcript revisions mark directly derived records stale; B07/B11 also checks transitive
+transcript revisions, including removal revisions, mark directly derived records stale; B07/B11 also checks transitive
 staleness at use. Fresh v2 databases and restored/upgraded v1 databases must have the
 same canonical schema. Both 002 tables retain their guard names, use rowid-aware INSERT
 guards and whole-row UPDATE freezes, and have no secondary UNIQUE indexes. These
@@ -1253,6 +1264,21 @@ slash, after HTML entities, one percent-decoding, JavaScript \u005f/\x5f undersc
 escapes and NFKC folding. Split JavaScript string literals are not detected.
 Cookie domains require at least two labels and cannot normalize to IP literals;
 multi-label public suffix detection needs a public-suffix list.
+
+B12 durable canonical URLs are reviewable bound-host displays selected in webpage_url,
+extract_url, reviewed order, with canonical_basis in use_basis and revision evidence.
+Signed hop/resource URLs never persist. Changed subtitle files atomically append new
+cues and removed=true/empty-text revisions for omitted prior indexes; source basis
+records zero-cue replacements too. Search excludes latest removals, resolution and
+exports refuse removal refs without text, and historical text-bearing refs stay stale.
+Migration `006_transcript_removal.sql` upgrades schema 5→6 after Muse trust
+migration 005; its additive checked column preserves existing rows, triggers and indexes.
+Listing omissions alone remain B18, not source-removal proof.
+Subtitle/media final HTML responses (type or BOM/whitespace/opening-tag sniff) are
+parsed for login forms over the full body, retaining original context across redirects;
+E_AUTH_REQUIRED stops before later requests or resource writes. Page requests remain
+extractor-classified. Challenge/login block scans share a cheap deadline on every block
+and durable guard pacing: first, at most every 250 ms, and after last.
 
 ---
 

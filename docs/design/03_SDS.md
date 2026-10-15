@@ -98,7 +98,7 @@ internal _StorageBusy(CoreError)。public仍E_STORAGE／retry_class=never；其�
 | assets | sha256 UNIQUE、mime、actual bytes、duration、object path、state。 |
 | item_assets | item revision→asset、relation；保留各來源。 |
 | source_assets | source、project、asset、relation。直接匯入的媒體沒有貼文時仍有專案範圍的來源關係。 |
-| transcript_segments | project、可空 asset、可空 item/source、cue_index、overlap、start_ms/end_ms、text、language、method、review；end≥start≥0。至少要有 asset、item 或 source 之一。相同 bytes 的字幕不跨 project 可見。 |
+| transcript_segments | project、可空 asset、可空 item/source、cue_index、overlap、start_ms/end_ms、text、language、method、review、removed（default false；移除列text空、revision≥2）；end≥start≥0。至少要有 asset、item 或 source 之一。相同 bytes 的字幕不跨 project 可見。 |
 | packets | project、exact selection、rendered_text、redactions、coverage、digest、created。 |
 | permits | kind/scope、issuer、issued/expiry、max_uses/used、revoked、exact digest（需要時）。 |
 | discussions | project/provider/auth_ref、remote_session nullable、open attempt state、last_seq、state。 |
@@ -115,7 +115,7 @@ P1才加actions/action_attempts、metric_snapshots，不預建campaign/voice/for
 
 必須有FK及project一致性：跨project item/source/parent/packet引用拒絕。asset bytes可共用，但可見範圍依item_assets與source_assets，不因hash相同洩露別project。字幕的 project_id 是衍生文字的擁有者，可沒有 asset；共用 bytes 不共用字幕。transcript (id, revision) 只追加，不 UPDATE，也不能以 REPLACE、INSERT OR REPLACE 或 ON CONFLICT DO UPDATE 覆蓋既有主鍵。source_assets 整列不可更新，既有主鍵不可 REPLACE。兩表都沒有次要 UNIQUE；非唯一索引不是身分。單則字幕文字超過 1,000,000 字元是該列錯誤。
 
-native IDs為opaque字串，不自行解碼。可靠ID用(platform,scope,id)識別；無ID保持弱識別，不以文字hash假裝同留言。parent不得自我／循環。revision追加，不原地抹掉舊來源；修正同transaction標記派生stale。
+native IDs為opaque字串，不自行解碼。可靠ID用(platform,scope,id)識別；無ID保持弱識別，不以文字hash假裝同留言。parent不得自我／循環。revision追加，不原地抹掉舊來源；修正同transaction標記派生stale。移除cue追加removed=true/text=""的較新revision，需同id/project的前一文字列，拒絕double removal；舊文字明示引用仍可讀且stale，移除列不能解析為證據。
 
 ## 5. 工作提交与executor
 
@@ -462,7 +462,7 @@ or created; cleanup of files from older development builds remains an operator t
 Schema-2 transcript visibility uses authoritative project_id, with nullable asset/item/source
 anchors. Migration 002 copies a v1 transcript only when its asset links to exactly one
 project; unlinked or ambiguous ownership aborts and retains the original data. New
-transcript revisions mark directly derived records stale; B07/B11 also checks transitive
+transcript revisions, including removal revisions, mark directly derived records stale; B07/B11 also checks transitive
 staleness at use. Fresh v2 databases and restored/upgraded v1 databases must have the
 same canonical schema. Both 002 tables retain their guard names, use rowid-aware INSERT
 guards and whole-row UPDATE freezes, and have no secondary UNIQUE indexes. These
@@ -696,3 +696,18 @@ slash, after HTML entities, one percent-decoding, JavaScript \u005f/\x5f undersc
 escapes and NFKC folding. Split JavaScript string literals are not detected.
 Cookie domains require at least two labels and cannot normalize to IP literals;
 multi-label public suffix detection needs a public-suffix list.
+
+B12 durable canonical URLs are reviewable bound-host displays selected in webpage_url,
+extract_url, reviewed order, with canonical_basis in use_basis and revision evidence.
+Signed hop/resource URLs never persist. Changed subtitle files atomically append new
+cues and removed=true/empty-text revisions for omitted prior indexes; source basis
+records zero-cue replacements too. Search excludes latest removals, resolution and
+exports refuse removal refs without text, and historical text-bearing refs stay stale.
+Migration `006_transcript_removal.sql` upgrades schema 5→6 after Muse trust
+migration 005; its additive checked column preserves existing rows, triggers and indexes.
+Listing omissions alone remain B18, not source-removal proof.
+Subtitle/media final HTML responses (type or BOM/whitespace/opening-tag sniff) are
+parsed for login forms over the full body, retaining original context across redirects;
+E_AUTH_REQUIRED stops before later requests or resource writes. Page requests remain
+extractor-classified. Challenge/login block scans share a cheap deadline on every block
+and durable guard pacing: first, at most every 250 ms, and after last.

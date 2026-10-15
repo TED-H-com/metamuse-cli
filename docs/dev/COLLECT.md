@@ -401,6 +401,11 @@ and approves the exact digest with
 --exact-digest ACTION_DIGEST --request-key APPROVAL_KEY`. Repeat with the returned
 grant, then compare source metadata, subtitles and any requested media bytes against
 the permitted source, recording limits, omissions, provenance and partial coverage.
+Check that a subtitle/media login wall ends E_AUTH_REQUIRED without a later dial
+or rows for that resource. Re-fetch a deliberately shortened or empty permitted
+track: omitted cues must disappear from current search, old explicit citations
+must be stale, and citing packets/drafts must be stale. Older text remains in
+its historical revision; removal revisions must not render as text.
 Stop at a login wall or challenge. This plan has not been executed; the shipped
 CLI/MCP tests use synthetic extractors and egress seams, with no network or accounts.
 
@@ -675,15 +680,28 @@ A result with more than one playlist entry is `E_UNSUPPORTED`. The next action
 is `submit the individual media URL`. Nothing from that result is stored. A
 one-entry playlist is unwrapped and stored as that entry.
 
-Subtitle bytes are one track, keyed by video, language, and method. The same
-bytes and a complete track take the completed-hash shortcut. Any malformed cue
-stores the valid cues with `complete` 0, adds `subtitles` to the missing
-fields, and leaves the job `partial`. An incomplete track does not take the
-shortcut. Changed bytes append a transcript revision for every cue in the new
-file, reusing the segment id at the same cue index. `use_basis.revisions`
-records each revision's own file hash. A packet or draft that cites an older
-cue revision is stale. A subtitle HTTP 403 is `E_ACCESS_DENIED` and
-`awaiting_user`, same as a page 403. No later subtitle or media request runs.
+Subtitle bytes are one track, keyed by video, language, and method. Identical
+bytes write nothing, including incomplete tracks. Malformed cues keep valid cues
+with `complete` 0 and the job partial. Changed bytes append a track revision and
+text-bearing rows for its new cue indexes, reusing each segment ID. In the same
+transaction, every omitted prior index whose latest row is text-bearing gets a
+removal revision: `removed=true`, empty text, copied timing, and the track language
+and method. A changed valid empty or unreadable/malformed-only file records a
+zero-cue track revision and retires all old cues; subtitles remain missing and the
+job partial. A first empty fetch creates nothing; a failed fetch changes nothing.
+Reappearance appends text with the same ID. The digest, revision, cue count,
+complete flag and revision hash history live in use_basis. Failure before commit
+rolls back cues, removals, basis and stale flags together.
+Search excludes a segment whose latest row is removed, even on a prior search
+cursor. Resolving a removal/current removed revision, packet preparation and every
+export format refuse it with E_REFERENCE_INVALID, naming the last text-bearing
+revision without returning text. An explicit older text-bearing revision resolves
+with stale=true. Packet/draft stale flags move in the same transaction as removal.
+Migration `006_transcript_removal.sql` upgrades schema 5 to 6 after Muse trust
+migration 005; the additive column preserves the existing triggers and indexes.
+
+A track absent from a later listing is not retired: a transient extractor omission
+is not proof of source change. That limitation belongs to B18.
 
 A 2xx subtitle/media final response is classified for login forms when its type is
 text/html or application/xhtml+xml, or its bytes begin with a UTF-8 BOM, optional
