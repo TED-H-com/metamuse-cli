@@ -310,7 +310,10 @@ the accepted original question, two newlines and that packet. Private original
 exports retain original_private and their documented original bytes.
 
 Redaction uses bounded possessive name grammars, forward scans and precomputed
-quote/container/tag terminators. Scans advance past consumed values; a fixed number
+quote/container/tag terminators. A consumed outer value ending in a sensitive
+assignment name/operator extends over its following value, including across a newline.
+Form scopes revealed by decoding use their own operator depth; deeper pluses remain
+data. Scans advance past consumed values; a fixed number
 of ordered interval streams merge and each pass builds output with one join.
 Original-offset maps are sparse/coalesced; changed canonical views additionally use
 one byte of decoding depth per character. The four-application bound is constant.

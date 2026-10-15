@@ -46,6 +46,31 @@ def test_r4_bearer_closure_covers_intersecting_display_masks():
 
 
 @pytest.mark.parametrize(
+    "nested", ["password:", "password=", "--password", "-password", "password ="]
+)
+@pytest.mark.parametrize("space", [" ", " \n"])
+def test_r4_consumed_assignment_covers_nested_value_after_whitespace(nested, space):
+    value = marker()
+    assert_private('"token": +https://example.invalid/' + nested + space + value, value)
+
+
+def test_r4_malformed_preceding_line_does_not_hide_quoted_value():
+    value = marker()
+    assert_private('log: {"password": "unfinished\n{"x-api-key":"' + value + '"}', value)
+
+
+@pytest.mark.parametrize("prefix", ["&", "?", "#", "%26", "%2526"])
+def test_r4_colon_assignment_after_query_like_separator(prefix):
+    value = marker()
+    assert_private("note" + prefix + "secret: " + value, value)
+
+
+def test_r4_literal_percent_does_not_hide_a_named_assignment():
+    value = marker()
+    assert_private("sig?%3D%25token%3D" + value, value)
+
+
+@pytest.mark.parametrize(
     "text", ["prompt='Password: '", "def getpass(prompt='Password: ', stream=None):"]
 )
 def test_r4_empty_value_before_enclosing_quote_is_exempt(text):

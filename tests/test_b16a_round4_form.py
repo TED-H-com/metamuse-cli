@@ -2,6 +2,7 @@
 
 import base64
 import random
+from urllib.parse import quote
 
 import pytest
 from test_b16a_round4 import assert_private, marker
@@ -44,4 +45,24 @@ def test_r32_question_mark_does_not_enable_form_syntax_in_prose():
 def test_r32_url_fragment_never_enables_form_decoding(text):
     from metamuse.safety import redact_text
 
+    assert redact_text(text) == (text, [])
+
+
+@pytest.mark.parametrize("layers", [1, 2, 3])
+@pytest.mark.parametrize("safe", ["", "+"])
+@pytest.mark.parametrize(
+    "carrier", ["q=--password+{v}", "https://example.invalid/?q=--password+{v}"]
+)
+def test_r32_form_scope_revealed_by_percent_decoding(layers, safe, carrier):
+    value = marker()
+    text = carrier.format(v=value)
+    for _ in range(layers):
+        text = quote(text, safe=safe)
+    assert_private(text, value)
+
+
+def test_r32_deeper_encoded_plus_is_data():
+    from metamuse.safety import redact_text
+
+    text = "https://example.invalid/?q=--password%2Brequired"
     assert redact_text(text) == (text, [])
