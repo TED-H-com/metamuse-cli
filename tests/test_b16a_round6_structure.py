@@ -359,3 +359,25 @@ def test_r6_encoding_the_whole_url_keeps_literal_question_in_value(layers, prefi
 def test_r6_complete_template_expression_remains_exempt(layers):
     text = encoded("password: ${{ secrets.DB_PASSWORD }}", layers)
     assert redact_text(text) == (text, [])
+
+
+def test_r6_form_har_does_not_spend_json_decode_budget():
+    from urllib.parse import quote
+
+    from metamuse.safety import _har_candidates
+
+    text = "q=" + quote(json.dumps({"cookies": [{"name": "theme", "value": MARKER}]}), safe="")
+    spans = list(_har_candidates(text, _depth=3, _percent_depth=3))
+    assert any(MARKER in text[start:end] for start, end, *_ in spans)
+
+
+def test_r6_percent_har_is_independent_of_unrelated_json_candidate():
+    from urllib.parse import quote
+
+    from metamuse.safety import _har_candidates
+
+    text = 'noise {\\"bad\\" ' + quote(
+        json.dumps({"cookies": [{"name": "theme", "value": MARKER}]}), safe=""
+    )
+    spans = list(_har_candidates(text, _depth=3))
+    assert any(MARKER in text[start:end] for start, end, *_ in spans)

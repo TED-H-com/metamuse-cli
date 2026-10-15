@@ -703,6 +703,19 @@ new(
     "credential_shapes_and_encoded_spans",
 )
 
+adapt(
+    "har_percent_layer_consumes_form_budget",
+    base.MUTANTS["har_percent_layer_consumes_form_budget"][1],
+    STRUCT,
+    "form_har_does_not_spend",
+)
+adapt(
+    "r6_escaped_candidate_blocks_percent_har",
+    base.MUTANTS["r6_escaped_candidate_blocks_percent_har"][1],
+    STRUCT,
+    "percent_har_is_independent",
+)
+
 if __name__ == "__main__":
     from b16a_r6_mutation_run import main
 
