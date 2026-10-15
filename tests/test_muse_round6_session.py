@@ -3,14 +3,12 @@
 import json
 
 import pytest
-
 from test_muse_round5_identity import attempt
-
 from test_muse_standard import assignment, response
 
 from metamuse._muse_http import HttpResponse
-
 from metamuse.models import CoreError, ErrorCode
+
 
 def observed(store):
     with store.connection() as conn:
@@ -20,6 +18,7 @@ def observed(store):
                 "SELECT vm_id FROM muse_trust_observations WHERE confidential_required=1"
             )
         }
+
 
 def refuse(ctx, payload, *, ids=None, raw=None):
     transport, http, connector = attempt(ctx.store, payload)
@@ -47,6 +46,7 @@ def refuse(ctx, payload, *, ids=None, raw=None):
                 later.sessions_list()
             assert error.value.detail.code == ErrorCode.PROTOCOL_MISMATCH and not dial.urls
 
+
 MARKERS = [
     "hatch_cvm",
     "HATCH-CVM",
@@ -65,7 +65,6 @@ MARKERS = [
     "ᶜvm",
     "𝐜𝐯𝐦",
 ]
-
 NOT_MARKERS = [
     "Public VM",
     "basic vm",
@@ -82,6 +81,7 @@ NOT_MARKERS = [
     "HATCHCVM",
 ]
 
+
 @pytest.mark.parametrize("where", ["session", "row", "child"])
 @pytest.mark.parametrize("value", MARKERS)
 def test_r6_4_component_markers_sticky(ctx, where, value):
@@ -93,6 +93,7 @@ def test_r6_4_component_markers_sticky(ctx, where, value):
     else:
         payload = assignment(meta={"child": {"note": value}})
     refuse(ctx, payload, ids={"vm1"})
+
 
 @pytest.mark.parametrize("where", ["session", "row", "child"])
 @pytest.mark.parametrize("value", NOT_MARKERS)
@@ -111,6 +112,7 @@ def test_r6_4_no_cross_word_marker(ctx, where, value):
     with transport:
         transport.sessions_list()
     assert connector.urls and not observed(ctx.store)
+
 
 @pytest.mark.parametrize(
     "extra",
@@ -140,6 +142,29 @@ def test_r6_4_opaque_values_and_unmarked_keys(ctx, extra, where):
         transport.sessions_list()
     assert connector.urls and not observed(ctx.store)
 
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        {"cvm_required": True},
+        {"cvmRequired": 1},
+        {"CONFIDENTIAL": "yes"},
+        {"token": {"kind": "hatch_cvm"}},
+        {"token": {"secret": "opaque-cvm", "kind": "hatch_cvm"}},
+    ],
+)
+@pytest.mark.parametrize("where", ["session", "row", "child"])
+def test_r6_4_marker_keys_and_nested_evidence(ctx, extra, where):
+    payload = (
+        assignment(**extra)
+        if where == "session"
+        else assignment(vms=[{**assignment(), **extra}])
+        if where == "row"
+        else assignment(meta=extra)
+    )
+    refuse(ctx, payload, ids={"vm1"})
+
+
 @pytest.mark.parametrize(
     "pair",
     [
@@ -152,6 +177,7 @@ def test_r6_6_duplicate_evidence_is_not_lost(ctx, pair):
     body = json.dumps(assignment())[:-1] + "," + pair + "}"
     refuse(ctx, {}, raw=body.encode(), ids={"vm1", "vm9"} if "vm9" in pair else {"vm1"})
 
+
 @pytest.mark.parametrize("where", ["session", "child"])
 def test_r6_6_duplicate_without_marker_refused(ctx, where):
     pair = '"vm_id":"vm9","vm_id":"vm1"'
@@ -162,6 +188,7 @@ def test_r6_6_duplicate_without_marker_refused(ctx, where):
         + "}"
     )
     refuse(ctx, {}, raw=body.encode(), ids=set())
+
 
 @pytest.mark.parametrize(
     "encoding",
@@ -177,8 +204,10 @@ def test_r6_7_only_strict_utf8(ctx, encoding, deep):
         doc["deep"] = node
     refuse(ctx, {}, raw=json.dumps(doc, ensure_ascii=False).encode(encoding), ids=set())
 
+
 def test_r6_7_invalid_utf8(ctx):
     refuse(ctx, {}, raw=b'{"note":"\xff","vm_type":"hatch_cvm"}', ids=set())
+
 
 @pytest.mark.parametrize("shape", range(4))
 def test_r6_8_union_of_enclosing_identity_scopes(ctx, shape):
@@ -193,6 +222,15 @@ def test_r6_8_union_of_enclosing_identity_scopes(ctx, shape):
         payload = assignment(vms=[assignment(), {"vm_id": "vm7"}], vm_type="hatch_cvm")
     refuse(ctx, payload, ids={"vm1", "vm2"} if shape < 2 else {"vm1", "vm7"})
 
+
+@pytest.mark.parametrize("where", ["session", "row"])
+@pytest.mark.parametrize("status", ["assigned", "ASSIGNED", "ready", None])
+def test_r6_9_alias_only_is_protocol_drift(ctx, where, status):
+    row = assignment(status=status)
+    row["vmId"] = row.pop("vm_id")
+    refuse(ctx, row if where == "session" else assignment(vms=[row]), ids=set())
+
+
 @pytest.mark.parametrize("path", ["auth", "hatch"])
 def test_r6_6_other_https_duplicate_keys(ctx, path):
     transport, http, connector = attempt(ctx.store, assignment())
@@ -203,6 +241,7 @@ def test_r6_6_other_https_duplicate_keys(ctx, path):
         transport.sessions_list()
     assert error.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
     assert not connector.urls
+
 
 def test_r6_8_outermost_scope_cannot_claim_unmarked_decoy(ctx):
     payload = assignment(
@@ -218,6 +257,7 @@ def test_r6_8_outermost_scope_cannot_claim_unmarked_decoy(ctx):
     with later:
         later.sessions_list()
     assert dial.urls
+
 
 @pytest.mark.parametrize("encoding", ["utf-8", "utf-16-le", "utf-32-le"])
 @pytest.mark.parametrize("depth", [0, 1, 30, 31, 32, 33, 40])

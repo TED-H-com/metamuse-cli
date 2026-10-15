@@ -1437,7 +1437,8 @@ class MuseTransport:
             values = identities(item)
             normalized = usable_identities(item)
             if (
-                not values
+                "vm_id" not in item
+                or not values
                 or len(normalized) != 1
                 or any(
                     not isinstance(value, str) or not _VM_ID.fullmatch(value.strip())
@@ -1501,6 +1502,8 @@ class MuseTransport:
             )
             raise protocol_stop()
         if _duplicate_json(payload):
+            raise protocol_stop()
+        if identities(payload) and "vm_id" not in payload:
             raise protocol_stop()
         vm_id = payload.get("vm_id")
         if payload.get("status") == "unavailable" or vm_id is None:
