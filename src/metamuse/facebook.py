@@ -3064,8 +3064,9 @@ class _DOMExtractor:
         self.comments: list[dict[str, Any]] = []
         self._current_comment: dict[str, Any] | None = None
         self._in_comment_body = 0
+        self._unattributed = False
         self.expand_controls: list[ExpandControl] = []
-        self._stack: list[tuple[int, int, dict[str, Any] | None]] = []
+        self._stack: list[tuple[int, int, dict[str, Any] | None, bool]] = []
 
     def _barrier(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = {k.lower(): (v or "") for k, v in attrs}
@@ -3207,10 +3208,31 @@ class _DOMExtractor:
             return
         if visibility and tag in self.BLOCK_TAGS:
             self._block_boundary()
-        self._stack.append((self._in_post_body, self._in_comment_body, self._current_comment))
+        self._stack.append(
+            (self._in_post_body, self._in_comment_body, self._current_comment, self._unattributed)
+        )
 
         role = attr_map.get("role", "").lower()
         fb_role = attr_map.get("data-fb-role", "").lower()
+        identity = (
+            fb_role in {"post", "comment", "reply", "comments-section"}
+            or "data-comments-section" in attr_map
+            or (
+                role == "article"
+                and any(
+                    k in attr_map for k in ("data-post-id", "data-comment-id", "data-comment-kind")
+                )
+            )
+        )
+        if identity:
+            # A different identity owns this subtree, even when it has no box.
+            # Restore the enclosing identity only at this frame's exit.
+            self._in_post_body = 0
+            self._in_comment_body = 0
+            self._current_comment = None
+            self._unattributed = not visibility or fb_role == "comments-section"
+            if visibility and fb_role == "comments-section":
+                self._unattributed = False
 
         if visibility and (fb_role == "post" or (role == "article" and "data-post-id" in attr_map)):
             if self.post_attrs is None:
@@ -3271,7 +3293,12 @@ class _DOMExtractor:
         if visibility and tag.lower() in self.BLOCK_TAGS:
             self._block_boundary(nested_only=True)
         if self._stack:
-            self._in_post_body, self._in_comment_body, self._current_comment = self._stack.pop()
+            (
+                self._in_post_body,
+                self._in_comment_body,
+                self._current_comment,
+                self._unattributed,
+            ) = self._stack.pop()
 
     def _block_boundary(self, *, nested_only: bool = False) -> None:
         if self._in_post_body > (1 if nested_only else 0):
@@ -3292,6 +3319,10 @@ class _DOMExtractor:
             self._json_buf.append(data)
             return
         if self._visibility_stack and not self._visibility_stack[-1]:
+            return
+        if self._unattributed:
+            if data.strip():
+                self.count_gaps.add("unattributed_rendered_text")
             return
         if self._in_post_body > 0:
             self.post_body_present = True

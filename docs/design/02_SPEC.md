@@ -887,3 +887,9 @@ namespace nodes have HTML form/script/void/block semantics. Foreign nodes remain
 generic containers. test_r10_namespace_tag_table derives its SVG and MathML rows
 from the extractor's HTML_TAGS table; broad attribute stop markers still apply
 regardless of namespace or rendering.
+
+An unrendered post/comment/reply/comments-section identity isolates its subtree:
+painted descendants cannot attach to an enclosing or sibling identity. A rendered
+nested identity owns its own content. Painted text without such an identity is
+dropped and adds unattributed_rendered_text, making coverage partial. Each extractor
+stack frame saves and restores this isolation state as well as body/comment state.
