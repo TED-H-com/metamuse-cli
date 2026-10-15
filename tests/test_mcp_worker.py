@@ -155,6 +155,8 @@ def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop, 
         + ("    time.sleep(30)\n" if stop == "EOF_FORCED" else "")
         + "lifecycle._save_send = save\n"
     )
+    # This test exercises shutdown/recovery, not a 60-second import budget.
+    # Slow FULL-sync commits must still fit the finite shared test deadline.
     env = {"PYTHONPATH": str(hook) + os.pathsep + os.environ.get("PYTHONPATH", "")}
 
     async def scenario():
@@ -176,7 +178,7 @@ def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop, 
                             "max_urls": 10,
                             "max_items": 500,
                             "max_bytes": 1024,
-                            "wall_clock_seconds": 60,
+                            "wall_clock_seconds": 300,
                         },
                         "access_grant_id": None,
                         "request_key": "collect",
@@ -221,9 +223,17 @@ def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop, 
                     "approve-send",
                 )
             )["data"]
-            with anyio.fail_after(30):
+            claim_state = None
+            with anyio.move_on_after(min(120, entry.remaining("MCP worker handoff"))) as wait:
                 while not entered.exists():
+                    claim_state = (
+                        await entry.call(session, "job_get", {"job_id": sent["job_id"]})
+                    )["data"]
                     await anyio.sleep(0.02)
+            if wait.cancel_called:
+                pytest.fail(
+                    "Worker handoff timed out; job state and steps: " + json.dumps(claim_state)
+                )
             state = (await entry.call(session, "job_get", {"job_id": sent["job_id"]}))["data"]
             assert state["job"]["state"] == "running" and state["steps"][0]["state"] == "submitting"
             queued = (
@@ -240,7 +250,7 @@ def test_mcp_mid_send_shutdown_or_crash_recovers_without_resend(tmp_path, stop, 
                             "max_urls": 10,
                             "max_items": 500,
                             "max_bytes": 1024,
-                            "wall_clock_seconds": 60,
+                            "wall_clock_seconds": 300,
                         },
                         "access_grant_id": None,
                         "request_key": "after-shutdown",

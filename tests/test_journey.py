@@ -39,12 +39,17 @@ class Entrypoints:
         self.diagnostics = []
         self.server_number = 0
         self.deadline = time.monotonic() + 600
+        self.last_job = None
         self._mcp_command = "metamuse mcp"
+
+    def deadline_error(self, command):
+        detail = json.dumps(self.last_job, ensure_ascii=False)
+        return AssertionError("Test deadline exceeded: " + command + "; last job: " + detail)
 
     def remaining(self, command):
         remaining = self.deadline - time.monotonic()
         if remaining <= 0:
-            raise AssertionError("Test deadline exceeded: " + command)
+            raise self.deadline_error(command)
         return remaining
 
     @contextmanager
@@ -55,7 +60,7 @@ class Entrypoints:
                 yield
         except TimeoutError:
             label = command() if callable(command) else command
-            raise AssertionError("Test deadline exceeded: " + label) from None
+            raise self.deadline_error(label) from None
 
     def cli(self, *args, operator=False, code=0, stdin=None):
         command = [str(self.command), "--workspace", str(self.workspace), "--json"]
@@ -73,7 +78,7 @@ class Entrypoints:
                 check=False,
             )
         except subprocess.TimeoutExpired:
-            raise AssertionError("Test deadline exceeded: " + label) from None
+            raise self.deadline_error(label) from None
         assert result.returncode == code, (result.stdout, result.stderr)
         envelope = json.loads(result.stdout)
         self.transcript.append(
@@ -157,7 +162,7 @@ class Entrypoints:
                         try:
                             await session.initialize()
                         except TimeoutError:
-                            raise AssertionError("Test deadline exceeded: MCP initialize") from None
+                            raise self.deadline_error("MCP initialize") from None
                     yield session
         self.diagnostics.append(log.read_text())
 
@@ -168,7 +173,7 @@ class Entrypoints:
             with anyio.fail_after(self.remaining(label)):
                 result = await session.call_tool("metamuse_" + tool, request)
         except TimeoutError:
-            raise AssertionError("Test deadline exceeded: " + label) from None
+            raise self.deadline_error(label) from None
         assert result.is_error is error, json.dumps(result.structured_content, ensure_ascii=False)
         envelope = result.structured_content
         assert json.loads(result.content[0].text) == envelope
@@ -179,9 +184,12 @@ class Entrypoints:
         return envelope
 
     async def terminal(self, session, job_id):
+        self.last_job = {"job": {"id": job_id, "state": "not_yet_observed"}, "steps": []}
+        next_worker_check = time.monotonic() + 1
         with self.waiting("MCP metamuse_job_get " + job_id):
             while True:
                 data = (await self.call(session, "job_get", {"job_id": job_id}))["data"]
+                self.last_job = data
                 if data["job"]["state"] in (
                     "succeeded",
                     "partial",
@@ -193,6 +201,14 @@ class Entrypoints:
                         data, ensure_ascii=False
                     )
                     return data
+                if time.monotonic() >= next_worker_check:
+                    worker = (await self.call(session, "inspect", {}))["data"]
+                    if not worker["worker_available"]:
+                        raise AssertionError(
+                            "Attached worker stopped before terminal job: "
+                            + json.dumps({"last_job": data, "worker": worker}, ensure_ascii=False)
+                        )
+                    next_worker_check = time.monotonic() + 1
                 await anyio.sleep(0.05)
 
     async def approved_call(self, session, operation, request, key):
@@ -304,7 +320,7 @@ def test_mcp_only_journey_followup_restart_and_export(tmp_path):
                         "max_urls": 10,
                         "max_items": 500,
                         "max_bytes": 1048576,
-                        "wall_clock_seconds": 60,
+                        "wall_clock_seconds": 300,
                     },
                     "access_grant_id": None,
                     "request_key": "collect",

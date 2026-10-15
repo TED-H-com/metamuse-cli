@@ -61,13 +61,14 @@ def test_entrypoint_terminal_poll_deadline_names_command(tmp_path):
     entry.deadline = time.monotonic() + 0.02
 
     async def queued(*args, **kwargs):
-        return {"data": {"job": {"state": "queued"}}}
+        return {"data": {"job": {"state": "queued"}, "steps": [{"state": "pending"}]}}
 
     entry.call = queued
 
     async def scenario():
         with pytest.raises(
-            AssertionError, match="Test deadline exceeded: MCP metamuse_job_get synthetic"
+            AssertionError,
+            match='Test deadline exceeded: MCP metamuse_job_get synthetic.*"queued".*"pending"',
         ):
             await entry.terminal(None, "synthetic")
 
@@ -112,3 +113,25 @@ def test_entrypoint_real_mcp_hang_names_tool_and_disables_bytecode(tmp_path, han
         assert "Test deadline exceeded: metamuse mcp" not in detail
     else:
         anyio.run(scenario)
+
+
+def test_terminal_reports_stopped_attached_worker_and_job_state(tmp_path, monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(test_journey, "time", SimpleNamespace(monotonic=lambda: clock[0]))
+    entry = Entrypoints(tmp_path)
+
+    async def call(session, tool, request):
+        if tool == "inspect":
+            return {"data": {"worker_available": False, "attached_worker": "failed"}}
+        clock[0] += 2
+        return {"data": {"job": {"state": "queued"}, "steps": [{"state": "pending"}]}}
+
+    entry.call = call
+
+    async def scenario():
+        with pytest.raises(
+            AssertionError, match='Attached worker stopped.*"queued".*"pending".*"failed"'
+        ):
+            await entry.terminal(None, "synthetic")
+
+    anyio.run(scenario)
