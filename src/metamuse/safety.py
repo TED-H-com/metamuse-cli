@@ -2228,8 +2228,6 @@ def _bearer_spans(text):
     )
     for match in pattern.finditer(text):
         token = match["token"]
-        if token == _REDACTED:
-            continue
         if (
             token.startswith(_REDACTED)
             and len(token) > len(_REDACTED)
