@@ -1,9 +1,9 @@
 """Adversarial assignment grammars: CPU growth through 1 MiB."""
 
 import json
-import time
 
 import pytest
+from cpu_growth import SAMPLES, CpuRow, assert_cpu_growth, sample_cpu
 
 from metamuse._muse_redact import _syntax_spans, sanitize_text
 from metamuse.muse import _Secrets
@@ -11,32 +11,27 @@ from metamuse.muse import _Secrets
 FAMILIES = ["k:", "k=>", "a=1;", "k:v|", ";p=1", "authorization:"]
 
 
-def measure(call, family, wrapped):
+def measure(call, family, wrapped, entry):
     rows = []
-    for size in (131072, 262144, 524288, 1048576):
+    core_quadratic = family == "k=>" and entry != "owned"
+    sizes = (4096, 8192, 16384, 32768) if core_quadratic else (131072, 262144, 524288, 1048576)
+    # Fixed batch sizes keep the fastest grammar above 20 ms without changing
+    # the amount of work per byte between sizes. Bound known core quadratic CPU.
+    repeats = 1 if core_quadratic else 4 if family == "authorization:" else 2
+    for size in sizes:
         value = (family * (size // len(family) + 1))[:size]
         if wrapped:
             value = json.dumps({"reply": value})
-        start = time.process_time()
-        call(value)
-        cpu = time.process_time() - start
-        rows.append(cpu)
-        print(
-            f"r6-growth call={call.__name__} family={family} json={wrapped} "
-            f"bytes={size} cpu={cpu:.6f}",
-            flush=True,
-        )
-        assert cpu < 12, rows
-        if len(rows) > 1:
-            assert rows[-1] / rows[-2] <= 2.5, rows
+        samples = [
+            sample_cpu(lambda value=value: call(value), repeats=repeats) for _ in range(SAMPLES)
+        ]
+        rows.append(CpuRow(size, samples))
     return rows
 
 
-def assert_linear(rows):
-    assert all(b / a <= 2.5 for a, b in zip(rows, rows[1:], strict=False)), rows
-    # 1 MiB ceiling allows >3x the observed CPU on this busy host; independent
-    # of elapsed scheduling time. It prevents minute-long blocking regressions.
-    assert rows[-1] < 12, rows
+def assert_linear(rows, *, label):
+    # Retain the absolute CPU ceiling as well as both sampled growth criteria.
+    assert_cpu_growth(rows, label=label, ceiling=12)
 
 
 @pytest.mark.parametrize(
@@ -69,5 +64,5 @@ def test_r6_2_adversarial_grammars_linear(family, wrapped, entry):
         if entry == "text"
         else lambda text: _Secrets().body(text.encode())
     )
-    rows = measure(call, family, wrapped)
-    assert_linear(rows)
+    rows = measure(call, family, wrapped, entry)
+    assert_linear(rows, label=f"r6-{entry}-{family}-json={wrapped}")

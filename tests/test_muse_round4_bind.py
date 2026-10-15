@@ -3,6 +3,7 @@
 import time
 
 import pytest
+from cpu_growth import SAMPLES, CpuRow, assert_cpu_growth
 from test_muse_standard import Connecting, assignment, response
 from test_muse_transport import FakeHttp, build, ok_frames
 
@@ -25,30 +26,30 @@ def hinted_transport(store, count):
 
 
 def test_r4_1_hint_bind_cpu_growth_and_every_id(tmp_path):
-    previous = None
-    for count in (625, 1250, 2500, 5000):
-        store = Store(WorkspacePaths.resolve(tmp_path / str(count)))
-        transport, connector, ids = hinted_transport(store, count)
-        with store._muse_boundary("synthetic", "synthetic"):
-            pass  # Exclude the once-per-Store schema verification from the measurement.
-        started = time.process_time()
-        with pytest.raises(CoreError) as caught:
-            transport.sessions_list()
-        cpu = time.process_time() - started
-        assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
-        assert not connector.urls
-        with store.connection() as conn:
-            observations = dict(
-                conn.execute("SELECT vm_id,confidential_required FROM muse_trust_observations")
-            )
-            vms = dict(conn.execute("SELECT vm_id,confidential_required FROM muse_trust_vms"))
-            assert observations == dict.fromkeys(ids, 1)
-            assert vms == dict.fromkeys(ids, 1)
-            assert not conn.execute("SELECT * FROM muse_trust_propagating").fetchall()
-        print(f"bind ids={count} cpu={cpu:.6f} ratio={cpu / previous if previous else 0:.3f}")
-        if previous is not None:
-            assert cpu / previous <= 2.5
-        previous = cpu
+    rows = []
+    for count in (1250, 2500, 5000, 10000):
+        samples = []
+        for sample in range(SAMPLES):
+            store = Store(WorkspacePaths.resolve(tmp_path / f"{count}-{sample}"))
+            transport, connector, ids = hinted_transport(store, count)
+            with store._muse_boundary("synthetic", "synthetic"):
+                pass  # Exclude the once-per-Store schema verification from the measurement.
+            started = time.process_time()
+            with pytest.raises(CoreError) as caught:
+                transport.sessions_list()
+            samples.append(time.process_time() - started)
+            assert caught.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+            assert not connector.urls
+            with store.connection() as conn:
+                observations = dict(
+                    conn.execute("SELECT vm_id,confidential_required FROM muse_trust_observations")
+                )
+                vms = dict(conn.execute("SELECT vm_id,confidential_required FROM muse_trust_vms"))
+                assert observations == dict.fromkeys(ids, 1)
+                assert vms == dict.fromkeys(ids, 1)
+                assert not conn.execute("SELECT * FROM muse_trust_propagating").fetchall()
+        rows.append(CpuRow(count, samples))
+    assert_cpu_growth(rows, label="r4-bind")
 
 
 def test_r4_1_one_closure_for_the_whole_hint_bind(ctx, monkeypatch):
