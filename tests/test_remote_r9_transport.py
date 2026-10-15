@@ -91,3 +91,40 @@ def test_r9_yt_dlp_normalized_signed_hop_keeps_checked_bytes(origin, resolver, m
     )
     assert status == 200 and peer == "127.0.0.1"
     assert checked.url == request.url and seen == [expected]
+
+
+def test_r10_redirect_later_hop_keeps_lowercase_escape_target(origin, resolver, monkeypatch):
+    wire, approved = [], []
+    prefix = f"http://media.fixture.test:{origin.server_address[1]}"
+    later = "/kept/%2f?x=%7e%2f"
+
+    def response(self):
+        wire.append(self.path)
+        if self.path == "/start":
+            self.send_response(302)
+            self.send_header("Location", prefix + later)
+            self.send_header("Content-Length", "0")
+            self.send_header("Connection", "close")
+            self.end_headers()
+        else:
+            self._send(200, b"Synthetic later hop", "text/plain")
+
+    monkeypatch.setattr(FixtureHandler, "do_GET", response)
+
+    def checker(value, *, purpose):
+        approved.append((value, purpose))
+        return safety.check_fixture_url(
+            value, purpose=purpose, resolver=resolver, allowed_hosts=["media.fixture.test"]
+        )
+
+    net = remote_media._Net(
+        checker=checker, budget=remote_media._Budget(0, 10000), media_max=10000, timeout=2
+    )
+    result = remote_media._exchange(net, "GET", prefix + "/start", {}, None, follow=True)
+    assert result[0] == 200
+    assert approved == [
+        (prefix + "/start", "request"),
+        (prefix + later, "redirect"),
+        (prefix + later, "redirect"),
+    ]
+    assert wire == ["/start", later]
