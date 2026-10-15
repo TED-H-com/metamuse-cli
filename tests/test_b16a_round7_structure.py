@@ -178,6 +178,12 @@ def test_r7_curl_exemption_decides_password_without_username(text):
 
 
 
+def test_r7_unquoted_nested_tag_starts_independent_context():
+    text = "<div q=<password>" + V + "</password>"
+    assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
 @pytest.mark.parametrize(
     "shape", ["(Cookie: 'pa) {v}')", "[https://example.invalid/p?token='pa] {v}']"]
 )
@@ -241,6 +247,13 @@ def test_r7_typographic_quote_ends_complete_placeholder():
 
 
 
+def test_r7_comment_context_never_consumes_following_public_text():
+    text = "<!-- <password>" + V + " --> PUBLIC_AFTER"
+    out, found = redact_text(text)
+    assert V not in out and out.endswith("--> PUBLIC_AFTER"), (text, out, found)
+
+
+
 @pytest.mark.parametrize("prefix", ["(", "the users' (", "func(", "r'\\' ("])
 def test_r7_unowned_call_pairing_never_hides_cookie_chain(prefix):
     text = prefix + "theme=dark; foo=" + V + ")"
@@ -257,6 +270,22 @@ def test_r7_sentinel_prefix_with_short_tail_is_not_exempt(tail):
 @pytest.mark.parametrize("template", ["Cookie: '{v}", 'cu' + 'rl ' + "-u 'alice:{v}", "--password '{v}"])
 def test_r7_unclosed_value_quote_is_not_empty(template):
     assert V not in redact_text(template.format(v=V))[0]
+
+
+
+@pytest.mark.parametrize(
+    "shape",
+    [
+        '<input value="{v}" name=password/>',
+        '<input type=" password " value="{v}">',
+        "<input name=`password` value=`{v}`>",
+        "<!-- <password user's tag> -->\n<password>{v}</password>",
+        "<password label='bob\\'s'>{v}</password>",
+        '<input name=password value=pa"<{v}>',
+    ],
+)
+def test_r7_markup_per_tag_contract(shape):
+    assert V not in redact_text(shape.format(v=V))[0]
 
 
 

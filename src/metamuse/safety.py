@@ -3194,97 +3194,148 @@ def _pem_spans(text, syntax):
         position = end
 
 
-def _xml_spans(text, syntax):
-    # Index closing tags once; repeated unterminated starts cannot rescan a suffix.
+def _markup_spans(text, syntax):
+    """One bounded tag pass, with each quoted attribute/comment entered once."""
+    if hasattr(syntax, "markup"):
+        return syntax.markup
+    tokens = re.compile(r"<!--|</?(?P<name>[A-Za-z][A-Za-z0-9_:.-]*+)(?=[\s/>])")
+    attributes = re.compile(r"(?P<name>[A-Za-z_:][A-Za-z0-9_:.-]*+)\s*+=\s*+")
     closings = {}
-    for match in re.finditer(r"</(?P<key>(?:" + _NAME + r":)?" + _NAME + r")[^\S\r\n]*+>", text):
-        closings.setdefault(match["key"].lower(), []).append(match)
-    cursors = {}
-    position = 0
-    pattern = re.compile(r"<(?P<key>(?:" + _NAME + r":)?" + _NAME + r")(?=[\s>])")
-    while match := pattern.search(text, position):
-        position = match.end()
-        key = match["key"]
-        if not redaction_sensitive_key(key.rsplit(":", 1)[-1]):
-            continue
-        value_start = match.end()
-        while value_start < len(text) and text[value_start] != ">":
-            if text[value_start] in {'"', "'", "`"}:
-                value_start = syntax.attribute_end(text, value_start) or len(text)
-            else:
-                value_start += 1
-        if value_start == len(text):
-            position = value_start
-            continue
-        if text[value_start - 1 : value_start] == "/":
-            position = value_start + 1
-            continue
-        value_start += 1
-        level = max(syntax.layer(match.start(), match.end()), syntax.depth(value_start - 1))
-        ends = closings.get(key.lower(), [])
-        index = cursors.get(key.lower(), 0)
-        while index < len(ends) and (
-            ends[index].start() < match.end()
-            or syntax.layer(ends[index].start(), ends[index].end()) > level
-        ):
-            index += 1
-        end = ends[index].start() if index < len(ends) else len(text)
-        cursors[key.lower()] = index + 1
-        private_start, private_end = value_start, end
-        if text.startswith("<![CDATA[", value_start) and text[end - 3 : end] == "]]>":
-            private_start += 9
-            private_end -= 3
-        if syntax.private(text, key.rsplit(":", 1)[-1], private_start, private_end):
-            position = ends[index].end() if index < len(ends) else end
-            yield value_start, end, "sensitive_field", _REDACTED
+    for match in re.finditer(r"</(?P<key>[A-Za-z][A-Za-z0-9_:.-]*+)[^\S\r\n]*+>", text):
+        closings.setdefault(match["key"].casefold(), []).append(match)
+    next_tag_ends = array("I", [len(text)]) * (len(text) // 64 + 2)
+    following = len(text)
+    for block in range(len(next_tag_ends) - 1, -1, -1):
+        edge = block * 64
+        position = text.find(">", edge, min(len(text), edge + 64))
+        if position >= 0:
+            following = position
+        next_tag_ends[block] = following
+
+    def next_tag_end(start, upper):
+        edge = min(upper, (start // 64 + 1) * 64)
+        position = text.find(">", start, edge)
+        return min(upper, position if position >= 0 else next_tag_ends[start // 64 + 1])
+
+    contexts = _QuoteRanges([(0, len(text))])
+    context_index = 0
+    output = _PositionIndex(text)
+    indices = {}
+    while context_index < len(contexts):
+        lower, upper = contexts[context_index]
+        context_index += 1
+        position = lower
+        while tag := tokens.search(text, position, upper):
+            position = tag.end()
+            if tag[0] == "<!--":
+                stop = text.find("-->", position, upper)
+                stop = upper if stop < 0 else stop
+                contexts.append((position, stop))
+                position = min(upper, stop + 3)
+                continue
+            if tag[0].startswith("</"):
+                continue
+            if text[tag.start() - 1 : tag.start()] == "<" and re.compile(
+                r"[^\S\r\n]*+(?:\r?\n|\r|$)"
+            ).match(text, tag.end(), upper):
+                continue  # A shell heredoc delimiter line is not a start tag.
+
+            name = tag["name"].casefold()
+            cursor = tag.end()
+            private = password_type = False
+            values = []
+            closed = False
+            while cursor < upper:
+                char = text[cursor]
+                if char == "<":
+                    break
+                if char == ">":
+                    cursor += 1
+                    closed = True
+                    break
+                attr = attributes.match(text, cursor, upper)
+                if attr is None:
+                    cursor += 1
+                    continue
+                start = attr.end()
+                quote = text[start : start + 1]
+                if quote in {'"', "'", "`"}:
+                    finish = syntax.attribute_end(text, start)
+                    if finish is not None and finish <= upper:
+                        begin, end = start + 1, finish - 1
+                        cursor = finish
+                    else:
+                        # Malformed quotes cannot consume a following tag.
+                        end = next_tag_end(start, upper)
+                        begin, cursor = start + 1, end
+                else:
+                    unquoted = re.compile(r"(?:[^\s<>/]|/(?!>))*+").match(text, start, upper)
+                    begin, end = start, unquoted.end()
+                    cursor = max(end, start)
+                if text.find("<", begin, end) >= 0:
+                    contexts.append((begin, end))
+                key = attr["name"].casefold().rsplit(":", 1)[-1]
+                if key in {"name", "type"}:
+                    if end - begin > 1024:
+                        private = True
+                        continue
+                    value = html.unescape(text[begin:end]).strip(" \t\r\n\f").casefold()
+                    if key == "name":
+                        private |= redaction_sensitive_key(value)
+                    else:
+                        password_type |= value == "password"
+                elif key in {"value", "content"}:
+                    values.append((begin, end, key))
+            position = max(position, cursor)
+            for begin, end, key in values:
+                if not closed and text[end : end + 1] == "<" and (private or password_type):
+                    # A malformed private attribute cannot expose the token
+                    # that interrupted its tag. Include that bounded token.
+                    stop = next_tag_end(end, upper)
+                    end = min(upper, stop + 1)
+                if (private or password_type and key == "value") and syntax.private(
+                    text, "password", begin, end
+                ):
+                    output[begin] = max(output.get(begin, 0), end)
+            if not closed or text[cursor - 2 : cursor] == "/>":
+                continue
+            leaf = name.rsplit(":", 1)[-1]
+            if not redaction_sensitive_key(leaf):
+                continue
+            ends = closings.get(name, [])
+            index = indices.get(name, 0)
+            level = syntax.layer(tag.start(), tag.end())
+            while index < len(ends) and (
+                ends[index].start() < cursor or syntax.depth(ends[index].start()) > level
+            ):
+                index += 1
+            end = min(upper, ends[index].start()) if index < len(ends) else upper
+            indices[name] = index
+            begin, finish = cursor, end
+            if text.startswith("<![CDATA[", begin) and text[end - 3 : end] == "]]>":
+                begin += 9
+                finish -= 3
+            if syntax.private(text, leaf, begin, finish):
+                output[cursor] = max(output.get(cursor, 0), end)
+                position = (
+                    ends[index].end() if index < len(ends) and ends[index].end() <= upper else end
+                )
+    syntax.markup = _SpanIndex(
+        (start, end, "sensitive_field", _REDACTED) for start, end in enumerate(output.data) if end
+    )
+    return syntax.markup
+
+
+
+def _xml_spans(text, syntax):
+    yield from _markup_spans(text, syntax)
+
 
 
 def _html_spans(text, syntax):
-    """An element's name/type attributes classify its value/content attributes."""
-    tags = re.compile(r"<([A-Za-z][A-Za-z0-9_:.\-]*+)(?=[\s/>])")
-    attributes = re.compile(r"(?P<name>[A-Za-z_:][A-Za-z0-9_:.-]*+)\s*+=\s*+")
-    unquoted = re.compile(r"[^\s>]*+")
-    position = 0
-    while tag := tags.search(text, position):
-        cursor = tag.end()
-        private = password_type = False
-        values = []
-        while cursor < len(text):
-            if text[cursor] == "<":
-                break  # An independent element cannot be swallowed by malformed attributes.
-            if text[cursor] == ">":
-                cursor += 1
-                break
-            match = attributes.match(text, cursor)
-            if match is None:
-                cursor += 1
-                continue
-            start = match.end()
-            quoted_end = (
-                syntax.attribute_end(text, start) if text[start : start + 1] in {'"', "'"} else None
-            )
-            if quoted_end is not None:
-                begin, end, cursor = start + 1, quoted_end - 1, quoted_end
-            else:
-                found = unquoted.match(text, start)
-                begin, end, cursor = start, found.end(), max(found.end(), match.end())
-            key = match["name"].lower().rsplit(":", 1)[-1]
-            if key == "name":
-                private |= end - begin > 1024 or redaction_sensitive_key(
-                    html.unescape(text[begin:end])
-                )
-            elif key == "type":
-                password_type |= (
-                    end - begin > 1024 or html.unescape(text[begin:end]).lower() == "password"
-                )
-            elif key in {"value", "content"}:
-                values.append((begin, end, key))
-        position = tag.end()
-        for begin, end, key in values:
-            if (private or password_type and key == "value") and syntax.private(
-                text, "password", begin, end
-            ):
-                yield begin, end, "sensitive_field", _REDACTED
+    # The shared lexer covers both local-name bodies and name/value attributes.
+    return iter(())
+
 
 
 def _curl_spans(text, syntax):
