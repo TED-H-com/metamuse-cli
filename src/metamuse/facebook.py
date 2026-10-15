@@ -3192,6 +3192,10 @@ class _DOMExtractor:
         if void:
             if not visibility:
                 return
+            if self._unattributed:
+                if tag == "img" and attr_map.get("alt", "").strip():
+                    self.count_gaps.add("unattributed_rendered_text")
+                return
             if tag == "img" and "alt" in attr_map:
                 if self._in_post_body:
                     self.post_body_present = True
@@ -3301,6 +3305,8 @@ class _DOMExtractor:
             ) = self._stack.pop()
 
     def _block_boundary(self, *, nested_only: bool = False) -> None:
+        if self._unattributed:
+            return
         if self._in_post_body > (1 if nested_only else 0):
             if self.post_text_parts and not self.post_text_parts[-1].endswith("\n"):
                 self.post_text_parts.append("\n")

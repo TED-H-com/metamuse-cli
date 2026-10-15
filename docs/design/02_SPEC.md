@@ -891,7 +891,8 @@ regardless of namespace or rendering.
 An unrendered post/comment/reply/comments-section identity isolates its subtree:
 painted descendants cannot attach to an enclosing or sibling identity. A rendered
 nested identity owns its own content. Painted text without such an identity is
-dropped and adds unattributed_rendered_text, making coverage partial. Each extractor
+dropped and adds unattributed_rendered_text, making coverage partial. The same
+isolation applies to image alt text and derived block boundaries. Each extractor
 stack frame saves and restores this isolation state as well as body/comment state.
 
 Before WALK and HIT_TEST, one shared bounded helper indexes assignedNodes from
