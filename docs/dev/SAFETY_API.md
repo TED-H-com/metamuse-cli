@@ -291,44 +291,49 @@ B16a submit/prepare order is a read-only exact-payload receipt replay, the crede
 check on new text, then preview/grant checks, persistence and work. Exact replay keeps
 its original result after a rule upgrade. The worker checks session.start topics,
 questions, packet fixpoints and body equality again before any token or gateway.
-Frozen refusals prove `not_submitted`, close sends as `abandoned`, and keep the refusal's
-own next action; a stale packet asks to prepare a new packet. No refused send quarantines
-a discussion as an unknown delivery.
+Frozen refusals prove not_submitted, close sends as abandoned and retain the refusal's
+own next action. No refused send quarantines a discussion as unknown delivery.
 
-Stored discussion titles are not new outbound text and are never re-checked. Previews
-show a display-redacted "Stored discussion title"; it is not in the send body or read
-payload. Reconciliation compares its request topic with the exact stored title only.
-The original reconciliation request, not the display-redacted topic, is used for the
-human approval request file and retry. Approval failures propagate their actual fixed
-code, message and next action rather than replacing them with a permit error.
+Stored discussion titles are never re-checked as new outbound text. Previews show a
+display-redacted "Stored discussion title", outside the send/read body. Reconciliation
+identifies a discussion by discussion_id and project; its request topic must equal
+the stored title or its current display-redacted form. approval.request and saved
+request files carry only that display-redacted title. If the display changed since
+saving, E_REFERENCE_INVALID asks to request reconciliation again. Approval failures
+propagate their real fixed code, message and next action.
 
-Packets and bundles use the shared redactor's bounded fixpoint before hashing. Still-changing text is fixed `E_INPUT_INVALID` "Packet redaction did not
-stabilize": invalid share text cannot be hashed or stored. Muse sends exactly stored
-`packet.rendered_text`. Current rules changing an older packet cause `E_REFERENCE_INVALID`,
-"Packet is stale; prepare a new packet", in prepare/preview/submit/wire, with no preview.
-The body contains only the accepted original question, two newlines and that packet.
-Private original exports retain `original_private` and their documented original bytes.
+Muse sends exactly stored packet.rendered_text. Current rules changing an older
+packet cause E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in prepare,
+preview, submit and wire, without a preview or rewriting stored bytes. Send guidance
+is "Prepare a new packet and send request with a new exact share grant". The body is
+the accepted original question, two newlines and that packet. Private original
+exports retain original_private and their documented original bytes.
 
-Redaction uses bounded possessive name grammars, forward scans and precomputed quote,
-container and tag terminators. Every scan advances past consumed values; interval
-streams merge with a fixed fan-in and output uses one join. Sparse, coalesced decoding
-offsets allocate for escapes only. CPU growth is checked at four doubling sizes for
-all review families and new rules. Packet/bundle resolution checks raw canonical sizes,
-then renders/redacts before `BEGIN IMMEDIATE`; the write repeats reference/snapshot
-checks. `_save_send` redacts the full remote detail (capped at 1 MiB) before its write
-batch opens, then cuts to 512 characters. The remaining settlement callback sanitizes
-only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes).
-It rejects oversized legacy text before redaction with fixed `E_LIMIT_REACHED`; it
-cannot turn uncertain delivery into proof. Configured limits may lower these hard caps.
+Redaction uses bounded possessive name grammars, forward scans and precomputed
+quote/container/tag terminators. Scans advance past consumed values; a fixed number
+of ordered interval streams merge and each pass builds output with one join.
+Original-offset maps are sparse/coalesced; changed canonical views additionally use
+one byte of decoding depth per character. The four-application bound is constant.
+CPU growth of the iterated public call is checked at four doubling sizes for all
+review and new-rule families. Raw canonical sizes are checked before rendering;
+packet/bundle rendering and redaction precede BEGIN IMMEDIATE. Writes repeat only
+reference/snapshot checks. _save_send redacts the full remote detail (capped at 1 MiB)
+before its batch, then cuts to 512 characters. The settlement callback sanitizes
+only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes)
+inside the jobs transaction. Oversized legacy text refuses before redaction with
+fixed E_LIMIT_REACHED; this bound is measured and does not prove delivery.
 
-`auth list` returns `partial` for corrupt records: valid metadata in `references`,
-opaque refs and fixed reasons in `unavailable`. Its actions revoke regular records or
-symlinks, or give a fixed manual instruction for FIFOs/directories/unowned entries.
-`auth revoke` unlinks a symlink itself via dir_fd without opening its target; it refuses
-other non-regular entries with that manual instruction. List/revoke read existing
-configuration for config_bound but never initialize/open a workspace or Store.
-Noninteractive auth/permit calls refuse before opening anything; scripted human
-`permit approve --exact-digest` needs no TTY. Auth values and outside paths never appear.
+Auth list returns partial for corrupt entries: valid metadata in references, opaque
+refs and fixed reasons in unavailable. It suggests working revoke commands for
+regular records/symlinks, and a fixed manual instruction for FIFO/directory/unowned
+entries. When --workspace was given, revoke suggestions retain it, shell quoted.
+Revoke unlinks a symlink via dir_fd without opening its target; other non-regular
+entries require manual cleanup. List/revoke read existing config for config_bound
+without opening or initializing a workspace/Store. Noninteractive auth/permit
+commands refuse before opening anything; scripted human permit approval needs no
+TTY. Auth values and resolved secret-target paths never appear; explicitly supplied
+workspace paths remain in the requested operator command. Revoked bindings ask to
+import and rebind.
 
 ## B16a classifier and finding classes
 
@@ -349,7 +354,8 @@ is copied and no dependency or migration is added.
 | url_token | Sensitive/signed query value or userinfo password |
 | api_key | Known token prefixes and JWTs |
 | bearer_token | Bare Bearer value |
-| private_key | Complete or unterminated PEM private-key block |
+| private_key | PEM/PGP private-key blocks or PuTTY private-key files |
+| redaction_unstable | Fourth single-pass application still changes text; whole output is masked |
 | local_path | Plausible private path or explicit local_path field |
 
 Consumers aggregate all kinds generically. The Muse check refuses every kind except
@@ -357,15 +363,16 @@ local_path. Overlaps share one opaque replacement and report the covering creden
 class; local_path never overrides an overlapping credential class. Adjacent masks merge.
 The sentinel is opaque at every rule. Quoted strings retain their quotes and numeric/
 container JSON fields use a quoted sentinel to retain JSON syntax. Canonical views map
-back through coalesced sparse escape runs in forward order, with no dense offset array,
-per-value rescanning or per-span output rebuilding. Literal query '?' stays in its value;
+back through coalesced sparse escape runs in forward order. Original offsets are sparse;
+decoding depth uses one byte per canonical character. There is no per-value suffix
+rescanning or per-span output rebuilding. Literal query '?' stays in its value;
 encoded '?' ends it. Encoded whitespace/quotes are value data, not URL-token boundaries.
 
 Prefix rules are independently written: GitHub classic body 36 or PAT 22+59, GitLab 20,
 Slack 10–13 digit segments and 24–64 character body (including xoxa-2), AWS 16 after the
 prefix, Google 35, npm 36, Hugging Face 34, Stripe live body 24–200. The sk-style
 body compatibility rule has a minimum of 8 characters and no upper bound, including Anthropic prefixes. Three JWT segments
-and matching PEM labels are separately recognized. Formats outside these documented/
+including empty signatures, and matching private-key labels are separately recognized. Formats outside these documented/
 compatibility bounds need a sensitive name to be recognized; this is a guard, not a
 universal secret scanner or a proof that text is public.
 
@@ -388,60 +395,8 @@ whole, while a self-closing element has an empty value. Existing secure-cookie
 and cloud-header name prefixes use the same three-layer decoding in structured
 records as in text.
 
-Decoded-view terminators end a value only at the operator's decoding layer or a
-shallower layer. Deeper percent, JSON-escape and form-plus characters are value
-data. Original assignment spans are retained even when they contain percent escapes;
-the mask is the union of original and decoded spans.
-
-Form-plus decoding is scoped to each actual URL query, through that URL's end,
-or a whole whitespace-free form body of name=value pairs joined by &. An earlier
-question mark in prose never changes later plus characters. Bare Bearer detection
-also runs on original text; its spans are unioned with canonical-view spans.
-
-One call to `redact_text` applies the single pass at most four times (three changing
-passes and one confirming pass). For every input without `redaction_unstable`,
-`redact_text(redact_text(x)[0])[0] == redact_text(x)[0]`. The fourth changing
-application reports `redaction_unstable`; packet/bundle rendering refuses with the
-fixed "Packet redaction did not stabilize" E_INPUT_INVALID before hashing or writes.
-Muse text refuses the finding; nonrefusable displays and error details mask the whole
-value. There is no separate packet iteration bound.
-
-Unquoted assignment values end at whitespace, contextual list separators, or a
-closing enclosing string. A raw quote, ] or } inside the value is data. URL userinfo
-uses the WHATWG authority: the first /, ?, #, whitespace, or a backslash for special
-schemes ends it. Passwords run from the first userinfo colon to the last @ in that
-authority; raw authority terminators cannot occur in a URL password. Query values
-end at &, #, whitespace, a same-layer encoded ?, or the URL's enclosing quote/bracket.
-Namespaced XML elements use their local name and mask CDATA whole. Quoted subscript
-keys, single-dash flags and quoted type annotations with defaults are supported.
-
-Additional sensitive names include normalized suffixes api_key/apikey, secret_key,
-access_key and private_key, passphrase and sid. Fullwidth ： and ＝ are assignment
-operators. HAR name/value objects follow the name classifier; every cookies-array
-entry is private. SQL IDENTIFIED BY / WITH PASSWORD, sshpass -p and attached -p
-values after mysql/mariadb/mysqldump identify credentials. Empty-signature JWTs,
-PGP private-key blocks, PuTTY private-key files and case-insensitive PEM labels
-are self-identifying private material. These use existing finding classes.
-
-Out of scope: .netrc and .pgpass lines need separate positional file grammars;
-token-only URL userinfo has no password delimiter (known token prefixes still
-apply); localized names such as 密碼 require an explicitly maintained language
-policy. These omissions are not evidence that a document is public.
-
-Outside a cookie context a chain is at least two name=value pairs joined only
-by semicolons and optional spaces. Commas, ampersands and spaces alone do not
-make chains; call arguments and signatures never do. Generic member names are
-private only in a chain or cookie context: Cookie/Set-Cookie, document.cookie,
-curl -b/--cookie, Netscape jars and HAR cookies arrays. Sensitive names such as
-sid remain private in ordinary comma-separated assignments. Equality comparisons
-are not assignment operators.
-
-Placeholder exemptions apply only after the entire value extent is known.
-A value must be exactly one placeholder; prefix/suffix lookalikes are credentials.
-Nested shell expansions such as ${A:-${B}} use a brace-balance counter whose outer
-closing brace must be the final character.
-
-When auth list is given --workspace, every removable-entry revoke suggestion
-retains that workspace (shell quoted). Running it verbatim reports any remaining
-config binding and asks to import credentials and rebind. List and revoke still
-read config only and never open or initialize a workspace database.
+The classifier, all closed exemptions, layer-aware terminators, scoped form decoding,
+one-call fixpoint bound and out-of-scope grammars are normative in
+[SPEC FR-019](../design/02_SPEC.md). `redact_display` returns the display-safe string;
+redact_text already masks the entire output on instability, including for legacy
+callers that discard findings. Packets/bundles additionally refuse the finding.

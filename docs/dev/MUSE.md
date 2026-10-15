@@ -360,74 +360,54 @@ B16a submit/prepare order is a read-only exact-payload receipt replay, the crede
 check on new text, then preview/grant checks, persistence and work. Exact replay keeps
 its original result after a rule upgrade. The worker checks session.start topics,
 questions, packet fixpoints and body equality again before any token or gateway.
-Frozen refusals prove `not_submitted`, close sends as `abandoned`, and keep the refusal's
-own next action; a stale packet asks to prepare a new packet. No refused send quarantines
-a discussion as an unknown delivery.
+Frozen refusals prove not_submitted, close sends as abandoned and retain the refusal's
+own next action. No refused send quarantines a discussion as unknown delivery.
 
-Stored discussion titles are not new outbound text and are never re-checked. Previews
-show a display-redacted "Stored discussion title"; it is not in the send body or read
-payload. Reconciliation identifies the discussion by ID and project. Its request topic must
-equal the stored title or its current display-redacted form. Approval requests and
-saved request files carry only the display-redacted title. A changed display after
-saving requires a fresh reconciliation preview (E_REFERENCE_INVALID). Approval failures propagate their actual fixed
-code, message and next action rather than replacing them with a permit error.
+Stored discussion titles are never re-checked as new outbound text. Previews show a
+display-redacted "Stored discussion title", outside the send/read body. Reconciliation
+identifies a discussion by discussion_id and project; its request topic must equal
+the stored title or its current display-redacted form. approval.request and saved
+request files carry only that display-redacted title. If the display changed since
+saving, E_REFERENCE_INVALID asks to request reconciliation again. Approval failures
+propagate their real fixed code, message and next action.
 
-Packets and bundles use the shared redactor's bounded fixpoint before hashing. Still-changing text is fixed `E_INPUT_INVALID` "Packet redaction did not
-stabilize": invalid share text cannot be hashed or stored. Muse sends exactly stored
-`packet.rendered_text`. Current rules changing an older packet cause `E_REFERENCE_INVALID`,
-"Packet is stale; prepare a new packet", in prepare/preview/submit/wire, with no preview.
-The body contains only the accepted original question, two newlines and that packet.
-Private original exports retain `original_private` and their documented original bytes.
+Muse sends exactly stored packet.rendered_text. Current rules changing an older
+packet cause E_REFERENCE_INVALID "Packet is stale; prepare a new packet" in prepare,
+preview, submit and wire, without a preview or rewriting stored bytes. Send guidance
+is "Prepare a new packet and send request with a new exact share grant". The body is
+the accepted original question, two newlines and that packet. Private original
+exports retain original_private and their documented original bytes.
 
-Redaction uses bounded possessive name grammars, forward scans and precomputed quote,
-container and tag terminators. Every scan advances past consumed values; interval
-streams merge with a fixed fan-in and output uses one join. Sparse, coalesced decoding
-offsets allocate for escapes only. CPU growth is checked at four doubling sizes for
-all review families and new rules. Packet/bundle resolution checks raw canonical sizes,
-then renders/redacts before `BEGIN IMMEDIATE`; the write repeats reference/snapshot
-checks. `_save_send` redacts the full remote detail (capped at 1 MiB) before its write
-batch opens, then cuts to 512 characters. The remaining settlement callback sanitizes
-only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes).
-It rejects oversized legacy text before redaction with fixed `E_LIMIT_REACHED`; it
-cannot turn uncertain delivery into proof. Configured limits may lower these hard caps.
+Redaction uses bounded possessive name grammars, forward scans and precomputed
+quote/container/tag terminators. Scans advance past consumed values; a fixed number
+of ordered interval streams merge and each pass builds output with one join.
+Original-offset maps are sparse/coalesced; changed canonical views additionally use
+one byte of decoding depth per character. The four-application bound is constant.
+CPU growth of the iterated public call is checked at four doubling sizes for all
+review and new-rule families. Raw canonical sizes are checked before rendering;
+packet/bundle rendering and redaction precede BEGIN IMMEDIATE. Writes repeat only
+reference/snapshot checks. _save_send redacts the full remote detail (capped at 1 MiB)
+before its batch, then cuts to 512 characters. The settlement callback sanitizes
+only locally bounded outbound text (48 KiB packet, 8 KiB question, two joining bytes)
+inside the jobs transaction. Oversized legacy text refuses before redaction with
+fixed E_LIMIT_REACHED; this bound is measured and does not prove delivery.
 
-`auth list` returns `partial` for corrupt records: valid metadata in `references`,
-opaque refs and fixed reasons in `unavailable`. Its actions revoke regular records or
-symlinks, or give a fixed manual instruction for FIFOs/directories/unowned entries.
-`auth revoke` unlinks a symlink itself via dir_fd without opening its target; it refuses
-other non-regular entries with that manual instruction. List/revoke read existing
-configuration for config_bound but never initialize/open a workspace or Store.
-Noninteractive auth/permit calls refuse before opening anything; scripted human
-`permit approve --exact-digest` needs no TTY. Auth values and outside paths never appear.
+Auth list returns partial for corrupt entries: valid metadata in references, opaque
+refs and fixed reasons in unavailable. It suggests working revoke commands for
+regular records/symlinks, and a fixed manual instruction for FIFO/directory/unowned
+entries. When --workspace was given, revoke suggestions retain it, shell quoted.
+Revoke unlinks a symlink via dir_fd without opening its target; other non-regular
+entries require manual cleanup. List/revoke read existing config for config_bound
+without opening or initializing a workspace/Store. Noninteractive auth/permit
+commands refuse before opening anything; scripted human permit approval needs no
+TTY. Auth values and resolved secret-target paths never appear; explicitly supplied
+workspace paths remain in the requested operator command. Revoked bindings ask to
+import and rebind.
 
-Human `packet preview` refuses text rendered by older rules with the fixed
-`E_REFERENCE_INVALID` stale-packet error before exposing it. URL userinfo stops at
-the literal authority boundary (`/`, `?` or `#`); encoded characters remain inside
-the mapped password span. Scheme scanning has a forward anchor and accepts custom
-schemes of any length.
-
-Flags whose names are `authorization`, `proxy-authorization`, `cookie` or
-`set-cookie` use the complete quoted value, or the complete remaining line when
-unquoted, so schemes and cookie-chain members cannot fall outside the mask.
-
-Plain YAML string values extend through the line (excluding a YAML comment);
-TOML triple-quoted strings extend through their closing triple quote. Annotated
-assignment defaults retain the type annotation and redact the actual value.
-Sensitive XML elements may have quoted attributes; their content is redacted
-whole, while a self-closing element has an empty value. Existing secure-cookie
-and cloud-header name prefixes use the same three-layer decoding in structured
-records as in text.
-
-One call to `redact_text` applies the single pass at most four times (three changing
-passes and one confirming pass). For every input without `redaction_unstable`,
-`redact_text(redact_text(x)[0])[0] == redact_text(x)[0]`. The fourth changing
-application reports `redaction_unstable`; packet/bundle rendering refuses with the
-fixed "Packet redaction did not stabilize" E_INPUT_INVALID before hashing or writes.
-Muse text refuses the finding; nonrefusable displays and error details mask the whole
-value. There is no separate packet iteration bound.
-
-Human reconciliation uses discussion_id and project, accepting either the raw
-stored topic or exactly its current display-redacted form. The saved approval
-request never carries the raw topic. A stale saved display is E_REFERENCE_INVALID
-and asks to request reconciliation again. Stored topics are never re-checked as
-new outbound text.
+The complete classifier and closed exemptions, decoded-layer rule, scoped form-plus
+decoding, one-call fixpoint/instability contract, cookie contexts, placeholders,
+new key suffixes/syntaxes and explicit out-of-scope formats are specified in
+[SPEC FR-019](../design/02_SPEC.md) and [SAFETY_API](SAFETY_API.md). Every finding
+except local_path refuses new Muse text. Accepted topic/question bytes remain exact;
+credentials never enter a new approval preview. Unstable nonrefusable details use
+one complete mask. This is OFFLINE/FIXTURE/INTEGRATION/MEASURE evidence, not LIVE.
