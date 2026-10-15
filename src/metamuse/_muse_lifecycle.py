@@ -216,7 +216,11 @@ def prepare_send(ctx, request: m.MuseSendRequest):
     if packet.project_id != discussion.project_id:
         _error(m.ErrorCode.REFERENCE_INVALID, "Packet is outside this discussion project")
     if packet.stale or redact_text(packet.rendered_text)[0] != packet.rendered_text:
-        _error(m.ErrorCode.REFERENCE_INVALID, "Packet is stale; prepare a new packet")
+        _error(
+            m.ErrorCode.REFERENCE_INVALID,
+            "Packet is stale; prepare a new packet",
+            "Prepare a new packet and send request with a new exact share grant",
+        )
     if not discussion.remote_session:
         _error(m.ErrorCode.EXTERNAL_STATE_UNKNOWN, "Session mapping requires reconciliation")
     for value, cap in (
