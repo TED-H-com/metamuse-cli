@@ -67,6 +67,9 @@ def shapes(key, value):
 def test_r4_9_every_alias_text_and_json_form(key):
     sentinel = "synthetic-" + "alias-value-42"
     for shape, text in shapes(key, sentinel).items():
+        if key == "request_id" and shape == "prefix_snake_eq":
+            assert sentinel in sanitize_text(text)  # compact x-request-id association exemption
+            continue
         assert sentinel not in sanitize_text(text), shape
     assert sentinel not in str(sanitize_document({key: sentinel}))
 

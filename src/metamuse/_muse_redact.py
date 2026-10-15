@@ -26,12 +26,14 @@ _EXTRA_KEYS = frozenset(
         "hatchsess",
     }
 )
-# The same compact sensitive family is used for JSON, headers, repr and queries.
+# Scan a key and separator first. Ordinary values are never scanned here.
+_KEY_CHAR = r"[^\s\"'=<>:;,{}\[\]&|?!/]+"
 _ASSIGNMENT = re.compile(
-    r"""(?<![A-Za-z0-9_.-])((?:["'])?([A-Za-z_][A-Za-z0-9_.-]*)(?:["'])?\s*(?:=>|:|=)\s*)"""
-    r"""(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[^,}\]&\s]+)"""
+    r"(?<![^\s\"'=<>:;,{}\[\]&|?!/])(("
+    r"\"[^\"\\]*(?:\\.[^\"\\]*)*\"|'[^'\\]*(?:\\.[^'\\]*)*'|" + _KEY_CHAR + r")\s*(?:=>|:|=)\s*)"
 )
-_XML = re.compile(r"<([A-Za-z_][A-Za-z0-9_.-]*)>([^<]*)</\1>", re.DOTALL)
+_VALUE = re.compile(r"\"[^\"\\]*(?:\\.[^\"\\]*)*\"|'[^'\\]*(?:\\.[^'\\]*)*'|[^,}\]&\s]+")
+_XML_KEY = re.compile(r"<([^\s<>/]+)>")
 _WAKE_OBJECT = re.compile(r"\{[^{}]*\}")
 
 
@@ -202,11 +204,21 @@ def _render_spans(value, spans):
     return "".join(chunks)
 
 
+def _text_key(match):
+    token = match[2]
+    if token.startswith(('"', "'")):
+        try:
+            return json.loads(token if token[0] == '"' else '"' + token[1:-1] + '"')
+        except ValueError:
+            return token[1:-1]
+    return token
+
+
 def _syntax_spans(value):
     from metamuse._muse_codec import _BEARER, _COOKIE, _PAIR
 
     for match in re.finditer(
-        r"(?i)(?<![a-z0-9_.-])(?:proxy-)?authorization\s*:\s*[^\s]+[ \t]+[^\s,}]+", value
+        r"(?i)(?<![a-z0-9_.-])(?:proxy-)?authorization\s*:\s*\S+(?:[ \t]+[^\s,}]+)?", value
     ):
         yield match.span()
     # Match these before a generic assignment can treat 'Bearer' as the value.
@@ -214,14 +226,21 @@ def _syntax_spans(value):
         yield from (match.span() for match in pattern.finditer(value))
     offset = 0
     while match := _ASSIGNMENT.search(value, offset):
-        if sensitive_key(match[2]):
-            yield match.span()
-            offset = match.end()
-        else:
-            offset = match.start() + len(match[1])
-    for match in _XML.finditer(value):
+        offset = match.end()
+        if sensitive_key(_text_key(match)):
+            body = _VALUE.match(value, offset)
+            if body is not None:
+                yield match.start(), body.end()
+                offset = body.end()
+    offset = 0
+    while match := _XML_KEY.search(value, offset):
+        offset = match.end()
         if sensitive_key(match[1]):
-            yield match.start(2), match.end(2)
+            end = value.find("<", offset)
+            if end < 0:
+                end = len(value)
+            yield offset, end
+            offset = end
     for match in _WAKE_OBJECT.finditer(value):
         if _embedded_wake(match) != match[0]:
             yield match.span()
@@ -245,25 +264,24 @@ def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
             )
     rendered = _render_spans(value, spans)
     # Core historically classifies session_id as a cookie. Protect only these
-    # exact public key names; values still pass known-value and core scrubbing.
+    # public key spellings; values still pass known-value and core scrubbing.
     protected = {}
-    for key in ("session_id", "request_marker", "x-request-id", "client_request_id"):
-        placeholder = "musepublicfield" + str(len(protected))
-        while placeholder in rendered:
-            placeholder += "x"
-        protected[placeholder] = key
-    by_key = {key: placeholder for placeholder, key in protected.items()}
 
-    def public_key(match):
+    def mask_public(match):
         key = match[2]
-        if key not in {"session_id", "request_marker", "x-request-id", "client_request_id"}:
+        if not public_key(_text_key(match)):
             return match[0]
-        return match[0].replace(key, by_key[key], 1)
+        placeholder = "musepublicfield" + str(len(protected)) + "end"
+        protected[placeholder] = key
+        return match[0].replace(key, placeholder, 1)
 
-    rendered = _ASSIGNMENT.sub(public_key, rendered)
+    rendered = _ASSIGNMENT.sub(mask_public, rendered)
     cleaned = redact_text(rendered)[0]
-    for placeholder, key in protected.items():
-        cleaned = cleaned.replace(placeholder, key)
+    # One replacement pass even when there are many public assignment keys.
+    if protected:
+        cleaned = re.sub(
+            r"musepublicfield[0-9]+end", lambda match: protected.get(match[0], match[0]), cleaned
+        )
     return cleaned
 
 
