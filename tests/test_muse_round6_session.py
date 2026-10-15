@@ -139,3 +139,37 @@ def test_r6_4_opaque_values_and_unmarked_keys(ctx, extra, where):
     with transport:
         transport.sessions_list()
     assert connector.urls and not observed(ctx.store)
+
+@pytest.mark.parametrize(
+    "pair",
+    [
+        '"vm_type":"hatch_cvm","vm_type":"hatch_vm"',
+        '"cvm_required":true,"cvm_required":false',
+        '"vm_id":"vm9","vm_id":"vm1","kind":"hatch_cvm"',
+    ],
+)
+def test_r6_6_duplicate_evidence_is_not_lost(ctx, pair):
+    body = json.dumps(assignment())[:-1] + "," + pair + "}"
+    refuse(ctx, {}, raw=body.encode(), ids={"vm1", "vm9"} if "vm9" in pair else {"vm1"})
+
+@pytest.mark.parametrize("where", ["session", "child"])
+def test_r6_6_duplicate_without_marker_refused(ctx, where):
+    pair = '"vm_id":"vm9","vm_id":"vm1"'
+    body = (
+        json.dumps(assignment())[:-1]
+        + ","
+        + (pair if where == "session" else '"meta":{' + pair + "}")
+        + "}"
+    )
+    refuse(ctx, {}, raw=body.encode(), ids=set())
+
+@pytest.mark.parametrize("path", ["auth", "hatch"])
+def test_r6_6_other_https_duplicate_keys(ctx, path):
+    transport, http, connector = attempt(ctx.store, assignment())
+    route = "/api/auth/check" if path == "auth" else "/api/hatch/token"
+    raw = b'{"ok":true,"ok":true,"token":"synthetic"}'
+    http.responses[route] = HttpResponse(200, raw, {}, response({}).peer)
+    with pytest.raises(CoreError) as error:
+        transport.sessions_list()
+    assert error.value.detail.code == ErrorCode.PROTOCOL_MISMATCH
+    assert not connector.urls

@@ -396,6 +396,32 @@ def _check_body_limits(body: bytes, joined: str | None = None) -> None:
     _walk_limits(parsed, 0, joined)
 
 
+class _JSONPairs(dict):
+    """Normal consumers see a dict, but evidence scanning retains every pair."""
+
+    def __init__(self, pairs):
+        super().__init__(pairs)
+        self.pairs = pairs
+        self.duplicate = len(self) != len(pairs)
+
+
+def _pairs(value):
+    return value.pairs if isinstance(value, _JSONPairs) else value.items()
+
+
+def _duplicate_json(value):
+    stack = [value]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            if isinstance(node, _JSONPairs) and node.duplicate:
+                return True
+            stack.extend(child for _, child in _pairs(node))
+        elif isinstance(node, list):
+            stack.extend(node)
+    return False
+
+
 def _json_value(body: bytes) -> Any:
     if json_depth(body, limit=_JSON_DEPTH) > _JSON_DEPTH:
         raise _error(
@@ -404,7 +430,7 @@ def _json_value(body: bytes) -> Any:
             next_action="Stop. Do not retry a damaged payload.",
         )
     try:
-        return json.loads(body)
+        return json.loads(body, object_pairs_hook=_JSONPairs)
     except (json.JSONDecodeError, UnicodeDecodeError, RecursionError, ValueError, OverflowError):
         failure = _error(
             ErrorCode.PROTOCOL_MISMATCH,
@@ -757,6 +783,8 @@ def _json_object(body: bytes, *, session: bool = False, kind: str = "auth") -> d
             "Muse HTTPS response was not an object",
             next_action=f"Stop. Do not retry a damaged {kind} response.",
         )
+    if not session and _duplicate_json(value):
+        raise protocol_stop()
     return value
 
 
@@ -1404,7 +1432,7 @@ class MuseTransport:
         rows = payload.get("vms")
 
         def identities(item):
-            return [value for key, value in item.items() if compact(key) == "vmid"]
+            return [value for key, value in _pairs(item) if compact(key) == "vmid"]
 
         def usable_identities(item):
             return {
@@ -1447,7 +1475,7 @@ class MuseTransport:
                 usable.update(node_ids)
                 if identities(node):
                     scopes = (*scopes, (node is payload, node_ids))
-                for key, value in node.items():
+                for key, value in _pairs(node):
                     sensitive = sensitive_key(key)
                     marker = confidential_marker(key) and truthy(value)
                     if marker or (
@@ -1479,6 +1507,8 @@ class MuseTransport:
                 confidential=True,
                 confidential_vm_ids=ids,
             )
+            raise protocol_stop()
+        if _duplicate_json(payload):
             raise protocol_stop()
         vm_id = payload.get("vm_id")
         if payload.get("status") == "unavailable" or vm_id is None:
