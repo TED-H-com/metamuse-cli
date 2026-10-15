@@ -357,3 +357,44 @@ def test_r8_chromium_fatal_cutoff_pairs(tmp_path, monkeypatch, condition, reques
                 if order == "none":
                     baseline = outcome
                 assert outcome == baseline, (order, outcome, baseline)
+
+
+@pytest.mark.parametrize("cutoff", [False, True])
+def test_r8_port_denial_precedes_dns(cutoff):
+    calls = []
+    guard = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com",),
+        resolver=lambda host: calls.append(host) or ["93.184.216.34"],
+    )
+    proxy = BrowserEgressProxy(guard, max_bytes=1, start_closed=True)
+    try:
+        if cutoff:
+            proxy._charge_bytes(2)
+        with pytest.raises(m.CoreError) as caught:
+            proxy.check_url_bounded("https://www.facebook.com:8443/login/", "redirect")
+        assert caught.value.detail.code == m.ErrorCode.SCOPE_DENIED
+        assert calls == []
+    finally:
+        proxy.close()
+
+
+def test_r8_strong_diagnostic_is_not_current_dns_error(monkeypatch):
+    import threading
+
+    from metamuse import _browser_egress
+
+    guard = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com",), resolver=lambda _: ["93.184.216.34"]
+    )
+    denial = m.CoreError(m.ErrorCode.SCOPE_DENIED, "Earlier unrelated subresource denial")
+    guard.last_proxy_error = denial
+    proxy = BrowserEgressProxy(guard, start_closed=True)
+    monkeypatch.setattr(_browser_egress, "_RESOLUTION_SLOTS", threading.BoundedSemaphore(0))
+    try:
+        with pytest.raises(m.CoreError) as caught:
+            proxy.check_url_bounded(URL, "redirect")
+        assert caught.value.detail.code == m.ErrorCode.NETWORK_TIMEOUT
+        assert guard.last_proxy_error is denial
+        assert guard.navigation_error is None
+    finally:
+        proxy.close()
