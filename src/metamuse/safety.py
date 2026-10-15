@@ -951,11 +951,17 @@ def auth_context(workspace: str | Path | None):
     return AppContext(paths, None, policy=load_config(paths.root))
 
 
-def list_auth(ctx: AppContext) -> m.Envelope:
+def list_auth(ctx: AppContext, *, workspace: str | Path | None = None) -> m.Envelope:
     ctx.require_interactive()
     binding = ctx.policy.muse.binding
     corrupt: list[dict[str, str]] = []
     records = (ctx.secret_store or SecretStore()).list(corrupt=corrupt)
+    if workspace is not None:
+        for record in corrupt:
+            if record["next_action"].startswith("metamuse auth revoke "):
+                record["next_action"] = operator_command(
+                    ctx, "auth", "revoke", "--auth-ref", record["auth_ref"]
+                )
     for record in records:
         record["config_bound"] = binding is not None and binding.auth_ref == record["auth_ref"]
     return m.Envelope(

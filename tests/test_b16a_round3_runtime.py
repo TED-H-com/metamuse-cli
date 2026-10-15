@@ -367,7 +367,7 @@ def test_r2_8_auth_list_revoke_no_workspace_and_working_guidance(tmp_path, expli
             refused = command("auth", "revoke", "--auth-ref", ref)
             assert refused["error"]["next_action"] == next_action
         else:
-            assert shlex.split(next_action) == ["metamuse", "auth", "revoke", "--auth-ref", ref]
+            assert shlex.split(next_action)[-4:] == ["auth", "revoke", "--auth-ref", ref]
             assert command(*shlex.split(next_action)[1:])["status"] == "ok"
     assert (tmp_path / "outside").read_text() == marker
     assert command("auth", "revoke", "--auth-ref", valid["auth_ref"])["status"] == "ok"

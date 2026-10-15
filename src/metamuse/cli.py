@@ -319,7 +319,7 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
 
         ctx = safety.auth_context(args.workspace)
         return (
-            safety.list_auth(ctx)
+            safety.list_auth(ctx, workspace=args.workspace)
             if args.action == "list"
             else safety.revoke_auth(ctx, args.auth_ref)
         )

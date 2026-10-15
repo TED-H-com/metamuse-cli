@@ -188,3 +188,8 @@ private only in a chain or cookie context: Cookie/Set-Cookie, document.cookie,
 curl -b/--cookie, Netscape jars and HAR cookies arrays. Sensitive names such as
 sid remain private in ordinary comma-separated assignments. Equality comparisons
 are not assignment operators.
+
+When auth list is given --workspace, every removable-entry revoke suggestion
+retains that workspace (shell quoted). Running it verbatim reports any remaining
+config binding and asks to import credentials and rebind. List and revoke still
+read config only and never open or initialize a workspace database.
