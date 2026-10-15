@@ -1543,7 +1543,14 @@ class EgressGuard:
             )
 
     def record_proxy_stop(
-        self, url: str, error: m.CoreError, *, is_connect: bool, is_navigation: bool
+        self,
+        url: str,
+        error: m.CoreError,
+        *,
+        is_connect: bool,
+        is_navigation: bool,
+        purpose: safety.URLPurpose,
+        record_decision: bool,
     ) -> None:
         with self._lock:
             self.last_proxy_error = _keep_stop(self.last_proxy_error, error)
@@ -1554,6 +1561,20 @@ class EgressGuard:
                 )
             if is_navigation:
                 self.navigation_error = _keep_stop(self.navigation_error, error)
+            if record_decision:
+                # DNS-free refusal never reached check_proxy_target's audit site.
+                # Later policy failures already have a decision; do not count twice.
+                self.decisions.append(
+                    EgressDecision(
+                        hostname=(self._authority(url) or ("invalid", 0))[0],
+                        purpose=purpose,
+                        resource_type="connect"
+                        if is_connect
+                        else ("document" if is_navigation else "subresource"),
+                        allowed=False,
+                        reason=error.detail.code.value,
+                    )
+                )
 
     def check_proxy_target(
         self,

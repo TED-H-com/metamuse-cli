@@ -398,3 +398,37 @@ def test_r8_strong_diagnostic_is_not_current_dns_error(monkeypatch):
         assert guard.navigation_error is None
     finally:
         proxy.close()
+
+
+@pytest.mark.parametrize("stage", ["preflight", "preflight-cutoff", "resolved-policy"])
+def test_r8_proxy_refusal_is_counted_once(stage):
+    from metamuse._browser_egress import parse_proxy_request
+
+    guard = facebook.EgressGuard(
+        allowed_hosts=("www.facebook.com",), resolver=lambda _: ["10.0.0.1"]
+    )
+    host = "denied.example" if stage.startswith("preflight") else "www.facebook.com"
+    parsed = parse_proxy_request(
+        f"CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n".encode(),
+        proxy_port=31280,
+    )
+    proxy = BrowserEgressProxy(guard, max_bytes=1, start_closed=True)
+    try:
+        if stage == "preflight-cutoff":
+            proxy._charge_bytes(2)
+        before = guard.summary()["aborted"]
+        with pytest.raises(m.CoreError) as caught:
+            proxy._check_target_bounded(parsed)
+        assert caught.value.detail.code == m.ErrorCode.SCOPE_DENIED
+        summary = guard.summary()
+        assert summary["aborted"] == before + 1
+        assert (
+            sum(
+                row["count"]
+                for row in summary["aborted_reasons"]
+                if row["reason"] == "E_SCOPE_DENIED"
+            )
+            == 1
+        )
+    finally:
+        proxy.close()
