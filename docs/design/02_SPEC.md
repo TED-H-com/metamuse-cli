@@ -338,8 +338,7 @@ The original reconciliation request, not the display-redacted topic, is used for
 human approval request file and retry. Approval failures propagate their actual fixed
 code, message and next action rather than replacing them with a permit error.
 
-Packets reach a fixpoint before hashing, with at most three passes as a bounded
-backstop. Still-changing text is fixed `E_INPUT_INVALID` "Packet redaction did not
+Packets and bundles use the shared redactor's bounded fixpoint before hashing. Still-changing text is fixed `E_INPUT_INVALID` "Packet redaction did not
 stabilize": invalid share text cannot be hashed or stored. Muse sends exactly stored
 `packet.rendered_text`. Current rules changing an older packet cause `E_REFERENCE_INVALID`,
 "Packet is stale; prepare a new packet", in prepare/preview/submit/wire, with no preview.
@@ -395,3 +394,11 @@ Form-plus decoding is scoped to each actual URL query, through that URL's end,
 or a whole whitespace-free form body of name=value pairs joined by &. An earlier
 question mark in prose never changes later plus characters. Bare Bearer detection
 also runs on original text; its spans are unioned with canonical-view spans.
+
+One call to `redact_text` applies the single pass at most four times (three changing
+passes and one confirming pass). For every input without `redaction_unstable`,
+`redact_text(redact_text(x)[0])[0] == redact_text(x)[0]`. The fourth changing
+application reports `redaction_unstable`; packet/bundle rendering refuses with the
+fixed "Packet redaction did not stabilize" E_INPUT_INVALID before hashing or writes.
+Muse text refuses the finding; nonrefusable displays and error details mask the whole
+value. There is no separate packet iteration bound.

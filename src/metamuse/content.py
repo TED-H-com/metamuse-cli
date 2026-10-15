@@ -338,6 +338,7 @@ def _is_stale(resolver: _Resolver, refs: list[m.EvidenceRef]) -> bool:
 def _safe_value(value: Any, records: list[dict[str, Any]]) -> Any:
     if isinstance(value, str):
         result, redactions = redact_text(value)
+        _require_stable_redaction(redactions)
         records.extend(redactions)
         return result
     if isinstance(value, dict):
@@ -353,6 +354,15 @@ def _safe_value(value: Any, records: list[dict[str, Any]]) -> Any:
     if isinstance(value, list):
         return [_safe_value(v, records) for v in value]
     return value
+
+
+def _require_stable_redaction(findings):
+    if any(row["kind"] == "redaction_unstable" for row in findings):
+        raise m.CoreError(
+            m.ErrorCode.INPUT_INVALID,
+            "Packet redaction did not stabilize",
+            next_action="Remove credential-bearing syntax from the source and prepare a new packet",
+        )
 
 
 def _summarize_redactions(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -608,22 +618,9 @@ def prepare_packet(ctx: AppContext, request: m.PacketPrepareRequest) -> m.Envelo
         raw = "".join(chunks)
         if len(raw.encode("utf-8")) > ctx.limits.text_max_bytes:
             raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Raw packet byte budget exceeded")
-        rendered = raw
-        for _ in range(3):
-            candidate, text_redactions = redact_text(rendered)
-            redactions.extend(text_redactions)
-            if candidate == rendered:
-                break
-            rendered = candidate
-        else:
-            # No digest or receipt may describe text that is still changing.
-            raise m.CoreError(
-                m.ErrorCode.INPUT_INVALID,
-                "Packet redaction did not stabilize",
-                next_action=(
-                    "Remove credential-bearing syntax from the source and prepare a new packet"
-                ),
-            )
+        rendered, text_redactions = redact_text(raw)
+        _require_stable_redaction(text_redactions)
+        redactions.extend(text_redactions)
         if len(rendered.encode("utf-8")) > min(48 * 1024, ctx.limits.packet_max_utf8_bytes):
             raise m.CoreError(m.ErrorCode.LIMIT_REACHED, "Rendered packet exceeds UTF-8 byte limit")
     with ctx.store.transaction() as conn:

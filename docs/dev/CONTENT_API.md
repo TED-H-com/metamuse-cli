@@ -80,8 +80,9 @@ private-key blocks and paths use the same shared detector. CJK prose and slash
 expressions remain unchanged. Quoted JSON keeps its delimiters; container/numeric
 JSON uses a quoted sentinel. Findings contain only category and count.
 
-Redaction is idempotent, with a maximum-three-pass packet backstop before any digest.
-Still-changing text gives fixed E_INPUT_INVALID and cannot create a packet or receipt.
+The shared redactor performs at most four applications: three changing passes and
+one confirming pass. A fourth changing pass adds `redaction_unstable`. Packets and
+bundles refuse it with fixed E_INPUT_INVALID before hashing or writing any state.
 Raw canonical size checks precede rendering; packet/bundle redaction runs outside the
 write transaction, whose snapshot validation remains database-only. Sparse decoding
 maps up to three percent and JSON-escape layers to original value spans and literal
@@ -257,3 +258,11 @@ Sensitive XML elements may have quoted attributes; their content is redacted
 whole, while a self-closing element has an empty value. Existing secure-cookie
 and cloud-header name prefixes use the same three-layer decoding in structured
 records as in text.
+
+One call to `redact_text` applies the single pass at most four times (three changing
+passes and one confirming pass). For every input without `redaction_unstable`,
+`redact_text(redact_text(x)[0])[0] == redact_text(x)[0]`. The fourth changing
+application reports `redaction_unstable`; packet/bundle rendering refuses with the
+fixed "Packet redaction did not stabilize" E_INPUT_INVALID before hashing or writes.
+Muse text refuses the finding; nonrefusable displays and error details mask the whole
+value. There is no separate packet iteration bound.
