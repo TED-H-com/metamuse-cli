@@ -43,7 +43,7 @@ FIXTURE_CV_DISPLAYS = CV_SKIPS | frozenset(
 )
 DEFAULT_DISPLAY = {
     **dict.fromkeys(
-        "div p article section form ul ol li pre blockquote h1 h2 h3 h4 h5 h6 details summary fieldset header footer main nav aside figure figcaption address".split(),
+        "html body legend div p article section form ul ol li pre blockquote h1 h2 h3 h4 h5 h6 details summary fieldset header footer main nav aside figure figcaption address".split(),
         "block",
     ),
     **dict.fromkeys("button input meter progress".split(), "inline-block"),
@@ -683,6 +683,16 @@ class FixtureTree(HTMLParser):
             raise failure()  # A doctype fragment implies unmodelled document insertion.
         self.complete_document()
         validate(self.nodes)
+        # Chromium blockifies the document root and the fieldset's first legend
+        # even when authored inline; body keeps an explicit inline override.
+        blockified = {i for i, node in enumerate(self.nodes) if html_tag(node) == "html"}
+        for node in self.nodes:
+            if html_tag(node) == "fieldset":
+                legend = next(
+                    (i for i in node["children"] if html_tag(self.nodes[i]) == "legend"), None
+                )
+                if legend is not None:
+                    blockified.add(legend)
         pending = [(0, False, True)]
         while pending:
             i, blocked, visibility = pending.pop()
@@ -690,6 +700,9 @@ class FixtureTree(HTMLParser):
             attrs, tag = node["attrs"], node["tag"]
             style = attrs.get("style", "")
             display = css(style, "display")
+            containment_display = display or DEFAULT_DISPLAY.get(tag, "inline")
+            if display == "inline" and i in blockified:
+                containment_display = "block"
             vis = css(style, "visibility")
             if vis not in (None, "inherit", "unset", "revert", "revert-layer"):
                 visibility = vis in {"visible", "initial"}
@@ -730,7 +743,7 @@ class FixtureTree(HTMLParser):
                         blocked
                         or (
                             css(style, "content-visibility") == "hidden"
-                            and (display or DEFAULT_DISPLAY.get(tag, "inline")) in CV_SKIPS
+                            and containment_display in CV_SKIPS
                         )
                         or (tag == "details" and "open" not in attrs and child != summary),
                         visibility,

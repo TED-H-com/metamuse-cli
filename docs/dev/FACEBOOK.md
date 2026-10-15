@@ -648,6 +648,11 @@ boxes. Fixture content-visibility is accepted only for independently proved disp
 values; unmodelled/unsupported display values refuse with the fixed capture error.
 Auto-skipped content remains eligible.
 
+The accepted fixture defaults for `html`, `body` and `legend` are block display.
+Focused parity checks also retain explicit-inline mirrors: Chromium blockifies
+the root and the fieldset's first legend, while inline body contents remain
+eligible under `content-visibility:hidden`.
+
 A trusted click moves the pointer to the quad first, then resolves and checks
 the hit node through its composed ancestors, and immediately sends mousePressed
 and mouseReleased. Hover-revealed overlays therefore fail the hit check without
