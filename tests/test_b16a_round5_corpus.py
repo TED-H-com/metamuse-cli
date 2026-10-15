@@ -28,4 +28,4 @@ def test_r5_assignment_closure_masks_unterminated_outer_value():
     marker = f"{'CLOSURE'}_MARKER_PRIVATE_VALUE"
     text = 'sid=${"password":"' + marker + '"'
     output, findings = redact_text(text)
-    assert output == "sid=[REDACTED]", (output, findings)
+    assert output == 'sid=[REDACTED]"', (output, findings)  # D3 retains only trailing punctuation.

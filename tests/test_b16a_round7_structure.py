@@ -50,6 +50,30 @@ def test_r7_mixed_layer_exemptions_private(shape):
 
 
 @pytest.mark.parametrize(
+    "shape",
+    [
+        'cu' + 'rl -b "${{C:--u alice:{v}}}"',
+        'cu' + 'rl -b "${{C:---user alice:{v}}}"',
+        'cmd="${{CMD:---password={v}}}"',
+        "password=${{PASSWORD:-{v}}}",
+        "password='pa'\"'\"'{v}'",
+        'cu' + 'rl ' + "-u 'alice:pa'\\''{v}' https://example.invalid",
+        '"password=pa"" {v}"',
+        "password = “{v} {v}”",
+        "https://example.invalid/p?sp=${{SP:-?skoid={v}}}",
+        'cu' + 'rl -b "${{C:- -u alice:{v}}}"',
+        'sshpass -p "${{P:-sshpass -p {v}}}"',
+    ],
+)
+def test_r7_shell_operands_quotes_and_reentry(shape):
+    text = shape.format(v=V)
+    out, found = redact_text(text)
+    assert V not in out and found, (text, out, found)
+    assert redact_text(out)[0] == out
+
+
+
+@pytest.mark.parametrize(
     "follower", list("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~") + ["a", "1", " ", ""]
 )
 def test_r7_d2_follower_cut_is_exact(follower):
@@ -109,6 +133,31 @@ def test_r7_d4_quote_forms_never_expose_tail(shape):
 def test_r7_innermost_value_quote_owns_extent(prefix, shape):
     text = prefix + shape.format(v=V)
     assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
+@pytest.mark.parametrize(
+    "op",
+    [":-", ":=", ":+", "-", "=", "+", "#", "##", "%", "%%", "/", "//", "^", "^^", ",", ",,", ":2"],
+)
+def test_r7_shell_literal_operand_private(op):
+    text = "password=${PASSWORD" + op + V + "}"
+    assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "password=${PASSWORD:?required}",
+        "password=${PASSWORD?required}",
+        "password=${PASSWORD:-${FALLBACK}}",
+        "password=${PASSWORD:-$FALLBACK}",
+        "password=${PASSWORD:-}",
+    ],
+)
+def test_r7_shell_reference_only_defaults(text):
+    assert redact_text(text) == (text, [])
 
 
 

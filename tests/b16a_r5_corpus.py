@@ -296,7 +296,7 @@ def neighbours():
         'token=os.getenv("TOKEN")',
     ):
         for _, encoded in class_encodings(text):
-            yield Row("exempt_mirror", encoded, benign=True)
+            yield Row("exempt_mirror", encoded, benign=not text.startswith("password=${X:-"))
 
 
 CATEGORIES = {
