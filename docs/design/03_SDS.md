@@ -77,6 +77,9 @@ Connection timeout為30秒，busy_timeout=30000 ms，共用一個internal consta
 suite load下90秒548次Store.transaction，p50 12.16 ms、p99 1781.87 ms、max 6903.15 ms；
 commit至context exit的max 6901.59 ms。30秒提供超過觀測stall的餘裕，不保證更長stall不發生。
 一般CLI同步等待每個SQLite operation，不印progress；逾時回固定E_STORAGE／exit 7。
+30秒是每個write transaction的等待上限，不是整個CLI command的deadline；同命令可有多個transaction。
+既有workspace先read檢查active content.cursor，存在就不開provisioning write transaction，
+doctor、jobs get/list及search不取得write lock；首次provision在write transaction內重查以避免race。
 WAL reader不取得write lock；同Store的短connection仍受process內RLock序列化。
 每次writable open先讀journal mode，必要時才切WAL；切換也可能SQLITE_BUSY。
 Store按sqlite_errorcode的primary byte分類SQLITE_BUSY／SQLITE_LOCKED，保留extended code於

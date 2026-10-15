@@ -325,7 +325,10 @@ suite load measured 548 transactions: p50 12.16 ms, p99 1781.87 ms, max 6903.15 
 commit-to-context-exit max was 6901.59 ms. Thirty seconds gives margin above that
 observed stall; it is not a host-wide deadline or a guarantee against longer stalls.
 A CLI caller waits synchronously, without progress output, for each contended SQLite
-operation; exhaustion returns a sanitized E_STORAGE (exit 7). Foreground workers
+operation; exhaustion returns a sanitized E_STORAGE (exit 7). The 30-second limit is
+per contended write transaction, not per CLI command: commands can perform several
+transactions in sequence. Existing-workspace doctor, jobs get/list and search open
+without taking the write lock. Foreground workers
 instead keep retrying unclaimed maintenance until stopped. WAL readers do not take
 the write lock, although one Store instance still serializes its short connection
 lifetimes with its process-local RLock.
@@ -376,7 +379,9 @@ points), format plain_text/markdown, scope this_draft. The content-owner/core-ow
 explicitly authorizes these additive contracts; generated schemas come from models.py.
 See [CONTENT_API.md](CONTENT_API.md) for content resolution budgets and replay behavior.
 `workspace_keys` holds internal 32-byte signing material. Store initialization provisions
-`content.cursor` before any search. `get_workspace_key(name, version=None)` reads the
+`content.cursor` before any search. Existing workspaces check for the active key with
+a read connection and open no provisioning transaction when it exists. First opens
+recheck under the write transaction, so racing opens create exactly one active key. `get_workspace_key(name, version=None)` reads the
 active or exact retained version; `workspace_verification_keys(name)` reads all versions.
 `get_or_create_workspace_key(name, conn=None)` is for initialization/mutation boundaries;
 read-only tools must use the read methods. `rotate_workspace_key(name)` atomically retires

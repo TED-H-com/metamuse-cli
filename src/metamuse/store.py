@@ -453,6 +453,15 @@ class Store:
             return self.get_or_create_workspace_key(name, conn=conn)
 
     def _provision_workspace_keys(self) -> None:
+        # Existing workspaces, including read-only CLI tools, need no writer.
+        with self.connection() as conn:
+            if conn.execute(
+                "SELECT 1 FROM workspace_keys WHERE name=? AND status='active'",
+                (CONTENT_CURSOR_KEY,),
+            ).fetchone():
+                return
+        # Another first opener may have provisioned it since our read. The helper
+        # rechecks under BEGIN IMMEDIATE before generating or inserting a key.
         with self.transaction() as conn:
             self.get_or_create_workspace_key(CONTENT_CURSOR_KEY, conn=conn)
 
