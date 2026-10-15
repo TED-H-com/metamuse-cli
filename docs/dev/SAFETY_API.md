@@ -393,3 +393,8 @@ Decoded-view terminators end a value only at the operator's decoding layer or a
 shallower layer. Deeper percent, JSON-escape and form-plus characters are value
 data. Original assignment spans are retained even when they contain percent escapes;
 the mask is the union of original and decoded spans.
+
+Form-plus decoding is scoped to each actual URL query, through that URL's end,
+or a whole whitespace-free form body of name=value pairs joined by &. An earlier
+question mark in prose never changes later plus characters. Bare Bearer detection
+also runs on original text; its spans are unioned with canonical-view spans.
