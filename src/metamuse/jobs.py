@@ -22,6 +22,8 @@ from metamuse.store import Store, TransactionWriter, _StorageBusy
 
 _T = TypeVar("_T")
 _UNCLAIMED_BUSY_TIMEOUT_SECONDS = 1.0
+_LIVE_OWNER_NONCES: set[str] = set()
+_LIVE_OWNER_NONCES_LOCK = threading.Lock()
 
 UncertainState = Literal["open_uncertain", "send_uncertain", "needs_reconcile"]
 UNCERTAIN = ("open_uncertain", "send_uncertain", "needs_reconcile")
@@ -73,6 +75,10 @@ def worker_available(store: Store) -> bool:
     try:
         stat = store.paths.worker_lock.stat()
         pid = int(owner.split(":", 1)[0])
+        if pid == os.getpid():
+            with _LIVE_OWNER_NONCES_LOCK:
+                if owner not in _LIVE_OWNER_NONCES:
+                    return False
         with Path("/proc/locks").open(encoding="ascii") as records:
             for line in records:
                 fields = line.split()
@@ -431,6 +437,9 @@ class Executor:
         self.nonce = f"{os.getpid()}:{m.new_id('owner')}"
         try:
             self.epoch = self._retry_unclaimed(self._start)
+            if self.epoch is not None:
+                with _LIVE_OWNER_NONCES_LOCK:
+                    _LIVE_OWNER_NONCES.add(self.nonce)
         except BaseException:
             fcntl.flock(self.handle, fcntl.LOCK_UN)
             self.handle.close()
@@ -470,6 +479,8 @@ class Executor:
                         # claim availability and the next owner replaces it.
                         pass
             finally:
+                with _LIVE_OWNER_NONCES_LOCK:
+                    _LIVE_OWNER_NONCES.discard(self.nonce)
                 fcntl.flock(self.handle, fcntl.LOCK_UN)
                 self.handle.close()
                 self.handle = None

@@ -150,6 +150,8 @@ committed submitting boundary可failed/not_submitted，越過則uncertain，絕�
 _fail／_finish_step等保存若busy則rollback；fallback寫入也busy時傳出錯誤，保留durable
 running/submitting供原有restart recovery，不捏造succeeded或failed_before_send。
 shutdown清owner metadata若busy可留stale metadata；釋放OS lock才是availability權威。
+同PID另須完整owner nonce存在process-local live registry；ownership commit後才加入，
+exit不論cleanup結果皆移除。新的同PID Executor不會借用舊nonce；其他PID仍以Linux FLOCK觀測。
 
 ### 重啟恢復
 

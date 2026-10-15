@@ -314,6 +314,10 @@ the error propagates and the durable running/submitting state remains for existi
 restart recovery; it cannot become a fabricated success or failed_before_send.
 Entered external work is never automatically resent. On shutdown a busy owner-metadata
 cleanup may leave stale metadata; OS-lock release remains authoritative for availability.
+For this process, availability also requires the complete owner nonce in the live
+registry, added only after ownership commits and removed even if exit cleanup fails.
+A later Executor in the same PID cannot make an old row look available. Other PIDs
+continue to require matching Linux FLOCK evidence.
 
 ## Store and objects
 
