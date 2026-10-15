@@ -42,6 +42,21 @@ def test_r7_d2_follower_cut_is_exact(follower):
 
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "password=${PW}.",
+        "password=${PW}!!!",
+        "password=${PW})",
+        "password=[REDACTED])",
+        'password="[REDACTED]"',
+    ],
+)
+def test_r7_d3_exemption_uses_trimmed_whole_value(text):
+    assert redact_text(text) == (text, [])
+
+
+
 @pytest.mark.parametrize("prefix", ["(", "[", "{", "<"])
 @pytest.mark.parametrize(
     "shape",
@@ -72,6 +87,14 @@ def test_r7_autolink_invalid_follower_is_data(shape):
 def test_r7_innermost_header_and_query_quote(shape):
     text = shape.format(v=V)
     assert V not in redact_text(text)[0], (text, redact_text(text))
+
+
+
+@pytest.mark.parametrize(
+    "text", ["Use `token=<your token>`.", "password=<your token>", 'cu' + 'rl ' + '-u "alice:<your token>"']
+)
+def test_r7_complete_placeholder_with_spaces(text):
+    assert redact_text(text) == (text, []), (text, redact_text(text))
 
 
 
