@@ -15,6 +15,7 @@ ACCESSORS = {
     "attributes": ("Element", "attributes", True),
     "shadowRoot": ("Element", "shadowRoot", True),
     "assignedSlot": ("Element", "assignedSlot", True),
+    "textSlot": ("Text", "assignedSlot", True),
     "checkVisibility": ("Element", "checkVisibility", False),
     "getAttribute": ("Element", "getAttribute", False),
     "hasAttribute": ("Element", "hasAttribute", False),
@@ -58,9 +59,9 @@ function children(n_node) {
   return v_result;
 }
 function parent(n_node) {
-  if(D.nodeType(n_node)===1) {
-    const n_slot=D.assignedSlot(n_node);if(n_slot)return n_slot;
-  }
+  const n_slot=D.nodeType(n_node)===1?D.assignedSlot(n_node):
+    (D.nodeType(n_node)===3?D.textSlot(n_node):null);
+  if(n_slot)return n_slot;
   const n_parent=D.parentNode(n_node);if(n_parent)return n_parent;
   return D.nodeType(n_node)===11?D.host(n_node):null;
 }

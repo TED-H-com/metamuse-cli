@@ -871,6 +871,23 @@ the observation digest and byte accounting; it is not parsed as HTML.
 | `visibility:hidden` or `collapse` | no; descendants may restore `visible` |
 | Text, including through `display:contents` | its text box and inherited visible state; skipped auto content remains eligible |
 
+
+An element's composed parent is its assigned slot, otherwise its parent element,
+otherwise its shadow root's host. A `display:none` composed ancestor blocks every
+composed descendant, including slotted `display:contents` children. Visibility can
+be restored by descendants, but an unrendered container never establishes a post,
+comments-section or comment identity. Extractor stack frames restore exactly the
+state opened at entry. `display:contents` suppresses replaced elements and controls:
+img, input, textarea, select, video, audio, canvas, iframe, embed, object, br, wbr,
+meter, progress, frame and frameset. Look-through never climbs out of these nodes.
+
+One `capture.controls` traversal assigns rendered controls in composed order to
+both the extractor queue and the CDP identity map. IDs use `data-expand-id` or
+`expand_N`; the first rendered duplicate wins. The hit test follows assigned slots,
+parents and shadow hosts through cached accessors, accepting labels inside a
+control's shadow root or assigned through a slot. An overlay, removed control or
+unusable quad fails expansion without clicking a substitute node.
+
 Default `checkVisibility()` preserves auto-skipped content. Text-range boxes exclude
 non-painting direct text in closed details; looking through `display:contents`
 preserves text whose immediate parent has no box. Opacity, clipping, size and viewport
