@@ -558,6 +558,13 @@ query exception. These do not exempt an encoded delimiter deeper than a form
 assignment. Unenclosed port/email lists that are syntactically URL userinfo retain
 the credential interpretation; use enclosing JSON/string boundaries for a list.
 
+Known form boundaries are carried through decoded layers, including encoded newlines.
+An encoded nested form prefix gets its own operator layer within its parent field;
+its plus signs decode only at that layer or shallower. The scan never grants form
+semantics to unrelated prose after a question mark. Whole escaped quoted placeholders
+are canonicalized before applying the same closed exemption list; their nested
+assignments remain independently inspected. Public-key block mirrors stay public.
+
 ---
 
 # MetaMuse CLI — Software Design Specification（SDS）
@@ -1161,6 +1168,13 @@ the URL authority. `encoded_query_question_terminator` is the documented encoded
 query exception. These do not exempt an encoded delimiter deeper than a form
 assignment. Unenclosed port/email lists that are syntactically URL userinfo retain
 the credential interpretation; use enclosing JSON/string boundaries for a list.
+
+Known form boundaries are carried through decoded layers, including encoded newlines.
+An encoded nested form prefix gets its own operator layer within its parent field;
+its plus signs decode only at that layer or shallower. The scan never grants form
+semantics to unrelated prose after a question mark. Whole escaped quoted placeholders
+are canonicalized before applying the same closed exemption list; their nested
+assignments remain independently inspected. Public-key block mirrors stay public.
 
 ---
 

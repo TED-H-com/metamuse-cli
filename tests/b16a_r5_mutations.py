@@ -257,6 +257,20 @@ add(
     "non_json_whitespace",
 )
 
+old = base.MUTANTS["assignment_closure_removed"]
+add("assignment_closure_removed", SAFE, old[1], R5, "assignment_closure", False)
+add(
+    "nested_form_scope_removed",
+    SAFE,
+    within(
+        "_layered_form_ranges",
+        "        yield from _form_prefix_ranges(text, depths, prefix, field_start, end, level)",
+        "        yield field_start, end, level",
+    ),
+    R5,
+    "class_matrix",
+)
+
 
 if __name__ == "__main__":
     base.main()

@@ -173,6 +173,17 @@ def neighbours():
             text = json.dumps(text)
         return text
 
+    def class_encodings(text):
+        yield from encodings(text)
+        value = text
+        for _ in range(3):
+            value = json.dumps({"capture": value})
+        yield "json3", value
+        value = "q=" + quote_plus(text)
+        for n in (2, 3):
+            value = "q=" + quote_plus(value)
+            yield f"nested_form{n}", value
+
     marker = f"{'NEIGHBOUR'}_MARKER_PRIVATE_VALUE"
     for first in FIRST:
         for join in JOINS:
@@ -198,7 +209,7 @@ def neighbours():
             entry = (
                 {"value": marker, "name": "sid"} if reverse else {"name": "sid", "value": marker}
             )
-            for _, text in encodings(
+            for _, text in class_encodings(
                 json.dumps(
                     {
                         "earlier": earlier,
@@ -208,7 +219,7 @@ def neighbours():
                 )
             ):
                 yield Row("har", text, (marker,))
-            for _, text in encodings(
+            for _, text in class_encodings(
                 json.dumps(
                     {
                         "earlier": earlier,
@@ -225,12 +236,15 @@ def neighbours():
             if reverse
             else {"name": "sid", "value": int(number)}
         )
-        for _, text in encodings(json.dumps({"headers": [entry]})):
+        for _, text in class_encodings(json.dumps({"headers": [entry]})):
             yield Row("har_scalar", text, (number,))
+        public_entry = dict(entry, name="theme")
+        for _, text in class_encodings(json.dumps({"entries": [public_entry]})):
+            yield Row("har_scalar_mirror", text, benign=True)
         entry = {"value": marker, "name": "sid"} if reverse else {"name": "sid", "value": marker}
         # A partial value-first object cannot establish its later sensitive name.
         complete = json.dumps({"headers": [entry]})
-        for _, text in encodings(complete[:-2]):
+        for _, text in class_encodings(complete[:-2]):
             yield Row("har_partial", text, (marker,))
     form = "q=" + quote_plus(json.dumps({"cookies": [{"name": "theme", "value": marker}]}))
     for _depth in range(3):
@@ -240,17 +254,29 @@ def neighbours():
         for ending in ("\n", "\r\n"):
             for closed in (False, True):
                 raw = block(kind, marker, closed).replace("\n", ending)
-                for _, text in encodings("key_file: " + raw):
+                for _, text in class_encodings("key_file: " + raw):
                     yield Row("key_block", text, (marker,))
+                public = raw.replace("PRIVATE", "PUBLIC").replace(
+                    "Pu" + "TTY-User-Key-File", "Pu" + "TTY-User-Public-Key-File"
+                )
+                for _, text in class_encodings("key_file: " + public):
+                    yield Row("key_block_mirror", text, benign=True)
     for shape in (
         'password=${X:-"api_key={v}"}',
         'token=os.getenv("T", "password={v}")',
         'password="<password={v}>"',
     ):
-        for _, text in encodings(shape.replace("{v}", marker)):
+        for _, text in class_encodings(shape.replace("{v}", marker)):
             yield Row("nested_exempt", text, (marker,))
-    for text in ("password=$VAR", "password=${A:-${B}}", 'token=os.getenv("TOKEN")'):
-        for _, encoded in encodings(text):
+    for text in (
+        'password=${X:-"user_name=public"}',
+        'token=os.getenv("T", "theme=public")',
+        'password="<user_name=public>"',
+        "password=$VAR",
+        "password=${A:-${B}}",
+        'token=os.getenv("TOKEN")',
+    ):
+        for _, encoded in class_encodings(text):
             yield Row("exempt_mirror", encoded, benign=True)
 
 

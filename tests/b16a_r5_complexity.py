@@ -1,6 +1,7 @@
 """Every prior family, the reviewer additions, and the new scanner boundaries."""
 
 import json
+from urllib.parse import quote_plus
 
 from b16a_r4_complexity import build as prior_build
 from b16a_r4_complexity import families as prior_families
@@ -42,6 +43,11 @@ NEW = {
     "exempt_nested_defaults": 'token=os.getenv("T", "password={v}") ',
     "open_brackets": "[",
     "invalid_utf8_percent": "%80",
+    "nested_form_block": "q="
+    + quote_plus(
+        "q=" + quote_plus("-----BE" + f"GIN PRIVATE KEY-----\n{'Complex'}{4242}{'Marker'}")
+    ),
+    "escaped_outer_exemption": 'password=\\"<user_name=public>\\" ',
 }
 STD = ("k_arrow", "k_arrow_json", "vm_id", "vm_id_json")
 

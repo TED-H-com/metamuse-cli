@@ -1501,6 +1501,11 @@ def _credential_value_exempt(key: str, value: Any) -> bool:
     for _ in range(3):
         value = unquote(value)
     value = value.strip()
+    if re.match(r'\\{1,8}"', value):
+        for _ in range(3):
+            value, edits = _decode_view(value, json_escapes=True)
+            if not edits:
+                break
     if value.startswith(('"""', "'''")) and value.endswith(value[:3]) and len(value) >= 6:
         value = value[3:-3].strip()
     elif len(value) >= 2 and value[0] in "\"'" and value[-1] == value[0]:
@@ -3054,6 +3059,68 @@ def _form_ranges(text):
         yield start, end
 
 
+def _decoded_ranges(ranges, edits):
+    """Carry known form boundaries forward without losing decoded value data."""
+    if not ranges or not edits:
+        return ranges
+    values = iter(edits)
+    edit = next(values, None)
+    shift = 0
+    result = []
+    for start, end in ranges:
+        bounds = []
+        for position, ending in ((start, False), (end, True)):
+            while edit is not None and edit.original_end <= position:
+                shift = edit.original_end - edit.end
+                edit = next(values, None)
+            bounds.append(
+                (edit.end if ending else edit.start)
+                if edit is not None and edit.original_start < position
+                else position - shift
+            )
+        result.append(tuple(bounds))
+    return result
+
+
+def _layered_form_ranges(text, depths, known):
+    """Nested form prefixes get their own layer, bounded by the parent field."""
+    discovered = list(_form_ranges(text))
+    scopes = _merge_spans(
+        [
+            [(a, b, "form", "") for a, b in known],
+            [(a, b, "form", "") for a, b in discovered],
+        ]
+    )
+    prefix = re.compile(_NAME + "=")
+    for start, end, _, _ in scopes:
+        first = prefix.match(text, start, end)
+        level = max(depths[start - 1] if start else 0, depths[first.end() - 1] if first else 0)
+        field_start = start
+        # Each parent field is visited once. Deeper '&' is data for this parent.
+        boundaries = (
+            m.start()
+            for m in re.finditer("&", text[start:end])
+            if depths[start + m.start()] <= level
+        )
+        for boundary in boundaries:
+            field_end = start + boundary
+            yield from _form_prefix_ranges(text, depths, prefix, field_start, field_end, level)
+            yield field_end, field_end + 1, level
+            field_start = field_end + 1
+        yield from _form_prefix_ranges(text, depths, prefix, field_start, end, level)
+
+
+def _form_prefix_ranges(text, depths, prefix, start, end, level):
+    cursor = start
+    while match := prefix.match(text, cursor, end):
+        nested_level = depths[match.end() - 1]
+        if nested_level > level:
+            yield start, cursor, level
+            start, level = cursor, nested_level
+        cursor = match.end()
+    yield start, end, level
+
+
 def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     """Canonical decoded views, forward scans, sparse offsets, one output join."""
     layers = []
@@ -3064,6 +3131,7 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
         # Decode before percent escapes: an encoded %2B remains a literal plus.
         view, edits = _decode_view(text, form=True, ranges=ranges)
         if edits:
+            ranges = _decoded_ranges(ranges, edits)
             layers.append(edits)
     # Escaped documents can reveal percent escapes, and conversely. Each
     # successful layer consumes its own budget; failed probes do not consume it.
@@ -3077,17 +3145,14 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
             if edits:
                 budgets[decoding] -= 1
                 view = decoded
+                ranges = _decoded_ranges(ranges, edits)
                 layers.append(edits)
                 changed = True
         if not changed:
             break
     depths = _decoding_depths(len(text), layers)
     if layers and "+" in view:
-        scoped = []
-        for start, end in _form_ranges(view):
-            equals = view.find("=", start, end)
-            level = max(depths[start - 1] if start else 0, depths[equals] if equals >= 0 else 0)
-            scoped.append((start, end, level))
+        scoped = list(_layered_form_ranges(view, depths, ranges))
         decoded, edits = _decode_view(view, form=True, ranges=scoped, form_depths=depths)
         if edits:
             view = decoded

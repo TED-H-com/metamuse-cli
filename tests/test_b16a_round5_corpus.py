@@ -11,3 +11,12 @@ def test_r5_class_matrix_seeded_subset():
         == result.get("benign_changed", 0)
         == 0
     ), result
+
+
+def test_r5_assignment_closure_masks_unterminated_outer_value():
+    from metamuse.safety import redact_text
+
+    marker = f"{'CLOSURE'}_MARKER_PRIVATE_VALUE"
+    text = 'sid=${"password":"' + marker + '"'
+    output, findings = redact_text(text)
+    assert output == "sid=[REDACTED]", (output, findings)

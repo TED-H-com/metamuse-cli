@@ -310,3 +310,10 @@ exemptions inside JSON captures. Shell quoting of option names, including curl
 A whole form field is decoded before lexing a HAR document it contains, including
 whole percent-encoded form bodies. The HAR lexer never decodes string data into
 structure or resumes after an error within that JSON layer.
+
+Known form boundaries are carried through decoded layers, including encoded newlines.
+An encoded nested form prefix gets its own operator layer within its parent field;
+its plus signs decode only at that layer or shallower. The scan never grants form
+semantics to unrelated prose after a question mark. Whole escaped quoted placeholders
+are canonicalized before applying the same closed exemption list; their nested
+assignments remain independently inspected. Public-key block mirrors stay public.
