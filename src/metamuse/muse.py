@@ -848,15 +848,22 @@ def _notary_stale(value: str | None, now: float) -> bool:
     try:
         segment = value.split(".")[2]
         document = json.loads(base64.urlsafe_b64decode(segment + "=" * (-len(segment) % 4)))
-        restrictions = document.get("restrictions")
-        if not isinstance(restrictions, list):
-            return False
-        for item in restrictions:
-            if isinstance(item, str) and item.startswith("timeout:"):
-                expiry = float(item[len("timeout:") :].strip())
-                return math.isfinite(expiry) and expiry > 0 and expiry <= now + 60
-    except (ValueError, TypeError, AttributeError, UnicodeError):
-        pass
+    except (ValueError, TypeError, AttributeError, UnicodeError, IndexError):
+        return False
+    if not isinstance(document, dict):
+        return False
+    restrictions = document.get("restrictions")
+    if not isinstance(restrictions, list):
+        return False
+    for item in restrictions:
+        if not isinstance(item, str) or not item.startswith("timeout:"):
+            continue
+        try:
+            expiry = float(item[len("timeout:") :].strip())
+        except ValueError:
+            continue
+        if math.isfinite(expiry) and expiry > 0:
+            return expiry <= now + 60
     return False
 
 
