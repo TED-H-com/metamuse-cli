@@ -14,7 +14,7 @@ cases = {
     "R6-2": [
         f"password=<{V}%3e",
         f"https://alice:${{{V}%7d@example.invalid/p",
-        f"cu" + f'rl -b "${{C:--u alice:{V}}}"',
+        "cu" + f'rl -b "${{C:--u alice:{V}}}"',
         f'<input name="password" value="<{V}%3e">',
     ],
     "R6-3": [
@@ -44,9 +44,9 @@ rows = [
     f"{{'user': 'bob', 'password': '{V}'}}",
     f"password={V},user=bob",
     f"f(password={V}, user=bob)",
-    f"cu" + f"rl " + f"-u 'alice:{V}' https://example.invalid",
-    f'"cu' + f"rl " + f'''-u 'alice:{V}'"''',
-    f'cmd = "cu' + f"rl " + f'''-u 'alice:{V}' https://x"''',
+    "cu" + "rl " + f"-u 'alice:{V}' https://example.invalid",
+    '"cu' + "rl " + f'''-u 'alice:{V}'"''',
+    'cmd = "cu' + "rl " + f'''-u 'alice:{V}' https://x"''',
     f"(see https://example.invalid/p?token={V})",
     f"[link](https://alice:{V}@example.invalid/p)",
     f"'https://alice:pa',{V}@example.invalid/p'",
@@ -73,7 +73,7 @@ rows = [
     '<input value="abc"/>',
     f'<input name="password" value="{V}"/>',
     f'"password=pa"" {V}"',
-    f"cu" + f"rl " + f"-u 'alice:pa'\\''{V}' https://example.invalid",
+    "cu" + "rl " + f"-u 'alice:pa'\\''{V}' https://example.invalid",
     f"password = “{V} {V}”",
     f'{{"password":"pa\\",{V}"}}',
 ]

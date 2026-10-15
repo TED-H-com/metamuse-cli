@@ -94,7 +94,7 @@ check(
 check(
     "form_quote_curl",
     "Log: cmd=cu" + "rl+-H+'X:1'+--user+alice:SEC",
-    f"Log: cmd=cu" + f"rl+-H+'X:1'+--user+alice:{SEC}+https://example.invalid",
+    "Log: cmd=cu" + f"rl+-H+'X:1'+--user+alice:{SEC}+https://example.invalid",
 )
 check(
     "form_quote_sshpass",
@@ -109,17 +109,17 @@ check(
 check(
     "form_angle_curl",
     "Log: cmd=cu" + "rl+-H+<X>+--user+alice:SEC",
-    f"Log: cmd=cu" + f"rl+-H+<X>+--user+alice:{SEC}+https://example.invalid",
+    "Log: cmd=cu" + f"rl+-H+<X>+--user+alice:{SEC}+https://example.invalid",
 )
 check(
     "form_json2_angle_curl",
     "JSON2 body: cmd=cu" + "rl+-H+<X>+--user+alice:SEC",
-    json.dumps({"outer": json.dumps({"body": f"cmd=cu" + f"rl+-H+<X>+--user+alice:{SEC}"})}),
+    json.dumps({"outer": json.dumps({"body": "cmd=cu" + f"rl+-H+<X>+--user+alice:{SEC}"})}),
 )
 check(
     "form_bare_curl_long",
     "Bare quote_plus(cu" + "rl --user alice:SEC)",
-    quote_plus(f"cu" + f"rl --user alice:{SEC} https://example.invalid"),
+    quote_plus("cu" + f"rl --user alice:{SEC} https://example.invalid"),
 )
 check(
     "form_bare_sshpass",
