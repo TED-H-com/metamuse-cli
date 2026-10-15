@@ -16,11 +16,20 @@ from metamuse import jobs, mcp
 
 
 def test_journey_waits_for_real_attached_worker_handoff(tmp_path, monkeypatch):
-    """Hold the real Executor past the unchanged 2s handoff, then release via inspect.
+    _journey_with_startup_barrier(tmp_path, monkeypatch, "ownership")
+
+
+def test_journey_waits_during_real_executor_construction(tmp_path, monkeypatch):
+    _journey_with_startup_barrier(tmp_path, monkeypatch, "construction")
+
+
+def _journey_with_startup_barrier(tmp_path, monkeypatch, phase):
+    """Hold bootstrap across the unchanged 2s handoff, then release via inspect.
 
     Exercise the actual initial journey call site through the official SDK, stopping
-    before project_create. No full journey, storage contention or timed sleep is
-    needed to reproduce the old immediate assertion.
+    before project_create. Time starts before SDK spawn: construction, sibling Store
+    creation and ownership all consume the same handoff, so time since _start is
+    neither its clock nor guaranteed to exist when the first inspect returns.
     """
     entry = Entrypoints(tmp_path)
     deadline = entry.deadline
@@ -38,19 +47,29 @@ def test_journey_waits_for_real_attached_worker_handoff(tmp_path, monkeypatch):
         "    raise AssertionError('Network forbidden in startup fixture')\n"
         "socket.socket.connect = socket.socket.connect_ex = forbidden\n"
         "socket.create_connection = forbidden\n"
-        "original = jobs.Executor._start\n"
-        "def gated(self):\n"
-        f"    Path({str(started)!r}).write_text(str(time.monotonic()))\n"
+        "def await_release():\n"
+        f"    Path({str(started)!r}).touch()\n"
         f"    while not Path({str(release)!r}).exists():\n"
         f"        assert time.monotonic() < {deadline!r}, 'Startup gate exceeded shared deadline'\n"
         "        time.sleep(0.01)\n"
+        "original = jobs.Executor._start\n"
+        "def gated(self):\n"
+        "    await_release()\n"
         "    return original(self)\n"
-        "jobs.Executor._start = gated\n"
+        f"if {phase!r} == 'construction':\n"
+        "    construction_original = jobs.Executor.__init__\n"
+        "    def gated_init(self, *args, **kwargs):\n"
+        "        await_release()\n"
+        "        return construction_original(self, *args, **kwargs)\n"
+        "    jobs.Executor.__init__ = gated_init\n"
+        "else:\n"
+        "    jobs.Executor._start = gated\n"
         "raise SystemExit(main())\n"
     )
     wrapper.chmod(0o755)
     entry.command = wrapper
     observed = []
+    spawn_started = None
     original_call, original_server = entry.call, entry.server
 
     class FlowReached(Exception):
@@ -68,9 +87,13 @@ def test_journey_waits_for_real_attached_worker_handoff(tmp_path, monkeypatch):
             observed.append(data)
             if data["attached_worker"] == "starting":
                 assert data["worker_available"] is False, data
-                assert time.monotonic() - float(started.read_text()) >= (
-                    mcp._WORKER_START_HANDOFF_SECONDS
-                )
+                assert spawn_started is not None
+                assert time.monotonic() - spawn_started >= mcp._WORKER_START_HANDOFF_SECONDS
+                # A slow bootstrap may not have reached this phase at initial
+                # inspect. Wait for the gate explicitly within the same deadline.
+                with entry.waiting("Startup fixture phase entry"):
+                    while not started.exists():
+                        await anyio.sleep(0.01)
                 # One immediate inspect must still be insufficient. Release only
                 # after the readiness helper has explicitly polled a second time.
                 if len(observed) == 2:
@@ -79,6 +102,8 @@ def test_journey_waits_for_real_attached_worker_handoff(tmp_path, monkeypatch):
 
     @asynccontextmanager
     async def server(*args, **kwargs):
+        nonlocal spawn_started
+        spawn_started = time.monotonic()
         async with original_server(*args, **kwargs) as session:
             try:
                 yield session
