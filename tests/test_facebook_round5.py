@@ -360,14 +360,18 @@ def test_r5_n2_click_failure_imports_already_observed_data(tmp_path, monkeypatch
         comments=[{"id": "c_1", "text": "First"}], expand_controls=[{"id": "more"}]
     ).replace("</body>", script + "</body>")
     with browser_fixture(
-        tmp_path, monkeypatch, {POST_PATH: markup, "/api/more": (status, None)}
+        tmp_path,
+        monkeypatch,
+        {POST_PATH: markup, "/api/more": (status, None)},
+        read_timeout=2,
+        unsandboxed=False,
     ) as env:
         ctx, project, permit, _, _, _, _ = env
         job = finish(ctx, submit(ctx, project, permit))
         assert job["error"] is None
         assert job["coverage_status"] == "partial"
-        assert job["stop_reason"] == "expansion_failed"
-        assert "expansion_failed" in job["missing_fields"]
+        assert job["stop_reason"] == "expansion_timeout"
+        assert "expansion_progress_timeout" in job["missing_fields"]
         assert len(rows(ctx)) == 2
 
 
