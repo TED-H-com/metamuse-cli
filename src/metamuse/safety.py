@@ -1713,7 +1713,7 @@ class _PositionIndex:
         value = data[position]
         if self.mode == "ends":
             return value if value > 0 else default
-        allowed = {"closings": ")]}", "quotes": "\"'", "separators": ",;"}[self.mode]
+        allowed = {"closings": ")]}", "quotes": "\"'`", "separators": ",;"}[self.mode]
         if value < 0 and self.text[position] in allowed:
             opening = -value - 1
             return (self.text[opening], opening) if self.mode == "separators" else opening
@@ -1815,31 +1815,58 @@ class _Syntax:
                 else:
                     self.escaped_closings[escaped.start()] = opening + 1
         self.line_ends = array("I", (m.start() for m in re.finditer(r"[\r\n]", text)))
-        pending = {}
+        # Local quote successors and proven pairs are separate facts. A stray
+        # quote can never change the polarity of a credential's opening quote.
+        self.quote_next = _PositionIndex(text)
+        pending, successors = {}, {}
         stack = array("I")
         stack_context = array("i")
         quote_context = -1
-        for match in re.finditer(r"\\[\s\S]|[\"'()\[\]{},;]", text):
+        for match in re.finditer(r"\\[\s\S]|\"{3}|'{3}|[\"'`()\[\]{},;\r\n]", text):
             char, pos = match[0], match.start()
             if char.startswith("\\"):
                 continue
             level = self.depth(pos)
-            if char in "\"'":
-                previous = pending.pop((char, level), None)
+            if char in {"\r", "\n"}:
+                # A deeper decoded newline is data for a shallower string.
+                for channel in list(pending):
+                    if len(channel[0]) == 1 and channel[1] >= level:
+                        opening, index = pending.pop(channel)
+                        self.ends[opening] = pos
+                        self.quotes[index] = (opening, pos)
+                for channel in list(successors):
+                    if len(channel[0]) == 1 and channel[1] >= level:
+                        del successors[channel]
+                quote_context = max((v[0] for v in pending.values()), default=-1)
+                continue
+            if char[0] in "\"'`":
+                if (
+                    char == "'"
+                    and pos
+                    and pos + 1 < len(text)
+                    and text[pos - 1].isalnum()
+                    and text[pos + 1].isalnum()
+                ):
+                    continue
+                channel = char, level
+                prior = successors.get(channel)
+                if prior is not None:
+                    self.quote_next[prior] = match.end()
+                successors[channel] = pos
+                previous = pending.pop(channel, None)
                 if previous is None:
-                    pending[char, level] = (pos, len(self.quotes))
+                    pending[channel] = (pos, len(self.quotes))
                     self.quotes.append((pos, len(text)))
                 else:
                     opening, index = previous
-                    self.ends[opening] = pos + 1
+                    self.ends[opening] = match.end()
                     self.quotes[index] = (opening, pos)
                     self.quote_closings[pos] = opening
-                    # A delimiter cannot cross an enclosing string's closing quote.
-                    for channel, (inner, inner_index) in list(pending.items()):
-                        if inner > opening and channel[1] >= level:
+                    for inner_channel, (inner, inner_index) in list(pending.items()):
+                        if inner > opening and inner_channel[1] >= level:
                             self.ends[inner] = pos
                             self.quotes[inner_index] = (inner, pos)
-                            del pending[channel]
+                            del pending[inner_channel]
                     while stack and stack[-1] > opening:
                         begin = stack.pop()
                         stack_context.pop()
@@ -1855,7 +1882,7 @@ class _Syntax:
                 stack
                 and char == {"(": ")", "[": "]", "{": "}"}[text[stack[-1]]]
                 and stack_context[-1] == quote_context
-                and self.depth(pos) <= self.depth(stack[-1])
+                and self.depth(pos) == self.depth(stack[-1])
             ):
                 begin = stack.pop()
                 stack_context.pop()
@@ -1865,18 +1892,6 @@ class _Syntax:
             self.ends[opening] = len(text)
         for begin in stack:
             self.ends[begin] = len(text)
-        triple = None
-        for match in re.finditer(r"\\[\s\S]|" + '"' * 3 + "|" + "'" * 3, text):
-            delimiter = match[0]
-            if delimiter.startswith("\\"):
-                continue
-            if triple is None:
-                triple = (delimiter, match.start())
-            elif delimiter == triple[0] and self.depth(match.start()) <= self.depth(triple[1]):
-                self.ends[triple[1]] = match.end()
-                triple = None
-        if triple is not None:
-            self.ends[triple[1]] = len(text)
         # Indented YAML containers/scalars end at the next dedent. Close every
         # pending block once, using the previous content end computed once/line.
         self.yaml_ends = _PositionIndex(text)
@@ -1918,6 +1933,16 @@ class _Syntax:
     def layer(self, start, end):
         return max(self.depths[start:end], default=0) if self.depths is not None else 0
 
+    def complete(self, opening, end):
+        return (
+            end > opening
+            and self.closings.get(end - 1) == opening
+            and self.depth(end - 1) == self.depth(opening)
+        )
+
+    def quoted_end(self, text, start):
+        return self.quote_next.get(start) if text[start : start + 1] in {'"', "'", "`"} else None
+
     def value(self, text, start, *, list_separators=False, operator_depth=None):
         if start >= len(text):
             return start
@@ -1932,7 +1957,9 @@ class _Syntax:
                 or re.compile(r"\\+[nr\"']").match(text, finish)
             ):
                 return finish
-        quoted_end = self.ends.get(start, len(text)) if text[start] in "\"'" else start
+        quoted_end = self.quoted_end(text, start) or (
+            self.ends.get(start, len(text)) if text[start] in "\"'`" else start
+        )
         if quoted_end > start and (
             quoted_end == len(text) or text[quoted_end].isspace() or text[quoted_end] in ",;&)]}"
         ):

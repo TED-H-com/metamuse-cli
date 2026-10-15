@@ -460,3 +460,12 @@ its plus signs decode only at that layer or shallower. The scan never grants for
 semantics to unrelated prose after a question mark. Whole escaped quoted placeholders
 are canonicalized before applying the same closed exemption list; their nested
 assignments remain independently inspected. Public-key block mirrors stay public.
+
+
+B16a structural rule: ambiguity may only lengthen a redaction. Single-line single,
+double and backtick quotes pair locally at the same decoding layer and never
+cross a line break at that layer. An apostrophe between alphanumerics is prose,
+not a delimiter. Triple quotes are one multiline token, recognized before single
+quotes; heredoc bodies and YAML block scalars retain their multiline extent.
+A fully parsed JSON layer proves exact string extents. Only a delimiter proved
+by these rules may shorten a credential value, URL authority or private-key block.
