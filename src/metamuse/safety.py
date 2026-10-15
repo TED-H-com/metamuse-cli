@@ -1802,6 +1802,8 @@ class _Syntax:
     def value(self, text, start, *, list_separators=False, operator_depth=None):
         if start >= len(text):
             return start
+        if self.quote_closings.get(start, start) < start:
+            return start  # Empty value immediately before its enclosing quote.
         level = self.depth(start) if operator_depth is None else operator_depth
         quoted_end = (
             self.ends.get(start, len(text))
