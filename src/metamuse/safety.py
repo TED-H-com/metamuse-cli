@@ -2857,29 +2857,58 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
                     yield offset + inner_start, offset + inner_end, inner_kind, inner_replacement
 
 
-def _header_spans(text, syntax):
+def _header_spans(text, syntax, proven=()):
     pattern = re.compile(
         r"(?i)(?<![A-Za-z0-9_.-])(?P<key>" + _NAME + r")\s*(?P<sep>=|[:：＝])[^\S\r\n]*+"
     )
-    # New headers begin new groups. Compute a continuation group's end once,
+
+    def proof_cursor():
+        index, active = 0, []
+
+        def at(position):
+            nonlocal index
+            while index < len(proven) and proven[index][0] <= position:
+                opening, ending = proven[index]
+                index += 1
+                while active and active[-1][0] <= opening:
+                    active.pop()
+                if ending > position:
+                    escaped = re.compile(r'\\{1,7}(?=")').match(text, opening)
+                    width = len(escaped[0]) if escaped else 0
+                    level = syntax.depth(opening) + width.bit_length() + 1
+                    active.append((ending, level, ending - width - 1))
+            while active and active[-1][0] <= position:
+                active.pop()
+            return active[-1][1:] if active else (0, None)
+
+        return at
+
+    line_proof, value_proof = proof_cursor(), proof_cursor()
+    # Unindented lines begin new groups. Compute a continuation group's end once,
     # then reuse it even when an exempt header re-enters the group's contents.
     lines = array("I", [0])
-    lines.extend(line.end() for line in re.finditer(r"\r\n|\r|\n", text))
+    line_ends = array("I")
+    line_levels = bytearray()
+    for line in re.finditer(r"\r\n|\r|\n|\\++r(?:\\++n)?|\\++n", text):
+        escaped = text[line.start()] == "\\"
+        content_level = syntax.json_content[line.start()] if syntax.json_content is not None else 0
+        content_level = max(content_level, line_proof(line.start())[0])
+        if escaped and not content_level:
+            continue
+        lines.append(line.end())
+        line_ends.append(line.start())
+        line_levels.append(content_level if escaped else syntax.depth(line.start()))
+    line_ends.append(len(text))
     folded = array("I", [0]) * len(lines)
-    following = finish = len(text)
+    following = len(text)
+    continuation = False
     for index in range(len(lines) - 1, -1, -1):
         start = lines[index]
-        end = finish
-        while end > start and text[end - 1] in "\r\n":
-            end -= 1
-        indent = re.compile(r"[^\S\r\n]*+").match(text, start, end).end()
-        folded[index] = (
-            following
-            if text[start : start + 1].isspace() and not pattern.match(text, indent, end)
-            else end
-        )
-        following, finish = folded[index], start
-    fold_indices = {}
+        end = line_ends[index]
+        folded[index] = following if continuation else end
+        continuation = text[start : start + 1] in {" ", "\t"}
+        following = folded[index]
+    line_indices = {}
     position = 0
     while match := pattern.search(text, position):
         position = match.end()
@@ -2901,28 +2930,34 @@ def _header_spans(text, syntax):
         ):
             continue
         level = syntax.depth(match.start("sep"))
-        end = syntax.line_end(text, start, level)
-        # Fold only actual continuation lines, never a new named header.
-        cursor = end
-        while cursor < len(text) and text[cursor] in "\r\n":
-            after = cursor + 1 + int(text[cursor : cursor + 2] == "\r\n")
+        content_level, proven_end = value_proof(start)
+        level = max(level, content_level)
+        if syntax.json_content is not None:
+            level = max(level, syntax.json_content[start - 1])
+        index = line_indices.get(level, 0)
+        while index < len(line_levels) and (line_ends[index] < start or line_levels[index] > level):
+            index += 1
+        line_indices[level] = index
+        end = line_ends[index]
+        fold_end = None
+        # Indentation belongs to this header even when it resembles k=v or k:v.
+        if index < len(line_levels):
+            after = lines[index + 1]
             if after >= len(text) or text[after : after + 1] not in " \t":
-                break
-            tail = re.compile(r"[ \t]*+").match(text, after).end()
-            if pattern.match(text, tail):
-                break
-            index = fold_indices.get(level, 0)
-            while index < len(lines) and lines[index] < after:
-                index += 1
-            fold_indices[level] = index
-            end = folded[index] if index < len(lines) else len(text)
-            break
+                after = None
+            if after is not None:
+                end = folded[index + 1]
+                fold_end = end
         if syntax.quote_token(text, start):
             end = syntax.value(text, start, operator_depth=level, construct=match.start())
-        else:
-            limit = syntax.owned_end(text, match.start(), start)
-            if limit is not None:
-                end = min(end, limit)
+        if fold_end is not None:
+            end = max(end, fold_end)
+        limit = syntax.owned_end(text, match.start(), start)
+        if proven_end is not None:
+            limit = min(limit, proven_end) if limit is not None else proven_end
+        if limit is not None:
+            end = min(end, limit)
+        if not syntax.quote_token(text, start):
             end = syntax.trim(text, start, end)
         cookie = name not in {"authorization", "proxyauthorization"}
         value = text[start:end].strip().lower() if not cookie and end - start <= 128 else None
@@ -3160,37 +3195,47 @@ def _userinfo_spans(text, syntax):
 
 
 def _cookie_spans(text, syntax):
-    pair = re.compile(r"(?<![A-Za-z0-9_.%=/?:&#-])(?P<key>" + _NAME + r")=[^\S\r\n]*+")
-    position = 0
-    while match := pair.search(text, position):
-        begin = match.start()
-        end = syntax.value(
-            text, match.end(), list_separators=True, operator_depth=syntax.depth(match.end() - 1)
-        )
-        sensitive = syntax.private(text, match["key"], match.end(), end)
-        generic = syntax.private(text, "password", match.end(), end)
-        members = 1
-        position = max(end, match.end())
-        while separator := re.compile(r";[^\S\r\n]*+(?=" + _NAME + r"=)").match(text, position):
-            next_pair = re.compile(r"(?P<key>" + _NAME + r")=[^\S\r\n]*+").match(
-                text, separator.end()
-            )
-            if not next_pair:
-                break
-            finish = syntax.value(
+    def chains(pair):
+        position = 0
+        while match := pair.search(text, position):
+            begin = match.start()
+            end = syntax.value(
                 text,
-                next_pair.end(),
+                match.end(),
                 list_separators=True,
-                operator_depth=syntax.depth(next_pair.end() - 1),
+                operator_depth=syntax.depth(match.end() - 1),
             )
-            sensitive |= syntax.private(text, next_pair["key"], next_pair.end(), finish)
-            generic |= syntax.private(text, "password", next_pair.end(), finish)
-            end = position = max(finish, next_pair.end())
-            members += 1
-        if members > 1 and (sensitive or generic):
-            yield begin, end, "cookie", _REDACTED
-        elif not sensitive and not generic:
-            position = match.end()
+            sensitive = syntax.private(text, match["key"], match.end(), end)
+            generic = syntax.private(text, "password", match.end(), end)
+            members = 1
+            position = max(end, match.end())
+            while separator := re.compile(r";[^\S\r\n]*+(?=" + _NAME + r"=)").match(text, position):
+                next_pair = re.compile(r"(?P<key>" + _NAME + r")=[^\S\r\n]*+").match(
+                    text, separator.end()
+                )
+                if not next_pair:
+                    break
+                finish = syntax.value(
+                    text,
+                    next_pair.end(),
+                    list_separators=True,
+                    operator_depth=syntax.depth(next_pair.end() - 1),
+                )
+                sensitive |= syntax.private(text, next_pair["key"], next_pair.end(), finish)
+                generic |= syntax.private(text, "password", next_pair.end(), finish)
+                end = position = max(finish, next_pair.end())
+                members += 1
+            if members > 1 and (sensitive or generic):
+                yield begin, end, "cookie", _REDACTED
+            elif not sensitive and not generic:
+                position = match.end()
+
+    # A form's outer name=value must not consume a later URL's path/query
+    # candidate. Each disjoint start class has its own monotone cursor; merge
+    # their ordered spans without rescanning an outer value per inner pair.
+    ordinary = re.compile(r"(?<![A-Za-z0-9_.%=/?:&#-])(?P<key>" + _NAME + r")=[^\S\r\n]*+")
+    url = re.compile(r"(?<=[/?])(?P<key>" + _NAME + r")=[^\S\r\n]*+")
+    yield from _merge_spans([chains(ordinary), chains(url)])
 
 
 def _jar_spans(text, syntax):
@@ -4198,11 +4243,11 @@ def _command_spans(text, syntax):
             )
 
 
-def _view_spans(text, encoded_positions, syntax):
+def _view_spans(text, encoded_positions, syntax, header_proofs=()):
     return _merge_spans(
         [
             _assignment_spans(text, syntax),
-            _header_spans(text, syntax),
+            _header_spans(text, syntax, header_proofs),
             _query_spans(text, syntax, encoded_positions),
             _userinfo_spans(text, syntax),
             _cookie_spans(text, syntax),
@@ -4415,6 +4460,11 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
         if '{"' in text or '{ "' in text
         else []
     )
+    source_header_proofs = header_proofs = (
+        _QuoteRanges((a, b) for a, b, _, _ in _har_spans(text, _quotes=True))
+        if "\\" in text and re.search(r'[{\[]\s*+\\+(?:"|u0022)', text)
+        else ()
+    )
     ranges = list(_form_ranges(text))
     form = bool(ranges) and ranges[0] == (0, len(text))
     if "+" in text or re.search(r"\\{1,8}u002b", text, re.I):
@@ -4423,6 +4473,7 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
         if edits:
             ranges = _decoded_ranges(ranges, edits)
             proofs = _decoded_proofs(proofs, edits)
+            header_proofs = _decoded_proofs(header_proofs, edits)
             layers.append(edits)
     # Escaped documents can reveal percent escapes, and conversely. Each
     # successful layer consumes its own budget; failed probes do not consume it.
@@ -4454,6 +4505,7 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
                 view = decoded
                 ranges = _decoded_ranges(ranges, edits)
                 proofs = _decoded_proofs(proofs, edits)
+                header_proofs = _decoded_proofs(header_proofs, edits)
                 barriers = _decoded_ranges(barriers, edits)
                 json_lines = _decoded_ranges(json_lines, edits)
                 layers.append(edits)
@@ -4467,6 +4519,7 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
         if edits:
             view = decoded
             proofs = _decoded_proofs(proofs, edits)
+            header_proofs = _decoded_proofs(header_proofs, edits)
             barriers = _decoded_ranges(barriers, edits)
             json_lines = _decoded_ranges(json_lines, edits)
             layers.append(edits)
@@ -4485,7 +4538,10 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
         _merge_spans(
             [
                 _close_bearer_spans(
-                    view, _close_assignment_spans(view, _view_spans(view, encoded, syntax), syntax)
+                    view,
+                    _close_assignment_spans(
+                        view, _view_spans(view, encoded, syntax, header_proofs), syntax
+                    ),
                 )
             ]
         )
@@ -4502,7 +4558,7 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     )
     original_syntax = _Syntax(text, proven=original_proofs) if layers else None
     original_fields = _assignment_spans(text, original_syntax) if layers else ()
-    original_headers = _header_spans(text, original_syntax) if layers else ()
+    original_headers = _header_spans(text, original_syntax, source_header_proofs) if layers else ()
     original_markup = _xml_spans(text, original_syntax) if layers else ()
     spans = _SpanIndex(
         _merge_spans(

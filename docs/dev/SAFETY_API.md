@@ -418,6 +418,18 @@ is copied and no dependency or migration is added.
 | redaction_unstable | Fourth single-pass application still changes text; whole output is masked |
 | local_path | Plausible private path or explicit local_path field |
 
+Sensitive header ownership includes following CRLF/LF continuation lines indented
+with spaces or tabs, including members written as name=value or name: value.
+An unindented line starts an independent group. Quoting the first value
+does not truncate its continuation group. Proven JSON string extents preserve
+independent logical lines and their enclosing quotes, including JSON-in-JSON;
+without that proof, a deeper escaped newline is value data under the layer rule.
+The same semicolon cookie-chain rule applies at URL path and query boundaries:
+two or more joined pairs are private, including through percent/form/JSON views.
+A single assignment, a lone semicolon path parameter and ordinary ampersand query
+parameters do not become a cookie chain. URL path/query candidates have an
+independent forward cursor so an outer form field cannot hide them.
+
 Consumers aggregate all kinds generically. The Muse check refuses every kind except
 local_path. Overlaps share one opaque replacement and report the covering credential
 class; local_path never overrides an overlapping credential class. Adjacent masks merge.
