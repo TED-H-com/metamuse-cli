@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Immutable exact action, with monotone delivery accounting.",
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "project_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Project Id",
+      "type": "string"
+    },
+    "draft_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Draft Id",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "account": {
+      "title": "Account",
+      "type": "string"
+    },
+    "destination": {
+      "title": "Destination",
+      "type": "string"
+    },
+    "action_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Action Digest",
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": true,
+      "title": "Target",
+      "type": "object"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "job_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Job Id",
+      "type": "string"
+    },
+    "step_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Step Id",
+      "type": "string"
+    },
+    "state": {
+      "default": "queued",
+      "enum": [
+        "queued",
+        "not_submitted",
+        "submitting",
+        "needs_reconcile",
+        "sent_verified"
+      ],
+      "title": "State",
+      "type": "string"
+    },
+    "remote_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Remote Id"
+    },
+    "created_at": {
+      "title": "Created At",
+      "type": "string"
+    },
+    "verified_at": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Verified At"
+    }
+  },
+  "required": [
+    "id",
+    "project_id",
+    "draft_id",
+    "revision",
+    "account",
+    "destination",
+    "action_digest",
+    "target",
+    "payload",
+    "job_id",
+    "step_id",
+    "created_at"
+  ],
+  "title": "Publication",
+  "type": "object"
+}

@@ -30,7 +30,7 @@ from metamuse import models as m
 from metamuse.config import load_config
 from metamuse.paths import WorkspacePaths, private_dir, private_file
 
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 DATA = Path(__file__).parent / "data"
 MIGRATIONS = {
     1: DATA / "migrations" / "001_initial.sql",
@@ -39,6 +39,7 @@ MIGRATIONS = {
     4: DATA / "migrations" / "004_muse_evidence.sql",
     5: DATA / "migrations" / "005_muse_trust.sql",
     6: DATA / "migrations" / "006_transcript_removal.sql",
+    7: DATA / "migrations" / "007_publication.sql",
 }
 CONTENT_CURSOR_KEY = "content.cursor"
 
@@ -313,6 +314,8 @@ TABLE_MODELS = {
     "muse_observations": m.MuseObservation,
     "drafts": m.Draft,
     "draft_revisions": m.DraftRevision,
+    "publications": m.Publication,
+    "publication_attempts": m.PublicationAttempt,
     "exports": m.Export,
     "events": m.Event,
 }
@@ -1368,6 +1371,19 @@ class Store:
             self.validate_evidence(draft.project_id, record.facts_refs, conn=conn)
             for asset_id in record.assets:
                 self.require_project_asset(draft.project_id, asset_id, conn=conn)
+        if isinstance(record, m.Publication):
+            digest = m.payload_digest(
+                {
+                    "target": {
+                        key: value for key, value in record.target.items() if key != "intent_id"
+                    },
+                    "payload": record.payload,
+                }
+            )
+            if record.action_digest != digest:
+                raise m.CoreError(
+                    m.ErrorCode.REFERENCE_INVALID, "Publication digest differs from snapshot"
+                )
         if isinstance(record, m.Asset) and record.state == "ready":
             self.verify_asset(record)
         if isinstance(record, m.TranscriptSegment) and record.asset_id is not None:

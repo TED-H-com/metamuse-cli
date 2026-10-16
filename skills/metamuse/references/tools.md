@@ -1,6 +1,6 @@
 # MetaMuse 工具與命令對照
 
-本文件提供 MetaMuse P0 支援之 15 個 MCP 工具、對應 CLI 命令、必要識別碼（IDs）與結果語意。相關規則請參閱 [Skill 主文件](../SKILL.md)、[降級處理](degradation.md) 與 [安全邊界與限制](limits.md)。
+本文件提供 MetaMuse 支援之 19 個 MCP 工具（15 個 P0 與 4 個發布工具）、對應 CLI 命令、必要識別碼（IDs）與結果語意。相關規則請參閱 [Skill 主文件](../SKILL.md)、[降級處理](degradation.md) 與 [安全邊界與限制](limits.md)。
 
 > 動態限制數值（如字元組上限、檔案大小、逾時秒數）、錯誤重試策略與工具標註屬性（如 readOnlyHint、idempotentHint 等），皆在程式碼中集中維護。Host 必須動態從 `metamuse_inspect` / `metamuse doctor`、回應 envelope 中的 `retry_class` / `next_action` 以及 MCP `tools/list` 讀取，不得依賴文件靜態硬編碼。
 
@@ -97,6 +97,30 @@
 - **對應 CLI 命令**：`metamuse export`
 - **必要識別碼**：`project_id`、`request_key`。
 - **成功語意**：`ok`。同步產出並驗證本地artifact／manifest；fixture-derived內容保留backend/mock/research_complete=false。
+
+### 16. `metamuse_publication_preview`
+- **使用者意圖**：預覽已保存草稿將送到哪個 Facebook 粉專，以及完整文字。
+- **對應 CLI 命令**：`metamuse publication preview`。
+- **必要識別碼**：`project_id`、`draft_id`、`revision`、`account`、`destination`。
+- **成功語意**：`ok`，`data.approval` 提供給操作者核對，沒有發文或授權。
+
+### 17. `metamuse_publication_submit`
+- **使用者意圖**：送出操作者已核對並批准的一篇粉專文字貼文。
+- **對應 CLI 命令**：`metamuse publication submit`。
+- **必要識別碼**：預覽的相同欄位、`request_key`、人類核發的 `publication_grant`。
+- **成功語意**：`accepted` 只代表排隊；用 `publication_id` 查詢。`sent_verified` 才代表收到回執並核對回讀；fixture 不是真實發文。
+
+### 18. `metamuse_publication_get`
+- **使用者意圖**：查閱原始文字、目標、發送嘗試及回執。
+- **對應 CLI 命令**：`metamuse publication get`。
+- **必要識別碼**：`publication_id`。
+- **成功語意**：`ok` 只表示讀取本地紀錄。`needs_reconcile` 不可改 key、草稿版本或批准後重送。
+
+### 19. `metamuse_publication_reconcile`
+- **使用者意圖**：用原始貼文回執重新核對送達結果。
+- **對應 CLI 命令**：`metamuse publication reconcile`。
+- **必要識別碼**：`publication_id`、`request_key`、人類另行批准的 `publication_grant`。
+- **成功語意**：`accepted` 代表排隊回讀。只讀取原回執，不重發、不接受任意網址。沒有回執仍為未知。
 
 ---
 

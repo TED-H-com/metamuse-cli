@@ -1,6 +1,6 @@
 # 機器可讀設計基線
 
-十五個工具都是待實作application契約，不是已運行MCP。恢復版提供自包含inputSchema及共同output envelope；細項成功data依02_SPEC/03_SDS在實作模型補齊後產生專屬outputSchema。不要宣稱外層schema通過就驗證了資料內容、權限或平台能力。
+此處包含十五個 P0 與四個實驗性發布工具的 application 契約，由實作模型產生自包含 inputSchema 及共同 output envelope；細項成功 data 尚非各工具專屬 outputSchema。不要宣稱外層schema通過就驗證了資料內容、權限或平台能力。
 
 EvidenceRef新增muse_observation：id指向immutable observation、revision固定1（schema條件及runtime驗證）。
 草稿／匯出只接受同project的真實stored observation；backend/mock不由input供應。read回evidence_ref。
@@ -32,8 +32,8 @@ the sources appendix) and refreshes MANIFEST. Edit the numbered narrative source
 not a second hand-synchronized copy of their clarifications.
 
 `metamuse skill export --dest DIR [--force]` is a human CLI command. It copies the
-packaged Skill into that directory and is not a sixteenth MCP tool. The fifteen tool
-contracts are unchanged. Installation is documented in
+packaged Skill into that directory without adding an MCP tool. The original fifteen P0
+contracts are unchanged; B19 separately adds four experimental publication tools. Installation is documented in
 [SKILL.md](../../dev/SKILL.md).
 
 B16a human CLI auth contracts (shared Envelope, no new MCP tool):

@@ -58,7 +58,7 @@ Start with files on your computer. You can search, save drafts and export withou
 | Work with your AI assistant | Connect your assistant first | Connect your assistant to MetaMuse, then ask it to find material and draft a recap with citations. |
 | Ask Muse follow-up questions | Needs extra setup; real-account use is unverified | Set up your Muse connection and approve what may be shared before asking questions. Real-account use has not been verified. |
 | Collect a Facebook post or remote video | Needs extra setup; real-account use is unverified | Additional setup and your approval are required. These collectors have not been verified with real accounts. |
-| Publish to social media | Not available | Publishing is not available. Export a draft for your own review and further work. |
+| Publish a text post to a Facebook Page | Needs extra setup; real-account use is unverified | Preview a saved draft, approve its exact text and Page, then send and check the saved receipt. Text-only Page posts are experimental; [setup and limits](docs/dev/PUBLISHING.md). |
 
 See the [getting started guide](docs/GETTING_STARTED.md) to try the local example,
 or [connect your assistant](docs/dev/SKILL.md) to use your own material.

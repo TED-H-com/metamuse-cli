@@ -33,13 +33,13 @@ metamuse --workspace <path> mcp
 
 ---
 
-## 3. Registered P0 Tools and Annotation Table
+## 3. Registered Tools and Annotation Table
 
-Exactly the 15 P0 tools defined in `src/metamuse/data/schemas/mcp-tools.json` (`docs/design/contracts/mcp-tools.json`) are registered. Human-only interactive commands (`auth import`, `permit create`, `permit approve`) are never exposed as MCP tools.
+The 15 P0 tools and four experimental publication tools (19 total) defined in `src/metamuse/data/schemas/mcp-tools.json` (`docs/design/contracts/mcp-tools.json`) are registered. Human-only interactive commands (`auth import`, `permit create`, `permit approve`) are never exposed as MCP tools.
 
 Tool annotations are **advisory hints only** and are **never used for authorization**. Authorization and scope checks are enforced by the core store/policy layer.
 
-- `readOnlyHint=True` and `idempotentHint=True` are set **only** for the 5 purely local read operations (`metamuse_inspect`, `metamuse_job_get`, `metamuse_job_list`, `metamuse_search`, `metamuse_draft_preview`).
+- `readOnlyHint=True` and `idempotentHint=True` are set **only** for the 7 purely local read operations (`metamuse_inspect`, `metamuse_job_get`, `metamuse_job_list`, `metamuse_search`, `metamuse_draft_preview`, `metamuse_publication_preview`, `metamuse_publication_get`).
 - Any tool that can open a remote session, send messages, refresh or read remote history (`metamuse_muse_open`, `metamuse_muse_send`, `metamuse_muse_read`, `metamuse_collect`), or mutate local workspace state (`metamuse_project_create`, `metamuse_job_control`, `metamuse_packet_prepare`, `metamuse_muse_close_exchange`, `metamuse_draft_save`, `metamuse_export`) sets `readOnlyHint=False` and `idempotentHint=False`.
 
 | Tool Name | Request Model | `readOnlyHint` | `openWorldHint` | `destructiveHint` | `idempotentHint` | Description (`mcp-tools.json`) |
@@ -59,6 +59,14 @@ Tool annotations are **advisory hints only** and are **never used for authorizat
 | `metamuse_draft_save` | `DraftSaveRequest` | `False` | `False` | `False` | `False` | 只保存host提供文字；更新要expected_revision。 |
 | `metamuse_draft_preview` | `DraftPreviewRequest` | `True` | `False` | `False` | `True` | 檢查草稿，不發布。 |
 | `metamuse_export` | `ExportRequest` | `False` | `False` | `False` | `False` | 本地artifact job，不上傳或發布。 |
+| `metamuse_publication_preview` | `PublicationPreviewRequest` | `True` | `False` | `False` | `True` | 預覽目前的 Facebook 粉專文字草稿與精確批准內容。 |
+| `metamuse_publication_submit` | `PublicationSubmitRequest` | `False` | `True` | `True` | `False` | 排隊已由人類批准的新文字貼文；不明送達禁止重送。 |
+| `metamuse_publication_get` | `PublicationGetRequest` | `True` | `False` | `False` | `True` | 本地發布狀態、不可變快照與回執。 |
+| `metamuse_publication_reconcile` | `PublicationReconcileRequest` | `False` | `True` | `False` | `False` | 另經批准只回讀原回執，結算原工作。 |
+
+Publication submit and reconcile use `readOnlyHint=False` and `idempotentHint=False`;
+submit alone declares `destructiveHint=True`. Publication approval remains human-only.
+See [PUBLISHING.md](PUBLISHING.md) for setup and the experimental scope.
 
 ---
 

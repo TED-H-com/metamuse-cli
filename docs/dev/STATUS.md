@@ -17,12 +17,12 @@ not independently accepted; not done; needs a real account (LIVE).
 | Exports | implemented with offline tests | `bundle`, `jsonl`, `markdown`, `text`, and `csv`. No publish or upload. |
 | Muse lifecycle with the fixture backend | implemented with offline tests | Open, send, read, and close through `OfflineMuseGateway`. Derived records stay `backend=fixture`, `mock=true`, `research_complete=false`. |
 | Muse standard-VM transport | implemented with offline tests | Strict Noise key/nonce verification, durable trust and bounded wake/redial. AT-038 and AT-043 LIVE have not run; CVM is unsupported. |
-| MCP stdio | implemented with offline tests | Fifteen tools. Stdout is the protocol; logs go to stderr. |
+| MCP stdio | implemented with offline tests | Nineteen tools (fifteen P0 tools and four experimental publishing tools). Stdout is the protocol; logs go to stderr. |
 | MCP attached worker | implemented with offline tests | `metamuse mcp` starts one worker; `--no-worker` opts out. The workspace OS lock allows one executor. |
 | Approval previews and `metamuse permit approve` | implemented with offline tests | Human-only approval of the exact action; no MCP approval tool. |
 | Remote media (B12) | implemented with offline tests | Exact-action approval preview and human `permit approve`. OFFLINE and FIXTURE evidence; AT-040 LIVE has not been run. |
 | Facebook posts (B13) | implemented with offline tests | One operator-approved post per job, rendered in sandboxed Chromium through a policy-checked local proxy. Tested only on synthetic loopback pages; requires the `facebook` extra and Playwright Chromium. Human approval uses `metamuse permit create`; Facebook approval preview is not wired yet. No real-account run. |
-| Publishing | not done | Not started. |
+| Publishing | implemented with fixture tests; LIVE unverified | Experimental Facebook Page text posts, exact human approval, one durable send attempt, saved receipt/read-back and read-only reconciliation. No personal profiles, groups, replies, assets or cross-platform publishing. See [publishing](PUBLISHING.md). |
 
 ## Development checks
 

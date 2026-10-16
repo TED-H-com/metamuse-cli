@@ -82,7 +82,7 @@ def test_mcp_stdio_initialize_and_tools_list(tmp_path: Path) -> None:
 
                     tools_result = await session.list_tools()
                     tools = tools_result.tools
-                    assert len(tools) == 15
+                    assert len(tools) == 19
 
                     expected_names = [entry["name"] for entry in CONTRACT_TOOLS]
                     actual_names = [tool.name for tool in tools]
@@ -125,7 +125,9 @@ def test_mcp_stdio_initialize_and_tools_list(tmp_path: Path) -> None:
                             by_alias=True, exclude_none=True
                         )
                         assert dumped_annotations == contract_entry["annotations"]
-                        assert tool.annotations.destructive_hint is False
+                        assert tool.annotations.destructive_hint is (
+                            tool.name == "metamuse_publication_submit"
+                        )
                         if tool.annotations.read_only_hint:
                             read_only_tools.add(tool.name)
                         if tool.annotations.open_world_hint:
@@ -139,6 +141,8 @@ def test_mcp_stdio_initialize_and_tools_list(tmp_path: Path) -> None:
                         "metamuse_job_list",
                         "metamuse_search",
                         "metamuse_draft_preview",
+                        "metamuse_publication_preview",
+                        "metamuse_publication_get",
                     }
                     assert read_only_tools == expected_read_only
                     assert idempotent_tools == expected_read_only
@@ -147,6 +151,8 @@ def test_mcp_stdio_initialize_and_tools_list(tmp_path: Path) -> None:
                         "metamuse_muse_open",
                         "metamuse_muse_send",
                         "metamuse_muse_read",
+                        "metamuse_publication_submit",
+                        "metamuse_publication_reconcile",
                     }
                     for non_read_only in (
                         "metamuse_muse_open",
@@ -159,6 +165,8 @@ def test_mcp_stdio_initialize_and_tools_list(tmp_path: Path) -> None:
                         "metamuse_muse_close_exchange",
                         "metamuse_draft_save",
                         "metamuse_export",
+                        "metamuse_publication_submit",
+                        "metamuse_publication_reconcile",
                     ):
                         assert non_read_only not in read_only_tools
 
@@ -188,7 +196,7 @@ def test_mcp_stdio_calls_state_handles_and_errors(tmp_path: Path) -> None:
                     tool_rows = [
                         row for row in inspect_env["data"]["capabilities"] if "." not in row["name"]
                     ]
-                    assert len(tool_rows) == 15
+                    assert len(tool_rows) == 19
 
                     # 2. project_create followed by calls omitting project_id must NOT reuse it.
                     proj_res = await session.call_tool(
@@ -334,7 +342,7 @@ def test_mcp_package_data_only_and_annotations_match_contract() -> None:
     assert not hasattr(mcp, "CONTRACT_PATH")
 
     tools = mcp.list_tools()
-    assert len(tools) == len(CONTRACT_TOOLS) == 15
+    assert len(tools) == len(CONTRACT_TOOLS) == 19
     for tool, contract_entry in zip(tools, CONTRACT_TOOLS, strict=True):
         assert tool.name == contract_entry["name"]
         assert tool.description == contract_entry["description"]
@@ -539,7 +547,7 @@ def test_mcp_raw_pipe_stdout_cleanliness_with_logs_and_warnings(tmp_path: Path) 
 
     assert [msg["id"] for msg in parsed_messages] == [1, 2, 3, 4]
     assert parsed_messages[0]["result"]["protocolVersion"] == "2025-11-25"
-    assert len(parsed_messages[1]["result"]["tools"]) == 15
+    assert len(parsed_messages[1]["result"]["tools"]) == 19
     assert parsed_messages[2]["result"]["isError"] is False
     assert parsed_messages[3]["result"]["isError"] is True
     assert parsed_messages[3]["result"]["structuredContent"]["error"]["code"] == "E_STORAGE"

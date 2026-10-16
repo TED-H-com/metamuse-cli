@@ -36,6 +36,7 @@ class Operation:
     side_effect_class: m.SideEffectClass
     request_model: type[m.Model] | None = None
     uncertain_state: UncertainState = "needs_reconcile"
+    on_finish: Callable[[TransactionWriter, m.JobStep, m.JobResult], None] | None = None
 
 
 OPERATIONS: dict[str, Operation] = {}
@@ -48,6 +49,7 @@ def register_operation(
     *,
     request_model: type[m.Model] | None = None,
     uncertain_state: UncertainState = "needs_reconcile",
+    on_finish: Callable[[TransactionWriter, m.JobStep, m.JobResult], None] | None = None,
     registry: dict[str, Operation] | None = None,
 ) -> None:
     "Call once from your module's explicit registration function, before worker startup."
@@ -58,7 +60,9 @@ def register_operation(
     registry = OPERATIONS if registry is None else registry
     if not name or name in registry:
         raise ValueError("Operation name is empty or already registered")
-    registry[name] = Operation(handler, side_effect_class, request_model, uncertain_state)
+    registry[name] = Operation(
+        handler, side_effect_class, request_model, uncertain_state, on_finish
+    )
 
 
 @dataclass(frozen=True)
@@ -389,6 +393,7 @@ class Executor:
         muse_gateway: Any = None,
         secret_store: Any = None,
         muse_resolver: Any = None,
+        publishing_gateway: Any = None,
     ):
         self.store = store
         self.registry = OPERATIONS if registry is None else registry
@@ -402,6 +407,7 @@ class Executor:
         self.muse_gateway = muse_gateway
         self.secret_store = secret_store
         self.muse_resolver = muse_resolver
+        self.publishing_gateway = publishing_gateway
         self._tokens: dict[ExternalActionToken, tuple] = {}
         self._zero_handoff: dict[str, NotSubmittedProof] = {}
         self._proofs: dict[NotSubmittedProof, tuple] = {}
@@ -702,6 +708,11 @@ class Executor:
         )
 
     def _finish_step(self, conn: Any, job: m.Job, step: m.JobStep, result: m.JobResult) -> None:
+        # Domain settlement and job success must share the same commit. The explicit
+        # built-in hook is database-only; no discovery or additional executor exists.
+        operation = self.registry.get(job.operation)
+        if operation is not None and operation.on_finish is not None:
+            operation.on_finish(TransactionWriter(self.store, conn), step, result)
         encoded = m.canonical_json(result).decode()
         state = "partial" if result.coverage_status == "partial" else "succeeded"
         conn.execute(
@@ -755,6 +766,15 @@ class Executor:
 
     def require_network(self, *, operation: str | None = None, target: dict | None = None) -> None:
         policy = load_config(self.store.paths.root)
+        if (
+            operation in ("publication.send", "publication.reconcile")
+            and target
+            and target.get("backend") == "fixture"
+            and policy.publishing.enabled
+            and policy.publishing.backend == "fixture"
+            and getattr(self.publishing_gateway, "backend", None) == "fixture"
+        ):
+            return
         if (
             operation in ("muse.open", "muse.send", "muse.history", "muse.sessions")
             and target

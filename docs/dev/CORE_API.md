@@ -1,4 +1,4 @@
-# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 6)
+# MetaMuse core API (0.1.0.dev0, contract 1.1, schema 7)
 
 B02–B04 owns `app.py`, `cli.py`, `models.py`, `store.py`, `jobs.py`, migration SQL and
 generated schemas. Other tasks must build against these APIs without editing them.
@@ -57,14 +57,14 @@ never grant scope.
 
 ## Application functions and errors
 
-All fifteen SDS functions exist. Core implements `inspect_capabilities`, `create_project`,
+All nineteen SDS functions exist. Core implements `inspect_capabilities`, `create_project`,
 `get_job`, `list_jobs`, `control_job`; B07/B11 implements `search_evidence`, `prepare_packet`,
 `save_draft`, `preview_draft`, `export_objects`. Local `submit_collect` accepts files and
 pasted text. URL inputs for media metadata, subtitles, or a media file are B12
 `collect.remote_media` and require an allowlist plus a `collect.remote` permit.
 Posts, comments, and mixed URL inputs stay `E_UNSUPPORTED`; `next_action` names
 B12/B13 and LIVE. The four Muse functions use the B10 durable lifecycle and explicit
-fixture/live binding. `TOOL_FUNCTIONS` maps the fifteen
+fixture/live binding. `TOOL_FUNCTIONS` maps the nineteen
 contract names to their functions; MCP should use it rather than shelling out.
 
 Every wrapper accepts its model or a Python dictionary. `@application(RequestModel)`
@@ -138,6 +138,18 @@ entering `Executor`. It imports the fixed tuple `collect`, `media`, `content`, `
 idempotent per registry because submission and execution may register in the same process.
 Operations are process-local registrations; jobs/steps/checkpoints are persisted. No fake
 operation is registered in the shipped package. Tests use isolated registry dictionaries.
+
+`publishing` is also an explicit built-in. B19 adds the four P1 shared application
+functions `preview_publication`, `submit_publication`, `get_publication` and
+`reconcile_publication`; see [PUBLISHING.md](PUBLISHING.md). Migration 007 adds
+`Publication` and `PublicationAttempt` to the existing Store.
+
+An operation may register `on_finish(writer, step, result)`, a fixed database-only
+callback. The existing executor invokes it inside the same guarded transaction that
+finishes that step, including proven `settle_uncertain`. It must never perform network,
+redaction or external waits. Exceptions roll back domain settlement and job success
+together. Default `None` preserves all prior operations. Publication uses it to make
+exact read-back settlement atomic with the original step and job result.
 
 ```python
 from metamuse.jobs import OPERATIONS, register_operation, StepContext, StepSpec, submit_job
@@ -583,7 +595,7 @@ pytest-disktmp uv run pytest -q
 uv run ruff check .
 ```
 
-The generator writes all fifteen input schemas, the envelope and domain schemas, and a
+The generator writes all nineteen input schemas, the envelope and domain schemas, and a
 packaged copy of `mcp-tools.json` under `src/metamuse/data/schemas/`, plus the design
 envelope and every tool's input/output schema in `docs/design/contracts/`. Design
 descriptions/annotations are authored in `docs/design/contracts/mcp-tools.json` and
@@ -611,7 +623,7 @@ Owners edit their modules, supporting feature files and tests. They do not edit 
 `cli.py`, `models.py`, `store.py`, `jobs.py`, migrations or generated schemas. All SPEC §8
 commands already map flags to typed requests and delegate. `auth import` and `permit create`
 are human-only local commands with `AuthImportRequest`/`PermitCreateRequest`; neither is in
-the fifteen MCP tool registry. `--provider`/`--account` label an auth import; permit creation
+the nineteen MCP tool registry. `--provider`/`--account` label an auth import; permit creation
 supports `--scope-file` (JSON object), those labels, `--issuer`, `--expires-at`, `--max-uses`
 and `--exact-digest`. These fields express local intent; only safety validates and issues
 permission. Model output and arbitrary `approved` fields cannot create grants.
@@ -646,7 +658,7 @@ The optional status hook can set only verification/environment/permission for to
 declared by that module. `Capability` computes effective status from all four axes.
 An optional backend or page type reports its own row named `<declared tool>.<backend>`
 (`[a-z][a-z0-9_]{0,63}`, all three fields required), for example
-`metamuse_collect.browser_post`. Backend rows follow the fifteen tool rows in name order.
+`metamuse_collect.browser_post`. Backend rows follow the nineteen tool rows in name order.
 A missing browser, extra or login therefore never marks the tool's local function
 unavailable (SPEC §2: missing Muse or browser does not block local features).
 Collect reports `metamuse_collect.remote_media` for the optional yt-dlp extra. Its

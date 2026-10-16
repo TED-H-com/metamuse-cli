@@ -56,6 +56,6 @@ metadata:
 ## 7. 按需載入參考文件
 
 需要時查閱按需載入文件（位於 `references/` 目錄）：
-- `references/tools.md`：15 個工具與 CLI 命令對照、必要 ID 與結果狀態。
+- `references/tools.md`：19 個工具與 CLI 命令對照、必要 ID 與結果狀態。
 - `references/degradation.md`：各 inspect 狀態處理、降級路徑與無 worker 語意。
 - `references/limits.md`：操作限制與安全邊界。

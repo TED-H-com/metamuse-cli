@@ -7,6 +7,17 @@ This is the implementation detail for SPEC §7–§9 and SDS §2/§7/§9.
 A host with arbitrary same-UID shell access can change local state; this is the SDS §2
 local misuse boundary, not a hostile-host sandbox.
 
+B19 adds the human-only `publication` Permit kind. Its scope has one operation
+(`publication.send` or `publication.reconcile`), one exact `target_digests` entry and
+the original typed review `request`. `max_uses` must be one and `exact_digest` must
+equal that entry. Creation rechecks the configured account/Page and saved snapshot
+under the grant transaction; current/stale draft changes refuse send approval.
+The send action digest includes exact text, draft revision, target, parent/empty
+attachments, backend/API version/auth reference. All old access/share grant fingerprints
+are unchanged. Queue and external-action checks recheck expiry and revocation; attempt
+creation/permit reservation/submitting share one commit. Reconciliation gets its own
+exact read approval and never permits a send. See [PUBLISHING.md](PUBLISHING.md).
+
 ## URL and outbound-request hook
 
 ```python
@@ -171,7 +182,8 @@ here and again in the external verifier.
 `permit revoke ID --request-key KEY` is idempotent and permanent. `permit list --project
 ID` returns current grant records, up to 200; over 200 returns `E_LIMIT_REACHED` instead
 of presenting a partial list as complete. Paged permit listing is not implemented.
-These commands remain human-only; fifteen existing MCP tools remain unchanged.
+These commands remain human-only. The original fifteen P0 tool contracts remain unchanged;
+the four experimental publication tools also cannot issue permits.
 
 ## External-action verifier
 

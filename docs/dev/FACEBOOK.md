@@ -354,7 +354,7 @@ selected sets whose union equals the full collection, and completed runtime node
 with pytest exit zero. Collection-only evidence cannot satisfy this gate. Missing,
 failed or cancelled jobs cannot make `check` green. Static validation, schema drift,
 corpus validation and the unchanged fresh-wheel CLI/MCP/packaged-Skill smoke run in
-`static-wheel`. The generated fifteen-tool contract remains authoritative.
+`static-wheel`. The generated MCP tool contract remains authoritative.
 
 `installed-journeys` is an additional required 30-minute job on a clean hosted disk.
 It builds a fresh wheel from the checked-out runtime SHA, syncs locked development,

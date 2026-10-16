@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "publication_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Publication Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "publication_id"
+  ],
+  "title": "PublicationGetRequest",
+  "type": "object"
+}

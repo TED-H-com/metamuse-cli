@@ -238,7 +238,7 @@ def test_relative_links_resolve():
 
 
 def test_contract_tool_names_and_tools_md_coverage():
-    assert len(CONTRACT_TOOLS) == 15, f"Expected 15 contract tools, got {len(CONTRACT_TOOLS)}"
+    assert len(CONTRACT_TOOLS) == 19, f"Expected 19 contract tools, got {len(CONTRACT_TOOLS)}"
     all_files = list(SKILL_DIR.rglob("*.md"))
     tool_pattern = re.compile(r"\bmetamuse_[a-z0-9_]+\b")
 
