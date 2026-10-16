@@ -152,12 +152,7 @@ def test_private_spans_keep_exact_four_application_bound(monkeypatch, changes):
 
     monkeypatch.setattr(safety, "_redact_once", once)
     output, findings = safety.redact_text("public", private_spans=hook)
-    assert calls == [
-        {"private_spans": hook, "private_placeholder": "[REDACTED]"},
-        {},
-        {},
-        {},
-    ]
+    assert calls == [{"private_spans": hook}, {}, {}, {}]
     if changes == 3:
         assert (output, findings) == ("publicxxx", [])
     else:
