@@ -3694,7 +3694,23 @@ class _CurlScope:
         return None
 
 
-def _curl_spans(text, syntax):
+def _curl_spans(text, syntax, *, source_escapes=False):
+    if source_escapes and syntax.depths is not None:
+        # Percent/form views still contain source JSON quote escapes. Their
+        # successors occupy otherwise unused backslash slots in the existing
+        # quote index; no second per-character table is retained.
+        previous = {}
+        for escaped in re.finditer(r"(?P<slashes>\\++)(?P<quote>[\"']?)", text):
+            width = len(escaped["slashes"])
+            if width > 7 or not escaped["quote"]:
+                continue
+            channel = (escaped["quote"], width, syntax.depth(escaped.start()))
+            if syntax.depth(escaped.end() - 1) != channel[2]:
+                continue
+            prior = previous.get(channel)
+            if prior is not None:
+                syntax.owned_quote_ends[prior] = escaped.end()
+            previous[channel] = escaped.start()
     pattern = re.compile(
         r"(?P<curl>(?<![A-Za-z0-9_])curl\b)|"
         r"(?P<boundary>[;|&\r\n])|"
@@ -3736,6 +3752,21 @@ def _curl_spans(text, syntax):
         )
         token = syntax.quote_token(text, start)
         closed = token and syntax.quoted_end(text, start) == end
+        if token is None:
+            escaped_end = (
+                syntax.owned_quote_ends.get(start)
+                if source_escapes and syntax.depths is not None
+                else syntax.escaped_ends.get(start)
+            )
+            escaped = re.compile(r"\\{1,7}[\"']").match(text, start)
+            if (
+                escaped is not None
+                and escaped_end is not None
+                and text.endswith(escaped[0], escaped.end(), escaped_end)
+            ):
+                # Keep both whole source delimiters. Removing the closing
+                # backslash damages JSON and widens the confirming pass.
+                token, closed, end = escaped[0], True, escaped_end
         begin = start + (len(token) if token else 0)
         finish = end - ((1 if token == "$'" else len(token)) if closed else 0)
         key = "cookie" if (match["long"] or match["short"]) in {"-b", "--cookie"} else "password"
@@ -3787,7 +3818,7 @@ def _curl_source_spans(text):
         layers.append(edits)
     depths = _decoding_depths(len(text), layers) if layers else None
     syntax = _Syntax(view, depths)
-    spans = _SpanIndex(_curl_spans(view, syntax))
+    spans = _SpanIndex(_curl_spans(view, syntax, source_escapes=True))
     del syntax, depths
     if layers:
         spans = _SpanIndex(_merge_spans([spans, _curl_json_spans(view)]))
