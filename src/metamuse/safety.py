@@ -4460,7 +4460,12 @@ def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False
     if _form_depth < 3 and form.search(text):
         for field in form.finditer(text):
             raw = field["value"]
-            view, edits = _decode_view(raw, form=True, ranges=[(0, len(raw))])
+            view, form_edits = _decode_view(raw, form=True, ranges=[(0, len(raw))])
+            # One form layer is unquote-plus: decode literal pluses before
+            # percent escapes, without spending the independent percent budget.
+            # Keep both sparse maps so structural replacements retain their
+            # source quoting and exact boundaries.
+            view, edits = _decode_view(view) if "%" in view else (view, ())
             spans = _har_spans(
                 view,
                 _depth=_depth,
@@ -4470,6 +4475,8 @@ def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False
             )
             if edits:
                 spans = _original_spans(spans, edits)
+            if form_edits:
+                spans = _original_spans(spans, form_edits)
             for a, b, k, r in spans:
                 yield (
                     field.start("value") + a,
