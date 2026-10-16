@@ -307,6 +307,15 @@ key. A fresh comparison inside Store.transaction prevents review/creation substi
 Two existing Permit inserts, permit.created events and one permit.research mutate_once
 receipt commit together; failure rolls back the entire pair. Replay returns current rows
 without restoring counters or revocation. No permission system or migration is added.
+Research receipt comparison precedes fresh privacy preparation, including after the bound
+open consumes a use. CLI preparation reconstructs a candidate using the recorded binding
+and pure wire builder; Store.mutate_once must match the entire canonical approval payload.
+Preparation of a changed candidate still requires fresh privacy checks; even a matching
+new confirmation digest cannot issue it at the original receipt key, which conflicts.
+An existing receipt returns the same IDs and current expiry/counters/revocation even when
+the packet is stale or configuration changed. This is metadata replay, not grant validity
+or renewed authority. A missing/disappearing receipt cannot create a pair without a fresh
+process-owned preflight. Ordinary Muse open-request receipt equality remains unchanged.
 The current topic credential check and packet preview redaction fixed-point check run
 before review and in issuance preflight, outside write ownership. An immutable private
 process-owned snapshot binds the exact validated inputs. Pair issuance and manual

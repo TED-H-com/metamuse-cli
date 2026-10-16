@@ -63,6 +63,51 @@ def _open_jobs(conn, request_key):
     )
 
 
+def _review(request, prepared, packet, rounds, max_reads, expires_at, request_key):
+    """Canonical approval inputs; constructing these bytes never creates authority."""
+    scope = safety.ResearchScope(
+        discussion_id=prepared.target["intent_id"],
+        topic=request.topic,
+        open_request_key=request.request_key,
+        open_digest=safety.action_digest(prepared.target, prepared.payload),
+        backend=prepared.target["backend"],
+        packet_id=packet.id,
+        packet_digest=packet.digest,
+        selection_digest=safety.snapshot_digest(packet.selection),
+        rounds=rounds,
+        max_reads=max_reads,
+    )
+    return {
+        "project_id": request.project_id,
+        "provider": prepared.target["provider"],
+        "account": prepared.target["account"],
+        "scope": scope.model_dump(mode="json"),
+        "open_request": request.model_dump(mode="json"),
+        "open_payload": prepared.model_dump(mode="json"),
+        "packet_selection": [ref.model_dump(mode="json") for ref in packet.selection],
+        "expires_at": safety._timestamp(expires_at).isoformat(),
+        "request_key": request_key,
+        "access_max_uses": max_reads + 1,
+        "share_max_uses": rounds,
+    }
+
+
+def _receipt(conn, request_key):
+    return conn.execute(
+        "SELECT response FROM request_receipts WHERE operation='permit.research' AND request_key=?",
+        (request_key,),
+    ).fetchone()
+
+
+def _replay_only(ctx, conn, review):
+    def missing():
+        safety._grant_error("Research receipt changed; review again")
+
+    # The Store still checks the entire canonical payload and decodes its own receipt.
+    # A disappeared receipt must never turn this lookup into fresh issuance.
+    return ctx.store.mutate_once(conn, "permit.research", review["request_key"], review, missing)
+
+
 def _preflight(ctx, request, *, packet_id, rounds, max_reads, expires_at, request_key, conn):
     from metamuse._muse_lifecycle import prepare_open
 
@@ -91,36 +136,11 @@ def _preflight(ctx, request, *, packet_id, rounds, max_reads, expires_at, reques
             "Packet is stale; prepare a new packet",
             next_action="Prepare a new packet before reviewing or sending it",
         )
-    scope = safety.ResearchScope(
-        discussion_id=prepared.target["intent_id"],
-        topic=request.topic,
-        open_request_key=request.request_key,
-        open_digest=safety.action_digest(prepared.target, prepared.payload),
-        backend=prepared.target["backend"],
-        packet_id=packet.id,
-        packet_digest=packet.digest,
-        selection_digest=safety.snapshot_digest(packet.selection),
-        rounds=rounds,
-        max_reads=max_reads,
-    )
+    review = _review(request, prepared, packet, rounds, max_reads, expires_at, request_key)
     if rounds > ctx.limits.max_exchanges:
         safety._grant_error("Research rounds exceed the workspace exchange limit")
     if len(packet.rendered_text.encode()) > ctx.limits.packet_max_utf8_bytes:
         safety._grant_error("Research packet exceeds the workspace byte limit")
-    expiry = safety._timestamp(expires_at).isoformat()
-    review = {
-        "project_id": request.project_id,
-        "provider": prepared.target["provider"],
-        "account": prepared.target["account"],
-        "scope": scope.model_dump(mode="json"),
-        "open_request": request.model_dump(mode="json"),
-        "open_payload": prepared.model_dump(mode="json"),
-        "packet_selection": [ref.model_dump(mode="json") for ref in packet.selection],
-        "expires_at": expiry,
-        "request_key": request_key,
-        "access_max_uses": max_reads + 1,
-        "share_max_uses": rounds,
-    }
     if _open_jobs(conn, request.request_key) != open_jobs:
         safety._grant_error("Research open request changed during preparation; review again")
     return _Preflight(
@@ -133,6 +153,44 @@ def _preflight(ctx, request, *, packet_id, rounds, max_reads, expires_at, reques
 
 
 def prepare_research(ctx, request, *, packet_id, rounds, max_reads, expires_at, request_key, conn):
+    ctx.require_interactive()
+    receipt = _receipt(conn, request_key)
+    if receipt is not None:
+        from metamuse._muse_lifecycle import _identity, _prepared, _target
+
+        # Reconstruct only a candidate for exact receipt comparison, using the recorded
+        # binding, not today's configuration. No privacy preflight or new grant follows.
+        try:
+            access_id = json.loads(receipt["response"])["access_grant_id"]
+        except (ValueError, TypeError, KeyError):
+            raise m.CoreError(m.ErrorCode.STORAGE, "Stored receipt is invalid") from None
+        access = ctx.store.get(m.Permit, access_id, conn=conn)
+        request = m.MuseOpenRequest.model_validate(request)
+        identity = _identity("dsc", request.project_id, request.request_key)
+        prepared = _prepared(
+            "session.start",
+            _target(
+                request.project_id,
+                access,
+                access.scope["research"]["backend"],
+                "muse.open",
+                intent=identity,
+            ),
+            {"title": request.topic, "node_id": request.project_id},
+            "open-" + identity[4:],
+            request.project_id,
+        )
+        packet = ctx.store.get(m.Packet, packet_id, conn=conn)
+        review = _review(request, prepared, packet, rounds, max_reads, expires_at, request_key)
+        try:
+            _replay_only(ctx, conn, review)
+        except m.CoreError as exc:
+            if exc.detail.code != m.ErrorCode.IDEMPOTENCY_CONFLICT:
+                raise
+            # A changed candidate needs fresh privacy preparation before preview, as
+            # before. Issuance still requires the exact recorded approval payload.
+        else:
+            return review
     preflight = _preflight(
         ctx,
         request,
@@ -215,33 +273,32 @@ def issue_research(ctx, reviewed):
     ctx.require_interactive()
     inputs = copy.deepcopy(reviewed)
     with ctx.store.connection() as conn:
-        preflight = _preflight(
-            ctx,
-            inputs["open_request"],
-            packet_id=inputs["scope"]["packet_id"],
-            rounds=inputs["scope"]["rounds"],
-            max_reads=inputs["scope"]["max_reads"],
-            expires_at=inputs["expires_at"],
-            request_key=inputs["request_key"],
-            conn=conn,
-        )
-    if preflight.review != m.canonical_json(reviewed):
+        preflight = None
+        if _receipt(conn, inputs["request_key"]) is None:
+            preflight = _preflight(
+                ctx,
+                inputs["open_request"],
+                packet_id=inputs["scope"]["packet_id"],
+                rounds=inputs["scope"]["rounds"],
+                max_reads=inputs["scope"]["max_reads"],
+                expires_at=inputs["expires_at"],
+                request_key=inputs["request_key"],
+                conn=conn,
+            )
+    if preflight is not None and preflight.review != m.canonical_json(reviewed):
         safety._grant_error("Research approval changed during review; review again")
     with ctx.store.transaction() as conn:
-        fresh = _recheck(ctx, conn, preflight)
-        if preflight.review != m.canonical_json(reviewed):
+        if m.canonical_json(inputs) != m.canonical_json(reviewed):
             safety._grant_error("Research approval changed during review; review again")
-        reviewed = fresh
-        replayed = (
-            conn.execute(
-                "SELECT 1 FROM request_receipts "
-                "WHERE operation='permit.research' AND request_key=?",
-                (reviewed["request_key"],),
-            ).fetchone()
-            is not None
-        )
+        reviewed = inputs
+        replayed = _receipt(conn, reviewed["request_key"]) is not None
 
         def issue():
+            if preflight is None:
+                safety._grant_error("Research receipt changed; review again")
+            fresh = _recheck(ctx, conn, preflight)
+            if m.canonical_json(fresh) != m.canonical_json(reviewed):
+                safety._grant_error("Research approval changed during review; review again")
             now = safety._timestamp(ctx.clock())
             expires = safety._timestamp(reviewed["expires_at"])
             if not now < expires <= now + timedelta(hours=24):
