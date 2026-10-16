@@ -169,6 +169,8 @@ def run_pytest(python: str, work: Path, evidence: Path, data: dict) -> int:
         "-q",
         "-c",
         "/dev/null",
+        "--rootdir",
+        str(work / "checks"),
         "--confcutdir",
         str(work / "checks"),
         "-p",
