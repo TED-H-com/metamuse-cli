@@ -4449,8 +4449,34 @@ def _form_prefix_ranges(text, depths, prefix, start, end, level):
     yield start, end, level
 
 
-def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
+def _redact_once(
+    text: str, *, private_spans: Callable[..., Iterable[tuple[int, int]]] | None = None
+) -> tuple[str, list[dict[str, str | int]]]:
     """Canonical decoded views, forward scans, sparse offsets, one output join."""
+    if private_spans is not None:
+
+        def additions(value, *, original):
+            result = []
+            previous = 0
+            valid = True
+            try:
+                for start, end in private_spans(value, original=original):
+                    if (
+                        type(start) is not int
+                        or type(end) is not int
+                        or not previous <= start < end <= len(value)
+                    ):
+                        valid = False
+                        break
+                    result.append((start, end, "sensitive_field", _REDACTED))
+                    previous = end
+            except Exception:
+                valid = False
+            if not valid:
+                raise ValueError("Invalid additive private spans")
+            return result
+
+        raw_additions = additions(text, original=True)
     layers = []
     view = text
     barriers = []
@@ -4546,6 +4572,10 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
             ]
         )
     )
+    if private_spans is not None and view != text:
+        decoded_additions = additions(view, original=False)
+        if decoded_additions:
+            spans = _SpanIndex(_merge_spans([spans, decoded_additions]))
     for edits in reversed(layers):
         spans = _SpanIndex(_original_spans(spans, edits))
     # Original quoted/structured values have their original quote terminators,
@@ -4577,6 +4607,8 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     del original_syntax
     if any(word in source for source in (text, view) for word in ("curl", "--user", "--cookie")):
         spans = _SpanIndex(_merge_spans([spans, _curl_source_spans(text)]))
+    if private_spans is not None and raw_additions:
+        spans = _SpanIndex(_merge_spans([spans, raw_additions]))
     if not spans:
         return text, []
     parts = []
@@ -4594,11 +4626,16 @@ def _redact_once(text: str) -> tuple[str, list[dict[str, str | int]]]:
     ]
 
 
-def redact_text(text: str) -> tuple[str, list[dict[str, str | int]]]:
-    """Three changing applications and one confirming application, at most."""
+def redact_text(
+    text: str, *, private_spans: Callable[..., Iterable[tuple[int, int]]] | None = None
+) -> tuple[str, list[dict[str, str | int]]]:
+    """Bounded fixpoint; optional additive spans apply only to the initial input."""
     counts = {}
-    for _ in range(4):
-        output, findings = _redact_once(text)
+    for attempt in range(4):
+        if attempt == 0 and private_spans is not None:
+            output, findings = _redact_once(text, private_spans=private_spans)
+        else:
+            output, findings = _redact_once(text)
         for finding in findings:
             kind = finding["kind"]
             counts[kind] = counts.get(kind, 0) + finding["count"]
