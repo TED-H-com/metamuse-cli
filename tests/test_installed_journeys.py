@@ -30,6 +30,7 @@ def test_byte_and_origin_checks_reject_changed_inputs(tmp_path, damage):
     for name in installed.HARNESS:
         (work / "checks" / name).parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(ROOT / name, work / "checks" / name)
+    shutil.copyfile(ROOT / installed.DIAGNOSTIC_SOURCE, work / "checks" / installed.DIAGNOSTIC_COPY)
     installed.verify_harness(ROOT, work)
     package_source = source / "src/metamuse"
     package_source.mkdir(parents=True)
@@ -73,6 +74,7 @@ def test_real_pytest_binds_junit_identity_to_copied_checks_root(tmp_path):
         target = work / "checks" / module
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(f"def {name}():\n    pass\n")
+    shutil.copyfile(ROOT / installed.DIAGNOSTIC_SOURCE, work / "checks" / installed.DIAGNOSTIC_COPY)
     env = {**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "PYTEST_ADDOPTS": ""}
     for name in ("PYTHONPATH", "PYTHONNOUSERSITE", "PYTEST_PLUGINS", "PYTEST_CURRENT_TEST"):
         env.pop(name, None)
@@ -209,7 +211,7 @@ def test_fake_tool_preserves_failures_and_requires_two_passes(
     )
     assert signals[0][1] == signal.SIGTERM
     args, env = invocation["args"], invocation["env"]
-    assert args[:4] == ["-s", "-m", "pytest", "-q"]
+    assert args[:7] == ["-u", "-X", "faulthandler", "-s", "-m", "pytest", "-q"]
     assert args[args.index("--rootdir") + 1] == str(work / "checks")
     assert args[args.index("--confcutdir") + 1] == str(work / "checks")
     assert args[args.index("--basetemp") + 1] == str(work / "pytest")

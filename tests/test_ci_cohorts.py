@@ -198,7 +198,7 @@ def test_workflow_requires_all_cohorts_static_wheel_and_exact_coverage():
     cohorts = jobs["cohorts"]
     assert "cohort: [core, muse, media, facebook, privacy]" in cohorts
     assert "fail-fast: false" in cohorts and "max-parallel: 5" in cohorts
-    assert "--maxfail=1 -o faulthandler_timeout=30 --basetemp" in cohorts
+    assert "--maxfail=1 -o faulthandler_timeout=0 --basetemp" in cohorts
     assert "python -u -X faulthandler scripts/ci_cohorts.py run" in cohorts
     assert 'mktemp -d "${RUNNER_TEMP}/metamuse-pytest.XXXXXX"' in cohorts
     assert "trap 'rm -rf \"$pytest_temp_dir\"' EXIT" in cohorts
