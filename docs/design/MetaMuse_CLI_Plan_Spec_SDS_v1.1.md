@@ -239,6 +239,22 @@ covered. Sensitive structured strings, numbers, arrays and objects are redacted
 whole. YAML indented containers/block scalars and TOML triple-quoted strings retain
 their enclosing extent, including incomplete and escaped documents. HAR name/value
 objects follow the sensitive-name rule, and every HAR cookies-array entry is private.
+
+Sensitive JSON scalars and containers use a quoted sentinel at their actual source
+layer: raw, percent/form encoded or inside JSON-string wrappers. Proven enclosing
+objects supply exact scalar/container ends, including minified public siblings;
+a standalone fragment or failed enclosing object cannot shorten an ambiguous value.
+A sparse key-quote anchor carries the replacement's JSON/percent escaping back
+through the existing offset maps. A covering core structured mask keeps its quoted
+replacement even when a shorter additive span starts at the same offset; union
+coverage never shrinks. Generic literal/placeholder exemptions remain unchanged.
+
+A proven JSON string may contain a complete percent-encoded JSON container. The
+existing HAR lexer inspects that container at its actual percent layer within the
+independent three-layer budgets. Structural punctuation must belong to that layer;
+mixed-depth punctuation remains string data. This does not turn an encoded HAR
+fragment inside unrelated URL data into a new HAR document. Public siblings and
+each enclosing JSON representation retain their independent boundaries.
 SQL IDENTIFIED BY/WITH PASSWORD, sshpass -p, mysql/mariadb/mysqldump attached -p,
 and curl -u identify credential values.
 
@@ -789,6 +805,15 @@ unbounded forward search for each candidate. CPU growth uses the iterated public
 redactor, slope ≤1.20 and at most 12× from 16 to 128 KiB; fresh-process peak RSS
 is at most 1 GiB at the 20 MiB raw cap. No redaction or sanitize_document call
 may run while a store write transaction is held.
+
+Nested JSON proof mapping also obeys this bound. Opening-ordered proof intervals
+use one monotone sparse-edit traversal when disjoint, or two when overlapping,
+independent of structural nesting depth. Overlapping endpoints are ordered with
+fixed-width numeric radix passes, not comparison sorting or a mapper restart per
+nesting level. Starts round down and ends round up within the contributing
+coalesced escape; duplicate intervals and collapsed starts retain tuple order.
+Temporary numeric storage is O(proofs), with no per-depth edit streams or copied
+decoded layers. The codec budgets do not impose a JSON structural-depth limit.
 
 
 Exemptions require a complete genuine closing delimiter at the same layer.
@@ -2082,6 +2107,22 @@ covered. Sensitive structured strings, numbers, arrays and objects are redacted
 whole. YAML indented containers/block scalars and TOML triple-quoted strings retain
 their enclosing extent, including incomplete and escaped documents. HAR name/value
 objects follow the sensitive-name rule, and every HAR cookies-array entry is private.
+
+Sensitive JSON scalars and containers use a quoted sentinel at their actual source
+layer: raw, percent/form encoded or inside JSON-string wrappers. Proven enclosing
+objects supply exact scalar/container ends, including minified public siblings;
+a standalone fragment or failed enclosing object cannot shorten an ambiguous value.
+A sparse key-quote anchor carries the replacement's JSON/percent escaping back
+through the existing offset maps. A covering core structured mask keeps its quoted
+replacement even when a shorter additive span starts at the same offset; union
+coverage never shrinks. Generic literal/placeholder exemptions remain unchanged.
+
+A proven JSON string may contain a complete percent-encoded JSON container. The
+existing HAR lexer inspects that container at its actual percent layer within the
+independent three-layer budgets. Structural punctuation must belong to that layer;
+mixed-depth punctuation remains string data. This does not turn an encoded HAR
+fragment inside unrelated URL data into a new HAR document. Public siblings and
+each enclosing JSON representation retain their independent boundaries.
 SQL IDENTIFIED BY/WITH PASSWORD, sshpass -p, mysql/mariadb/mysqldump attached -p,
 and curl -u identify credential values.
 
@@ -2408,6 +2449,15 @@ unbounded forward search for each candidate. CPU growth uses the iterated public
 redactor, slope ≤1.20 and at most 12× from 16 to 128 KiB; fresh-process peak RSS
 is at most 1 GiB at the 20 MiB raw cap. No redaction or sanitize_document call
 may run while a store write transaction is held.
+
+Nested JSON proof mapping also obeys this bound. Opening-ordered proof intervals
+use one monotone sparse-edit traversal when disjoint, or two when overlapping,
+independent of structural nesting depth. Overlapping endpoints are ordered with
+fixed-width numeric radix passes, not comparison sorting or a mapper restart per
+nesting level. Starts round down and ends round up within the contributing
+coalesced escape; duplicate intervals and collapsed starts retain tuple order.
+Temporary numeric storage is O(proofs), with no per-depth edit streams or copied
+decoded layers. The codec budgets do not impose a JSON structural-depth limit.
 
 
 Exemptions require a complete genuine closing delimiter at the same layer.

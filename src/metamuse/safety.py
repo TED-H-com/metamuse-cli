@@ -1684,6 +1684,7 @@ def _decode_view(
         else r"(?:%[0-9a-fA-F]{2})++"
     )
     edits = _EditIndex()
+    edits.encoding = "form" if form else "json" if json_escapes else "percent"
     parts = []
     position = offset = 0
     ranges = iter(ranges or ())
@@ -1754,9 +1755,41 @@ def _decode_view(
 
 def _original_spans(spans, edits):
     """Map an ordered, disjoint stream backwards in one walk over sparse edits."""
-    index = 0
-    shift = 0
+    index = quote_index = 0
+    shift = quote_shift = 0
     for start, end, kind, replacement in spans:
+        if isinstance(replacement, _JsonReplacement):
+            # A key quote anchors the structure's layer even when an empty
+            # container or numeric value contains no escapes of its own.
+            a, b = replacement.anchor
+            while quote_index < len(edits) and edits[quote_index].end <= a:
+                quote_shift = edits[quote_index].original_end - edits[quote_index].end
+                quote_index += 1
+            first, last = a + quote_shift, b + quote_shift
+            escaped = False
+            while quote_index < len(edits) and edits[quote_index].start < b:
+                edit = edits[quote_index]
+                scale = (edit.original_end - edit.original_start) // (edit.end - edit.start)
+                if edit.start <= a:
+                    first = edit.original_start + (a - edit.start) * scale
+                last = (
+                    edit.original_start + (b - edit.start) * scale
+                    if b <= edit.end
+                    else b + edit.original_end - edit.end
+                )
+                escaped = True
+                if b < edit.end:
+                    break
+                quote_shift = edit.original_end - edit.end
+                quote_index += 1
+            value = str(replacement)
+            if escaped and edits.encoding == "json":
+                value = json.dumps(value, ensure_ascii=False)[1:-1]
+            elif escaped and edits.encoding == "percent":
+                # Keep the sentinel literal, as in existing encoded masks;
+                # only its structural wrapper needs source-layer escaping.
+                value = value.replace("%", "%25").replace("\\", "%5C").replace('"', "%22")
+            replacement = _JsonReplacement(value, first, last)
         while index < len(edits) and edits[index].end <= start:
             shift = edits[index].original_end - edits[index].end
             index += 1
@@ -2613,6 +2646,34 @@ class _Syntax:
         return self.trim(text, start, limit) if trim else limit
 
 
+class _JsonReplacement(str):
+    """Structured mask with a key-quote anchor in the current sparse view.
+
+    Only scalar/container JSON masks carry this bounded per-span metadata.
+    Ordinary masks and empty private additions allocate none of it.
+    """
+
+    __slots__ = ("anchor",)
+
+    def __new__(cls, value, start, end):
+        result = super().__new__(cls, value)
+        result.anchor = (start, end)
+        return result
+
+    def shifted(self, offset):
+        return _JsonReplacement(str(self), self.anchor[0] + offset, self.anchor[1] + offset)
+
+
+def _anchored_spans(spans, anchors):
+    """Rehydrate one transient structured mask from sparse numeric anchors."""
+    offset = 0
+    for index, (start, end, kind, replacement) in enumerate(spans):
+        if anchors is not None and offset < len(anchors) and anchors[offset] == index:
+            replacement = _JsonReplacement(replacement, anchors[offset + 1], anchors[offset + 2])
+            offset += 3
+        yield start, end, kind, replacement
+
+
 class _SpanIndex:
     """Compact spans; retain no Python tuple/int object per input match."""
 
@@ -2620,8 +2681,14 @@ class _SpanIndex:
         self.data = array("I")
         self.kinds = []
         self.replacements = []
+        self.anchors = None
         kinds, replacements = {}, {}
         for start, end, kind, replacement in spans:
+            if isinstance(replacement, _JsonReplacement):
+                if self.anchors is None:
+                    self.anchors = array("I")
+                self.anchors.extend((len(self.data) // 4, *replacement.anchor))
+                replacement = str(replacement)
             if kind not in kinds:
                 kinds[kind] = len(self.kinds)
                 self.kinds.append(kind)
@@ -2634,12 +2701,23 @@ class _SpanIndex:
         return len(self.data) // 4
 
     def __iter__(self):
+        anchor = 0
         for offset in range(0, len(self.data), 4):
+            replacement = self.replacements[self.data[offset + 3]]
+            if (
+                self.anchors is not None
+                and anchor < len(self.anchors)
+                and self.anchors[anchor] == offset // 4
+            ):
+                replacement = _JsonReplacement(
+                    replacement, self.anchors[anchor + 1], self.anchors[anchor + 2]
+                )
+                anchor += 3
             yield (
                 self.data[offset],
                 self.data[offset + 1],
                 self.kinds[self.data[offset + 2]],
-                self.replacements[self.data[offset + 3]],
+                replacement,
             )
 
 
@@ -2656,6 +2734,15 @@ def _merge_spans(streams):
             # Credential kinds dominate display-only paths; outer structured values
             # retain their JSON replacement when an inner rule overlaps them.
             chosen = old_kind if old_kind != "local_path" else kind
+            # A shorter additive span at the same start sorts first, but
+            # cannot take the covering core scalar/container's quoted mask.
+            if (
+                start == begin
+                and end >= finish
+                and isinstance(replacement, _JsonReplacement)
+                and not isinstance(old_replacement, _JsonReplacement)
+            ):
+                old_replacement = replacement
             current = (begin, max(finish, end), chosen, old_replacement)
         else:
             if current:
@@ -2674,7 +2761,7 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
     trailing_assignment = re.compile(
         r"(?<![A-Za-z0-9_.-])(?P<flag>--|-D|-)?(?P<name>" + _NAME + r")(?P<op>=>|[=:：＝])?$"
     )
-    position = line_index = 0
+    position = line_index = container_index = 0
     while match := pattern.search(text, position):
         position = match.end()
         if not match["q"] and syntax.shell_operator(text, match.start()):
@@ -2694,6 +2781,37 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
         if skip_paths and _credential_name(key) == "localpath":
             continue
         start = match.end()
+        container_end = None
+        if match["q"] and text[start : start + 1] in "[{0123456789-ntf" and start < len(text):
+            # The existing JSON lexer proves scalar/container ends.
+            # Prose terminators must not consume a minified public sibling
+            # or strip an actual JSON close.
+            if not hasattr(syntax, "json_containers"):
+                from heapq import merge
+
+                source_bounds = ()
+                source_layers = getattr(syntax, "source_layers", None)
+                if source_layers is not None:
+                    source, layers = source_layers
+                    source_bounds = _QuoteRanges(
+                        (a, b) for a, b, _, _ in _har_spans(source, _quotes="containers")
+                    )
+                    for edits in layers:
+                        source_bounds = _decoded_proofs(source_bounds, edits)
+                syntax.json_containers = _QuoteRanges(
+                    merge(
+                        ((a, b) for a, b, _, _ in _har_json_spans(text, _bounds=True)),
+                        source_bounds,
+                    )
+                )
+            bounds = syntax.json_containers
+            while container_index < len(bounds) and bounds[container_index][0] < start:
+                container_index += 1
+            if container_index < len(bounds) and bounds[container_index][0] == start:
+                container_end = bounds[container_index][1]
+                while container_index + 1 < len(bounds) and bounds[container_index + 1][0] == start:
+                    container_index += 1
+                    container_end = max(container_end, bounds[container_index][1])
         operator_depth = (
             syntax.depth(match.start("sep")) if match["sep"] else syntax.depth(match.start())
         )
@@ -2766,7 +2884,9 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
                 else:
                     scalar_end = boundary
         end = (
-            max(start, yaml_end)
+            container_end
+            if container_end is not None
+            else max(start, yaml_end)
             if yaml_end is not None
             else max(start, scalar_end)
             if scalar_end is not None
@@ -2846,7 +2966,9 @@ def _assignment_spans(text, syntax, *, include_exempt=False, skip_paths=False):
                 start += width
                 end -= width if closed else 0
             elif match["q"]:
-                replacement = '"' + _REDACTED + '"'
+                replacement = _JsonReplacement(
+                    '"' + _REDACTED + '"', match.start("q"), match.start("q") + 1
+                )
             yield start, end, kind, replacement
             if kind == "local_path" and not include_exempt:
                 # A local_path label must not hide credential syntax in its value.
@@ -3830,13 +3952,16 @@ class _JsonFrames:
         self.length -= 1
 
 
-def _har_json_spans(text, *, _depth=0, _quotes=False):
+def _har_json_spans(
+    text, *, _depth=0, _quotes=False, _bounds=False, _percent_depth=0, _form_depth=0, _levels=None
+):
     """Memoized strict JSON candidates, including candidates swallowed by an error.
 
     Lexical string ends are indexed once. Every container is parsed once, even
     when a failed outer candidate initially treated its opening brace as data.
     No parser resynchronizes *inside* a damaged object.
     """
+    _bounds = _bounds or _quotes == "containers"
     quote_ends = _PositionIndex(text)
     bad = array("I")
     previous = None
@@ -3854,14 +3979,18 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
     whitespace = re.compile(r"[ \t\r\n]*+")
     memo = _PositionIndex(text)
     slots, selected, nested = [], [], []
+    slot_anchors, nested_anchors = array("I"), array("I")
     seen_strings = set()
     frames = _JsonFrames()
+    key_start = 0
     quote_slots = array("I")
     proven = _PositionIndex(text)
     quote_begins = array("I")
 
     def token_at(position):
         char = text[position]
+        if _levels is not None and char in '{}[]:,"' and _levels[position] != _levels[root]:
+            return None  # A decoded data delimiter is not structure at this JSON layer.
         if char == '"':
             end = quote_ends.get(position, len(text))
             invalid = bisect_left(bad, position + 1)
@@ -3881,7 +4010,7 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
                 slot = slots[slot][4]
 
     def register(frame, kind, start, end):
-        if _quotes:
+        if _quotes or _bounds:
             return None
         key = frame.get("key")
         if key not in {"value", "cookies"}:
@@ -3896,6 +4025,8 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
             opaque = _credential_value_exempt("password", value, depths=depths)
         slot = len(slots)
         previous = frame.get("value") if key == "value" and not opaque else None
+        if not quoted:
+            slot_anchors.extend((slot, key_start, key_start + 1))
         slots.append(
             [
                 first,
@@ -3911,22 +4042,65 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
         return slot
 
     def string_data(start, end):
-        if start in seen_strings or _depth >= 3 or end - start <= 2:
+        if (_bounds and not _quotes) or start in seen_strings or _depth >= 3 or end - start <= 2:
             return
         seen_strings.add(start)
-        # Only actual JSON escapes reveal a new JSON layer. Percent encodings
-        # inside this string remain data until this layer has been consumed.
         raw = text[start + 1 : end - 1]
-        if "\\" not in raw:
+        if "\\" in raw:
+            inner, edits = _decode_view(raw, json_escapes=True)
+            if not edits:
+                return
+            spans = _original_spans(
+                _har_spans(
+                    inner,
+                    _depth=_depth + 1,
+                    _quotes=_quotes,
+                    _percent_depth=_percent_depth,
+                    _form_depth=_form_depth,
+                ),
+                edits,
+            )
+        elif "%" in raw and _percent_depth < 3:
+            # A proven JSON string can hold a whole percent-encoded JSON
+            # layer. Its own lexer, not the global canonical view, decides
+            # structure. Mixed-depth punctuation stays string data.
+            inner, layers = raw, []
+            for _ in range(3 - _percent_depth):
+                inner, edits = _decode_view(inner)
+                if not edits:
+                    return
+                layers.append(edits)
+                try:
+                    document = json.loads(inner)
+                except (ValueError, RecursionError):
+                    continue
+                if not isinstance(document, (dict, list)):
+                    return
+                break
+            else:
+                return
+            levels = _decoding_depths(len(raw), layers)
+            spans = _har_json_spans(
+                inner,
+                _depth=_depth + 1,
+                _quotes=_quotes,
+                _percent_depth=_percent_depth + len(layers),
+                _form_depth=_form_depth,
+                _levels=levels,
+            )
+            for edits in reversed(layers):
+                spans = _original_spans(spans, edits)
+        else:
             return
-        inner, edits = _decode_view(raw, json_escapes=True)
-        if edits:
-            spans = _original_spans(_har_spans(inner, _depth=_depth + 1, _quotes=_quotes), edits)
-            for a, b, k, r in spans:
-                if _quotes:
-                    proven[a + start + 1] = b + start + 1
-                else:
-                    nested.append((a + start + 1, b + start + 1, k, r))
+        for a, b, k, r in spans:
+            if _quotes:
+                proven[a + start + 1] = b + start + 1
+            else:
+                if isinstance(r, _JsonReplacement):
+                    nested_anchors.extend(
+                        (len(nested), r.anchor[0] + start + 1, r.anchor[1] + start + 1)
+                    )
+                nested.append((a + start + 1, b + start + 1, k, str(r)))
 
     candidates = re.finditer(r"[\[{]", text)
     covered = 0
@@ -3952,11 +4126,12 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
                 elif kind != '"' or text[end - 1 : end] != '"':
                     break
                 else:
+                    key_start = start
                     try:
                         frame["key"] = json.loads(text[start:end]) if end - start <= 128 else None
                     except ValueError:
                         break
-                    if _quotes:
+                    if _quotes is True:
                         quote_slots.extend((start, end))
                     frame["state"] = "colon"
                     position = end
@@ -4039,9 +4214,11 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
                 if text[end - 1 : end] != '"' or end - start == 1:
                     position = end
                     break
-                if _quotes:
+                if _quotes is True:
                     quote_slots.extend((start, end))
                 string_data(start, end)
+            elif _bounds and frame is not None:
+                memo[start] = end
             position = end
         # Retain partial records before their own first error. Mark every
         # outstanding container failed, so late failures remain linear.
@@ -4054,6 +4231,32 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
         frames.length = 0
         del quote_slots[:]
         del quote_begins[:]
+    if _bounds:
+
+        def bounds():
+            if not memo.data:
+                return
+            enclosing = array("I")
+            for start, end in enumerate(memo.data):
+                if end > 0:
+                    while enclosing and enclosing[-1] <= start:
+                        enclosing.pop()
+                    # A standalone candidate cannot prove a preceding key's
+                    # boundary. Its enclosing JSON object must also close.
+                    if enclosing:
+                        yield start, end, "proven_container", ""
+                    if text[start] == "{":
+                        enclosing.append(end)
+
+        from heapq import merge
+
+        yield from merge(
+            bounds(),
+            ((a, b, "proven_container", "") for a, b in enumerate(proven.data) if b)
+            if proven.data
+            else (),
+        )
+        return
     if _quotes:
         if proven.data:
             for start, end in enumerate(proven.data):
@@ -4062,8 +4265,16 @@ def _har_json_spans(text, *, _depth=0, _quotes=False):
         return
     yield from _merge_spans(
         [
-            ((a, b, k, r) for (a, b, k, r, _), use in zip(slots, selected, strict=True) if use),
-            iter(nested),
+            (
+                span
+                for span, use in zip(
+                    _anchored_spans(((a, b, k, r) for a, b, k, r, _ in slots), slot_anchors),
+                    selected,
+                    strict=True,
+                )
+                if use
+            ),
+            _anchored_spans(nested, nested_anchors),
         ]
     )
 
@@ -4072,6 +4283,8 @@ def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False, _pe
     # Recovery and wrapper views may overlap. Order spans with a linear numeric
     # index rather than sorting or assuming recovery visits them in source order.
     ordered = _PositionIndex(text)
+    structured = array("I")
+    replacements, replacement_ids = [], {}
     for start, end, kind, replacement in _har_candidates(
         text,
         syntax,
@@ -4084,16 +4297,41 @@ def _har_spans(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False, _pe
             continue
         flags = int(kind == "cookie") | (int(replacement.startswith('"')) << 1)
         encoded = (end << 2) | flags
-        ordered[start] = max(ordered.get(start, 0), encoded)
+        previous = ordered.data[start] if ordered.data else 0
+        previous = structured[-previous - 1] if previous < 0 else previous
+        if encoded > previous:
+            if isinstance(replacement, _JsonReplacement):
+                value = str(replacement)
+                if value not in replacement_ids:
+                    replacement_ids[value] = len(replacements)
+                    replacements.append(value)
+                ordered[start] = -len(structured) - 1
+                structured.extend((encoded, *replacement.anchor, replacement_ids[value]))
+            else:
+                ordered[start] = encoded
     if ordered.data:
         for start, encoded in enumerate(ordered.data):
-            if encoded:
-                yield (
-                    start,
-                    encoded >> 2,
-                    "proven_string" if _quotes else "cookie" if encoded & 1 else "sensitive_field",
-                    '"' + _REDACTED + '"' if encoded & 2 else _REDACTED,
+            if not encoded:
+                continue
+            replacement = None
+            if encoded < 0:
+                slot = -encoded - 1
+                encoded = structured[slot]
+                replacement = _JsonReplacement(
+                    replacements[structured[slot + 3]],
+                    structured[slot + 1],
+                    structured[slot + 2],
                 )
+            yield (
+                start,
+                encoded >> 2,
+                "proven_string" if _quotes else "cookie" if encoded & 1 else "sensitive_field",
+                replacement
+                if replacement is not None
+                else '"' + _REDACTED + '"'
+                if encoded & 2
+                else _REDACTED,
+            )
 
 
 def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False, _percent_depth=0):
@@ -4103,17 +4341,38 @@ def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False
     # Decode wrappers first only when structure itself is escaped. The lexer
     # below never interprets escaped characters inside a value as structure.
     if re.search(r'[{\[]\s*+\\+(?:"|u0022)', text):
-        yield from _har_json_spans(text, _depth=_depth, _quotes=_quotes)
+        yield from _har_json_spans(
+            text,
+            _depth=_depth,
+            _quotes=_quotes,
+            _percent_depth=_percent_depth,
+            _form_depth=_form_depth,
+        )
         decoded, edits = _decode_view(text, json_escapes=True)
         if edits:
             yield from _original_spans(
                 _har_spans(
-                    decoded, _depth=_depth + 1, _quotes=_quotes, _percent_depth=_percent_depth
+                    decoded,
+                    _depth=_depth + 1,
+                    _quotes=_quotes,
+                    _percent_depth=_percent_depth,
+                    _form_depth=_form_depth,
                 ),
                 edits,
             )
-    elif '"' in text and ("name" in text or "cookies" in text or "\\" in text):
-        yield from _har_json_spans(text, _depth=_depth, _quotes=_quotes)
+    elif '"' in text and (
+        "name" in text
+        or "cookies" in text
+        or "\\" in text
+        or (_quotes == "containers" and "%" in text)
+    ):
+        yield from _har_json_spans(
+            text,
+            _depth=_depth,
+            _quotes=_quotes,
+            _percent_depth=_percent_depth,
+            _form_depth=_form_depth,
+        )
     # A whole JSON string is itself a wrapper, including prose around its HAR.
     stripped = text.strip()
     if stripped.startswith('"'):
@@ -4124,21 +4383,43 @@ def _har_candidates(text, syntax=None, *, _depth=0, _form_depth=0, _quotes=False
         if isinstance(value, str) and _depth < 3:
             inner, edits = _decode_view(stripped[1:-1], json_escapes=True)
             offset = len(text) - len(text.lstrip()) + 1
-            spans = _har_spans(inner, _depth=_depth + 1, _quotes=_quotes)
+            spans = _har_spans(
+                inner,
+                _depth=_depth + 1,
+                _quotes=_quotes,
+                _percent_depth=_percent_depth,
+                _form_depth=_form_depth,
+            )
             if edits:
                 spans = _original_spans(spans, edits)
             for a, b, k, r in spans:
-                yield a + offset, b + offset, k, r
+                yield (
+                    a + offset,
+                    b + offset,
+                    k,
+                    r.shifted(offset) if isinstance(r, _JsonReplacement) else r,
+                )
     form = re.compile(r"(?<![A-Za-z0-9_%])" + _NAME + r"=(?P<value>[^&\s\"'`<>]*+)")
     if _form_depth < 3 and form.search(text):
         for field in form.finditer(text):
             raw = field["value"]
             view, edits = _decode_view(raw, form=True, ranges=[(0, len(raw))])
-            spans = _har_spans(view, _depth=_depth, _form_depth=_form_depth + 1, _quotes=_quotes)
+            spans = _har_spans(
+                view,
+                _depth=_depth,
+                _form_depth=_form_depth + 1,
+                _quotes=_quotes,
+                _percent_depth=_percent_depth,
+            )
             if edits:
                 spans = _original_spans(spans, edits)
             for a, b, k, r in spans:
-                yield field.start("value") + a, field.start("value") + b, k, r
+                yield (
+                    field.start("value") + a,
+                    field.start("value") + b,
+                    k,
+                    r.shifted(field.start("value")) if isinstance(r, _JsonReplacement) else r,
+                )
     if "%" in text and _percent_depth < 3:
         try:
             json.loads(text)
@@ -4383,31 +4664,80 @@ def _decoded_ranges(ranges, edits):
             while edit is not None and edit.original_end <= position:
                 shift = edit.original_end - edit.end
                 edit = next(values, None)
-            bounds.append(
-                (edit.end if ending else edit.start)
-                if edit is not None and edit.original_start < position
-                else position - shift
-            )
+            if edit is not None and edit.original_start < position:
+                # Coalesced escapes have a uniform scale. Round only a
+                # contributing escape, never the rest of the coalesced run.
+                width = edit.original_end - edit.original_start
+                numerator = (position - edit.original_start) * (edit.end - edit.start)
+                mapped = (numerator + width - 1) // width if ending else numerator // width
+                bounds.append(edit.start + mapped)
+            else:
+                bounds.append(position - shift)
         result.append(tuple(bounds))
     return result
 
 
 def _decoded_proofs(ranges, edits):
-    """Map nested JSON ranges as a bounded set of monotone streams."""
+    """Map opening-ordered proofs with at most two sparse-edit traversals."""
     if not edits or not ranges:
         return ranges
-    from heapq import merge
 
-    levels, enclosing = [], []
+    previous_end = 0
     for start, end in ranges:
-        while enclosing and enclosing[-1] <= start:
-            enclosing.pop()
-        level = len(enclosing)
-        if level == len(levels):
-            levels.append(_QuoteRanges())
-        levels[level].append((start, end))
-        enclosing.append(end)
-    return _QuoteRanges(merge(*(_decoded_ranges(level, edits) for level in levels)))
+        if start < previous_end:
+            break
+        previous_end = end
+    else:
+        # Preserve the usual disjoint-string path, including its storage bound.
+        return _QuoteRanges(_decoded_ranges(ranges, edits))
+
+    mapped = _QuoteRanges(ranges)
+    order = array("I", range(len(mapped)))
+    scratch = array("I", [0]) * len(mapped)
+
+    def order_by(coordinates):
+        nonlocal order, scratch
+        # Existing proof coordinates are unsigned 32-bit offsets. Four stable
+        # byte passes give linear work, even for crossing or equal-start proofs;
+        # no comparison sort or stack per JSON nesting level is needed.
+        for shift in (0, 8, 16, 24):
+            counts = array("I", [0]) * 256
+            for index in order:
+                counts[(coordinates[index] >> shift) & 255] += 1
+            total = 0
+            for bucket, count in enumerate(counts):
+                counts[bucket] = total
+                total += count
+            for index in order:
+                bucket = (coordinates[index] >> shift) & 255
+                scratch[counts[bucket]] = index
+                counts[bucket] += 1
+            order, scratch = scratch, order
+
+    def carry(coordinates, indexes, ending):
+        values = iter(edits)
+        edit = next(values, None)
+        shift = 0
+        for index in indexes:
+            position = coordinates[index]
+            while edit is not None and edit.original_end <= position:
+                shift = edit.original_end - edit.end
+                edit = next(values, None)
+            if edit is not None and edit.original_start < position:
+                width = edit.original_end - edit.original_start
+                numerator = (position - edit.original_start) * (edit.end - edit.start)
+                offset = (numerator + width - 1) // width if ending else numerator // width
+                coordinates[index] = edit.start + offset
+            else:
+                coordinates[index] = position - shift
+
+    order_by(mapped.ends)
+    carry(mapped.starts, range(len(mapped)), False)
+    carry(mapped.ends, order, True)
+    # Ends remain ordered under outward rounding. Stable start ordering restores
+    # tuple order when distinct source starts collapse into the same escape.
+    order_by(mapped.starts)
+    return _QuoteRanges((mapped.starts[index], mapped.ends[index]) for index in order)
 
 
 def _layered_form_ranges(text, depths, known):
@@ -4450,9 +4780,16 @@ def _form_prefix_ranges(text, depths, prefix, start, end, level):
 
 
 def _redact_once(
-    text: str, *, private_spans: Callable[..., Iterable[tuple[int, int]]] | None = None
+    text: str,
+    *,
+    private_spans: Callable[..., Iterable[tuple[int, int]]] | None = None,
+    private_placeholder: str = _REDACTED,
 ) -> tuple[str, list[dict[str, str | int]]]:
     """Canonical decoded views, forward scans, sparse offsets, one output join."""
+    if type(private_placeholder) is not str or (
+        private_placeholder != _REDACTED and private_placeholder != "redacted"
+    ):
+        raise ValueError("Invalid private placeholder")
     if private_spans is not None:
 
         def additions(value, *, original):
@@ -4468,7 +4805,7 @@ def _redact_once(
                     ):
                         valid = False
                         break
-                    result.append((start, end, "sensitive_field", _REDACTED))
+                    result.append((start, end, "sensitive_field", private_placeholder))
                     previous = end
             except Exception:
                 valid = False
@@ -4560,6 +4897,10 @@ def _redact_once(
     from heapq import merge
 
     syntax = _Syntax(view, depths, _QuoteRanges(merge(proofs, revealed)), barriers, json_lines)
+    if layers:
+        # Consult original-layer container proofs lazily, only when a quoted
+        # sensitive key actually has a structured value. No view is copied.
+        syntax.source_layers = (text, layers)
     spans = _SpanIndex(
         _merge_spans(
             [
@@ -4627,13 +4968,25 @@ def _redact_once(
 
 
 def redact_text(
-    text: str, *, private_spans: Callable[..., Iterable[tuple[int, int]]] | None = None
+    text: str,
+    *,
+    private_spans: Callable[..., Iterable[tuple[int, int]]] | None = None,
+    private_placeholder: str = _REDACTED,
 ) -> tuple[str, list[dict[str, str | int]]]:
     """Bounded fixpoint; optional additive spans apply only to the initial input."""
+    if type(private_placeholder) is not str or (
+        private_placeholder != _REDACTED and private_placeholder != "redacted"
+    ):
+        raise ValueError("Invalid private placeholder")
     counts = {}
     for attempt in range(4):
         if attempt == 0 and private_spans is not None:
-            output, findings = _redact_once(text, private_spans=private_spans)
+            if private_placeholder == _REDACTED:
+                output, findings = _redact_once(text, private_spans=private_spans)
+            else:
+                output, findings = _redact_once(
+                    text, private_spans=private_spans, private_placeholder=private_placeholder
+                )
         else:
             output, findings = _redact_once(text)
         for finding in findings:
