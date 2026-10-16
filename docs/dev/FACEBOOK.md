@@ -328,6 +328,12 @@ Remote-media tests of the yt-dlp Facebook extractor do not call DOM fixture capt
 and belong to media. New tests that capture Facebook inputs must belong to the
 Facebook cohort too. See the small classifier in `scripts/ci_cohorts.py`.
 
+B16a files whose stems start with `test_b16a_` and end with `_complexity` or
+`_memory` belong to privacy as whole modules. Facebook, Muse and remote/media
+classification keeps its existing precedence. This distributes the measured
+work across the existing five jobs; it changes neither selected-node order nor
+assertions, samples or deadlines, and does not guarantee completion within a job.
+
 Every job retains its 30-minute deadline. The matrix permits five concurrent jobs
 and does not cancel peers on failure. `--maxfail=1` prints the first real traceback;
 a failing cohort is incomplete and needs a cause fix on new source, never an unchanged
