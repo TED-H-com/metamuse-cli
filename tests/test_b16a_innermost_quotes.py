@@ -109,3 +109,42 @@ def test_unquoted_header_still_uses_outer_owner_and_quoted_punctuation_stays_pri
     assert assert_private(text, "raw", [marker]) == "(Cookie: [REDACTED]) public"
     quoted = "(Cookie: 'pa) ] } , ; & : " + marker + "') public"
     assert assert_private(quoted, "raw", [marker]) == "(Cookie: [REDACTED]) public"
+
+
+def test_closed_multiline_triple_cookie_keeps_all_private_content():
+    marker = f"{'ReviewTripleSynthetic'}_7942"
+    delimiter = "'" * 3
+    text = "Cookie: " + delimiter + "head\n" + marker + " tail" + delimiter + "\nX-Public: visible"
+    output, findings = redact_text(text)
+    assert marker not in output, (text, output, findings)
+    assert "X-Public: visible" in output
+    assert findings == [{"kind": "cookie", "count": 1}]
+    assert redact_text(output) == (output, [])
+
+
+@pytest.mark.parametrize("representation", ["raw", "json2", "pct2", "form"])
+@pytest.mark.parametrize("quote_char", ["'", '"'])
+def test_closed_triple_header_owns_multiline_punctuation(quote_char, representation):
+    marker = f"{'MultilineTriple'}_Synthetic_8619"
+    delimiter = quote_char * 3
+    text = (
+        "(Cookie: "
+        + delimiter
+        + "head) ] }\n"
+        + marker
+        + " tail"
+        + delimiter
+        + ")\nX-Public: visible"
+    )
+    assert assert_private(text, representation, [marker]) == (
+        "(Cookie: [REDACTED])\nX-Public: visible"
+    )
+
+
+@pytest.mark.parametrize(("quote_char", "representation"), [("'", "raw"), ('"', "json")])
+def test_unclosed_triple_header_retains_unmatched_logical_line_bound(quote_char, representation):
+    marker = f"{'UnmatchedTriple'}_Synthetic_6821"
+    text = "Cookie: " + quote_char * 3 + marker + "\nX-Public: visible"
+    assert assert_private(text, representation, [marker]) == (
+        "Cookie: [REDACTED]\nX-Public: visible"
+    )

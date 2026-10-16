@@ -3088,7 +3088,12 @@ def _header_spans(text, syntax, proven=()):
                 fold_end = end
         quoted = syntax.quote_token(text, start)
         if quoted:
-            end = min(end, syntax.value(text, start, operator_depth=level, construct=match.start()))
+            own_end = syntax.value(text, start, operator_depth=level, construct=match.start())
+            if len(quoted) == 3 and syntax.quoted_end(text, start) == own_end:
+                # A genuinely closed triple token owns its intervening lines.
+                end = own_end
+            else:
+                end = min(end, own_end)
         if fold_end is not None:
             end = max(end, fold_end)
         # value() already gives an own quote its innermost extent. An outer
