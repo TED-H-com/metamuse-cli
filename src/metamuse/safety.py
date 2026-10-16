@@ -1957,7 +1957,7 @@ class _EditIndex:
 class _Syntax:
     """Compute quote and balanced-value terminators once, never from every key."""
 
-    def __init__(self, text, depths=None, proven=(), barriers=(), json_lines=()):
+    def __init__(self, text, depths=None, proven=(), barriers=(), json_lines=(), header_proofs=()):
         self.barriers = barriers
         self.attribute_quotes = None
         self.json_lines = bytearray(len(text)) if json_lines else None
@@ -2173,6 +2173,20 @@ class _Syntax:
                     if lookup:
                         self.ends[opening] = token.end()
                         self.closings[pos] = opening
+        # Escaped header proofs establish content layers, not generic quote
+        # endpoints. Keep their source bounds out of the balanced-value tables.
+        for opening, ending in header_proofs:
+            if not 0 <= opening < ending <= len(text):
+                continue
+            escaped = re.compile(r'\\{1,7}(?=")').match(text, opening)
+            width = len(escaped[0]) if escaped else 0
+            start, end = opening + width + 1, ending - width - 1
+            if start >= end or self.depth(opening) != self.depth(ending - 1):
+                continue
+            if self.json_content is None:
+                self.json_content = bytearray(len(text))
+            level = self.depth(opening) + width.bit_length() + 1
+            self.json_content[start:end] = bytes([level]) * (end - start)
         self._owned_quotes(text)
         # The temporary proof-close index is no longer needed after local call
         # indexing. Reuse its allocation for constant-time containing bounds.
@@ -4983,7 +4997,14 @@ def _redact_once(
     )
     from heapq import merge
 
-    syntax = _Syntax(view, depths, _QuoteRanges(merge(proofs, revealed)), barriers, json_lines)
+    syntax = _Syntax(
+        view,
+        depths,
+        _QuoteRanges(merge(proofs, revealed)),
+        barriers,
+        json_lines,
+        header_proofs=header_proofs,
+    )
     if layers:
         # Consult original-layer container proofs lazily, only when a quoted
         # sensitive key actually has a structured value. No view is copied.
@@ -5014,7 +5035,11 @@ def _redact_once(
         if '{"' in text or '{ "' in text
         else []
     )
-    original_syntax = _Syntax(text, proven=original_proofs) if layers else None
+    original_syntax = (
+        _Syntax(text, proven=original_proofs, header_proofs=source_header_proofs)
+        if layers
+        else None
+    )
     original_fields = _assignment_spans(text, original_syntax) if layers else ()
     original_headers = _header_spans(text, original_syntax, source_header_proofs) if layers else ()
     original_markup = _xml_spans(text, original_syntax) if layers else ()
