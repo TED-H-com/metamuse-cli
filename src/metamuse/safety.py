@@ -3086,16 +3086,19 @@ def _header_spans(text, syntax, proven=()):
             if after is not None:
                 end = folded[index + 1]
                 fold_end = end
-        if syntax.quote_token(text, start):
+        quoted = syntax.quote_token(text, start)
+        if quoted:
             end = syntax.value(text, start, operator_depth=level, construct=match.start())
         if fold_end is not None:
             end = max(end, fold_end)
-        limit = syntax.owned_end(text, match.start(), start)
+        # value() already gives an own quote its innermost extent. An outer
+        # adjacent bracket cannot cut it short; a proven JSON bound still can.
+        limit = None if quoted else syntax.owned_end(text, match.start(), start)
         if proven_end is not None:
             limit = min(limit, proven_end) if limit is not None else proven_end
         if limit is not None:
             end = min(end, limit)
-        if not syntax.quote_token(text, start):
+        if not quoted:
             end = syntax.trim(text, start, end)
         cookie = name not in {"authorization", "proxyauthorization"}
         value = text[start:end].strip().lower() if not cookie and end - start <= 128 else None
