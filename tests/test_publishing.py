@@ -48,6 +48,140 @@ class FixtureGateway:
         }
 
 
+_PAGE_BINDING = {
+    "account": "synthetic-page",
+    "page_id": "123456",
+    "api_version": "v25.0",
+}
+
+
+@pytest.mark.parametrize(
+    "network,config,expected_error",
+    [
+        pytest.param("offline", {}, m.ErrorCode.UNSUPPORTED, id="default"),
+        pytest.param(
+            "offline",
+            {**_PAGE_BINDING, "enabled": False, "backend": "fixture"},
+            m.ErrorCode.UNSUPPORTED,
+            id="disabled-bound",
+        ),
+        pytest.param(
+            "offline", {"enabled": True}, m.ErrorCode.AUTH_REQUIRED, id="enabled-unconfigured"
+        ),
+        *[
+            pytest.param(
+                "offline",
+                {
+                    **{key: value for key, value in _PAGE_BINDING.items() if key != missing},
+                    "enabled": True,
+                    "backend": "fixture",
+                },
+                m.ErrorCode.AUTH_REQUIRED,
+                id="fixture-missing-" + missing,
+            )
+            for missing in ("account", "page_id", "api_version")
+        ],
+        pytest.param(
+            "offline",
+            {**_PAGE_BINDING, "enabled": True, "backend": "fixture"},
+            None,
+            id="fixture-ready",
+        ),
+        pytest.param(
+            "offline",
+            {**_PAGE_BINDING, "enabled": True, "auth_ref": "auth_" + "0" * 32},
+            m.ErrorCode.AUTH_REQUIRED,
+            id="live-offline",
+        ),
+        pytest.param(
+            "live", {**_PAGE_BINDING, "enabled": True}, m.ErrorCode.AUTH_REQUIRED, id="live-no-auth"
+        ),
+        pytest.param(
+            "live",
+            {**_PAGE_BINDING, "enabled": True, "auth_ref": "auth_" + "0" * 32},
+            None,
+            id="live-bound",
+        ),
+    ],
+)
+def test_publication_capabilities_follow_current_binding_without_remote_probes(
+    setup, monkeypatch, network, config, expected_error
+):
+    env = setup
+    accepted = app.submit_publication(env.ctx, approve(env))
+    assert accepted.status == "accepted"
+    # Keep ctx.policy at the original fixture binding: a long-lived process must
+    # observe the TOML change just as the real preview does.
+    assert env.ctx.policy.publishing.backend == "fixture"
+    path = env.ctx.paths.root / "metamuse.toml"
+    path.write_text(
+        "[app]\nnetwork_mode = "
+        + json.dumps(network)
+        + "\n[publishing]\n"
+        + "\n".join(key + " = " + json.dumps(value) for key, value in config.items())
+        + "\n"
+    )
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Local publication capability/preview accessed credentials or remote I/O")
+
+    monkeypatch.setattr(safety, "resolve_secret", forbidden)
+    monkeypatch.setattr(publishing, "GraphPageGateway", forbidden)
+    monkeypatch.setattr(publishing.socket, "getaddrinfo", forbidden)
+    inspected = app.inspect_capabilities(env.ctx)
+    assert inspected.status == "ok"
+    rows = {row["name"]: row for row in inspected.data["capabilities"]}
+    preview = app.preview_publication(
+        env.ctx, {key: value for key, value in env.request.items() if key != "request_key"}
+    )
+    row = rows["metamuse_publication_preview"]
+    assert row["environment"] == "ready"
+    assert row["effective"] is (expected_error is None)
+    assert row["permission"] == ("granted_scope" if expected_error is None else "not_configured")
+    if expected_error is None:
+        assert preview.status == "ok" and preview.data["live_verified"] is False
+    else:
+        assert preview.status == "error" and preview.error.code == expected_error
+    assert rows["metamuse_publication_get"]["effective"] is True
+    saved = app.get_publication(env.ctx, {"publication_id": accepted.data["publication_id"]})
+    assert saved.status == "ok" and saved.data["state"] == "queued"
+    for name in ("metamuse_publication_submit", "metamuse_publication_reconcile"):
+        assert rows[name]["permission"] == "not_configured"
+        assert rows[name]["effective"] is False
+        assert rows[name]["environment"] == (
+            "ready" if config.get("backend") == "fixture" else "needs_auth"
+        )
+    assert env.gateway.sent == [] and env.gateway.reads == []
+
+
+@pytest.mark.parametrize(
+    "current_config",
+    [
+        pytest.param("[publishing]\nenabled = [\n", id="malformed-toml"),
+        pytest.param(
+            '[publishing]\nenabled = true\napi_version = "latest"\n', id="invalid-typed-config"
+        ),
+    ],
+)
+def test_publication_capabilities_reject_malformed_current_config(setup, current_config):
+    env = setup
+    accepted = app.submit_publication(env.ctx, approve(env))
+    assert accepted.status == "accepted" and env.ctx.policy.publishing.enabled
+    (env.ctx.paths.root / "metamuse.toml").write_text(current_config)
+    inspected = app.inspect_capabilities(env.ctx)
+    assert inspected.status == "error" and inspected.data is None
+    assert inspected.error.code == m.ErrorCode.INPUT_INVALID
+    preview = app.preview_publication(
+        env.ctx, {key: value for key, value in env.request.items() if key != "request_key"}
+    )
+    assert preview.status == "error" and preview.error.code == m.ErrorCode.INPUT_INVALID
+    assert (
+        app.get_publication(env.ctx, {"publication_id": accepted.data["publication_id"]}).status
+        == "ok"
+    )
+    assert env.gateway.sent == [] and env.gateway.reads == []
+
+
 @pytest.fixture
 def setup(tmp_path):
     now = [datetime.now(UTC)]

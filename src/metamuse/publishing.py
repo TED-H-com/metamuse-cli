@@ -33,13 +33,27 @@ IMPLEMENTED_TOOLS = frozenset(
 
 
 def capability_status(ctx):
+    policy = load_config(ctx.paths.root) if ctx is not None else None
+    local_ready = {"metamuse_publication_get"}
+    if policy is not None:
+        try:
+            _binding(
+                policy,
+                account=policy.publishing.account,
+                destination=policy.publishing.page_id,
+            )
+        except m.CoreError:
+            pass
+        else:
+            local_ready.add("metamuse_publication_preview")
+    remote_environment = (
+        "ready" if policy is not None and policy.publishing.backend == "fixture" else "needs_auth"
+    )
     return {
         name: {
             "verification": "fixture_passed",
-            "environment": "ready" if name.endswith(("preview", "get")) else "needs_auth",
-            "permission": "granted_scope"
-            if name.endswith(("preview", "get"))
-            else "not_configured",
+            "environment": "ready" if name.endswith(("preview", "get")) else remote_environment,
+            "permission": "granted_scope" if name in local_ready else "not_configured",
         }
         for name in IMPLEMENTED_TOOLS
     }
