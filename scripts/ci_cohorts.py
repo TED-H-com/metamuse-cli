@@ -153,8 +153,12 @@ def run_cohort(group: str, manifest: Path, source_sha: str, pytest_args: list[st
                 for node in ids:
                     reporter.write_line(f"COHORT_NODE {node}")
 
+        def pytest_runtest_logstart(self, nodeid):
+            print(f"\nCOHORT_START {nodeid}", flush=True)
+
         def pytest_runtest_logfinish(self, nodeid):
             self.data["finished"].append(nodeid)
+            print(f"\nCOHORT_FINISH {nodeid}", flush=True)
 
     plugin = Selection()
     # Replace any earlier success manifest even if pytest is interrupted.

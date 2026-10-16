@@ -1,5 +1,6 @@
 """Round-4 privacy regressions; all credential values are synthesized at runtime."""
 
+import json
 from urllib.parse import quote
 
 import pytest
@@ -242,7 +243,11 @@ def test_r33_unstable_bundle_values_refuse(monkeypatch, value):
 
 def test_r33_nonrefusable_display_masks_unstable_value(monkeypatch):
     value = marker()
-    monkeypatch.setattr(safety, "_redact_once", lambda text: (text + "!", []))
+    monkeypatch.setattr(
+        safety,
+        "_redact_once",
+        lambda text: (text + "!", []) if text.startswith(value) else (text, []),
+    )
     assert safety.redact_display(value) == "[REDACTED]"
     from metamuse._muse_redact import sanitize_document
     from metamuse.muse import _Secrets
@@ -252,3 +257,17 @@ def test_r33_nonrefusable_display_masks_unstable_value(monkeypatch):
     with pytest.raises(CoreError) as error:
         _check_question(value)
     assert error.value.detail.code == ErrorCode.INPUT_INVALID
+
+
+def test_r33_nonrefusable_display_masks_unstable_key(monkeypatch):
+    key = marker()
+    monkeypatch.setattr(
+        safety,
+        "_redact_once",
+        lambda text: (text + "!", []) if text.startswith(key) else (text, []),
+    )
+    from metamuse._muse_redact import sanitize_document
+
+    rendered = sanitize_document({key: "public value"})
+    assert rendered == {"[REDACTED]": "public value"}
+    assert key not in json.dumps(rendered)

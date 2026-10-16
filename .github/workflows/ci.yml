@@ -11,6 +11,7 @@ permissions:
 
 env:
   METAMUSE_REQUIRE_BROWSER_TESTS: "1"
+  UV_MANAGED_PYTHON: "true"
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
@@ -24,12 +25,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
       - name: Install ffmpeg and ffprobe
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
-      - run: uv sync --locked --python 3.12 --group dev --extra remote --extra facebook
+      - run: uv sync --locked --python 3.12.13 --group dev --extra remote --extra facebook
+      - name: Verify managed Python runtime
+        run: uv run --locked python -c 'import sys; print(sys.version); print(sys.base_prefix); assert sys.version_info[:3] == (3, 12, 13)'
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run python docs/design/validate_design_pack.py
@@ -53,12 +56,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
         with:
-          python-version: "3.12"
+          python-version: "3.12.13"
       - name: Install ffmpeg and ffprobe
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ffmpeg
-      - run: uv sync --locked --python 3.12 --group dev --extra remote --extra facebook
+      - run: uv sync --locked --python 3.12.13 --group dev --extra remote --extra facebook
+      - name: Verify managed Python runtime
+        run: uv run --locked python -c 'import sys; print(sys.version); print(sys.base_prefix); assert sys.version_info[:3] == (3, 12, 13)'
       - name: Install Chromium from the locked Playwright package
         run: uv run --locked python -m playwright install --with-deps chromium
       - name: Enable Chromium user namespace sandbox on the hosted runner
@@ -69,7 +74,7 @@ jobs:
           trap 'rm -rf "$pytest_temp_dir"' EXIT
           mkdir -p ci-evidence
           set -o pipefail
-          uv run --locked python scripts/ci_cohorts.py run \
+          uv run --locked python -u -X faulthandler scripts/ci_cohorts.py run \
             --cohort "${{ matrix.cohort }}" \
             --source-sha "$GITHUB_SHA" \
             --manifest "ci-evidence/${{ matrix.cohort }}.json" -- \
@@ -84,17 +89,141 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  installed-journeys:
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          python-version: "3.12.13"
+      - name: Install ffmpeg and ffprobe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: uv sync --locked --python 3.12.13 --group dev --extra remote --extra facebook
+      - name: Verify managed Python runtime
+        run: uv run --locked python -c 'import sys; print(sys.version); print(sys.base_prefix); assert sys.version_info[:3] == (3, 12, 13)'
+      - name: Run exact and bounded journeys from the isolated installed wheel
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/installed-journey-evidence"
+          set -o pipefail
+          scripts/check_installed_journeys.sh "$GITHUB_SHA" "$RUNNER_TEMP/installed-journey-evidence" \
+            2>&1 | tee "$RUNNER_TEMP/installed-journey-evidence/installed.log"
+      - name: Retain installed provenance and diagnostics even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: installed-${{ github.sha }}-journeys
+          path: ${{ runner.temp }}/installed-journey-evidence/
+          if-no-files-found: error
+          retention-days: 7
+
+  privacy-load:
+    timeout-minutes: 30
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          python-version: "3.12.13"
+      - name: Install ffmpeg and ffprobe
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: uv sync --locked --python 3.12.13 --group dev --extra remote --extra facebook
+      - name: Verify managed Python runtime
+        run: uv run --locked python -c 'import sys; print(sys.version); print(sys.base_prefix); assert sys.version_info[:3] == (3, 12, 13)'
+      - name: Run five serial final-tree privacy measurements
+        env:
+          CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          unset LD_LIBRARY_PATH
+          export PATH="$HOME/.local/bin:$PATH"
+          evidence="$RUNNER_TEMP/privacy-load-evidence"
+          mkdir -p "$evidence"
+          printf 'run\tevent\texit_code\n' > "$evidence/results.tsv"
+          run=0
+          pytest_temp_dir=
+          cleanup() {
+            status=$?
+            printf '%s\tjob_exit\t%s\n' "$run" "$status" >> "$evidence/results.tsv"
+            if [ -n "$pytest_temp_dir" ]; then rm -rf -- "$pytest_temp_dir"; fi
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          case "$(stat -f -c %T "$RUNNER_TEMP")" in
+            tmpfs|ramfs) echo 'Privacy measurements require disk scratch' >&2; exit 1 ;;
+          esac
+          uv run --locked python -u -X faulthandler - <<'PY' | tee "$evidence/identity.json"
+          import hashlib, json, os, subprocess, sys
+          from pathlib import Path
+          def git(*args):
+              return subprocess.check_output(["git", *args], text=True).strip()
+          assert sys.version_info[:3] == (3, 12, 13), sys.version
+          assert git("rev-parse", "HEAD") == os.environ["GITHUB_SHA"]
+          assert not git("status", "--porcelain"), "Privacy measurements require a clean checkout"
+          paths = (
+              "src/metamuse/safety.py", "src/metamuse/_muse_redact.py", "tests/cpu_growth.py",
+              "tests/test_muse_round5_growth.py", "tests/test_muse_round6_growth.py",
+              "tests/test_at042_review_fixes.py",
+          )
+          print(json.dumps({
+              "source_commit": git("rev-parse", "HEAD"), "source_tree": git("rev-parse", "HEAD^{tree}"),
+              "source_parents": git("show", "-s", "--format=%P", "HEAD").split(),
+              "candidate_sha": os.environ["CANDIDATE_SHA"],
+              "python_version": sys.version, "python_executable": sys.executable,
+              "python_base_prefix": sys.base_prefix,
+              "sha256": {path: hashlib.sha256(Path(path).read_bytes()).hexdigest() for path in paths},
+          }, sort_keys=True), flush=True)
+          PY
+          nodes=(
+            'tests/test_muse_round5_growth.py::test_r5_5_ordinary_pairs_core_growth'
+            'tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-False-text]'
+            'tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-True-text]'
+            'tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-False-body]'
+            'tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-True-body]'
+            'tests/test_at042_review_fixes.py::test_b16a_bare_muse_cookie_must_not_leak_into_redacted_bundle'
+          )
+          for run in 1 2 3 4 5; do
+            pytest_temp_dir="$(mktemp -d "$RUNNER_TEMP/metamuse-privacy-load.XXXXXX")"
+            printf '%s\tstarted\t\n' "$run" >> "$evidence/results.tsv"
+            {
+              cat "$evidence/identity.json"
+              printf '\nPRIVACY_LOAD_RUN %s\n' "$run"
+              uv run --locked python -u -X faulthandler -m pytest -q -s \
+                --basetemp "$pytest_temp_dir" "${nodes[@]}"
+            } 2>&1 | tee "$evidence/load-$run.log"
+            printf '%s\tcompleted\t0\n' "$run" >> "$evidence/results.tsv"
+            rm -rf -- "$pytest_temp_dir"
+            pytest_temp_dir=
+          done
+      - name: Retain privacy measurement logs and identity even on failure
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: privacy-load-${{ github.sha }}
+          path: ${{ runner.temp }}/privacy-load-evidence/
+          if-no-files-found: error
+          retention-days: 7
+
   check:
     timeout-minutes: 30
     runs-on: ubuntu-24.04
-    needs: [static-wheel, cohorts]
+    needs: [static-wheel, cohorts, installed-journeys, privacy-load]
     if: always()
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
         with:
-          python-version: "3.12"
-      - run: uv sync --locked --python 3.12 --group dev --extra remote --extra facebook
+          python-version: "3.12.13"
+      - run: uv sync --locked --python 3.12.13 --group dev --extra remote --extra facebook
+      - name: Verify managed Python runtime
+        run: uv run --locked python -c 'import sys; print(sys.version); print(sys.base_prefix); assert sys.version_info[:3] == (3, 12, 13)'
       - name: Download every cohort manifest and log for this source
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
         with:
@@ -106,7 +235,11 @@ jobs:
         env:
           COHORT_RESULT: ${{ needs.cohorts.result }}
           STATIC_RESULT: ${{ needs.static-wheel.result }}
+          INSTALLED_RESULT: ${{ needs.installed-journeys.result }}
+          PRIVACY_LOAD_RESULT: ${{ needs.privacy-load.result }}
         run: |
           python3 scripts/ci_cohorts.py verify --manifest-dir ci-evidence --source-sha "$GITHUB_SHA"
           test "$COHORT_RESULT" = success
           test "$STATIC_RESULT" = success
+          test "$INSTALLED_RESULT" = success
+          test "$PRIVACY_LOAD_RESULT" = success

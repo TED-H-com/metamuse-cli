@@ -307,7 +307,7 @@ After a Facebook post identity is bound, a main-frame navigation to an unknown n
 Facebook rendered text includes inline image alt text (including emoji) and follows the structured capture/rendering contract below. JSON text remains unchanged.
 
 CI uses Ubuntu 24.04 and locked development, remote and Facebook dependencies. Each
-test job installs ffmpeg/ffprobe and Chromium through the locked Playwright package. The
+cohort installs ffmpeg/ffprobe and Chromium through the locked Playwright package. The
 hosted runner enables unprivileged user namespaces with the AppArmor sysctl before
 testing. All workflow actions use full commit SHAs. METAMUSE_REQUIRE_BROWSER_TESTS=1
 converts skipped Facebook/browser tests into failures; locally an absent Chromium
@@ -334,8 +334,14 @@ a failing cohort is incomplete and needs a cause fix on new source, never an unc
 retry for green. A 30-second faulthandler dump is diagnostic only. Successful jobs
 run every selected node, preserving existing assertions, strict xfails and browser
 skip refusal. No per-test deadline or production limit changes.
+The cohort Python process enables unbuffered output and faulthandler. Flushed
+`COHORT_START <node ID>` and `COHORT_FINISH <node ID>` lines identify actual runtime
+progress even if pytest exits abruptly. A finish line records the end of a node,
+including a failed test; manifests and exit codes still determine success. These
+diagnostics do not recover or explain the earlier hosted Muse exit 139.
 
-The required `check` depends on both the entire matrix and `static-wheel`. It runs
+The required `check` depends on the entire matrix, `static-wheel`, and
+both `installed-journeys` and `privacy-load`. It runs
 even after upstream failure, checks every job result, and verifies five manifests:
 same source SHA, identical sorted full node IDs and SHA-256, nonempty disjoint
 selected sets whose union equals the full collection, and completed runtime nodes
@@ -343,6 +349,81 @@ with pytest exit zero. Collection-only evidence cannot satisfy this gate. Missin
 failed or cancelled jobs cannot make `check` green. Static validation, schema drift,
 corpus validation and the unchanged fresh-wheel CLI/MCP/packaged-Skill smoke run in
 `static-wheel`. The generated fifteen-tool contract remains authoritative.
+
+`installed-journeys` is an additional required 30-minute job on a clean hosted disk.
+It builds a fresh wheel from the checked-out runtime SHA, syncs locked development,
+remote and Facebook dependencies into a separate venv without installing the project,
+then installs only that wheel offline with `--no-deps`. All jobs select uv-managed
+CPython 3.12.13 and assert the actual interpreter version. The installed runner checks
+all package Python/data bytes, notices and packaged Skill against the exact source,
+requires package imports inside the new venv and outside the checkout, and runs from
+an external disk directory. It copies only the four unmodified harness modules
+`test_journey`, `test_muse_research`, `test_muse_lifecycle`, `test_safety_permits` and
+the synthetic `comments_tree.jsonl`, checking their hashes before and after execution.
+No conftest or external pytest plugin participates. The two selected nodes are:
+
+```text
+tests/test_journey.py::test_mcp_only_journey_followup_restart_and_export
+tests/test_muse_research.py::test_one_cli_approval_two_mcp_questions_restart_citations_export
+```
+
+These are the original exact-approval and bounded-research acceptance tests, with
+their existing assertions and deadlines. Both must pass without skips. This adds
+installed-package acceptance alongside their existing cohort coverage; it does not
+alter the five-cohort union or replace the fresh-wheel smoke. There is no retry or
+pass-on-error path. A failed, missing, cancelled or skipped installed job fails `check`
+even if all cohorts pass. Run this job only on the combined final repair candidate;
+do not run the two journeys locally while preparing CI changes.
+
+`scripts/check_installed_journeys.sh` uses unique RUNNER_TEMP/TMPDIR disk scratch,
+rejects tmpfs/ramfs, clears Python import overrides, and cleans its scratch on exit.
+Its provenance records the runtime commit, tree and raw parent IDs (including PR
+merge commits), candidate SHA, interpreter, import origin, exact hashes and pytest
+summary/exit. The orchestrator separately verifies the hosted runtime tree equals
+the intended candidate tree. On failure, bounded synthetic MCP stderr tails and
+owned process/resource/database-file-role metadata aid diagnosis; no database or
+workspace content is uploaded. Cleanup targets only the pytest process group the
+helper created. Diagnostic snapshots cannot recover an earlier missing failure cause.
+An always-upload step retains the installed log, JUnit and provenance for seven days
+under `installed-<runtime SHA>-journeys`, outside the `ci-<SHA>-*` cohort artifact
+pattern. This job adds one runner and another wheel build/dependency installation.
+Hosted exact-source full and installed passes plus independent review remain required;
+local helper probes and collection do not establish acceptance or LIVE.
+
+`privacy-load` adds one required 30-minute hosted job on the combined final repaired
+tree. Five serial measurements each run the same unchanged six regression nodes:
+
+```text
+tests/test_muse_round5_growth.py::test_r5_5_ordinary_pairs_core_growth
+tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-False-text]
+tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-True-text]
+tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-False-body]
+tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-True-body]
+tests/test_at042_review_fixes.py::test_b16a_bare_muse_cookie_must_not_leak_into_redacted_bundle
+```
+
+The fixed `1 2 3 4 5` loop stops at its first failed run and propagates its exit.
+Each run has a unique disk RUNNER_TEMP basetemp, cleaned by the exit trap, and
+prints the original CPU_GROWTH tables and pytest summary with `-q -s`. No size,
+sample count, slope, ratio, time or RSS assertion changes. Five successful runs
+must provide 25 original tables, 300 CPU samples and 30 test passes; the orchestrator
+independently checks those logs. Earlier measurements on different redactor code
+cannot certify a later Muse entrypoint repair. Do not execute the load runs locally
+while preparing this workflow.
+
+Each `load-N.log` includes the initial clean runtime commit/tree/parents, candidate
+SHA, actual managed 3.12.13 interpreter and SHA-256 of both redactors, the CPU helper
+and the three harness modules. `identity.json` and `results.tsv` retain that identity,
+attempted runs, completed runs with exit zero, and the job exit. A terminated job
+can leave an attempted run without a completion record. An always-upload step keeps
+only these small diagnostics and logs under `privacy-load-<runtime SHA>` for seven
+days, outside the cohort artifact pattern. No workspace or database is uploaded.
+This adds a runner and repeated measurements alongside the five-cohort full union;
+it neither replaces nor enters that union. Missing, failed, skipped or cancelled
+`privacy-load` fails `check`, even if all other jobs pass. All eight execution jobs
+(five cohorts, static/wheel, installed journeys and privacy load) remain bounded;
+their aggregate also retains its 30-minute limit. Final hosted success, exact source
+and worst resource-cap audits and independent review remain required.
 
 Manifests contain node IDs and execution metadata, without captured fixture bodies.
 An always-upload step retains manifests and diagnostic logs for seven days under
