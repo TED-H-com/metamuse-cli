@@ -24,7 +24,9 @@ def cohort_for(path: str) -> str:
         return "muse"
     if "remote" in name or "media" in name:
         return "media"
-    if any(word in name for word in ("privacy", "redact", "safety", "secret", "keys", "approval")):
+    if (name.startswith("test_b16a_") and name.endswith(("_complexity", "_memory"))) or any(
+        word in name for word in ("privacy", "redact", "safety", "secret", "keys", "approval")
+    ):
         return "privacy"
     return "core"
 
