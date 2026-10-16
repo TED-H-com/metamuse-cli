@@ -246,7 +246,9 @@ def test_r33_nonrefusable_display_masks_unstable_value(monkeypatch):
     monkeypatch.setattr(
         safety,
         "_redact_once",
-        lambda text: (text + "!", []) if text.startswith(value) else (text, []),
+        lambda text, *, private_spans=None, private_placeholder=None: (
+            (text + "!", []) if text.startswith(value) else (text, [])
+        ),
     )
     assert safety.redact_display(value) == "[REDACTED]"
     from metamuse._muse_redact import sanitize_document
@@ -264,7 +266,9 @@ def test_r33_nonrefusable_display_masks_unstable_key(monkeypatch):
     monkeypatch.setattr(
         safety,
         "_redact_once",
-        lambda text: (text + "!", []) if text.startswith(key) else (text, []),
+        lambda text, *, private_spans=None, private_placeholder=None: (
+            (text + "!", []) if text.startswith(key) else (text, [])
+        ),
     )
     from metamuse._muse_redact import sanitize_document
 
