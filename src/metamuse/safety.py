@@ -3011,7 +3011,9 @@ def _header_spans(text, syntax, proven=()):
     lines = array("I", [0])
     line_ends = array("I")
     line_levels = bytearray()
-    for line in re.finditer(r"\r\n|\r|\n|\\++r(?:\\++n)?|\\++n", text):
+    # Only a run's first backslash can start its escaped newline. Otherwise an
+    # absent r/n retries the remaining possessive run at every backslash.
+    for line in re.finditer(r"\r\n|\r|\n|(?<!\\)\\++(?:r(?:\\++n)?|n)", text):
         escaped = text[line.start()] == "\\"
         content_level = syntax.json_content[line.start()] if syntax.json_content is not None else 0
         content_level = max(content_level, line_proof(line.start())[0])
