@@ -11,7 +11,7 @@ python3 "$PAGE_KIT_DIR/render.py" .
 PAGE_KIT_DIR="$PAGE_KIT_DIR" python3 scripts/check_site.py
 ```
 
-`check_site.py` requires `PAGE_KIT_DIR` (there is no default local path). It runs `render.py --check`, renders again, and fails if a generated file changes. It also checks local links, transcript links in captions, image and transcript SHA-256 hashes, crop rectangles, bilingual alt text, the row-by-row README status mirror, transcript privacy, and `.github/workflows/pages.yml`.
+`check_site.py` requires `PAGE_KIT_DIR` (there is no default local path). It runs `render.py --check`, renders again, and fails if a generated file changes. It also checks local links, transcript links in captions, image and transcript SHA-256 hashes, crop rectangles, bilingual alt text, the README user-task and availability mirror, transcript privacy, and `.github/workflows/pages.yml`.
 
 The page address follows the lowercased owner in `page.json` `repo` and its `slug`.
 After a repository move, update `repo`, repository links and caption transcript URLs,
@@ -116,23 +116,37 @@ lists 15 tools, imports a local synthetic file and polls `metamuse_job_get` to a
 terminal state. It never invokes a manual worker. The worker belongs to the MCP
 server process; closing the server does not promise background continuation.
 
-## Keep status in sync
+## Keep user-facing availability in sync
 
-The status columns contain exactly the README's rows and four-state vocabulary,
-preserving README order within each column. Traditional Chinese translates the
-capability and note while retaining the same state. Public copy describes the
-product and its limits, without branch names or planned capture rounds.
+The homepage describes user tasks and setup requirements, such as searching
+saved comments or exporting an editable draft. It does not display the developer
+verification inventory, CI checks, protocol details or acceptance test IDs.
+That inventory lives in [STATUS.md](STATUS.md).
 
-When a README status row changes:
+The `What can I use today?` table in the README is the source for the homepage's
+ordered task names and availability. The page's bilingual `availability` metadata
+uses these four setup states:
 
-1. Update the matching row in `site/page.json` in both languages.
-2. Re-render with `python3 "$PAGE_KIT_DIR/render.py" .`.
-3. Run `PAGE_KIT_DIR="$PAGE_KIT_DIR" python3 scripts/check_site.py`.
+- Ready with local files.
+- Connect your assistant first.
+- Needs extra setup; real-account use is unverified.
+- Not available.
 
-`tests/test_site_check.py::test_real_site_status_transcripts_and_manifest` reads
-the real README, page source, transcripts and manifest without the kit, display
-tools or network. It runs in the required CI `check` through the normal pytest
-suite. A README state change without its matching page update fails that test.
+The first two belong in `works`; the others belong in `limits`. This metadata
+is checked without displaying status codes in the public copy. Each task's
+visible text explains the action, result and any setup it needs in plain language.
+The introduction states that Muse and remote collection have not been verified
+with real accounts.
+
+When a user-task row changes, update its matching row and availability metadata
+in `site/page.json` in both languages, re-render, and run `scripts/check_site.py`
+with `PAGE_KIT_DIR` set. The technical inventory is maintained separately as
+implementation evidence, not as a list of product features.
+
+`tests/test_site_check.py::test_real_site_status_transcripts_and_manifest` checks
+the real README/page task names, availability and column placement, along with
+transcripts and image hashes. Unit checks reject changed states, reordered or
+duplicate tasks, wrong columns, translation mismatches and false LIVE claims.
 
 ## Visual review
 

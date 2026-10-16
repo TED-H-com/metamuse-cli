@@ -16,6 +16,7 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
 from site_lib import (  # noqa: E402
+    AVAILABILITY_STATES,
     CHECKOUT_SHA,
     CONFIGURE_PAGES_SHA,
     DEPLOY_PAGES_SHA,
@@ -33,16 +34,15 @@ from site_lib import (  # noqa: E402
 
 SAMPLE_README = """# MetaMuse CLI
 
-## Status
+## What can I use today?
 
-| Capability | State | Note |
+| What you want to do | Availability | What you get |
 |---|---|---|
-| Local import | implemented with offline tests | Local files and text. |
-| Search | implemented with offline tests | Project-scoped search. |
-| Muse LIVE | needs a real account (LIVE) | Blocked by upstream protocol drift. |
-| MCP attached worker | not done | Unavailable in this synthetic sample. |
-| Publishing | not done | Not started. |
-| CI | implemented but not independently accepted | Offline CI workflow. |
+| Import your files | Ready with local files | Comments and subtitles. |
+| Find a passage | Ready with local files | Text and its source. |
+| Work with your assistant | Connect your assistant first | Let it use your files. |
+| Ask Muse | Needs extra setup; real-account use is unverified | Set up an account. |
+| Publish a post | Not available | Export your draft instead. |
 """
 
 
@@ -54,19 +54,24 @@ def _sample_page() -> dict:
         "showcase": {"shots": [{"src": "site/images/01-setup.png"}]},
         "status": {
             "intro": {
-                "en": "Muse LIVE is not verified; permissions require a human.",
-                "zh": "Muse LIVE 尚未驗證；權限須由人類核准。",
+                "en": "Muse and remote collection are not yet verified with real accounts.",
+                "zh": "Muse 與遠端收集尚未以真實帳號驗證。",
             },
             "works": [],
             "limits": [],
         },
     }
     for cap, state in readme_status_rows(SAMPLE_README):
-        column = "works" if state == "implemented with offline tests" else "limits"
+        column = (
+            "works"
+            if state in {"Ready with local files", "Connect your assistant first"}
+            else "limits"
+        )
         page["status"][column].append(
             {
-                "en": f"<strong>{cap}</strong> (<code>{state}</code>): Test note.",
-                "zh": f"測試項目（<code>{state}</code>）。",
+                "en": f"<strong>{cap}</strong><br>Find and keep your original material.",
+                "zh": "<strong>整理你的資料</strong><br>搜尋並保存原文。",
+                "availability": {"en": state, "zh": AVAILABILITY_STATES[state]},
             }
         )
     for item in (page["hero"]["visual"], *page["showcase"]["shots"]):
@@ -119,20 +124,19 @@ def test_real_site_status_transcripts_and_manifest(monkeypatch) -> None:
 
 
 def test_status_capability_inline_code_matches_visible_text() -> None:
-    readme = SAMPLE_README.replace("| Search |", "| `Search` |")
+    readme = SAMPLE_README.replace("| Find a passage |", "| `Find a passage` |")
     assert status_problems(readme, _sample_page()) == []
 
 
-@pytest.mark.parametrize("header", ["State", "Status", "狀態"])
+@pytest.mark.parametrize("header", ["Availability", "State", "Status", "狀態"])
 def test_status_table_parsing(header: str) -> None:
-    rows = readme_status_rows(SAMPLE_README.replace("State", header))
+    rows = readme_status_rows(SAMPLE_README.replace("Availability", header))
     assert rows == [
-        ("Local import", "implemented with offline tests"),
-        ("Search", "implemented with offline tests"),
-        ("Muse LIVE", "needs a real account (LIVE)"),
-        ("MCP attached worker", "not done"),
-        ("Publishing", "not done"),
-        ("CI", "implemented but not independently accepted"),
+        ("Import your files", "Ready with local files"),
+        ("Find a passage", "Ready with local files"),
+        ("Work with your assistant", "Connect your assistant first"),
+        ("Ask Muse", "Needs extra setup; real-account use is unverified"),
+        ("Publish a post", "Not available"),
     ]
     assert status_problems(SAMPLE_README, _sample_page()) == []
 
@@ -142,7 +146,7 @@ def test_status_mirror_catches_disagreements(change: str) -> None:
     page = _sample_page()
     works, limits = page["status"]["works"], page["status"]["limits"]
     if change == "state":
-        limits[-1]["en"] = "<strong>CI</strong> (<code>implemented with offline tests</code>)."
+        limits[-1]["availability"]["en"] = "Ready with local files"
     elif change == "order":
         works.reverse()
     elif change == "duplicate":
@@ -150,14 +154,14 @@ def test_status_mirror_catches_disagreements(change: str) -> None:
     elif change == "column":
         works.append(limits.pop())
     elif change == "zh":
-        limits[0]["zh"] = "已完成（<code>implemented with offline tests</code>）。"
+        limits[0]["availability"]["zh"] = "可用本地檔案"
     elif change == "live":
         works[0]["en"] += " LIVE is verified."
     assert status_problems(SAMPLE_README, page)
 
 
 def test_status_rejects_unknown_readme_state() -> None:
-    readme = SAMPLE_README.replace("implemented but not independently accepted", "done")
+    readme = SAMPLE_README.replace("Not available", "done")
     assert any("unknown state" in problem for problem in status_problems(readme, _sample_page()))
 
 

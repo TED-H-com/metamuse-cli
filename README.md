@@ -45,38 +45,25 @@ Once connected, try a request like this:
 
 Muse is an optional collaborator for further questions. Local import, search, drafts and exports work without a Muse account. A real Muse connection needs separate configuration and human approval; the [Muse guide](docs/dev/MUSE.md) covers that path. Real-account LIVE verification is still pending.
 
-## What is ready to try?
+## What can I use today?
 
-Local import, search, source previews, draft storage and exports have offline tests. Remote media, Facebook collection and Muse have synthetic test coverage, and still need real-account validation. Publishing is not implemented.
+Start with files on your computer. You can search, save drafts and export without a Muse account. Your assistant handles interpretation and writing once connected.
 
-<details>
-<summary>Detailed capability status and verification limits</summary>
-
-Each row uses one of four states: implemented with offline tests; implemented but not independently accepted; not done; needs a real account (LIVE).
-
-<!-- The project page mirrors this status table; CI checks that they stay in sync. -->
-
-| Capability | State | Note |
+| What you want to do | Availability | What you get |
 |---|---|---|
-| Local import | implemented with offline tests | Local files and text. The local import path rejects URLs before a job exists; approved remote inputs use their own collector. |
-| Local media and subtitles | implemented with offline tests | `ffprobe` is optional. Tests that need the binary skip when it is absent. |
-| Search | implemented with offline tests | Project-scoped search over imported evidence. |
-| Packets | implemented with offline tests | Selection file to a pre-share preview. |
-| Drafts | implemented with offline tests | Host-supplied text. MetaMuse makes no generation call. |
-| Exports | implemented with offline tests | `bundle`, `jsonl`, `markdown`, `text`, and `csv`. No publish or upload. |
-| Muse lifecycle with the fixture backend | implemented with offline tests | Open, send, read, and close through `OfflineMuseGateway`. Derived records stay `backend=fixture`, `mock=true`, `research_complete=false`. |
-| Muse standard-VM transport | implemented with offline tests | Strict Noise key/nonce verification, durable trust and bounded wake/redial. AT-038 and AT-043 LIVE have not run; CVM is unsupported. |
-| MCP stdio | implemented with offline tests | Fifteen tools. Stdout is the protocol; logs go to stderr. |
-| MCP attached worker | implemented with offline tests | `metamuse mcp` starts one worker; `--no-worker` opts out. The workspace OS lock allows one executor. |
-| Approval previews and `metamuse permit approve` | implemented with offline tests | Human-only approval of the exact action; no MCP approval tool. |
-| Remote media (B12) | implemented with offline tests | Exact-action approval preview and human `permit approve`. OFFLINE and FIXTURE evidence; AT-040 LIVE has not been run. |
-| Facebook posts (B13) | implemented with offline tests | One operator-approved post per job, rendered in sandboxed Chromium through a policy-checked local proxy. Tested only on synthetic loopback pages; requires the `facebook` extra and Playwright Chromium. Human approval uses `metamuse permit create`; Facebook approval preview is not wired yet. No real-account run. |
-| Publishing | not done | Not started. |
-| CI | implemented with offline tests | GitHub Actions `check` runs the offline gates, sandboxed loopback Chromium browser tests (browser skips fail CI), and wheel smoke on every PR and `main` push; required status check on `main` since 2026-10-14. |
+| Import saved comments and subtitles | Ready with local files | Bring together the saved comments, articles and subtitle files you already have, so you can find them later. |
+| Find a comment or transcript passage | Ready with local files | Search for a word such as subtitles, then read the matching text and its source. |
+| Keep a draft with its sources | Ready with local files | Save text you or your assistant wrote, together with the original material you cited. |
+| Export a file you can edit | Ready with local files | Keep your draft and material as text documents or spreadsheet-friendly files for further editing. |
+| Work with your AI assistant | Connect your assistant first | Connect your assistant to MetaMuse, then ask it to find material and draft a recap with citations. |
+| Ask Muse follow-up questions | Needs extra setup; real-account use is unverified | Set up your Muse connection and approve what may be shared before asking questions. Real-account use has not been verified. |
+| Collect a Facebook post or remote video | Needs extra setup; real-account use is unverified | Additional setup and your approval are required. These collectors have not been verified with real accounts. |
+| Publish to social media | Not available | Publishing is not available. Export a draft for your own review and further work. |
 
-Automated coverage of the fixture journey is `tests/test_at042_slice.py` and `tests/test_at042_evidence.py`. No real account integration is claimed.
-
-</details>
+See the [getting started guide](docs/GETTING_STARTED.md) to try the local example,
+or [connect your assistant](docs/dev/SKILL.md) to use your own material.
+Developers can find the [implementation and verification inventory](docs/dev/STATUS.md)
+in the development documentation.
 
 <details>
 <summary>Advanced: ask Muse follow-up questions with one bounded approval</summary>

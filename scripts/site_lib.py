@@ -12,14 +12,14 @@ import struct
 import zlib
 from pathlib import Path
 
-FOUR_STATES = (
-    "implemented with offline tests",
-    "implemented but not independently accepted",
-    "not done",
-    "needs a real account (LIVE)",
-)
+AVAILABILITY_STATES = {
+    "Ready with local files": "可用本地檔案",
+    "Connect your assistant first": "先連接你的 AI 助理",
+    "Needs extra setup; real-account use is unverified": "需額外設定，尚未驗證真實使用",
+    "Not available": "目前未提供",
+}
 
-WORKS_STATES = {"implemented with offline tests"}
+WORKS_STATES = {"Ready with local files", "Connect your assistant first"}
 GENERATED_SITE_FILES = (
     "index.html",
     "404.html",
@@ -112,7 +112,7 @@ def readme_status_rows(readme: str) -> list[tuple[str, str]] | None:
     """Return (capability, state) rows from a README status table, if one exists.
 
     A status table is a GitHub-flavored table whose header contains a cell
-    `State`, `Status`, or `狀態`. The capability is the first cell. The state is
+    `Availability`, `State`, `Status`, or `狀態`. The capability is the first cell. The state is
     the cell under that header.
     """
     lines = readme.splitlines()
@@ -126,7 +126,7 @@ def readme_status_rows(readme: str) -> list[tuple[str, str]] | None:
             continue
         status_at = None
         for cell_index, cell in enumerate(header):
-            if cell.lower() in {"state", "status"} or cell == "狀態":
+            if cell.lower() in {"availability", "state", "status"} or cell == "狀態":
                 status_at = cell_index
                 break
         block: list[tuple[str, str]] = []
@@ -160,7 +160,7 @@ def status_problems(readme: str, page: dict) -> list[str]:
     problems: list[str] = []
     status = page.get("status") or {}
     for cap, state in rows:
-        if state not in FOUR_STATES:
+        if state not in AVAILABILITY_STATES:
             problems.append(f"README row {cap!r} has unknown state {state!r}")
     for column in ("works", "limits"):
         expected = [
@@ -171,16 +171,12 @@ def status_problems(readme: str, page: dict) -> list[str]:
         for index, item in enumerate(items):
             en = str(item.get("en", "")) if isinstance(item, dict) else ""
             cap = re.search(r"<strong>([^<]+)</strong>", en)
-            state = re.search(r"<code>([^<]+)</code>", en)
-            actual.append((html.unescape(cap[1]) if cap else "", state[1] if state else ""))
-            if state:
-                zh = str(item.get("zh", ""))
-                if f"<code>{state[1]}</code>" not in zh:
+            availability = item.get("availability", {}) if isinstance(item, dict) else {}
+            state = availability.get("en", "") if isinstance(availability, dict) else ""
+            actual.append((html.unescape(cap[1]) if cap else "", state))
+            if state in AVAILABILITY_STATES:
+                if availability.get("zh") != AVAILABILITY_STATES[state]:
                     problems.append(f"{column}[{index}] Chinese state disagrees with English")
-                plain = html.unescape(_TAG_RE.sub("", en))
-                for other in FOUR_STATES:
-                    if other != state[1] and other in plain:
-                        problems.append(f"{column}[{index}] has conflicting state {other!r}")
         if actual != expected:
             problems.append(
                 f"{column} rows disagree with README: expected {expected!r}, got {actual!r}"
@@ -189,8 +185,8 @@ def status_problems(readme: str, page: dict) -> list[str]:
     if "live_verified" in works or "LIVE is verified" in works:
         problems.append("works column claims LIVE verification")
     intro = str((status.get("intro") or {}).get("en", ""))
-    if "Muse LIVE is not verified" not in intro:
-        problems.append("status intro must state that Muse LIVE is not verified")
+    if "not yet verified with real accounts" not in intro:
+        problems.append("status intro must state that real-account use is not yet verified")
     return problems
 
 
