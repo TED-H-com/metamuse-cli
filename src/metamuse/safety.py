@@ -4678,21 +4678,66 @@ def _decoded_ranges(ranges, edits):
 
 
 def _decoded_proofs(ranges, edits):
-    """Map nested JSON ranges as a bounded set of monotone streams."""
+    """Map opening-ordered proofs with at most two sparse-edit traversals."""
     if not edits or not ranges:
         return ranges
-    from heapq import merge
 
-    levels, enclosing = [], []
+    previous_end = 0
     for start, end in ranges:
-        while enclosing and enclosing[-1] <= start:
-            enclosing.pop()
-        level = len(enclosing)
-        if level == len(levels):
-            levels.append(_QuoteRanges())
-        levels[level].append((start, end))
-        enclosing.append(end)
-    return _QuoteRanges(merge(*(_decoded_ranges(level, edits) for level in levels)))
+        if start < previous_end:
+            break
+        previous_end = end
+    else:
+        # Preserve the usual disjoint-string path, including its storage bound.
+        return _QuoteRanges(_decoded_ranges(ranges, edits))
+
+    mapped = _QuoteRanges(ranges)
+    order = array("I", range(len(mapped)))
+    scratch = array("I", [0]) * len(mapped)
+
+    def order_by(coordinates):
+        nonlocal order, scratch
+        # Existing proof coordinates are unsigned 32-bit offsets. Four stable
+        # byte passes give linear work, even for crossing or equal-start proofs;
+        # no comparison sort or stack per JSON nesting level is needed.
+        for shift in (0, 8, 16, 24):
+            counts = array("I", [0]) * 256
+            for index in order:
+                counts[(coordinates[index] >> shift) & 255] += 1
+            total = 0
+            for bucket, count in enumerate(counts):
+                counts[bucket] = total
+                total += count
+            for index in order:
+                bucket = (coordinates[index] >> shift) & 255
+                scratch[counts[bucket]] = index
+                counts[bucket] += 1
+            order, scratch = scratch, order
+
+    def carry(coordinates, indexes, ending):
+        values = iter(edits)
+        edit = next(values, None)
+        shift = 0
+        for index in indexes:
+            position = coordinates[index]
+            while edit is not None and edit.original_end <= position:
+                shift = edit.original_end - edit.end
+                edit = next(values, None)
+            if edit is not None and edit.original_start < position:
+                width = edit.original_end - edit.original_start
+                numerator = (position - edit.original_start) * (edit.end - edit.start)
+                offset = (numerator + width - 1) // width if ending else numerator // width
+                coordinates[index] = edit.start + offset
+            else:
+                coordinates[index] = position - shift
+
+    order_by(mapped.ends)
+    carry(mapped.starts, range(len(mapped)), False)
+    carry(mapped.ends, order, True)
+    # Ends remain ordered under outward rounding. Stable start ordering restores
+    # tuple order when distinct source starts collapse into the same escape.
+    order_by(mapped.starts)
+    return _QuoteRanges((mapped.starts[index], mapped.ends[index]) for index in order)
 
 
 def _layered_form_ranges(text, depths, known):

@@ -715,6 +715,15 @@ redactor, slope ≤1.20 and at most 12× from 16 to 128 KiB; fresh-process peak 
 is at most 1 GiB at the 20 MiB raw cap. No redaction or sanitize_document call
 may run while a store write transaction is held.
 
+Nested JSON proof mapping also obeys this bound. Opening-ordered proof intervals
+use one monotone sparse-edit traversal when disjoint, or two when overlapping,
+independent of structural nesting depth. Overlapping endpoints are ordered with
+fixed-width numeric radix passes, not comparison sorting or a mapper restart per
+nesting level. Starts round down and ends round up within the contributing
+coalesced escape; duplicate intervals and collapsed starts retain tuple order.
+Temporary numeric storage is O(proofs), with no per-depth edit streams or copied
+decoded layers. The codec budgets do not impose a JSON structural-depth limit.
+
 
 Exemptions require a complete genuine closing delimiter at the same layer.
 Forced closure at an enclosing quote or end of input is not a match. Unclosed
