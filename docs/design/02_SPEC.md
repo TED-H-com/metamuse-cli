@@ -148,6 +148,22 @@ covered. Sensitive structured strings, numbers, arrays and objects are redacted
 whole. YAML indented containers/block scalars and TOML triple-quoted strings retain
 their enclosing extent, including incomplete and escaped documents. HAR name/value
 objects follow the sensitive-name rule, and every HAR cookies-array entry is private.
+
+Sensitive JSON scalars and containers use a quoted sentinel at their actual source
+layer: raw, percent/form encoded or inside JSON-string wrappers. Proven enclosing
+objects supply exact scalar/container ends, including minified public siblings;
+a standalone fragment or failed enclosing object cannot shorten an ambiguous value.
+A sparse key-quote anchor carries the replacement's JSON/percent escaping back
+through the existing offset maps. A covering core structured mask keeps its quoted
+replacement even when a shorter additive span starts at the same offset; union
+coverage never shrinks. Generic literal/placeholder exemptions remain unchanged.
+
+A proven JSON string may contain a complete percent-encoded JSON container. The
+existing HAR lexer inspects that container at its actual percent layer within the
+independent three-layer budgets. Structural punctuation must belong to that layer;
+mixed-depth punctuation remains string data. This does not turn an encoded HAR
+fragment inside unrelated URL data into a new HAR document. Public siblings and
+each enclosing JSON representation retain their independent boundaries.
 SQL IDENTIFIED BY/WITH PASSWORD, sshpass -p, mysql/mariadb/mysqldump attached -p,
 and curl -u identify credential values.
 

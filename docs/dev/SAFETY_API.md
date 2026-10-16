@@ -397,8 +397,8 @@ import and rebind.
 
 ## B16a classifier and finding classes
 
-`redact_text(text, *, private_spans=None) -> (text, findings)` preserves existing
-calls and their default scanning path. [SPEC](../design/02_SPEC.md)
+`redact_text(text, *, private_spans=None, private_placeholder="[REDACTED]")`
+returns `(text, findings)` and preserves existing calls and their default scanning path. [SPEC](../design/02_SPEC.md)
 contains every closed exemption, name exclusion, syntax, encoding and refused-by-design
 form. `redaction_sensitive_key` classifies names; `redaction_sensitive_value` applies
 those closed exemptions, including whole structured numbers/arrays/objects. Names are
@@ -419,6 +419,35 @@ is copied and no dependency or migration is added.
 | redaction_unstable | Fourth single-pass application still changes text; whole output is masked |
 | local_path | Plausible private path or explicit local_path field |
 
+### Structured replacement boundaries
+
+Sensitive JSON scalars and containers use a quoted sentinel at their actual source
+layer: raw, percent/form encoded or inside JSON-string wrappers. Proven enclosing
+objects supply exact scalar/container ends, including minified public siblings;
+a standalone fragment or failed enclosing object cannot shorten an ambiguous value.
+A sparse key-quote anchor carries the replacement's JSON/percent escaping back
+through the existing offset maps. A covering core structured mask keeps its quoted
+replacement even when a shorter additive span starts at the same offset; union
+coverage never shrinks. Generic literal/placeholder exemptions remain unchanged.
+
+A proven JSON string may contain a complete percent-encoded JSON container. The
+existing HAR lexer inspects that container at its actual percent layer within the
+independent three-layer budgets. Structural punctuation must belong to that layer;
+mixed-depth punctuation remains string data. This does not turn an encoded HAR
+fragment inside unrelated URL data into a new HAR document. Public siblings and
+each enclosing JSON representation retain their independent boundaries.
+
+Retained structured anchors are compact numeric records, not unique replacement
+strings or tuples per position: `_SpanIndex` uses three unsigned offsets per
+structured span, alongside its existing four-offset span record and interned plain
+replacement strings. HAR selection uses four unsigned offsets per structured
+candidate referenced from the existing position index. Transient positioned
+replacement objects exist only while a span is streamed between indexes; no
+positioned object is interned. Empty additions do not allocate another index,
+merge, clone or anchor array. Ordinary masks have no anchor array. These storage
+bounds do not certify a new-source 20 MiB peak; final cap measurements remain
+required on the final assembled source.
+
 ### Optional additive private spans
 
 Trusted in-process sanitizers may supply `private_spans(view, *, original: bool)`
@@ -427,8 +456,23 @@ any replacement. It returns an iterable of ordered half-open `(start, end)` Pyth
 Endpoints must be exact `int` values (not `bool`), with
 `0 <= start < end <= len(view)`, sorted and nonoverlapping; adjacent pairs are valid.
 The callback cannot select a finding class, replacement, exemption or permission.
-Its additions use `sensitive_field` and `[REDACTED]`, and union with core spans
-through the existing overlap/count/replacement rules. Core masks are never removed.
+Its additions use `sensitive_field`. The optional trusted `private_placeholder`
+keyword selects only the default `[REDACTED]` or the fixed legacy display marker
+`redacted`; it must be an exact plain `str`, never a subclass. Other choices raise
+fixed `ValueError("Invalid private placeholder")` before invoking a callback or
+returning output, even with no hook. Rejection never compares or represents an
+untrusted object and introduces no sensitive exception chain.
+
+The choice changes only validated additions' replacement slots. Union still uses
+existing overlap/count precedence. A covering shared structured replacement has
+priority at the same start even if a shorter additive span sorts first; the legacy
+marker cannot override its quoted sentinel or a later core redaction.
+Shared-only masks and pre-existing public literal markers are unchanged. Original
+and canonical additions use the choice only on the first application; confirmation
+passes and the complete unstable fallback retain `[REDACTED]`. The existing counts
+still include findings from any subsequent core application. Core masks are never
+removed. This is internal display compatibility, not a model permission or a way
+to inject arbitrary text.
 
 On the first single-pass application only, `original=True` receives the exact input
 before decoding or replacement. If the existing canonical decoded view differs,
@@ -551,8 +595,9 @@ Raw replay recognizes the whole escaped closing quote, preserving whole-value
 exemptions inside JSON captures. Shell quoting of option names, including curl
 --user/--cookie, sshpass -p and attached mysql -p, retains the argument rule.
 A whole form field is decoded before lexing a HAR document it contains, including
-whole percent-encoded form bodies. The HAR lexer never decodes string data into
-structure. A failed container stops at its first error; independently indexed later containers remain eligible, even after prose or a damaged outer candidate.
+whole percent-encoded form bodies. The HAR lexer does not promote data delimiters into its current structure;
+whole encoded JSON containers inside proven string values are inspected at their
+own layer with the same lexer. A failed container stops at its first error; independently indexed later containers remain eligible, even after prose or a damaged outer candidate.
 
 Known form boundaries are carried through decoded layers, including encoded newlines.
 An encoded nested form prefix gets its own operator layer within its parent field;
