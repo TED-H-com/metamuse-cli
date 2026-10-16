@@ -3088,12 +3088,27 @@ def _header_spans(text, syntax, proven=()):
                 fold_end = end
         quoted = syntax.quote_token(text, start)
         if quoted:
-            end = syntax.value(text, start, operator_depth=level, construct=match.start())
+            end = min(end, syntax.value(text, start, operator_depth=level, construct=match.start()))
         if fold_end is not None:
             end = max(end, fold_end)
         # value() already gives an own quote its innermost extent. An outer
         # adjacent bracket cannot cut it short; a proven JSON bound still can.
         limit = None if quoted else syntax.owned_end(text, match.start(), start)
+        if not quoted and text.startswith(_REDACTED, start):
+            # A confirming pass cannot use the sentinel's own ']' as the
+            # adjacent outer opener's close, including in a decoded layer.
+            sentinel_end = start + len(_REDACTED)
+            if limit is not None and limit < sentinel_end:
+                limit = None
+            outer = match.start() - 1
+            closer = {"(": ")", "[": "]", "{": "}", "<": ">", '"': '"', "'": "'", "`": "`"}
+            if (
+                outer >= 0
+                and text[sentinel_end : sentinel_end + 1] == closer.get(text[outer])
+                and syntax.depth(outer) == syntax.depth(sentinel_end) <= level
+                and syntax.boundary(text, sentinel_end)
+            ):
+                limit = sentinel_end
         if proven_end is not None:
             limit = min(limit, proven_end) if limit is not None else proven_end
         if limit is not None:
