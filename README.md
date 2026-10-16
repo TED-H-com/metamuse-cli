@@ -1,16 +1,56 @@
 # MetaMuse CLI
 
-Pre-alpha. Nothing is released yet.
+Turn comments and transcripts into a recap you can check against the originals.
 
-A local-first tool for organising permitted social posts, comments, media and subtitles into sourced evidence packets, discussing them with Muse, and saving drafts and exports. One package (`metamuse`), one shared core for the CLI, MCP server and Skill.
+Have event feedback to review, or a video transcript to quote? MetaMuse keeps your permitted source material, finds matching passages, and saves drafts with their citations. You or your AI assistant writes the recap; MetaMuse keeps the originals and the export together on your computer.
 
-This is an unofficial project. It is not affiliated with Meta, Facebook or Muse, and it does not claim official API access, terms-of-service compliance, or protection against account restrictions.
+Use it from a terminal, or connect it to an AI assistant that can run CLI or MCP tools. The tool runs on your machine.
 
-Credentials, account settings, real collected data and live-test evidence are never stored in this repository; the code reads them from operator-provided locations at runtime.
+[Try the example](#try-it) · [繁體中文上手指南](docs/GETTING_STARTED.md) · [Connect your assistant](docs/dev/SKILL.md)
 
-Design baseline: [docs/design/](docs/design/README.md). Collection behaviour is in [COLLECT.md](docs/dev/COLLECT.md). Muse binding, grants and recovery are in [MUSE.md](docs/dev/MUSE.md). The copyable offline path below is the same procedure as [OFFLINE_SLICE.md](docs/dev/OFFLINE_SLICE.md).
+## What can I do with it?
 
-## Status
+- **Review event feedback:** find comments about a request, then have your assistant draft a recap with links to the original comments.
+- **Find a passage in a transcript:** import local SRT or VTT subtitles and search for words you want to quote.
+- **Keep a checkable draft:** save your text with source references and export Markdown, text, CSV, JSONL or a bundle.
+
+Search currently matches literal text. Your assistant handles interpretation and writing; a saved citation still needs your review.
+
+## Try it
+
+You need [Git](https://git-scm.com/downloads) and [uv](https://docs.astral.sh/uv/getting-started/installation/). This is a source preview: install from the checkout below. A packaged release has not been published yet.
+
+```sh
+git clone https://github.com/TED-H-com/metamuse-cli.git
+cd metamuse-cli
+uv sync --locked --python 3.12.13
+uv run python scripts/try_local.py
+```
+
+Installation downloads Python and dependencies. The example itself runs locally with **synthetic comments and a prewritten recap**. It needs no account, Muse connection or AI service.
+
+You will import three records, search for `字幕` (subtitles), and export a Markdown recap with the matching comment and its source reference. The terminal prints `Export directory:`; open the `.md` files there to see the result. This is a demonstration of the data workflow, not an AI-generated analysis.
+
+Every run creates a separate workspace outside the checkout, under your system's user data directory (`metamuse/demos/`). It stays there so you can inspect it. Delete the workspace printed by the example when you no longer need it.
+
+The [getting started guide (繁體中文)](docs/GETTING_STARTED.md) shows the expected result and how to move on to your own files. The sample inputs are in [examples/event-comments.jsonl](examples/event-comments.jsonl).
+
+## Use it with your AI assistant
+
+Connect the installed CLI using the [Skill setup guide](docs/dev/SKILL.md), or configure the [MCP server](docs/dev/MCP.md). Loading the Skill supplies instructions; your assistant also needs access to the working CLI or MCP backend.
+
+Once connected, try a request like this:
+
+> Use MetaMuse to review the event comments I provide and have permission to use. Find feedback about subtitles, group the requests, and draft a recap with links to the original comments. Show me the sources and gaps before saving. Export Markdown and keep this work local.
+
+Muse is an optional collaborator for further questions. Local import, search, drafts and exports work without a Muse account. A real Muse connection needs separate configuration and human approval; the [Muse guide](docs/dev/MUSE.md) covers that path. Real-account LIVE verification is still pending.
+
+## What is ready to try?
+
+Local import, search, source previews, draft storage and exports have offline tests. Remote media, Facebook collection and Muse have synthetic test coverage, and still need real-account validation. Publishing is not implemented.
+
+<details>
+<summary>Detailed capability status and verification limits</summary>
 
 Each row uses one of four states: implemented with offline tests; implemented but not independently accepted; not done; needs a real account (LIVE).
 
@@ -36,38 +76,17 @@ Each row uses one of four states: implemented with offline tests; implemented bu
 
 Automated coverage of the fixture journey is `tests/test_at042_slice.py` and `tests/test_at042_evidence.py`. No real account integration is claimed.
 
-```sh
-uv sync --python 3.12
-uv run metamuse --workspace /path/to/private/workspace --json init
-uv run metamuse --workspace /path/to/private/workspace --json doctor
-pytest-disktmp uv run pytest -q
-uv run ruff check .
-```
+</details>
 
-Runtime workspaces belong outside the checkout. Operation registration, handler
-boundaries and database APIs are documented in [CORE_API.md](docs/dev/CORE_API.md).
-Dependency notices are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+<details>
+<summary>Advanced: ask Muse follow-up questions with one bounded approval</summary>
 
-## Bounded Muse research (candidate)
+The implemented [bounded research workflow](docs/dev/MUSE.md#bounded-research-workflow-synthetic-evidence) lets a human approve a fixed packet, topic, expiry and question/read budget. Your assistant can then ask varied questions within that scope, keep the discussion across restarts, and save a draft citing sources and Muse observations. Changed data or scope needs new consent. This has synthetic test coverage; it does not establish real-account LIVE success.
 
-This candidate adds human-only `permit research` alongside the existing exact-action
-approval. It has synthetic OFFLINE/FIXTURE/INTEGRATION coverage; it has not been accepted
-on main or verified LIVE. Follow the [bounded workflow](docs/dev/MUSE.md#bounded-research-workflow-candidate-synthetic-evidence)
-for sourced packet → one human approval → two varied Muse questions → restart/read →
-host draft with source/observation citations → preview/export.
+</details>
 
-The human reviews `permit research --open-request-file open.json --packet PACKET
---rounds 2 --max-reads 4 --expires-at EXPIRY_WITH_TIMEZONE --request-key research-approval`.
-The open file contains project/topic/open request_key, with no grants or reconciliation
-ID. Confirmation returns one access and one share Permit ID, used by the existing
-CLI/MCP commands. It binds current account/provider/backend, project, one deterministic
-discussion/topic/open key and one immutable packet digest/selection. Expiry is at most
-24h, rounds at most 20 and the workspace exchange cap, remote reads at most 200 plus
-one open. Existing usage, expiry/revocation and uncertain-delivery reconciliation apply.
-The terminal review explicitly permits host-authored question variation on that topic;
-free-text topic meaning and absence of other data remain host instructions. Changed
-packet/data revision/account/project/discussion needs new consent. It grants no collection,
-social action or publishing permission. The exact-action walkthrough below still works.
+<details>
+<summary>Advanced: full command-by-command offline example, including fixture Muse</summary>
 
 ## Local offline walkthrough
 
@@ -195,8 +214,25 @@ cat "$SLICE_DIR/preview.json" "$SLICE_DIR/export-bundle.json"
 if [ "${SLICE_KEEP:-0}" != 1 ]; then rm -rf -- "$SLICE_DIR"; fi
 ```
 
+</details>
+
 ## Skill
 
 The canonical Skill tree is [skills/metamuse/](skills/metamuse/SKILL.md). The wheel ships the same files, and `metamuse skill export --dest DIR` writes them to a directory the operator names. It is not an MCP tool. Installation steps are in [SKILL.md](docs/dev/SKILL.md). The Skill requires an installed, reachable MetaMuse backend (CLI or MCP server) to execute operations; when the backend is unavailable, operations cannot be simulated.
 
-License: [Apache-2.0](LICENSE).
+## Development and project details
+
+One package (`metamuse`) and one shared application serve the CLI, MCP server and Skill. See the [design baseline](docs/design/README.md), [core API](docs/dev/CORE_API.md), [collection formats](docs/dev/COLLECT.md), and [full offline walkthrough](docs/dev/OFFLINE_SLICE.md).
+
+For development, use Python 3.12 managed by uv:
+
+```sh
+pytest-disktmp uv run pytest -q
+uv run ruff check .
+```
+
+Runtime workspaces belong outside the checkout. Credentials, account settings, real collected data and LIVE evidence stay outside this repository and are supplied by the operator at runtime.
+
+This is an unofficial project, unaffiliated with Meta, Facebook or Muse. It does not claim official API access, terms-of-service compliance or protection against account restrictions.
+
+License: [Apache-2.0](LICENSE). Dependency notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

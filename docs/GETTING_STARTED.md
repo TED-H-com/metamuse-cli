@@ -1,0 +1,63 @@
+# 從一份留言回顧開始
+
+活動結束後，你想知道大家提了哪些需求，也想讓 AI 助理幫忙寫回顧。MetaMuse CLI 負責保存留言、找到相關原文，並把草稿與引用一起匯出，方便你回頭核對來源。
+
+你可以在終端機直接使用，也可以接到能執行 CLI 或 MCP 工具的 AI 助理。文字由你或 AI 助理撰寫；MetaMuse 保存資料與引用。這個網站是介紹頁，操作在你的電腦上完成。
+
+## 先跑範例，不用帳號
+
+需要先安裝 [Git](https://git-scm.com/downloads) 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)。目前提供原始碼預覽，尚未發布套件；請從專案下載安裝。uv 會管理這裡使用的 Python 3.12。
+
+在終端機依序執行：
+
+```sh
+git clone https://github.com/TED-H-com/metamuse-cli.git
+cd metamuse-cli
+uv sync --locked --python 3.12.13
+uv run python scripts/try_local.py
+```
+
+第一次安裝需要下載 Python 與依賴。安裝完成後，範例本身只用本地檔案，不登入帳號、不連 Muse。
+
+它會完成這些事：
+
+1. 匯入一則合成活動貼文與兩則合成留言。
+2. 搜尋「字幕」，找到「希望下次的影片能加上字幕，方便回看。」
+3. 預覽這則留言的來源，保存一份預寫回顧，再匯出 Markdown。
+
+回顧文字是預寫示例，沒有呼叫 AI，也不是對真實活動的分析。範例資料可在 [event-comments.jsonl](../examples/event-comments.jsonl) 查看。
+
+## 到哪裡看結果？
+
+終端機會顯示 `Workspace:` 和 `Export directory:`。開啟匯出目錄裡的 `.md` 檔，可以看到這段回顧及隨附的來源紀錄：
+
+> 活動回顧範例（預寫示例，非 AI 分析）
+>
+> 一則合成留言希望影片提供字幕，方便回看。
+>
+> 引用：https://example.org/events/demo/comments/1
+
+`example.org` 是合成來源連結，不是真實活動。匯出也保留引用的原文版本，方便核對。
+
+每次執行都會建立獨立的新工作區，存放在系統使用者資料目錄下的 `metamuse/demos/`，不會寫入專案目錄。Linux 通常是 `~/.local/share/metamuse/demos/`。資料會保留；不需要時可刪除終端機列出的那個範例工作區。
+
+## 換成自己的資料
+
+適合的第一件事是：整理你有權使用的一份留言匯出檔，或從一份本地 SRT/VTT 字幕找出可引用的段落。
+
+- **直接用指令：** [完整指令範例](dev/OFFLINE_SLICE.md) 示範建立專案、匯入、搜尋、預覽與匯出；[匯入格式](dev/COLLECT.md) 說明檔案欄位及允許讀取的目錄。工作區放在專案目錄之外。
+- **交給 AI 助理操作：** 先依 [Skill 安裝指南](dev/SKILL.md) 或 [MCP 連線指南](dev/MCP.md) 接上已安裝的 MetaMuse。Skill 提供使用說明，實際執行仍需要能使用的 CLI 或 MCP 後端。
+
+接好工具後，可以這樣提出需求：
+
+> 請用 MetaMuse 整理我提供且有權使用的活動留言。先找出提到字幕的原文，再把需求分組，幫我寫一份附來源的回顧。先讓我看引用與資料缺口，再保存草稿並匯出 Markdown。這次只處理本地資料。
+
+目前搜尋是關鍵字比對；分組、判讀與撰寫由 AI 助理完成。保存引用能讓你核對來源，仍需要自己確認草稿是否忠實表達原文。
+
+## 想再問 Muse？
+
+本地匯入、搜尋、草稿與匯出不需要 Muse 帳號。Muse 是可選的討論對象，需要另外設定連線、帳號與操作者授權；真實帳號流程尚未完成 LIVE 驗證。詳見 [Muse 指南](dev/MUSE.md)。
+
+遠端影音與 Facebook 收集也需要各自的設定與授權，目前只有合成資料測試。第一個範例不會替你抓取網頁。MetaMuse 目前提供本地匯出，尚未提供發布功能。
+
+完整功能狀態與進階的離線 Muse 範例見 [README](../README.md)。

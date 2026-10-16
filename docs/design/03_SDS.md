@@ -544,8 +544,8 @@ fingerprints exclude the newly optional discussion_id but retain the old packet_
 field. Research fingerprints additionally bind discussion_id. No counter reset, reservation
 refund, external-submit retry or automatic expiry extension is introduced. Topic meaning
 and exclusion of other data from arbitrary free text remain host instructions, explicitly
-separate from enforced identity/budget checks. Candidate evidence is OFFLINE/FIXTURE;
-exact-SHA hosted full CI, independent review, bot and parent acceptance remain pending.
+separate from enforced identity/budget checks. The implemented workflow has synthetic
+OFFLINE/FIXTURE coverage; real-account LIVE verification is still pending.
 
 ## Operator approval preview seam (B08/B10/B14)
 

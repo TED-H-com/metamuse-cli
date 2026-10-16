@@ -456,11 +456,12 @@ reservation or requeue. Quarantine clears only after settlement. Late observatio
 remain visible and are labeled `late`; `closed` never reopens. Uncalibrated statuses,
 including `completed`, remain progress; an answer never asserts research completion.
 
-## Bounded research workflow (candidate, synthetic evidence)
+## Bounded research workflow (synthetic evidence)
 
 Use exact `permit approve` for a verbatim action. For a few host-authored questions
 with one fixed packet, the human may instead approve one bounded research scope.
-This candidate is not a main/LIVE acceptance claim. The existing CLI/MCP requests,
+This workflow is implemented with synthetic coverage; real-account LIVE verification
+is still pending. The existing CLI/MCP requests,
 worker and durable discussion/exchange/results remain the same.
 Credential-bearing new topics/questions are refused by the shared Muse checks. A legacy
 packet that fails the current preview redaction check needs a new packet before approval.

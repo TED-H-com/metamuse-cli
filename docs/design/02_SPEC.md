@@ -281,7 +281,7 @@ bundle regression is a normal passing test.
 
 Preview檢查客觀格式、素材可用、引用存在、日期/數字衝突候選。引用存在不代表語義被支持。Export生成本地文件與manifest，不發布或上傳。
 
-### Bounded Muse research (B08/B09/B10; candidate, OFFLINE/FIXTURE)
+### Bounded Muse research (B08/B09/B10; implemented, OFFLINE/FIXTURE)
 
 Research approval applies the current Muse topic credential check and refuses packets
 that no longer pass the existing preview redaction fixed-point check before issuing
@@ -325,8 +325,8 @@ Topic labels cannot prove arbitrary question semantics: the UI distinguishes enf
 identities/bounds from the host instruction to stay on topic and include no other data.
 It does not claim free text is derived only from the packet. Unknown delivery still
 requires reconciliation of the original intent, with no resend or refunded use.
-This candidate has synthetic evidence only; main acceptance, hosted full CI and LIVE
-remain separate gates.
+This implemented workflow has synthetic evidence only; it does not establish
+real-account LIVE success.
 
 ## 8. CLI
 

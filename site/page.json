@@ -5,7 +5,7 @@
   "mark": "Mm",
   "palette": "teal",
   "default_branch": "main",
-  "verified": "2026-10-14",
+  "verified": "2026-10-16",
   "language": "Python",
   "license": {
     "label": {
@@ -15,389 +15,274 @@
     "href": "LICENSE"
   },
   "title": {
-    "en": "Local evidence for a host agent",
-    "zh": "給主代理使用的本地證據"
+    "en": "Comments and transcripts, ready for your recap",
+    "zh": "把留言與字幕，整理成有來源的回顧"
   },
   "description": {
-    "en": "A local-first CLI and MCP server. The host agent collects, searches, previews, and exports. Muse does not take over, and nothing is published.",
-    "zh": "本地優先的 CLI 與 MCP 伺服器。主代理負責收集、搜尋、預覽與匯出。Muse 不接管，也不發布。"
+    "en": "Find the original comments, work with your AI assistant on a recap, and keep a draft with citations. Try the local example without an account.",
+    "zh": "找到原始留言，與你的 AI 助理一起寫回顧，再把草稿與引用一起留下。先跑本地範例，不需要帳號。"
   },
   "hero": {
     "eyebrow": {
-      "en": "Pre-alpha · unofficial",
-      "zh": "預覽版 · 非官方"
+      "en": "For your next event recap",
+      "zh": "從下一份活動回顧開始"
     },
     "headline": {
-      "en": "See the exact text before sharing.",
-      "zh": "分享之前，先看精確文字。"
+      "en": "Turn comments into a recap with sources.",
+      "zh": "把留言與字幕，整理成有來源的回顧。"
     },
     "lede": {
-      "en": "MetaMuse CLI keeps permitted social posts, comments, media, and subtitles as sourced evidence. A host agent such as Claude Code or Codex writes the questions and the copy. Muse is a collaborator, not the harness.",
-      "zh": "MetaMuse CLI 把獲准使用的貼文、留言、影音與字幕收成有來源的證據。Claude Code、Codex 這類主代理負責寫問題與文案。Muse 是協作者，不是主控。"
+      "en": "Have event feedback to review or a transcript to quote? Your AI assistant helps you make sense of it. MetaMuse keeps the originals, finds matching passages, and saves your draft with its citations.",
+      "zh": "活動後的留言想整理？影片裡的一段話想引用？讓你慣用的 AI 助理幫忙判讀與撰寫，MetaMuse 負責保存原文、搜尋段落，把草稿與引用一起留下。"
     },
     "primary": {
-      "href": "https://github.com/TED-H-com/metamuse-cli",
+      "href": "#start",
       "label": {
-        "en": "View the code",
-        "zh": "查看程式碼"
+        "en": "Try the local example",
+        "zh": "先跑一個範例"
       }
     },
     "secondary": {
-      "href": "#screens",
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md",
       "label": {
-        "en": "See the terminal",
-        "zh": "看終端機畫面"
+        "en": "Read the getting started guide (中文)",
+        "zh": "看上手指南"
       }
     },
     "notes": [
       {
-        "en": "Apache-2.0",
-        "zh": "Apache-2.0"
+        "en": "Runs on your computer",
+        "zh": "在你的電腦上操作"
       },
       {
-        "en": "Not affiliated with Meta, Facebook, or Muse",
-        "zh": "與 Meta、Facebook、Muse 無關"
+        "en": "No account needed for the example",
+        "zh": "範例不需要帳號"
       },
       {
-        "en": "No upload and no publishing",
-        "zh": "不上傳、不發布"
+        "en": "Source preview",
+        "zh": "原始碼預覽版"
       }
     ],
     "visual": {
-      "type": "image",
-      "src": "site/images/00-hero.png",
-      "alt": {
-        "en": "Terminal preview of a packet: the exact text that would be shared, one url_token redaction, and the SHA-256 digest. The token is shown as [REDACTED].",
-        "zh": "終端機上的資料包預覽：將被分享的精確文字、一筆 url_token 遮蔽，以及 SHA-256。權杖顯示為 [REDACTED]。"
+      "type": "receipt",
+      "top": {
+        "en": "Your first recap",
+        "zh": "你的第一份回顧"
       },
-      "caption": {
-        "en": "Exact packet text, one redaction and its digest. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/00-hero.txt\">Read transcript</a>.",
-        "zh": "精確資料包文字、一筆遮蔽與 SHA-256。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/00-hero.txt\">閱讀純文字紀錄</a>。"
+      "meta": {
+        "en": "Synthetic example · prewritten recap",
+        "zh": "合成資料示範 · 預寫回顧"
+      },
+      "rows": [
+        {
+          "label": {
+            "en": "Import a post and two comments",
+            "zh": "匯入一則貼文與兩則留言"
+          },
+          "state": "ok"
+        },
+        {
+          "label": {
+            "en": "Find the request for video subtitles",
+            "zh": "找到「希望影片加上字幕」的留言"
+          },
+          "state": "ok"
+        },
+        {
+          "label": {
+            "en": "Keep the original comment as a citation",
+            "zh": "保留原始留言作為引用"
+          },
+          "state": "ok"
+        },
+        {
+          "label": {
+            "en": "Open the recap as a Markdown file",
+            "zh": "打開 Markdown，閱讀回顧與來源"
+          },
+          "state": "ok"
+        }
+      ],
+      "footer": {
+        "left": {
+          "en": "Local files only",
+          "zh": "全程使用本地檔案"
+        },
+        "right": {
+          "en": "No AI call in this example",
+          "zh": "範例沒有呼叫 AI"
+        }
       }
     }
   },
-  "stats": [
-    {
-      "value": "15",
-      "label": {
-        "en": "MCP tools, same core as the CLI",
-        "zh": "MCP 工具，與 CLI 共用核心"
-      }
-    },
-    {
-      "value": "6",
-      "label": {
-        "en": "SQLite schema after init",
-        "zh": "init 之後的 SQLite 綱要"
-      }
-    },
-    {
-      "value": "5",
-      "label": {
-        "en": "Local export formats",
-        "zh": "本地匯出格式"
-      }
-    },
-    {
-      "value": "offline",
-      "label": {
-        "en": "Default network mode",
-        "zh": "預設網路模式"
-      }
-    }
-  ],
   "problem": {
     "kicker": {
-      "en": "What it is for",
-      "zh": "它解決什麼"
+      "en": "A familiar task",
+      "zh": "你可能也遇過"
     },
     "title": {
-      "en": "A pile of posts is not evidence, and a draft is not a publish button.",
-      "zh": "貼文不是證據。草稿不是發布。"
+      "en": "The event is over. The feedback is still scattered.",
+      "zh": "活動結束了，留言與影片還散在各處。"
     },
     "body": {
-      "en": "The host agent needs a local place for permitted posts, comments, media, and subtitles, with the source method kept as it was. Search should cite an exact revision. A share packet should show the exact text, the redaction counts, and a digest before anything leaves. Partial imports must stay partial. MetaMuse does that bookkeeping. It does not write the copy, and it does not publish.",
-      "zh": "主代理需要一個本地位置，存放獲准的貼文、留言、影音與字幕，並維持原來的來源方式。搜尋要引用精確版本。分享用的資料包在離開機器之前，要出示精確文字、遮蔽次數與 SHA-256。部分匯入必須維持部分。MetaMuse 做這些紀錄。它不寫文案，也不發布。"
+      "en": "You want to know what people asked for, find a useful quote, and write a recap you can stand behind. Give your assistant permitted comments or local subtitles. MetaMuse keeps those sources available so you can check a draft against the original words.",
+      "zh": "想知道大家提了哪些需求、找出一段值得引用的話，再寫成一份能核對的回顧。把你有權使用的留言或本地字幕交給助理整理，MetaMuse 留下來源，讓你隨時回頭確認原文。"
     }
   },
   "flow": {
     "kicker": {
-      "en": "On this machine",
-      "zh": "在這台機器上"
+      "en": "From input to a file you can keep",
+      "zh": "從資料到一份可保存的文件"
     },
     "title": {
-      "en": "Collect, cite, preview, keep.",
-      "zh": "收集、引用、預覽、留下。"
+      "en": "Bring the comments. Leave with a sourced draft.",
+      "zh": "帶入留言，帶走有來源的草稿。"
     },
     "intro": {
-      "en": "Every step below is a real metamuse command. The host agent decides the question and the wording.",
-      "zh": "下面每一步都是真正的 metamuse 指令。問題與用詞由主代理決定。"
+      "en": "You can use the terminal directly, or connect an AI assistant that can run MetaMuse tools.",
+      "zh": "你可以直接使用終端機，也可以接上能操作 MetaMuse 工具的 AI 助理。"
+    },
+    "nav": {
+      "en": "How it works",
+      "zh": "怎麼使用"
     },
     "steps": [
       {
         "title": {
-          "en": "Import",
-          "zh": "匯入"
+          "en": "Bring your files",
+          "zh": "匯入資料"
         },
         "body": {
-          "en": "Read a local file. Bad rows are rejected one by one. The job ends partial instead of pretending the file was complete.",
-          "zh": "讀取本地檔。壞列逐列拒絕。工作以部分結束，不把檔案說成完整。"
+          "en": "Import permitted local comments, text or SRT/VTT subtitles into a project.",
+          "zh": "將有權使用的本地留言、文字或 SRT/VTT 字幕匯入專案。"
         }
       },
       {
         "title": {
-          "en": "Search",
-          "zh": "搜尋"
+          "en": "Find the original",
+          "zh": "找到原文"
         },
         "body": {
-          "en": "Find text inside one project. Each hit cites an item revision and names the collection method.",
-          "zh": "在單一專案裡找文字。每筆命中都引用一個項目版本，並寫出來源方式。"
+          "en": "Search for a word such as subtitles. Open the matching text and its source reference.",
+          "zh": "例如搜尋「字幕」，查看命中的原文與來源引用。"
         }
       },
       {
         "title": {
-          "en": "Preview",
-          "zh": "預覽"
+          "en": "Write with your assistant",
+          "zh": "一起寫回顧"
         },
         "body": {
-          "en": "Build the exact text that would be shared. Count redactions. Record the SHA-256. Do not send it.",
-          "zh": "組出將被分享的精確文字。計算遮蔽次數。記下 SHA-256。先不送出。"
+          "en": "Your assistant groups requests and writes. Save the draft with the sources you reviewed.",
+          "zh": "由你的 AI 助理分組、判讀與撰寫，再連同你核對過的引用保存草稿。"
         }
       },
       {
         "title": {
-          "en": "Keep",
-          "zh": "留下"
+          "en": "Read and keep it",
+          "zh": "閱讀並留下"
         },
         "body": {
-          "en": "Save the host's draft with those citations, then export a local bundle. The manifest lists file hashes. Nothing is uploaded.",
-          "zh": "連同引用一起保存主代理的草稿，再匯出本地套件。清單列出檔案雜湊。沒有上傳。"
+          "en": "Preview the draft and export Markdown or another local format. Check the wording against the cited material.",
+          "zh": "預覽草稿，匯出 Markdown 等本地格式，對照引用確認文字是否忠實。"
         }
       }
     ]
   },
-  "flows": [
-    {
-      "id": "local-loop",
-      "after": "how",
-      "heading": {
-        "en": "One core, then the file stays put",
-        "zh": "核心只有一個。檔案留在原地。"
-      },
-      "intro": {
-        "en": "CLI and MCP call the same application. The draft never becomes a post.",
-        "zh": "CLI 與 MCP 呼叫同一個應用。草稿不會變成貼文。"
-      },
-      "spec": {
-        "columns": [
-          [
-            0
-          ],
-          [
-            1
-          ],
-          [
-            2
-          ],
-          [
-            3
-          ]
-        ],
-        "core": 1,
-        "loop": true
-      },
-      "steps": [
-        {
-          "title": {
-            "en": "Local file",
-            "zh": "本地檔"
-          },
-          "note": {
-            "en": "Only paths under import_roots.",
-            "zh": "只讀 import_roots 裡的路徑。"
-          },
-          "tone": "neutral",
-          "icon": "doc"
-        },
-        {
-          "title": {
-            "en": "Shared core",
-            "zh": "共用核心"
-          },
-          "note": {
-            "en": "One SQLite workspace for every entry.",
-            "zh": "每個入口共用一個 SQLite 工作區。"
-          },
-          "tone": "accent",
-          "icon": "database"
-        },
-        {
-          "title": {
-            "en": "Preview",
-            "zh": "預覽"
-          },
-          "note": {
-            "en": "Exact text, counts, and digest.",
-            "zh": "精確文字、次數與 SHA-256。"
-          },
-          "tone": "info",
-          "icon": "eye"
-        },
-        {
-          "title": {
-            "en": "Host draft",
-            "zh": "主代理草稿"
-          },
-          "note": {
-            "en": "Saved locally. Not sent.",
-            "zh": "存在本地。沒有送出。"
-          },
-          "tone": "neutral",
-          "icon": "lock"
-        }
-      ],
-      "ticks": [
-        {
-          "en": "partial stays partial",
-          "zh": "部分結果維持部分"
-        },
-        {
-          "en": "accepted is still queued",
-          "zh": "已接受仍在佇列"
-        },
-        {
-          "en": "preview before any send",
-          "zh": "送出前先看預覽"
-        },
-        {
-          "en": "export stays on disk",
-          "zh": "匯出留在磁碟"
-        }
-      ],
-      "caption": {
-        "en": "The host agent writes the question and the copy. MetaMuse stores evidence and runs bounded actions.",
-        "zh": "主代理撰寫問題與文案。MetaMuse 保存證據並執行有界動作。"
-      }
-    }
-  ],
   "capabilities": {
     "kicker": {
-      "en": "What the tools do",
-      "zh": "工具做什麼"
+      "en": "When it helps",
+      "zh": "適合拿來做什麼"
     },
     "title": {
-      "en": "Six jobs, one workspace.",
-      "zh": "六件事，一個工作區。"
+      "en": "Less hunting for the original. More time for the recap.",
+      "zh": "少一點翻找原文，多一點時間整理重點。"
     },
     "intro": {
-      "en": "The same application serves the CLI and the MCP server. The Skill in the repository is a neutral guide: if the backend is missing, it must say so and stop.",
-      "zh": "同一個應用同時服務 CLI 與 MCP 伺服器。儲存庫裡的 Skill 是中性指引：後端不在時必須說明並停止。"
+      "en": "Start with local files. Add an assistant when you want help interpreting and writing.",
+      "zh": "先從本地檔案開始，需要判讀與撰寫時，再交給你的 AI 助理協助。"
+    },
+    "nav": {
+      "en": "Use cases",
+      "zh": "使用情境"
     },
     "items": [
       {
         "title": {
-          "en": "Import, including the bad rows",
-          "zh": "匯入，包含壞列"
+          "en": "Review event feedback",
+          "zh": "整理活動回饋"
         },
         "body": {
-          "en": "Text, CSV, JSON, JSONL, subtitles, and local media. A rejected row keeps its error. Seven bad lines do not erase seven good ones, and the job does not become complete.",
-          "zh": "文字、CSV、JSON、JSONL、字幕與本地影音。被拒的列留著錯誤碼。七列壞資料不會抹掉七列好資料，工作也不會變成完整。"
-        },
-        "tag": "AT-003"
+          "en": "Find comments about the next event, accessibility requests or missing materials. Your assistant can turn the selected evidence into a recap.",
+          "zh": "找出對下一場活動的建議、無障礙需求或索取講義的留言，再讓助理依選好的原文寫回顧。"
+        }
       },
       {
         "title": {
-          "en": "Search with a citation",
-          "zh": "帶引用的搜尋"
+          "en": "Find a transcript passage",
+          "zh": "找回字幕段落"
         },
         "body": {
-          "en": "Exact substring search inside one project. A hit names the revision, the collection method, and the upstream method from the file. file_import is not rewritten as manual.",
-          "zh": "在單一專案裡做精確子字串搜尋。命中會標出版本、收集方式，以及檔案裡的上游方式。file_import 不會被改寫成 manual。"
-        },
-        "tag": "AT-017"
+          "en": "Import local SRT or VTT files and search for the words you want to quote.",
+          "zh": "匯入本地 SRT 或 VTT 字幕，用關鍵字找出想引用的段落。"
+        }
       },
       {
         "title": {
-          "en": "Preview the share",
-          "zh": "預覽分享內容"
+          "en": "Check where a claim came from",
+          "zh": "核對一句話的來源"
         },
         "body": {
-          "en": "packet prepare renders the exact text, the redaction counts, and the digest of that text. The frame on this page shows one url_token redaction. Preparing a packet does not send it.",
-          "zh": "packet prepare 呈現精確文字、遮蔽次數，以及該文字的 SHA-256。本頁畫面有一筆 url_token 遮蔽。準備資料包並不會送出。"
-        },
-        "tag": "AT-015"
+          "en": "Keep source references and exact text revisions alongside a draft, so you can compare the wording with the original.",
+          "zh": "將來源引用與原文版本連同草稿保存，需要時可以對照文字。"
+        }
       },
       {
         "title": {
-          "en": "Muse stays a collaborator",
-          "zh": "Muse 維持協作者"
+          "en": "Use your usual AI assistant",
+          "zh": "接上慣用的 AI 助理"
         },
         "body": {
-          "en": "The host writes the question. An explicit fixture backend is available for offline checks and reports fixture_passed. Open and send stay ineffective until a human grant exists. LIVE is not verified.",
-          "zh": "問題由主代理撰寫。離線檢查可明示選用 fixture 後端，並回報 fixture_passed。在人類授權之前，開啟與送出維持無效。LIVE 尚未驗證。"
-        },
-        "tag": "fixture"
+          "en": "Connect through CLI or MCP. The assistant asks questions and writes; MetaMuse handles the local records.",
+          "zh": "透過 CLI 或 MCP 連接。助理負責提問與撰寫，MetaMuse 負責保存本地資料。"
+        }
       },
       {
         "title": {
-          "en": "Drafts the host already wrote",
-          "zh": "主代理已經寫好的草稿"
+          "en": "Ask Muse a follow-up",
+          "zh": "選擇向 Muse 追問"
         },
         "body": {
-          "en": "draft save stores the supplied text and the citations the host passes in. It does not call a model, and it does not add a persona, a formula, or a call to action.",
-          "zh": "draft save 保存提供的文字，以及主代理傳入的引用。它不呼叫模型，也不加入人設、公式或行動呼籲。"
-        },
-        "tag": "AT-023"
+          "en": "Muse is optional and needs separate setup and human approval. Real-account use is still awaiting LIVE verification.",
+          "zh": "Muse 是可選的協作者，需要另外設定及人類授權。真實帳號使用仍待 LIVE 驗證。"
+        }
       },
       {
         "title": {
-          "en": "Export, then stop",
-          "zh": "匯出，然後停止"
+          "en": "Keep a file you can use",
+          "zh": "留下能接著使用的文件"
         },
         "body": {
-          "en": "bundle, jsonl, markdown, text, and csv stay on disk. A bundle manifest lists each member hash and a redaction notice. The CLI warns that nothing was published or uploaded. There is no publish tool.",
-          "zh": "bundle、jsonl、markdown、text、csv 都留在磁碟。套件清單列出每個成員的雜湊與遮蔽說明。CLI 會警告沒有發布或上傳。沒有發布工具。"
-        },
-        "tag": "AT-025"
+          "en": "Export Markdown, text, CSV, JSONL or a bundle for your own review and editing. Publishing is not implemented.",
+          "zh": "匯出 Markdown、文字、CSV、JSONL 或資料套件，方便後續閱讀與編輯。目前尚未提供發布功能。"
+        }
       }
     ]
   },
   "showcase": {
     "kicker": {
-      "en": "Real terminal",
-      "zh": "真實終端機"
+      "en": "See the output",
+      "zh": "看看實際輸出"
     },
     "title": {
-      "en": "The installed CLI, on a synthetic workspace.",
-      "zh": "已安裝的 CLI。合成工作區。"
+      "en": "Search, draft, export. In the real CLI.",
+      "zh": "搜尋、草稿、匯出，實際畫面在這裡。"
     },
     "intro": {
-      "en": "A synthetic journey: setup, queue, search, packet, human approval, fixture questions and a follow-up, draft, export, MCP and Skill. Real Alacritty frames are captured at 2× density and cropped to content; every frame links its plain-text transcript.",
-      "zh": "合成資料的完整流程：設定、佇列、搜尋、資料包、人類核准、fixture 問答與追問、草稿、匯出、MCP 與 Skill。真實 Alacritty 畫面以 2 倍像素密度擷取並裁到內容；每格都連結純文字紀錄。"
+      "en": "These are real terminal captures from a separate synthetic walkthrough, including fixture Muse replies. Each image links to a readable transcript. They demonstrate the workflow, not real-account results.",
+      "zh": "這些是真實終端機截圖，來自另一份包含 fixture Muse 回覆的合成資料範例。每張都有純文字紀錄可閱讀，用來展示流程，不代表真實帳號的執行結果。"
     },
     "shots": [
-      {
-        "src": "site/images/01-setup.png",
-        "alt": {
-          "en": "CLI init, offline and fixture config, and doctor capability rows.",
-          "zh": "CLI 初始化、offline 與 fixture 設定，以及 doctor 能力列。"
-        },
-        "caption": {
-          "en": "Offline setup. The config selects the fixture backend; doctor lists capabilities and worker_available=false. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/01-setup.txt\">Read transcript</a>.",
-          "zh": "離線設定。設定檔選用 fixture 後端；doctor 列出能力與 worker_available=false。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/01-setup.txt\">閱讀純文字紀錄</a>。"
-        }
-      },
-      {
-        "src": "site/images/02-queue.png",
-        "alt": {
-          "en": "Accepted, queued, worker_available=false; run once; partial, 7 committed, 7 rejected, and rejection codes.",
-          "zh": "accepted、queued、worker_available=false；執行一次後為 partial，7 筆寫入、7 筆拒絕，並列出錯誤碼。"
-        },
-        "caption": {
-          "en": "Accepted is queued with no worker. One foreground worker pass leaves 7 committed, 7 rejected and a partial job. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/02-queue.txt\">Read transcript</a>.",
-          "zh": "accepted 表示排隊，沒有 worker。前景 worker 執行一次後，7 筆寫入、7 筆拒絕，工作維持 partial。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/02-queue.txt\">閱讀純文字紀錄</a>。"
-        }
-      },
       {
         "src": "site/images/03-search.png",
         "alt": {
@@ -407,61 +292,6 @@
         "caption": {
           "en": "One hit cites its exact item revision. Its source labels remain file_import and synthetic_fixture. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/03-search.txt\">Read transcript</a>.",
           "zh": "一筆命中引用精確項目版本。來源標籤維持 file_import 與 synthetic_fixture。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/03-search.txt\">閱讀純文字紀錄</a>。"
-        }
-      },
-      {
-        "src": "site/images/04-packet.png",
-        "alt": {
-          "en": "Packet preparation, exact rendered text, one url_token redaction and SHA-256.",
-          "zh": "準備資料包、精確文字、一筆 url_token 遮蔽與 SHA-256。"
-        },
-        "caption": {
-          "en": "The exact text that would be shared, with access_token=[REDACTED], one redaction and a SHA-256 digest. Nothing is sent. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/04-packet.txt\">Read transcript</a>.",
-          "zh": "將被分享的精確文字，含 access_token=[REDACTED]、一筆遮蔽與 SHA-256。沒有送出。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/04-packet.txt\">閱讀純文字紀錄</a>。"
-        }
-      },
-      {
-        "src": "site/images/05-approval-preview.png",
-        "alt": {
-          "en": "Muse open approval preview with the exact action digest",
-          "zh": "Muse 開啟預覽與精確操作雜湊"
-        },
-        "caption": {
-          "en": "A grant-free open returns E_SCOPE_REQUIRED with the operation, exact digest and request to review. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/05-approval-preview.txt\">Read transcript</a>.",
-          "zh": "未附授權的開啟指令回傳 E_SCOPE_REQUIRED，列出操作、精確雜湊與待審查請求。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/05-approval-preview.txt\">閱讀純文字紀錄</a>。"
-        }
-      },
-      {
-        "src": "site/images/06-human-approval.png",
-        "alt": {
-          "en": "Packet preview, human-only permit approval and accepted open",
-          "zh": "資料包預覽、人類專用核准與獲接受的開啟請求"
-        },
-        "caption": {
-          "en": "The host agent has no approval tool: a person previews the packet and approves the exact digest. The operator review shows expiry and one use; open is then accepted. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/06-human-approval.txt\">Read transcript</a>.",
-          "zh": "主代理沒有核准工具：人類預覽資料包，再核准精確雜湊。操作者審查列出到期時間與一次使用；開啟請求接著獲接受。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/06-human-approval.txt\">閱讀純文字紀錄</a>。"
-        }
-      },
-      {
-        "src": "site/images/07-fixture-discussion.png",
-        "alt": {
-          "en": "Fixture Muse question, worker refresh, progress reply and closure",
-          "zh": "fixture Muse 問題、worker 更新、進度回覆與結束"
-        },
-        "caption": {
-          "en": "A host-written question and approved packet go to the offline fixture backend, not a real Muse account. The cached reply retains backend=fixture, mock=true and research_complete=false; the exchange closes as needs_more_data. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/07-fixture-discussion.txt\">Read transcript</a>.",
-          "zh": "主代理撰寫的問題與已核准資料包送往離線 fixture 後端，並非真實 Muse 帳號。回覆保留 backend=fixture、mock=true、research_complete=false；此輪以 needs_more_data 結束。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/07-fixture-discussion.txt\">閱讀純文字紀錄</a>。"
-        }
-      },
-      {
-        "src": "site/images/08-fixture-follow-up.png",
-        "alt": {
-          "en": "Fixture follow-up in the same discussion with incomplete research",
-          "zh": "同一個 fixture 討論的追問與未完成研究標記"
-        },
-        "caption": {
-          "en": "A second neutral question stays in the same fixture discussion. Its reply remains progress with research_complete=false, and the exchange again closes as needs_more_data. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/08-fixture-follow-up.txt\">Read transcript</a>.",
-          "zh": "第二個中性問題沿用同一個 fixture 討論。回覆仍是 research_complete=false 的進度，此輪也以 needs_more_data 結束。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/08-fixture-follow-up.txt\">閱讀純文字紀錄</a>。"
         }
       },
       {
@@ -485,268 +315,212 @@
           "en": "The local bundle manifest lists file hashes and retains the fixture labels. Stderr says nothing was published or uploaded, and redaction is a guard. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/10-local-export.txt\">Read transcript</a>.",
           "zh": "本地套件清單列出檔案雜湊並保留 fixture 標記。stderr 寫明沒有發布或上傳，遮蔽只是一道防護。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/10-local-export.txt\">閱讀純文字紀錄</a>。"
         }
-      },
-      {
-        "src": "site/images/11-mcp-worker.png",
-        "alt": {
-          "en": "Official MCP client, 15 tools and attached-worker collection",
-          "zh": "官方 MCP 用戶端、15 個工具與附掛 worker 匯入"
-        },
-        "caption": {
-          "en": "The official stdio client lists 15 tools, submits a local synthetic file and polls the attached worker to completion. The server reports worker_available=true. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/11-mcp-worker.txt\">Read transcript</a>.",
-          "zh": "官方 stdio 用戶端列出 15 個工具、提交本地合成檔，並輪詢附掛 worker 至工作結束。伺服器回報 worker_available=true。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/11-mcp-worker.txt\">閱讀純文字紀錄</a>。"
-        }
-      },
-      {
-        "src": "site/images/12-skill-export.png",
-        "alt": {
-          "en": "Packaged Skill export and resulting local files",
-          "zh": "打包 Skill 匯出與產生的本地檔案"
-        },
-        "caption": {
-          "en": "Skill export writes SKILL.md and three references to the named host directory. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/12-skill-export.txt\">Read transcript</a>.",
-          "zh": "Skill 匯出把 SKILL.md 與三份參考寫入指定的主代理目錄。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/12-skill-export.txt\">閱讀純文字紀錄</a>。"
-        }
       }
-    ]
+    ],
+    "nav": false
   },
   "architecture": {
     "kicker": {
-      "en": "Shape",
-      "zh": "形狀"
+      "en": "With your assistant",
+      "zh": "與你的助理一起使用"
     },
     "title": {
-      "en": "One package. The host stays in charge.",
-      "zh": "一個套件。主代理做主。"
+      "en": "Your assistant writes. You can check the sources.",
+      "zh": "助理幫你寫，你查得到來源。"
     },
     "intro": {
-      "en": "There is no second orchestrator inside the tool. The Skill tells the host how to call the backend, and it refuses to invent a result when the backend is down.",
-      "zh": "工具裡沒有第二個編排器。Skill 告訴主代理如何呼叫後端；後端不在時，它拒絕編造結果。"
+      "en": "Install MetaMuse locally, then give an assistant access through CLI or MCP. The Skill explains how to use the connected tools.",
+      "zh": "先在本地安裝 MetaMuse，再讓助理透過 CLI 或 MCP 使用工具。Skill 提供已連接工具的操作說明。"
     },
+    "nav": false,
     "nodes": [
       {
         "name": {
-          "en": "Host",
-          "zh": "主代理"
+          "en": "Your files",
+          "zh": "你的檔案"
         },
         "lines": [
           {
-            "en": "Writes the question",
-            "zh": "撰寫問題"
-          },
-          {
-            "en": "Writes the copy",
-            "zh": "撰寫文案"
+            "en": "Comments and subtitles",
+            "zh": "留言與字幕"
           }
         ]
       },
       {
         "name": {
-          "en": "Core",
-          "zh": "核心"
+          "en": "MetaMuse",
+          "zh": "MetaMuse"
         },
         "core": true,
         "lines": [
           {
-            "en": "CLI and MCP",
-            "zh": "CLI 與 MCP"
-          },
-          {
-            "en": "15 shared tools",
-            "zh": "15 個工具"
+            "en": "Search and source references",
+            "zh": "搜尋與來源引用"
           }
         ]
       },
       {
         "name": {
-          "en": "SQLite",
-          "zh": "SQLite"
+          "en": "Your assistant",
+          "zh": "你的助理"
         },
         "lines": [
           {
-            "en": "Jobs and drafts",
-            "zh": "工作與草稿"
-          },
-          {
-            "en": "Schema 6",
-            "zh": "綱要 6"
+            "en": "Interpret and write",
+            "zh": "判讀與撰寫"
           }
         ]
       },
       {
         "name": {
-          "en": "Files",
-          "zh": "檔案"
+          "en": "Your recap",
+          "zh": "你的回顧"
         },
         "lines": [
           {
-            "en": "Named roots",
-            "zh": "指定根目錄"
-          },
-          {
-            "en": "Local exports",
-            "zh": "本地匯出"
+            "en": "Review and export",
+            "zh": "核對並匯出"
           }
         ]
       }
-    ],
-    "principles": {
-      "title": {
-        "en": "Trust rules",
-        "zh": "信任規則"
-      },
-      "items": [
-        {
-          "en": "Humans grant access. The model cannot.",
-          "zh": "存取由人類授權。模型不能。"
-        },
-        {
-          "en": "A share is an exact digest, or it is not sent.",
-          "zh": "分享要對上精確 SHA-256，否則不送。"
-        },
-        {
-          "en": "Labels stay source-faithful: backend, mock, research_complete.",
-          "zh": "標籤維持來源原貌：backend、mock、research_complete。"
-        },
-        {
-          "en": "Accepted is not running.",
-          "zh": "已接受並非執行中。"
-        },
-        {
-          "en": "Partial is never shown as complete.",
-          "zh": "部分結果不會顯示成完整。"
-        },
-        {
-          "en": "No publishing and no upload.",
-          "zh": "不發布，也不上傳。"
-        }
-      ]
-    }
+    ]
   },
   "decisions": {
     "kicker": {
-      "en": "Choices",
-      "zh": "取捨"
+      "en": "Before you start",
+      "zh": "開始之前"
     },
     "title": {
-      "en": "Human decisions. Honest limits.",
-      "zh": "人類決定。限制照實。"
+      "en": "A few practical questions.",
+      "zh": "幾個你可能想問的問題。"
     },
     "intro": {
-      "en": "Review the exact action before sharing. Fixture replies keep their labels, and the host writes the draft.",
-      "zh": "分享前審查精確操作。fixture 回覆保留原有標記，草稿由主代理撰寫。"
+      "en": "The first example uses local synthetic files, so you can see the result before connecting accounts or an assistant.",
+      "zh": "第一個範例只用本地合成檔案，先看到結果，再決定是否連接帳號或 AI 助理。"
     },
+    "nav": false,
     "items": [
       {
         "title": {
-          "en": "A person approves the exact action",
-          "zh": "精確操作由人類核准"
+          "en": "Do I need a Muse account?",
+          "zh": "一定要有 Muse 帳號嗎？"
         },
         "body": {
-          "en": "A missing grant returns an approval preview. The human-only permit approve command binds the exact digest, expiry and use limit; there is no MCP approval tool. The synthetic demo scripts the operator input.",
-          "zh": "缺少授權時回傳核准預覽。人類專用的 permit approve 綁定精確雜湊、到期時間與使用次數；MCP 沒有核准工具。合成示範以腳本輸入操作者核准。"
+          "en": "No account is needed for local import, search, drafts or exports. Muse is a separately configured, optional discussion partner.",
+          "zh": "本地匯入、搜尋、草稿與匯出不需要帳號。Muse 是需要另外設定的選用討論對象。"
         }
       },
       {
         "title": {
-          "en": "Accepted is not running",
-          "zh": "已接受並非執行中"
+          "en": "Will the example write with AI?",
+          "zh": "範例會直接用 AI 寫回顧嗎？"
         },
         "body": {
-          "en": "A CLI import can be accepted and queued without a worker. The MCP server starts one attached worker by default; --no-worker opts out. Both use the same workspace executor lock.",
-          "zh": "CLI 匯入可在沒有 worker 時接受並排隊。MCP 伺服器預設啟動一個附掛 worker；--no-worker 可停用。兩者使用同一個工作區執行鎖。"
+          "en": "It saves a clearly labelled prewritten recap. For your own work, connect an AI assistant or provide the text yourself.",
+          "zh": "範例保存的是清楚標記的預寫回顧。處理自己的資料時，可以連接 AI 助理，或自行提供文字。"
         }
       },
       {
         "title": {
-          "en": "Redaction is a guard",
-          "zh": "遮蔽只是一道防護"
+          "en": "Can I paste a Facebook or video URL?",
+          "zh": "可以直接貼 Facebook 或影片網址嗎？"
         },
         "body": {
-          "en": "The packet frame shows one url_token replaced with [REDACTED]. The tool also says redaction is not a privacy guarantee. Read the text before you share a bundle.",
-          "zh": "資料包畫面把一筆 url_token 換成 [REDACTED]。工具也寫明遮蔽不是隱私保證。分享套件之前要自己讀過文字。"
+          "en": "Remote collectors need their own setup and operator approval. They currently have synthetic tests, with real-account LIVE validation pending. Start with local files.",
+          "zh": "遠端收集需要各自的設定與操作者授權。目前已有合成資料測試，真實帳號 LIVE 驗證仍待完成。建議先從本地檔案開始。"
         }
       },
       {
         "title": {
-          "en": "The Skill does not simulate",
-          "zh": "Skill 不會模擬"
+          "en": "Is this a web app?",
+          "zh": "這是網頁版工具嗎？"
         },
         "body": {
-          "en": "The Skill tells a host how to use an installed CLI or MCP server. Without a reachable backend it reports unavailable and stops; it cannot fabricate execution.",
-          "zh": "Skill 告訴主代理如何使用已安裝的 CLI 或 MCP 伺服器。沒有可連線的後端就回報不可用並停止，不能編造執行結果。"
+          "en": "This page introduces a tool that runs on your computer through a terminal or a connected AI assistant. The source preview can be installed today; a packaged release is not published yet.",
+          "zh": "這裡是介紹頁。工具在你的電腦上，透過終端機或已連接的 AI 助理操作。目前可從原始碼安裝預覽版，尚未發布套件。"
         }
       }
     ]
   },
   "quickstart": {
     "kicker": {
-      "en": "From the repository",
-      "zh": "從儲存庫開始"
+      "en": "Try it on your computer",
+      "zh": "在你的電腦上試試"
     },
     "title": {
-      "en": "Install, init, doctor.",
-      "zh": "安裝、init、doctor。"
+      "en": "Open your first sourced recap.",
+      "zh": "打開你的第一份有來源回顧。"
     },
     "intro": {
-      "en": "Python 3.12, managed by uv. This example puts the workspace outside the checkout; the CLI uses its readable output without --json.",
-      "zh": "Python 3.12，由 uv 管理。範例把工作區放在檢出目錄之外；CLI 使用不帶 --json 的可讀輸出。"
+      "en": "You need Git and uv. Install from source; uv manages Python 3.12. Installation downloads dependencies. The example then uses only local synthetic data and a prewritten recap, with no account or AI service.",
+      "zh": "需要先安裝 Git 與 uv。目前從原始碼安裝，由 uv 管理 Python 3.12。安裝時會下載依賴；之後的範例只用本地合成資料與預寫回顧，不需要帳號或 AI 服務。"
+    },
+    "nav": {
+      "en": "Try it",
+      "zh": "開始試用"
     },
     "primary": {
-      "href": "https://github.com/TED-H-com/metamuse-cli",
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md",
       "label": {
-        "en": "Repository",
-        "zh": "儲存庫"
+        "en": "Getting started guide (中文)",
+        "zh": "完整上手指南"
+      }
+    },
+    "secondary": {
+      "href": "https://docs.astral.sh/uv/getting-started/installation/",
+      "label": {
+        "en": "Install uv",
+        "zh": "安裝 uv"
       }
     },
     "steps": [
       {
         "title": {
-          "en": "Sync",
-          "zh": "同步"
+          "en": "Get the project",
+          "zh": "下載專案"
         },
         "body": {
-          "en": "Python 3.12, managed by uv.",
-          "zh": "Python 3.12，由 uv 管理。"
+          "en": "Open a terminal and run these commands in order.",
+          "zh": "打開終端機，依序執行這些指令。"
         },
-        "code": "uv sync --python 3.12\nWS=/tmp/metamuse-start/ws"
+        "code": "git clone https://github.com/TED-H-com/metamuse-cli.git\ncd metamuse-cli"
       },
       {
         "title": {
-          "en": "Init",
-          "zh": "初始化"
+          "en": "Install",
+          "zh": "安裝"
         },
         "body": {
-          "en": "Creates the workspace database and the offline config.",
-          "zh": "建立工作區資料庫與離線設定。"
+          "en": "uv installs Python and the locked dependencies.",
+          "zh": "uv 會安裝 Python 與固定版本的依賴。"
         },
-        "code": "uv run metamuse \\\n  --workspace \"$WS\" init"
+        "code": "uv sync --locked --python 3.12.13"
       },
       {
         "title": {
-          "en": "Doctor",
-          "zh": "檢查"
+          "en": "Run the example",
+          "zh": "跑範例，看結果"
         },
         "body": {
-          "en": "Lists capabilities. Live doctor is unavailable.",
-          "zh": "列出能力。live doctor 尚未提供。"
+          "en": "Import comments, find the subtitle request and export Markdown. Open the .md files in the printed Export directory. Each run keeps a new workspace outside the checkout.",
+          "zh": "匯入留言、找到字幕需求並匯出 Markdown。打開終端機顯示的 Export directory 裡的 .md 檔。每次執行都會在專案目錄之外保留獨立的新工作區。"
         },
-        "code": "uv run metamuse \\\n  --workspace \"$WS\" doctor"
+        "code": "uv run python scripts/try_local.py"
       }
     ]
   },
   "status": {
     "kicker": {
-      "en": "Honest status",
-      "zh": "誠實狀態"
+      "en": "Availability",
+      "zh": "目前可用範圍"
     },
     "title": {
-      "en": "The README status, row by row.",
-      "zh": "逐列對應 README 的狀態。"
+      "en": "Start locally. Check the integration limits.",
+      "zh": "先用本地流程，再看整合範圍。"
     },
     "intro": {
-      "en": "The same four states as the README. Muse LIVE is not verified. Approval, fixture exchanges and the attached worker have offline tests; no real account integration is claimed. Pre-alpha; nothing is released.",
-      "zh": "與 README 相同的四種狀態。Muse LIVE 尚未驗證。核准、fixture 討論與附掛 worker 已有離線測試；不宣稱真實帳號整合。預覽版，尚未發行。"
+      "en": "Local import, search, drafts and exports have offline tests. Muse LIVE is not verified. Remote collection also awaits real-account LIVE verification. This source preview has no packaged release yet. Details below match the README.",
+      "zh": "本地匯入、搜尋、草稿與匯出已有離線測試。Muse 與遠端收集有合成資料測試，真實帳號 LIVE 驗證仍待完成。目前是原始碼預覽版，尚未發布套件。以下細節與 README 保持一致。"
     },
     "works": [
       {
@@ -819,6 +593,10 @@
     "limits_title": {
       "en": "Acceptance and unfinished work",
       "zh": "待驗收與未完成工作"
+    },
+    "nav": {
+      "en": "Availability",
+      "zh": "目前可用範圍"
     }
   },
   "facts": [
@@ -856,17 +634,24 @@
   ],
   "links": [
     {
-      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/OFFLINE_SLICE.md",
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md",
       "label": {
-        "en": "Offline slice",
-        "zh": "離線切片"
+        "en": "Getting started (中文)",
+        "zh": "上手指南"
       }
     },
     {
-      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/skills/metamuse/SKILL.md",
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/SKILL.md",
       "label": {
-        "en": "Skill",
-        "zh": "Skill"
+        "en": "Connect your assistant",
+        "zh": "連接 AI 助理"
+      }
+    },
+    {
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/design/README.md",
+      "label": {
+        "en": "Design and development",
+        "zh": "設計與開發文件"
       }
     }
   ]

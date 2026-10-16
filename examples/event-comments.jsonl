@@ -1,0 +1,3 @@
+{"platform":"generic","kind":"post","native_id":"event-demo","native_scope":"getting-started","text":"合成活動範例：本週分享會結束，歡迎留下回饋。","source_url":"https://example.org/events/demo","upstream_collection_method":"synthetic_fixture"}
+{"platform":"generic","kind":"comment","native_id":"event-comment-1","native_scope":"getting-started","parent_native_id":"event-demo","text":"希望下次的影片能加上字幕，方便回看。","source_url":"https://example.org/events/demo/comments/1","upstream_collection_method":"synthetic_fixture"}
+{"platform":"generic","kind":"comment","native_id":"event-comment-2","native_scope":"getting-started","parent_native_id":"event-demo","text":"案例很有幫助，希望能提供講義。","source_url":"https://example.org/events/demo/comments/2","upstream_collection_method":"synthetic_fixture"}
