@@ -925,6 +925,12 @@ coalesced escape; duplicate intervals and collapsed starts retain tuple order.
 Temporary numeric storage is O(proofs), with no per-depth edit streams or copied
 decoded layers. The codec budgets do not impose a JSON structural-depth limit.
 
+Escaped-header newline indexing begins only at the first backslash of each
+contiguous run. A possessive run alone does not ensure linear work in an
+unanchored search: a missing `r` or `n` must not retry every remaining suffix.
+This start guard preserves the existing escaped CR/LF matches and adds no
+decoding layer, offset table or change to literal backslash output.
+
 
 Exemptions require a complete genuine closing delimiter at the same layer.
 Forced closure at an enclosing quote or end of input is not a match. Unclosed
