@@ -17,7 +17,8 @@ pytest-disktmp uv run pytest -q tests/test_journey.py
 `tests/test_journey.py` is the full MCP-only acceptance. The human uses CLI `init`,
 edits `metamuse.toml` to allow the synthetic input directory and explicitly selects
 `[muse] enabled=true; backend="fixture"`, then uses only `permit approve`. The host
-uses the fifteen shipped MCP tools over stdio, with the default attached Executor.
+uses the original fifteen P0 MCP tools over stdio, with the default attached Executor.
+The four experimental publishing tools are outside this journey.
 It never starts `worker run`, approves through MCP, calls Python internals or writes DB.
 
 The host inspects, creates a project, queues local JSONL collection, polls job_get,

@@ -30,7 +30,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -439,7 +440,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -1121,7 +1123,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -1524,7 +1527,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -1946,7 +1950,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -2365,7 +2370,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -2794,7 +2800,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -3266,7 +3273,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -3712,7 +3720,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -4151,7 +4160,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -4585,7 +4595,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -5005,7 +5016,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -5576,7 +5588,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -5985,7 +5998,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -6469,7 +6483,8 @@
               "kind": {
                 "enum": [
                   "access",
-                  "share"
+                  "share",
+                  "publication"
                 ],
                 "title": "Kind",
                 "type": "string"
@@ -6832,6 +6847,1734 @@
         "openWorldHint": false,
         "destructiveHint": false,
         "idempotentHint": false
+      }
+    },
+    {
+      "name": "metamuse_publication_preview",
+      "description": "Preview a saved draft for a Facebook Page text post; does not send or approve.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Project Id",
+            "type": "string"
+          },
+          "draft_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "destination": {
+            "title": "Destination",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Parent"
+          }
+        },
+        "required": [
+          "project_id",
+          "draft_id",
+          "revision",
+          "account",
+          "destination"
+        ],
+        "title": "PublicationPreviewRequest",
+        "type": "object"
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share",
+                  "publication"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
+          "ErrorCode": {
+            "enum": [
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
+          },
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
+              },
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "metamuse_publication_submit",
+      "description": "Queue an exact human-approved Facebook Page text post. Accepted is not running; unknown delivery never resends.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "project_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Project Id",
+            "type": "string"
+          },
+          "draft_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "revision": {
+            "minimum": 1,
+            "title": "Revision",
+            "type": "integer"
+          },
+          "account": {
+            "title": "Account",
+            "type": "string"
+          },
+          "destination": {
+            "title": "Destination",
+            "type": "string"
+          },
+          "parent": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Parent"
+          },
+          "publication_grant": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Publication Grant"
+          },
+          "request_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "draft_id",
+          "revision",
+          "account",
+          "destination",
+          "request_key"
+        ],
+        "title": "PublicationSubmitRequest",
+        "type": "object"
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share",
+                  "publication"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
+          "ErrorCode": {
+            "enum": [
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
+          },
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
+              },
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "metamuse_publication_get",
+      "description": "Read the local publication snapshot, attempt and saved remote receipt.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "publication_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Publication Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publication_id"
+        ],
+        "title": "PublicationGetRequest",
+        "type": "object"
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share",
+                  "publication"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
+          "ErrorCode": {
+            "enum": [
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
+          },
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
+              },
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "metamuse_publication_reconcile",
+      "description": "Queue read-back of the original saved post receipt; never sends another post.",
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "additionalProperties": false,
+        "properties": {
+          "publication_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Publication Id",
+            "type": "string"
+          },
+          "publication_grant": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 3,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Publication Grant"
+          },
+          "request_key": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "publication_id",
+          "request_key"
+        ],
+        "title": "PublicationReconcileRequest",
+        "type": "object"
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$defs": {
+          "ApprovalPreview": {
+            "additionalProperties": false,
+            "description": "Non-secret operator review; never a grant or submission intent.",
+            "properties": {
+              "operation": {
+                "title": "Operation",
+                "type": "string"
+              },
+              "permit_operation": {
+                "title": "Permit Operation",
+                "type": "string"
+              },
+              "kind": {
+                "enum": [
+                  "access",
+                  "share",
+                  "publication"
+                ],
+                "title": "Kind",
+                "type": "string"
+              },
+              "project_id": {
+                "maxLength": 128,
+                "minLength": 3,
+                "title": "Project Id",
+                "type": "string"
+              },
+              "provider": {
+                "title": "Provider",
+                "type": "string"
+              },
+              "account": {
+                "title": "Account",
+                "type": "string"
+              },
+              "action_digest": {
+                "pattern": "^[0-9a-f]{64}$",
+                "title": "Action Digest",
+                "type": "string"
+              },
+              "destination": {
+                "title": "Destination",
+                "type": "string"
+              },
+              "topic": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Topic"
+              },
+              "question": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Question"
+              },
+              "packet_id": {
+                "anyOf": [
+                  {
+                    "maxLength": 128,
+                    "minLength": 3,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Id"
+              },
+              "packet_digest": {
+                "anyOf": [
+                  {
+                    "pattern": "^[0-9a-f]{64}$",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Digest"
+              },
+              "packet_utf8_bytes": {
+                "anyOf": [
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Utf8 Bytes"
+              },
+              "packet_preview_command": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Packet Preview Command"
+              },
+              "summary": {
+                "title": "Summary",
+                "type": "string"
+              },
+              "request_file": {
+                "title": "Request File",
+                "type": "string"
+              },
+              "request": {
+                "additionalProperties": true,
+                "title": "Request",
+                "type": "object"
+              },
+              "next_action": {
+                "title": "Next Action",
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation",
+              "permit_operation",
+              "kind",
+              "project_id",
+              "provider",
+              "account",
+              "action_digest",
+              "destination",
+              "summary",
+              "request_file",
+              "request",
+              "next_action"
+            ],
+            "title": "ApprovalPreview",
+            "type": "object"
+          },
+          "ErrorCode": {
+            "enum": [
+              "E_INPUT_INVALID",
+              "E_REFERENCE_INVALID",
+              "E_SCOPE_REQUIRED",
+              "E_SCOPE_DENIED",
+              "E_AUTH_REQUIRED",
+              "E_DEPENDENCY_MISSING",
+              "E_UNSUPPORTED",
+              "E_PROTOCOL_MISMATCH",
+              "E_ACCESS_DENIED",
+              "E_CHECKPOINT_REQUIRED",
+              "E_RATE_LIMITED",
+              "E_SELECTOR_DRIFT",
+              "E_NETWORK_TIMEOUT",
+              "E_JOB_BUSY",
+              "E_IDEMPOTENCY_CONFLICT",
+              "E_EXTERNAL_STATE_UNKNOWN",
+              "E_STORAGE",
+              "E_LIMIT_REACHED",
+              "E_DATA_STALE",
+              "E_RESOURCE_UNAVAILABLE"
+            ],
+            "title": "ErrorCode",
+            "type": "string"
+          },
+          "ErrorDetail": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "$ref": "#/$defs/ErrorCode"
+              },
+              "message": {
+                "maxLength": 1000000,
+                "title": "Message",
+                "type": "string"
+              },
+              "retry_class": {
+                "enum": [
+                  "never",
+                  "safe_read",
+                  "reconcile",
+                  "user_action"
+                ],
+                "title": "Retry Class",
+                "type": "string"
+              },
+              "next_action": {
+                "anyOf": [
+                  {
+                    "maxLength": 1000000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Next Action"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "retry_class"
+            ],
+            "title": "ErrorDetail",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "else": {
+              "properties": {
+                "error": {
+                  "type": "null"
+                }
+              }
+            },
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "data": {
+                  "type": "null"
+                },
+                "error": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "approval": {
+                  "type": "object"
+                }
+              },
+              "required": [
+                "approval"
+              ]
+            },
+            "then": {
+              "properties": {
+                "status": {
+                  "const": "error"
+                },
+                "error": {
+                  "properties": {
+                    "code": {
+                      "const": "E_SCOPE_REQUIRED"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "properties": {
+          "contract_version": {
+            "const": "1.1",
+            "default": "1.1",
+            "title": "Contract Version",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 3,
+            "title": "Request Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "accepted",
+              "partial",
+              "error"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Data"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ErrorDetail"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "warnings": {
+            "items": {
+              "maxLength": 1000000,
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Next Cursor"
+          },
+          "approval": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/ApprovalPreview"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "contract_version",
+          "request_id",
+          "status",
+          "data",
+          "error",
+          "warnings",
+          "next_cursor"
+        ],
+        "title": "Envelope",
+        "type": "object"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
       }
     }
   ]

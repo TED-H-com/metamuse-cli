@@ -164,6 +164,25 @@ def parser() -> Parser:
     export.add_argument("--refs-file", required=True)
     export.add_argument("--format", required=True)
     _request_key(export)
+    publication = commands.add_parser("publication").add_subparsers(dest="action", required=True)
+    for action in ("preview", "submit"):
+        command = publication.add_parser(action)
+        _project(command)
+        command.add_argument("--draft", required=True)
+        command.add_argument("--revision", required=True, type=int)
+        command.add_argument("--account", required=True)
+        command.add_argument("--destination", required=True)
+        command.add_argument("--parent")
+        if action == "submit":
+            command.add_argument("--publication-grant")
+            command.add_argument("--run", action="store_true")
+            _request_key(command)
+    publication.add_parser("get").add_argument("id")
+    reconcile = publication.add_parser("reconcile")
+    reconcile.add_argument("id")
+    reconcile.add_argument("--publication-grant")
+    reconcile.add_argument("--run", action="store_true")
+    _request_key(reconcile)
     commands.add_parser("mcp").add_argument("--no-worker", action="store_true")
     for command, action in (("auth", "import"), ("permit", "create")):
         sub = commands.add_parser(command).add_subparsers(dest="action", required=True)
@@ -302,7 +321,14 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
     job_id = accepted.data["job_id"]
     with ExitStack() as stack:
         try:
-            executor = stack.enter_context(Executor(ctx.store, non_interactive=ctx.non_interactive))
+            executor = stack.enter_context(
+                Executor(
+                    ctx.store,
+                    non_interactive=ctx.non_interactive,
+                    publishing_gateway=ctx.publishing_gateway,
+                    secret_store=ctx.secret_store,
+                )
+            )
         except m.CoreError as exc:
             if exc.detail.code != m.ErrorCode.JOB_BUSY:
                 raise
@@ -375,7 +401,7 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
 
 
 def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | None:
-    if args.command in ("worker", "add", "packet", "muse", "draft", "export", "mcp"):
+    if args.command in ("worker", "add", "packet", "muse", "draft", "export", "mcp", "publication"):
         app.register_builtin_operations()
     match args.command:
         case "init":
@@ -538,6 +564,38 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
                 ctx,
                 m.AuthImportRequest(path=args.file, provider=args.provider, account=args.account),
             )
+        case "publication":
+            if args.action == "get":
+                return app.get_publication(ctx, m.PublicationGetRequest(publication_id=args.id))
+            if args.action == "reconcile":
+                result = app.reconcile_publication(
+                    ctx,
+                    m.PublicationReconcileRequest(
+                        publication_id=args.id,
+                        publication_grant=args.publication_grant,
+                        request_key=args.request_key,
+                    ),
+                )
+            else:
+                fields = dict(
+                    project_id=args.project,
+                    draft_id=args.draft,
+                    revision=args.revision,
+                    account=args.account,
+                    destination=args.destination,
+                    parent=args.parent,
+                )
+                if args.action == "preview":
+                    return app.preview_publication(ctx, m.PublicationPreviewRequest(**fields))
+                result = app.submit_publication(
+                    ctx,
+                    m.PublicationSubmitRequest(
+                        **fields,
+                        publication_grant=args.publication_grant,
+                        request_key=args.request_key,
+                    ),
+                )
+            return _run_foreground(ctx, result) if args.run else result
         case "permit":
             from metamuse import safety
 

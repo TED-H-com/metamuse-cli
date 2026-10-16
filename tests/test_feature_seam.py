@@ -412,7 +412,7 @@ def test_mcp_lifecycle_registers_and_owns_stdout(ctx, monkeypatch, capsys, attac
 
 
 def test_human_only_requests_are_not_mcp_tools():
-    assert len(m.TOOL_REQUEST_MODELS) == len(app.TOOL_FUNCTIONS) == 15
+    assert len(m.TOOL_REQUEST_MODELS) == len(app.TOOL_FUNCTIONS) == 19
     assert m.AuthImportRequest not in m.TOOL_REQUEST_MODELS.values()
     assert m.PermitCreateRequest not in m.TOOL_REQUEST_MODELS.values()
 
@@ -498,6 +498,7 @@ def test_builtin_registration_fixed_modules_and_optional_hooks(monkeypatch):
         "metamuse.content",
         "metamuse.safety",
         "metamuse.muse",
+        "metamuse.publishing",
     ]
     assert all(target is registry for _, target in seen)
     from metamuse import media
@@ -505,7 +506,7 @@ def test_builtin_registration_fixed_modules_and_optional_hooks(monkeypatch):
     monkeypatch.delattr(media, "register_operations")
     seen.clear()
     app.register_builtin_operations()
-    assert len(seen) == 4 and all(target is None for _, target in seen)
+    assert len(seen) == 5 and all(target is None for _, target in seen)
 
 
 def test_worker_registers_before_executor(ctx, monkeypatch):

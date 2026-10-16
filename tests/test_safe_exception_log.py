@@ -176,7 +176,7 @@ def test_mcp_stdio_unexpected_exception_does_not_log_markers(tmp_path: Path) -> 
                 async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     listed = await session.list_tools()
-                    assert len(listed.tools) == 15
+                    assert len(listed.tools) == 19
                     result = await session.call_tool("metamuse_inspect", {})
         assert result.is_error is True
         assert result.structured_content is not None

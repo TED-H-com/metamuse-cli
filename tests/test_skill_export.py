@@ -88,7 +88,7 @@ def test_skill_export_writes_canonical_bytes_and_refuses_overwrite(tmp_path: Pat
     assert not (home / ".codex").exists()
     assert not (home / ".config").exists()
     names = {tool.name for tool in mcp.list_tools()}
-    assert len(names) == 15
+    assert len(names) == 19
     assert "metamuse_skill_export" not in names
 
 

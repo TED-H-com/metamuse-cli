@@ -38,6 +38,7 @@ class AppContext:
     policy: Config = field(default_factory=Config)
     non_interactive: bool = False
     muse_gateway: Any = field(default=None, repr=False)
+    publishing_gateway: Any = field(default=None, repr=False)
     secret_store: Any = field(default=None, repr=False)
     muse_resolver: Any = field(default=None, repr=False)
     worker_status: Callable[[], dict[str, Any]] | None = field(default=None, repr=False)
@@ -121,9 +122,9 @@ CORE_IMPLEMENTED_TOOLS = frozenset(
 
 def _feature_modules() -> tuple[ModuleType, ...]:
     # Fixed imports only: no entrypoints, discovery, configuration or runtime cloning.
-    from metamuse import collect, content, media, muse, safety
+    from metamuse import collect, content, media, muse, publishing, safety
 
-    return (collect, media, content, safety, muse)
+    return (collect, media, content, safety, muse, publishing)
 
 
 def register_builtin_operations(registry: dict[str, Operation] | None = None) -> None:
@@ -413,6 +414,34 @@ def export_objects(ctx: AppContext, request: m.ExportRequest) -> m.Envelope:
     return content.export_objects(ctx, request)
 
 
+@application(m.PublicationPreviewRequest)
+def preview_publication(ctx: AppContext, request: m.PublicationPreviewRequest) -> m.Envelope:
+    from metamuse import publishing
+
+    return publishing.preview_publication(ctx, request)
+
+
+@application(m.PublicationSubmitRequest)
+def submit_publication(ctx: AppContext, request: m.PublicationSubmitRequest) -> m.Envelope:
+    from metamuse import publishing
+
+    return publishing.submit_publication(ctx, request)
+
+
+@application(m.PublicationGetRequest)
+def get_publication(ctx: AppContext, request: m.PublicationGetRequest) -> m.Envelope:
+    from metamuse import publishing
+
+    return publishing.get_publication(ctx, request)
+
+
+@application(m.PublicationReconcileRequest)
+def reconcile_publication(ctx: AppContext, request: m.PublicationReconcileRequest) -> m.Envelope:
+    from metamuse import publishing
+
+    return publishing.reconcile_publication(ctx, request)
+
+
 TOOL_FUNCTIONS = dict(
     zip(
         m.TOOL_REQUEST_MODELS,
@@ -432,6 +461,10 @@ TOOL_FUNCTIONS = dict(
             save_draft,
             preview_draft,
             export_objects,
+            preview_publication,
+            submit_publication,
+            get_publication,
+            reconcile_publication,
         ),
         strict=True,
     )

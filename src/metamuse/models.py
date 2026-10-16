@@ -243,7 +243,7 @@ class ApprovalPreview(Model):
 
     operation: str
     permit_operation: str
-    kind: Literal["access", "share"]
+    kind: Literal["access", "share", "publication"]
     project_id: ID
     provider: str
     account: str
@@ -783,6 +783,37 @@ class Export(Model):
     state: str = "staging"
 
 
+class Publication(Model):
+    """Immutable exact action, with monotone delivery accounting."""
+
+    id: ID
+    project_id: ID
+    draft_id: ID
+    revision: Revision
+    account: str
+    destination: str
+    action_digest: Digest
+    target: dict[str, Any]
+    payload: dict[str, Any]
+    job_id: ID
+    step_id: ID
+    state: Literal["queued", "not_submitted", "submitting", "needs_reconcile", "sent_verified"] = (
+        "queued"
+    )
+    remote_id: str | None = None
+    created_at: str
+    verified_at: str | None = None
+
+
+class PublicationAttempt(Model):
+    id: ID
+    publication_id: ID
+    step_id: ID
+    action_digest: Digest
+    started_at: str
+    remote_id: str | None = None
+
+
 class Event(Model):
     id: ID
     object_id: str | None = None
@@ -927,6 +958,30 @@ class ExportRequest(PacketPrepareRequest):
     format: Literal["text", "markdown", "jsonl", "csv", "bundle"]
 
 
+class PublicationPreviewRequest(Model):
+    project_id: ID
+    draft_id: ID
+    revision: Revision
+    # Both are explicit, and must match operator configuration.
+    account: str
+    destination: str
+    parent: str | None = None
+
+
+class PublicationSubmitRequest(PublicationPreviewRequest):
+    publication_grant: ID | None = None
+    request_key: RequestKey
+
+
+class PublicationGetRequest(Model):
+    publication_id: ID
+
+
+class PublicationReconcileRequest(PublicationGetRequest):
+    publication_grant: ID | None = None
+    request_key: RequestKey
+
+
 class AuthImportRequest(Model):
     """Human-only CLI input; never part of the MCP tool registry."""
 
@@ -966,4 +1021,8 @@ TOOL_REQUEST_MODELS = {
     "metamuse_draft_save": DraftSaveRequest,
     "metamuse_draft_preview": DraftPreviewRequest,
     "metamuse_export": ExportRequest,
+    "metamuse_publication_preview": PublicationPreviewRequest,
+    "metamuse_publication_submit": PublicationSubmitRequest,
+    "metamuse_publication_get": PublicationGetRequest,
+    "metamuse_publication_reconcile": PublicationReconcileRequest,
 }

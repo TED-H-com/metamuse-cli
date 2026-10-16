@@ -43,7 +43,7 @@ def _load_schema_resource(filename: str) -> dict[str, Any]:
 
 
 def list_tools() -> list[types.Tool]:
-    """Load the fifteen P0 tool definitions from packaged contract data."""
+    """Load the fixed tool definitions from packaged contract data."""
     envelope_schema = _load_schema_resource("envelope.json")
     if envelope_schema.get("type") != "object":
         raise m.CoreError(m.ErrorCode.STORAGE, "Schema envelope.json must be object-rooted")
@@ -94,7 +94,7 @@ def call_tool(
             m.CoreError(
                 m.ErrorCode.INPUT_INVALID,
                 "Unknown MCP tool",
-                next_action="Call tools/list to inspect the fifteen supported tools.",
+                next_action="Call tools/list to inspect the supported tools.",
             )
         )
         return _envelope_to_result(ctx, envelope)
@@ -266,6 +266,7 @@ class _AttachedWorker:
                 muse_gateway=self.ctx.muse_gateway,
                 secret_store=self.ctx.secret_store,
                 muse_resolver=self.ctx.muse_resolver,
+                publishing_gateway=self.ctx.publishing_gateway,
             )
             self.executor = executor
             executor._busy_observer = self.ready.set

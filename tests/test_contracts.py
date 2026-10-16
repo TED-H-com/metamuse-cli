@@ -43,7 +43,7 @@ def test_schema_drift():
     packaged_contract = json.loads(packaged_contract_text)
     assert packaged_contract == design_contract
     tools = design_contract["tools"]
-    assert len(tools) == 15
+    assert len(tools) == 19
     for tool in tools:
         assert tool["inputSchema"] == schema_for(m.TOOL_REQUEST_MODELS[tool["name"]])
         assert tool["outputSchema"] == envelope
@@ -131,7 +131,7 @@ def test_envelope_consistency():
 def test_capability_and_stub(ctx):
     rows = app.inspect_capabilities(ctx).data["capabilities"]
     capabilities = [row for row in rows if row["name"] in m.TOOL_REQUEST_MODELS]
-    assert len(capabilities) == 15
+    assert len(capabilities) == 19
 
     assert sum(c["implementation"] == "implemented" for c in capabilities) == (
         len(app.CORE_IMPLEMENTED_TOOLS)

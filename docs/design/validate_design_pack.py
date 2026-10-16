@@ -30,7 +30,7 @@ def load(p):
 
 
 tools = load("contracts/mcp-tools.json")["tools"]
-assert len(tools) == 15 and len({x["name"] for x in tools}) == 15
+assert len(tools) == 19 and len({x["name"] for x in tools}) == 19
 by_name = {x["name"]: x for x in tools}
 for t in tools:
     Draft202012Validator.check_schema(t["inputSchema"])
@@ -81,7 +81,7 @@ report = {
     "backlog_tasks": 22,
     "specified_acceptance_cases": 54,
     "product_acceptance_cases_executed": 0,
-    "mcp_tool_designs": 15,
+    "mcp_tool_designs": 19,
     "positive_contract_checks": 2,
     "negative_contract_checks": negatives,
     "local_links_checked": links,

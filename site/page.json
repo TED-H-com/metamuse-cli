@@ -263,8 +263,8 @@
           "zh": "留下能接著使用的文件"
         },
         "body": {
-          "en": "Export Markdown, text, CSV, JSONL or a bundle for your own review and editing. Publishing is not implemented.",
-          "zh": "匯出 Markdown、文字、CSV、JSONL 或資料套件，方便後續閱讀與編輯。目前尚未提供發布功能。"
+          "en": "Export Markdown, text, CSV, JSONL or a bundle for your own review and editing. Facebook Page text publishing is experimental and requires separate setup and your exact approval.",
+          "zh": "匯出 Markdown、文字、CSV、JSONL 或資料套件，方便後續閱讀與編輯。Facebook 粉專文字發文仍在實驗階段，需要另外設定，並由你核對批准。"
         }
       }
     ]
@@ -594,11 +594,11 @@
         }
       },
       {
-        "en": "<strong>Publish to social media</strong><br>Publishing is not available. Export a draft for your own review and further work.",
-        "zh": "<strong>直接發布到社群平台</strong><br>目前還不能直接發布。你可以先匯出草稿，自行核對與編輯。",
+        "en": "<strong>Publish a text post to a Facebook Page</strong><br>Preview your saved draft, approve the exact text and Page, then send and check the receipt. Experimental; requires a Page token and setup. Real-account use is unverified.",
+        "zh": "<strong>把文字草稿發到 Facebook 粉專</strong><br>先核對全文與粉專，再由你批准送出，並保存貼文回執。這項功能仍在實驗階段，需要設定粉專權杖，尚未驗證真實帳號。",
         "availability": {
-          "en": "Not available",
-          "zh": "目前未提供"
+          "en": "Needs extra setup; real-account use is unverified",
+          "zh": "需額外設定，尚未驗證真實使用"
         }
       }
     ]

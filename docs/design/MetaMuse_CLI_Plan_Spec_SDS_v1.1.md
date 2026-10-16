@@ -542,12 +542,38 @@ JSON envelope：contract_version、request_id、status(ok/accepted/partial/error
 
 十五個P0工具見contracts/mcp-tools.json：inspect、project_create、collect、job_get、job_list、job_control、search、packet_prepare、muse_open、muse_send、muse_read、muse_close_exchange、draft_save、draft_preview、export。P0不曝光publish_commit或raw gateway。
 
+B19 adds four shared P1 tools: publication_preview, publication_submit, publication_get,
+publication_reconcile. The first provider is experimental Facebook Page new text posts,
+using an explicit operator-selected Graph API version and a Page token. Personal profiles,
+groups, replies, assets and nonempty variants are refused. Local preview/get never use
+the network. Preview returns the human review in data.approval; a missing grant on submit
+or reconcile uses the existing E_SCOPE_REQUIRED envelope.approval contract. Only the
+human CLI may issue the dedicated publication Permit, with one exact operation/digest,
+account and expiry. Source/MCP fields cannot issue or widen that Permit.
+
+The exact action binds project, draft identity/current revision/digest, verbatim text,
+platform/account/Page/parent, empty attachment identity, backend, API version and auth_ref.
+Review and issuance compare the current non-stale draft again in the grant transaction.
+Submission and the committed external boundary recheck current draft and permission.
+An unresolved publication quarantines that draft/account/Page across revisions and keys.
+An entered attempt is unique per publication and cannot be replaced, refunded or resent.
+A proven failure before the committed boundary can accept a fresh human grant and new
+queued job; the prior step cannot execute the replacement action.
+
+Read-back must match the saved post receipt, Page identity, exact message and published
+state. Saving the receipt precedes read-back; domain sent_verified and original job/step
+success commit together. Reconcile is a separately approved safe read of only that saved
+receipt and settles the original uncertain step. No receipt remains unknown; lack of a
+search result never permits resending. B19 has synthetic evidence only. B20/AT-049 real
+account verification and AT-050 cross-platform partial success remain unverified/out of
+this single-provider scope. Setup and limitations are in docs/dev/PUBLISHING.md.
+
 所有state handle顯式傳ID，不靠connection上次選過project。stdout只給SDK協定；log、下載器和warning導向stderr。資料分頁或受保護resource引用，不回整部影片。
 
 MCP SDK／host／協定版本在B01選定並實測，不宣稱任何host必然支援。輸出schema是我們的結果格式，不是Muse受約束生成。tool annotations不能代替授權；muse_send和refresh不可假稱read-only。
 
 Skill短主檔＋按需references，先查實際工具；只有Skill不代表backend已安裝或登入。
-安裝已打包的 Skill 用人類 CLI `metamuse skill export --dest DIR [--force]`，不是第十六個 MCP 工具，也不會自己寫入 agent 或 host 設定目錄。
+安裝已打包的 Skill 用人類 CLI `metamuse skill export --dest DIR [--force]`，不新增 MCP 工具，也不會自己寫入 agent 或 host 設定目錄。
 
 ## 10. 起始限制
 
@@ -1607,6 +1633,10 @@ runtime置於OS使用者私有data root，不放repo。配置、data、cache依p
 
 inspect_capabilities、create_project、submit_collect、get_job、list_jobs、control_job、search_evidence、prepare_packet、open_muse_discussion、submit_muse_exchange、read_muse_exchange、close_muse_exchange、save_draft、preview_draft、export_objects。
 
+B19 additionally exposes preview_publication, submit_publication, get_publication and
+reconcile_publication through the same app layer. These four P1 functions do not add a
+second worker, store, configuration or orchestration loop.
+
 handlers只做parse/render，domain結果不print。所有mutations有request_key和完整payload digest；同key同digest回原物件，異digest拒絕。canonical JSON為UTF-8、sorted keys、無多餘空白、拒NaN/Infinity，原文字串不正規化。發布digest還包含目的地、版本、附件hash，不能只hash正文。
 
 ## 4. SQLite與資料模型
@@ -1881,6 +1911,28 @@ Export先staging再manifest/hash/ready。引用不存在、跨project或已刪�
 P1 Action綁kind/platform/account/destination/parent、draft revision、assets、digest、grant和期限。變任何一項都需新批准。提交前驗真實帳號/target並寫attempt(submitting)，然後只送一次。
 
 平台receipt或回讀才sent_verified。按過按鈕不算成功，timeout進needs_reconcile；換attempt ID不能繞防重發。沒看到貼文不是沒發出的充分證據。跨平台部分成功分別記，不預設刪成功貼文rollback。
+
+B19 implementation: migration 007 adds immutable publications (exact target/payload)
+and publication_attempts (one entered attempt per publication). A partial unique index
+quarantines unresolved draft/account/destination across revisions. Proven pre-boundary
+failure with no attempt may be explicitly requeued with a new grant and job; an entered
+attempt forbids this path. The existing external-action transaction consumes the exact
+publication Permit, inserts the attempt and commits submitting before a single send.
+Receipts are saved immediately before exact read-back. A fixed, optional database-only
+Operation.on_finish callback runs in the existing executor finalization transaction,
+including settle_uncertain; publication sent_verified and original job/step success are
+atomic. A callback failure rolls back both and retains uncertainty, never another send.
+All previous operations default to no callback. Reconcile verifies remote evidence
+outside SQLite, then marks the original proof checkpoint and settles that original step.
+Missing receipts cannot be inferred from text search or caller-supplied post URLs.
+
+The built-in Graph provider accepts only an explicit Page binding and API version;
+uses /me to check Page identity before sending; uses existing locked curl-cffi HTTPS
+transport with public DNS pinning, TLS/hostname/peer verification, no redirects/proxy,
+bounded DNS wait/HTTP timeout and 64 KiB responses. Every request rechecks current
+network/config/credential state. Token bytes stay only in Authorization headers; fixed
+errors omit transport exception text and response bodies. No platform SDK source is
+adopted. Offline fixtures do not establish B20 LIVE permission or platform availability.
 
 Metrics保留原值、定義、時間、surface與null；外部參考與自有數據分开。保存數據不觸發人設或創作策略學習。
 

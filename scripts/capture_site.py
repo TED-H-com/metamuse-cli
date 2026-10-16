@@ -431,7 +431,7 @@ SCENES = (
     Scene(
         stem="11-mcp-worker",
         summary=(
-            "The official client discovers 15 tools, collects a synthetic "
+            "The official client discovers 19 tools, collects a synthetic "
             "file and polls the attached worker."
         ),
         acceptance=("AT-008", "AT-026"),

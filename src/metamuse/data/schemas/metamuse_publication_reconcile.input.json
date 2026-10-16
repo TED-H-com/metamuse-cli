@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "publication_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Publication Id",
+      "type": "string"
+    },
+    "publication_grant": {
+      "anyOf": [
+        {
+          "maxLength": 128,
+          "minLength": 3,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Publication Grant"
+    },
+    "request_key": {
+      "maxLength": 128,
+      "minLength": 1,
+      "title": "Request Key",
+      "type": "string"
+    }
+  },
+  "required": [
+    "publication_id",
+    "request_key"
+  ],
+  "title": "PublicationReconcileRequest",
+  "type": "object"
+}

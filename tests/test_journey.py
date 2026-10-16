@@ -334,7 +334,7 @@ def test_mcp_only_journey_followup_restart_and_export(tmp_path):
                 inspected["worker_available"] is True and inspected["attached_worker"] == "running"
             )
             tools = (await session.list_tools()).tools
-            assert len(tools) == 15 and not any("permit" in tool.name for tool in tools)
+            assert len(tools) == 19 and not any("permit" in tool.name for tool in tools)
             project = (
                 await entry.call(
                     session,

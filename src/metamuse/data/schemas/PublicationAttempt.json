@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Id",
+      "type": "string"
+    },
+    "publication_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Publication Id",
+      "type": "string"
+    },
+    "step_id": {
+      "maxLength": 128,
+      "minLength": 3,
+      "title": "Step Id",
+      "type": "string"
+    },
+    "action_digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Action Digest",
+      "type": "string"
+    },
+    "started_at": {
+      "title": "Started At",
+      "type": "string"
+    },
+    "remote_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Remote Id"
+    }
+  },
+  "required": [
+    "id",
+    "publication_id",
+    "step_id",
+    "action_digest",
+    "started_at"
+  ],
+  "title": "PublicationAttempt",
+  "type": "object"
+}

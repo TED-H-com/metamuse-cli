@@ -451,12 +451,38 @@ JSON envelope：contract_version、request_id、status(ok/accepted/partial/error
 
 十五個P0工具見contracts/mcp-tools.json：inspect、project_create、collect、job_get、job_list、job_control、search、packet_prepare、muse_open、muse_send、muse_read、muse_close_exchange、draft_save、draft_preview、export。P0不曝光publish_commit或raw gateway。
 
+B19 adds four shared P1 tools: publication_preview, publication_submit, publication_get,
+publication_reconcile. The first provider is experimental Facebook Page new text posts,
+using an explicit operator-selected Graph API version and a Page token. Personal profiles,
+groups, replies, assets and nonempty variants are refused. Local preview/get never use
+the network. Preview returns the human review in data.approval; a missing grant on submit
+or reconcile uses the existing E_SCOPE_REQUIRED envelope.approval contract. Only the
+human CLI may issue the dedicated publication Permit, with one exact operation/digest,
+account and expiry. Source/MCP fields cannot issue or widen that Permit.
+
+The exact action binds project, draft identity/current revision/digest, verbatim text,
+platform/account/Page/parent, empty attachment identity, backend, API version and auth_ref.
+Review and issuance compare the current non-stale draft again in the grant transaction.
+Submission and the committed external boundary recheck current draft and permission.
+An unresolved publication quarantines that draft/account/Page across revisions and keys.
+An entered attempt is unique per publication and cannot be replaced, refunded or resent.
+A proven failure before the committed boundary can accept a fresh human grant and new
+queued job; the prior step cannot execute the replacement action.
+
+Read-back must match the saved post receipt, Page identity, exact message and published
+state. Saving the receipt precedes read-back; domain sent_verified and original job/step
+success commit together. Reconcile is a separately approved safe read of only that saved
+receipt and settles the original uncertain step. No receipt remains unknown; lack of a
+search result never permits resending. B19 has synthetic evidence only. B20/AT-049 real
+account verification and AT-050 cross-platform partial success remain unverified/out of
+this single-provider scope. Setup and limitations are in docs/dev/PUBLISHING.md.
+
 所有state handle顯式傳ID，不靠connection上次選過project。stdout只給SDK協定；log、下載器和warning導向stderr。資料分頁或受保護resource引用，不回整部影片。
 
 MCP SDK／host／協定版本在B01選定並實測，不宣稱任何host必然支援。輸出schema是我們的結果格式，不是Muse受約束生成。tool annotations不能代替授權；muse_send和refresh不可假稱read-only。
 
 Skill短主檔＋按需references，先查實際工具；只有Skill不代表backend已安裝或登入。
-安裝已打包的 Skill 用人類 CLI `metamuse skill export --dest DIR [--force]`，不是第十六個 MCP 工具，也不會自己寫入 agent 或 host 設定目錄。
+安裝已打包的 Skill 用人類 CLI `metamuse skill export --dest DIR [--force]`，不新增 MCP 工具，也不會自己寫入 agent 或 host 設定目錄。
 
 ## 10. 起始限制
 

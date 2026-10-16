@@ -16,7 +16,8 @@
         "kind": {
           "enum": [
             "access",
-            "share"
+            "share",
+            "publication"
           ],
           "title": "Kind",
           "type": "string"

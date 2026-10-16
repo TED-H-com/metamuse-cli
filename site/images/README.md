@@ -190,7 +190,7 @@ jq -cC '.manifest.files[]' out/export.json
 
 ### 11-mcp-worker.png (AT-008, AT-026)
 
-The official client discovers 15 tools, collects a synthetic file and polls the attached worker.
+This captured demo discovers the original fifteen P0 tools, collects a synthetic file and polls the attached worker. The current server lists nineteen tools, including four experimental publication tools; this historical image is not publication evidence.
 
 ```sh
 python3 mcp_demo.py

@@ -135,12 +135,18 @@ def approve_permit(
 ) -> m.Envelope:
     """Called by the human CLI only, after confirmation of a freshly recomputed preview."""
     ctx.require_interactive()
+    if preview.kind == "publication":
+        current = approval_preview(ctx, preview.operation, preview.request)
+        if current.action_digest != preview.action_digest:
+            _grant_error("Publication changed during review; preview again")
     expires_at = approval_expiry(ctx, expires_at, request_key)
     scope = (
         {"packet_digests": [preview.packet_digest]}
         if preview.kind == "share"
         else {"operations": [preview.permit_operation], "target_digests": [preview.action_digest]}
     )
+    if preview.kind == "publication":
+        scope["request"] = preview.request
     return create_permit(
         ctx,
         m.PermitCreateRequest(
@@ -360,6 +366,10 @@ def create_permit(ctx: AppContext, request: m.PermitCreateRequest) -> m.Envelope
     """Issue local operator intent; never call this from source/model/MCP handlers."""
     ctx.require_interactive()
     scope = _parse_scope(request.kind, request.scope)
+    if isinstance(scope, PublicationScope) and (
+        request.max_uses != 1 or request.exact_digest != scope.target_digests[0]
+    ):
+        _scope_error("Publication approval requires one use and the exact action digest")
     _label(request.provider)
     _label(request.account)
     _label(request.issuer)
@@ -367,6 +377,11 @@ def create_permit(ctx: AppContext, request: m.PermitCreateRequest) -> m.Envelope
         _scope_error("Permit use limit is too large")
     expires = _timestamp(request.expires_at)
     research_preflight = None
+    publication_policy = None
+    if isinstance(scope, PublicationScope):
+        from metamuse.config import load_config
+
+        publication_policy = load_config(ctx.paths.root)
     if scope.research is not None:
         from metamuse._muse_research import prepare_creation
 
@@ -385,6 +400,10 @@ def create_permit(ctx: AppContext, request: m.PermitCreateRequest) -> m.Envelope
             if not now < expires <= now + PERMIT_MAX_LIFETIME:
                 _scope_error("Permit expiry must be in the next 30 days")
             ctx.store.get(m.Project, request.project_id, conn=conn)
+            if isinstance(scope, PublicationScope):
+                from metamuse.publishing import validate_approval_creation
+
+                validate_approval_creation(ctx, conn, scope, request, publication_policy)
             if scope.research is not None:
                 from metamuse._muse_research import validate_creation
 
@@ -1032,7 +1051,14 @@ def resolve_secret(
 
 PERMIT_MAX_LIFETIME = timedelta(days=30)
 PERMIT_MAX_USES = 1000
-OperationName = Literal["muse.open", "muse.read", "collect.remote", "muse.send"]
+OperationName = Literal[
+    "muse.open",
+    "muse.read",
+    "collect.remote",
+    "muse.send",
+    "publication.send",
+    "publication.reconcile",
+]
 
 
 def _scope_error(
@@ -1134,7 +1160,7 @@ class ShareScope(m.Model):
 
 
 class PermitUse(m.Model):
-    kind: Literal["access", "share"]
+    kind: Literal["access", "share", "publication"]
     project_id: m.ID
     provider: str
     account: str
@@ -1150,15 +1176,26 @@ def snapshot_digest(selection: list[m.EvidenceRef]) -> str:
     return m.payload_digest([json.loads(ref) for ref in refs])
 
 
-def _parse_scope(kind: str, scope: dict[str, Any]) -> AccessScope | ShareScope:
+class PublicationScope(m.Model):
+    operations: list[Literal["publication.send", "publication.reconcile"]] = Field(
+        min_length=1, max_length=1
+    )
+    target_digests: list[m.Digest] = Field(min_length=1, max_length=1)
+    request: dict[str, Any]
+    research: None = None
+
+
+def _parse_scope(kind: str, scope: dict[str, Any]) -> AccessScope | ShareScope | PublicationScope:
     try:
         if kind == "access":
             return AccessScope.model_validate(scope)
         if kind == "share":
             return ShareScope.model_validate(scope)
+        if kind == "publication":
+            return PublicationScope.model_validate(scope)
     except (ValidationError, ValueError, TypeError):
         _scope_error("Invalid scope for this permit kind")
-    _scope_error("Permit kind must be access or share")
+    _scope_error("Permit kind must be access, share or publication")
 
 
 def _verify_permit(
@@ -1191,7 +1228,7 @@ def _verify_permit(
         from metamuse._muse_research import verify_research_use
 
         verify_research_use(store, conn, permit, scope.research, use, check_remaining)
-    if isinstance(scope, AccessScope):
+    if isinstance(scope, (AccessScope, PublicationScope)):
         if use.operation not in scope.operations or (
             scope.research is None and use.digest not in scope.target_digests
         ):
@@ -1336,7 +1373,9 @@ def external_action_verifier(
         row = step.store.get(m.JobStep, step.step.id, conn=conn)
         job = step.store.get(m.Job, row.job_id, conn=conn)
         expected_class = (
-            "external_submit" if use.operation in ("muse.open", "muse.send") else "safe_read"
+            "external_submit"
+            if use.operation in ("muse.open", "muse.send", "publication.send")
+            else "safe_read"
         )
         if row.side_effect_class != expected_class:
             _scope_error("External operation has the wrong side effect class")

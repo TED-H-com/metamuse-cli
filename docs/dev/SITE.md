@@ -112,7 +112,7 @@ keep the two Muse frames compact. Product operations use shipped commands only;
 there is no direct application/database access or model-generated grant.
 
 The official MCP stdio client starts the server with its default attached worker,
-lists 15 tools, imports a local synthetic file and polls `metamuse_job_get` to a
+lists 19 tools, imports a local synthetic file and polls `metamuse_job_get` to a
 terminal state. It never invokes a manual worker. The worker belongs to the MCP
 server process; closing the server does not promise background continuation.
 

@@ -52,6 +52,15 @@ class MuseConfig(EnabledConfig):
     binding: m.MuseBinding | None = None
 
 
+class PublishingConfig(EnabledConfig):
+    backend: Literal["live", "fixture"] = "live"
+    account: str | None = Field(default=None, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,127}$")
+    page_id: str | None = Field(default=None, pattern=r"^[0-9]{1,32}$")
+    auth_ref: str | None = Field(default=None, pattern=r"^auth_[0-9a-f]{32}$")
+    # Required operator choice: no claim about the latest platform version.
+    api_version: str | None = Field(default=None, pattern=r"^v[0-9]{1,2}\.0$")
+
+
 DEFAULT_FACEBOOK_ALLOWED_HOSTS: tuple[str, ...] = (
     "www.facebook.com",
     "facebook.com",
@@ -119,7 +128,7 @@ class Config(m.Model):
     worker: WorkerConfig = Field(default_factory=WorkerConfig)
     limits: m.Limits = Field(default_factory=m.Limits)
     muse: MuseConfig = Field(default_factory=MuseConfig)
-    publishing: EnabledConfig = Field(default_factory=EnabledConfig)
+    publishing: PublishingConfig = Field(default_factory=PublishingConfig)
     remote_media: RemoteMediaConfig = Field(default_factory=RemoteMediaConfig)
     facebook: FacebookConfig = Field(default_factory=FacebookConfig)
 
