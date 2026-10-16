@@ -307,7 +307,7 @@ After a Facebook post identity is bound, a main-frame navigation to an unknown n
 Facebook rendered text includes inline image alt text (including emoji) and follows the structured capture/rendering contract below. JSON text remains unchanged.
 
 CI uses Ubuntu 24.04 and locked development, remote and Facebook dependencies. Each
-test job installs ffmpeg/ffprobe and Chromium through the locked Playwright package. The
+cohort installs ffmpeg/ffprobe and Chromium through the locked Playwright package. The
 hosted runner enables unprivileged user namespaces with the AppArmor sysctl before
 testing. All workflow actions use full commit SHAs. METAMUSE_REQUIRE_BROWSER_TESTS=1
 converts skipped Facebook/browser tests into failures; locally an absent Chromium
