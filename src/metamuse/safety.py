@@ -3728,8 +3728,9 @@ def _curl_spans(text, syntax, *, source_escapes=False):
     pattern = re.compile(
         r"(?P<curl>(?<![A-Za-z0-9_])curl\b)|"
         r"(?P<boundary>[;|&\r\n])|"
-        r"(?<![A-Za-z0-9_])(?:(?P<long>--user|--cookie)(?:=|[^\S\r\n]++|(?=[\"']))|(?P<short>-[ub])[^\S\r\n]*+)"
+        r"(?<![A-Za-z0-9_])(?:(?P<long>--user|--cookie)(?:=|[^\S\r\n]++|(?=(?:\\{1,7})?[\"'`]))|(?P<short>-[ub])[^\S\r\n]*+)"
     )
+    option_quote = re.compile(r"\\{0,7}[\"'`]")
     position = 0
     scope = _CurlScope(text, syntax)
     while match := pattern.search(text, position):
@@ -3749,12 +3750,21 @@ def _curl_spans(text, syntax, *, source_escapes=False):
             continue
         scope.anchor(match.end(), syntax.depth(match.start()), curl=False)
         start = match.end()
+        option_start = match.start("long") if match["long"] else match.start("short")
+        closing = option_quote.match(text, start)
         if (
-            text[start : start + 1] in {'"', "'", "`"}
-            and text[match.start() - 1 : match.start()] == text[start : start + 1]
-            and text[start + 1 : start + 2].isspace()
+            closing is not None
+            and option_start >= len(closing[0])
+            and text[option_start - len(closing[0]) : option_start] == closing[0]
+            and syntax.depth(option_start - len(closing[0])) == syntax.depth(start)
+            and (
+                text[closing.end() : closing.end() + 1].isspace()
+                or text[closing.end() : closing.end() + 1] == "="
+            )
         ):
-            start += 1
+            # The option owns this complete delimiter, not the argument. Keep
+            # its source escape and start the value at its independent opener.
+            start = closing.end() + int(text[closing.end() : closing.end() + 1] == "=")
             while start < len(text) and text[start].isspace():
                 start += 1
         end = syntax.value(
