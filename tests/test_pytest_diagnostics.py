@@ -187,7 +187,7 @@ def test_gil_stuck_keeps_start_evidence_and_external_termination(tmp_path):
         f"    pathlib.Path({str(ready)!r}).touch()\n"
         "    libc.pause()\n"  # PyDLL deliberately retains the GIL in this tiny child.
     )
-    command = ["pytest-disktmp", sys.executable, "-u", "-X", "faulthandler", "-c", code]
+    command = [sys.executable, "-u", "-X", "faulthandler", "-c", code]
     (evidence / "argv.json").write_text(json.dumps(command, indent=2))
     with (
         (evidence / "stdout").open("w") as stdout,
@@ -202,8 +202,7 @@ def test_gil_stuck_keeps_start_evidence_and_external_termination(tmp_path):
             time.sleep(0.15)
             assert process.poll() is None
             os.killpg(process.pid, signal.SIGTERM)
-            # The disk wrapper preserves normal shell signal-exit encoding.
-            assert process.wait(timeout=5) == 128 + signal.SIGTERM
+            assert process.wait(timeout=5) == -signal.SIGTERM
         finally:
             if process.poll() is None:
                 os.killpg(process.pid, signal.SIGKILL)
@@ -247,7 +246,6 @@ def test_actual_cohort_and_copied_helper_wiring(tmp_path, monkeypatch):
     env = {**os.environ, "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1", "PYTEST_ADDOPTS": ""}
     env.pop("PYTHONPATH", None)
     command = [
-        "pytest-disktmp",
         sys.executable,
         "-X",
         "faulthandler",
@@ -264,6 +262,8 @@ def test_actual_cohort_and_copied_helper_wiring(tmp_path, monkeypatch):
         "--maxfail=1",
         "-o",
         "faulthandler_timeout=0",
+        "--basetemp",
+        str(tmp_path / "cohort-pytest"),
         "--junitxml",
         str(evidence / "cohort.xml"),
     ]
