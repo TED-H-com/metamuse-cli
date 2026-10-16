@@ -87,6 +87,12 @@ Store按sqlite_errorcode的primary byte分類SQLITE_BUSY／SQLITE_LOCKED，保�
 internal _StorageBusy(CoreError)。public仍E_STORAGE／retry_class=never；其他SQLite錯誤
 （含corruption、I/O、缺code）不重試，不按message判斷，不輸出SQL／path／row內容。
 
+Live database／WAL／SHM在open前拒絕symlink、hardlink及非regular file。
+SQLite最後一個connection關閉時可unlink sidecar；racing lstat也可能回regular inode但
+st_nlink=0。僅此WAL／SHM情況對current pathname作一次strict recheck：已消失可繼續，
+替換成link或非regular仍拒絕。database與archive不接受zero-link inode；第二次stat再race
+仍可拒絕open，不循環重試，不replay transaction／job／external action。
+
 | Table | 主鍵／內容／約束 |
 |---|---|
 | projects | id、name、revision、created_at。 |
