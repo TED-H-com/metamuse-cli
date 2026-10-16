@@ -561,12 +561,25 @@ def test_f16_all_core_tools_effective_and_stubs_absent(ctx):
     rows = app.inspect_capabilities(ctx).data["capabilities"]
     effective = {row["name"] for row in rows if row["effective"]}
     # B05 declares metamuse_collect. B07/B11 declares the content tools.
-    # Muse stays ineffective until explicitly configured.
+    # B19 get is a config-independent local read. Publication preview needs its
+    # operator binding; Muse and publication send/reconcile remain unconfigured.
     assert effective == (
-        app.CORE_IMPLEMENTED_TOOLS | collect.IMPLEMENTED_TOOLS | content.IMPLEMENTED_TOOLS
+        app.CORE_IMPLEMENTED_TOOLS
+        | collect.IMPLEMENTED_TOOLS
+        | content.IMPLEMENTED_TOOLS
+        | {"metamuse_publication_get"}
     )
+    for name in (
+        "metamuse_publication_preview",
+        "metamuse_publication_submit",
+        "metamuse_publication_reconcile",
+    ):
+        row = next(row for row in rows if row["name"] == name)
+        assert row["implementation"] == "implemented"
+        assert row["permission"] == "not_configured"
+        assert row["effective"] is False
     assert all(not row["effective"] for row in rows if row["implementation"] == "absent")
-    assert len(generated_schemas()) == 41
+    assert len(generated_schemas()) == 47
 
 
 def test_f01_known_job_runs_past_unknown_job(ctx, project):

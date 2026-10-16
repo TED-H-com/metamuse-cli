@@ -132,6 +132,30 @@ VALID_SAMPLE_PAYLOADS: dict[str, dict[str, Any]] = {
         "format": "jsonl",
         "request_key": "req-export-1",
     },
+    "metamuse_publication_preview": {
+        "project_id": "prj_01234567890123456789012345678901",
+        "draft_id": "drf_01234567890123456789012345678901",
+        "revision": 1,
+        "account": "synthetic-page",
+        "destination": "123456",
+    },
+    "metamuse_publication_submit": {
+        "project_id": "prj_01234567890123456789012345678901",
+        "draft_id": "drf_01234567890123456789012345678901",
+        "revision": 1,
+        "account": "synthetic-page",
+        "destination": "123456",
+        "publication_grant": None,
+        "request_key": "req-publication-submit-1",
+    },
+    "metamuse_publication_get": {
+        "publication_id": "pub_01234567890123456789012345678901",
+    },
+    "metamuse_publication_reconcile": {
+        "publication_id": "pub_01234567890123456789012345678901",
+        "publication_grant": None,
+        "request_key": "req-publication-reconcile-1",
+    },
 }
 
 

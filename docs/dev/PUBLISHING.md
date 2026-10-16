@@ -110,6 +110,12 @@ CLI／MCP 共用 `app.preview_publication`、`submit_publication`、`get_publica
 `metamuse_publication_submit`、`metamuse_publication_get`、`metamuse_publication_reconcile`。
 沒有 MCP 授權工具；`approved: true` 等額外欄位拒絕。
 
+能力檢查會讀取磁碟中的目前設定，只有已啟用且完整綁定的預覽才標為可用；
+缺少設定時預覽仍是本地功能，但 `permission=not_configured`、`effective=false`。
+本地 `publication get` 不受目前發布設定影響。送出及對帳沒有精確請求的批准時
+保持不可用；fixture 不需要帳號憑證，但也不因此取得送出批准。
+這些檢查不讀 token 或探測平台，不代表 LIVE 已驗證。
+
 Migration 007 新增 `publications` 與 `publication_attempts`。publication 保存精確
 文字／草稿版本／目的地／帳號／backend／API 版本／附件空集合與 digest。
 同一 publication 最多一個已進入提交的 attempt，並以 SQLite 唯一約束保護
