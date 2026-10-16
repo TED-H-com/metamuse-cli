@@ -75,6 +75,100 @@ def project_text_workload(dumped):
     assert dumped.is_set(), "Python observer never collected a timed traceback"
 
 
+def test_startup_interrupt_owns_and_stops_worker(tmp_path, monkeypatch):
+    diagnostic = importlib.import_module("pytest_diagnostics")
+    evidence = evidence_dir(tmp_path, "startup-interrupt")
+    captured = {}
+    real_start = threading.Thread.start
+    target = diagnostic.TimedDiagnostics.watching.__wrapped__.__code__
+    previous_trace = sys.gettrace()
+
+    def record_start(worker):
+        real_start(worker)
+        captured["worker"] = worker
+
+    def interrupt_after_start(frame, event, arg):
+        if event == "line" and frame.f_code is target and "worker" in captured:
+            captured["cancel"] = frame.f_locals["cancel"]
+            captured["started"] = captured["worker"].is_alive()
+            captured["owned"] = frame.f_locals["self"].worker is captured["worker"]
+            sys.settrace(None)
+            signal.raise_signal(signal.SIGINT)
+        return interrupt_after_start
+
+    monkeypatch.setattr(threading.Thread, "start", record_start)
+    with (evidence / "traceback.log").open("w") as stream:
+        observer = diagnostic.TimedDiagnostics(stream.fileno())
+        owned_fd = observer.fd
+        try:
+            with pytest.raises(KeyboardInterrupt):
+                sys.settrace(interrupt_after_start)
+                try:
+                    with observer.watching("synthetic::startup_interrupt"):
+                        pytest.fail("startup SIGINT did not precede the test body")
+                finally:
+                    sys.settrace(previous_trace)
+            observer.close()
+            result = {
+                "worker_started": captured["started"],
+                "worker_owned_at_interrupt": captured["owned"],
+                "worker_alive_after_close": captured["worker"].is_alive(),
+                "worker_cleared": observer.worker is None,
+                "cancel_cleared": observer.cancel is None,
+                "fd_closed": observer.fd is None,
+            }
+            (evidence / "result.json").write_text(json.dumps(result, indent=2))
+            assert not result["worker_alive_after_close"], "startup worker survives close"
+            assert all(result[name] for name in result if name != "worker_alive_after_close")
+            assert observer.error is None and faulthandler.is_enabled()
+            with pytest.raises(OSError):
+                os.fstat(owned_fd)
+        finally:
+            sys.settrace(previous_trace)
+            # The immutable baseline leaks this worker; never wait for its timer.
+            if "cancel" in captured:
+                captured["cancel"].set()
+                captured["worker"].join(timeout=1)
+                (evidence / "cleanup.json").write_text(
+                    json.dumps({"worker_alive": captured["worker"].is_alive()})
+                )
+                assert not captured["worker"].is_alive()
+            observer.close()
+    trace = (evidence / "traceback.log").read_text()
+    assert "PYTEST_DIAGNOSTIC_START node=synthetic::startup_interrupt" in trace
+    assert "PYTEST_DIAGNOSTIC_FINISH" not in trace
+
+
+def test_pre_start_failure_preserves_error_and_closes_fd(tmp_path, monkeypatch):
+    diagnostic = importlib.import_module("pytest_diagnostics")
+    evidence = evidence_dir(tmp_path, "pre-start-failure")
+    failure = RuntimeError("synthetic thread-start failure")
+    created = []
+
+    def fail_before_start(worker):
+        created.append(worker)
+        raise failure
+
+    monkeypatch.setattr(threading.Thread, "start", fail_before_start)
+    with (evidence / "traceback.log").open("w") as stream:
+        observer = diagnostic.TimedDiagnostics(stream.fileno())
+        owned_fd = observer.fd
+        try:
+            with pytest.raises(RuntimeError) as caught:
+                with observer.watching("synthetic::pre_start_failure"):
+                    pytest.fail("failed start entered the test body")
+            assert caught.value is failure
+            assert len(created) == 1 and created[0].ident is None
+            assert observer.worker is None and observer.cancel is None
+        finally:
+            observer.close()
+        with pytest.raises(OSError):
+            os.fstat(owned_fd)
+    trace = (evidence / "traceback.log").read_text()
+    assert "PYTEST_DIAGNOSTIC_START node=synthetic::pre_start_failure" in trace
+    assert "PYTEST_DIAGNOSTIC_FINISH" not in trace
+
+
 @pytest.mark.parametrize("outcome", ["success", "failure", "interrupt"])
 def test_timed_dump_has_live_frames_and_cleans_up(tmp_path, monkeypatch, outcome):
     diagnostic = importlib.import_module("pytest_diagnostics")

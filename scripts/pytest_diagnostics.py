@@ -46,25 +46,32 @@ class TimedDiagnostics:
                     self.error = exc
 
         worker = threading.Thread(target=collect, name="pytest-timed-diagnostic", daemon=False)
-        worker.start()
-        self.worker, self.cancel = worker, cancel
+        entered = False
         try:
+            self.cancel = cancel
+            self.worker = worker
+            worker.start()
+            entered = True
             yield
         finally:
             self.stop()
-            os.write(self.fd, f"PYTEST_DIAGNOSTIC_FINISH node={nodeid}\n".encode())
+            if entered:
+                os.write(self.fd, f"PYTEST_DIAGNOSTIC_FINISH node={nodeid}\n".encode())
 
     def stop(self):
-        if self.worker is not None:
+        if self.cancel is not None:
             self.cancel.set()
+        if self.worker is not None and self.worker.is_alive():
             self.worker.join()
-            self.worker = self.cancel = None
+        self.worker = self.cancel = None
 
     def close(self):
-        self.stop()
-        if self.fd is not None:
-            os.close(self.fd)
-            self.fd = None
+        try:
+            self.stop()
+        finally:
+            if self.fd is not None:
+                os.close(self.fd)
+                self.fd = None
 
 
 def pytest_configure(config):
