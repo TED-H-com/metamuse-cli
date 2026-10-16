@@ -51,6 +51,11 @@ def _embedded_wake(match):
 
 _ENVELOPE = re.compile(r"(?i)\b(?:s0:|delegation\.|endorsement\.)[A-Za-z0-9_.~+/=-]+")
 _NOTARY = re.compile(r"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_-]+\.){5}[A-Za-z0-9_-]+(?![A-Za-z0-9_.-])")
+# The shared scanner owns complete header folds and their enclosing boundaries.
+# Erasing these introducers first would leave their continuation values untyped.
+_HEADER_CONTEXT_KEYS = frozenset(
+    ("cookie", "setcookie", "cookieheader", "authorization", "proxyauthorization")
+)
 
 
 _COUNTS = frozenset(
@@ -187,17 +192,21 @@ def _known_spans(value: str, known: tuple[str, ...]):
         yield from (match.span() for match in re.finditer(re.escape(secret), value, flags))
 
 
-def _render_spans(value, spans):
-    # One output build. Merge the union before editing so duplicates/containment
-    # neither leak a tail nor consume ordinary context beside the secret.
+def _merged_spans(spans):
     merged = []
     for start, end in sorted(spans):
         if merged and start <= merged[-1][1]:
             merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
         else:
             merged.append((start, end))
+    return merged
+
+
+def _render_spans(value, spans):
+    # One output build. Merge the union before editing so duplicates/containment
+    # neither leak a tail nor consume ordinary context beside the secret.
     chunks, offset = [], 0
-    for start, end in merged:
+    for start, end in _merged_spans(spans):
         chunks.extend((value[offset:start], "redacted"))
         offset = end
     chunks.append(value[offset:])
@@ -217,17 +226,19 @@ def _text_key(match):
 def _syntax_spans(value):
     from metamuse._muse_codec import _BEARER, _COOKIE, _PAIR
 
-    for match in re.finditer(
-        r"(?i)(?<![a-z0-9_.-])(?:proxy-)?authorization\s*:\s*\S+(?:[ \t]+[^\s,}]+)?", value
-    ):
-        yield match.span()
-    # Match these before a generic assignment can treat 'Bearer' as the value.
-    for pattern in (_BEARER, _COOKIE, _PAIR):
-        yield from (match.span() for match in pattern.finditer(value))
+    # Preserve shared header masks and their enclosing boundaries. The codec
+    # fallback still covers untyped text without consuming a masked Cookie line.
+    for match in _BEARER.finditer(value):
+        yield match.end(1), match.end()
+    for match in _COOKIE.finditer(value):
+        if not match[0].split(":", 1)[1].lstrip().startswith("[REDACTED]"):
+            yield match.span()
+    yield from (match.span() for match in _PAIR.finditer(value))
     offset = 0
     while match := _ASSIGNMENT.search(value, offset):
         offset = match.end()
-        if sensitive_key(_text_key(match)):
+        key = _text_key(match)
+        if sensitive_key(key) and compact(key) not in _HEADER_CONTEXT_KEYS:
             body = _VALUE.match(value, offset)
             if body is not None:
                 yield match.start(), body.end()
@@ -248,7 +259,99 @@ def _syntax_spans(value):
         yield from (match.span() for match in pattern.finditer(value))
 
 
+def _public_view(value):
+    # Core historically classifies session_id as a cookie. Protect only these
+    # public key spellings. Retain sparse edits to project known private ranges.
+    keys = [
+        (match.start(2), match.end(2))
+        for match in _ASSIGNMENT.finditer(value)
+        if public_key(_text_key(match))
+    ]
+    keys.extend(
+        (match.start(2), match.end(2))
+        for match in re.finditer(r"<(/?)([^\s<>/]+)>", value)
+        if public_key(match[2])
+    )
+    chunks, edits, protected = [], [], {}
+    offset = shift = 0
+    for start, end in _merged_spans(keys):
+        placeholder = "musepublicfield" + str(len(protected)) + "end"
+        protected[placeholder] = value[start:end]
+        chunks.extend((value[offset:start], placeholder))
+        edits.append((start, end, start + shift, start + shift + len(placeholder)))
+        shift += len(placeholder) - (end - start)
+        offset = end
+    chunks.append(value[offset:])
+    return "".join(chunks), edits, protected
+
+
+def _project_spans(spans, edits):
+    """Project ordered private ranges through public spelling edits in one walk."""
+    index = shift = 0
+    for start, end in spans:
+        while index < len(edits) and edits[index][1] <= start:
+            _, old_end, _, new_end = edits[index]
+            shift = new_end - old_end
+            index += 1
+        first = start + shift
+        if index < len(edits) and edits[index][0] <= start < edits[index][1]:
+            first = edits[index][2]
+        finish = end + shift
+        while index < len(edits) and edits[index][0] < end:
+            _, old_end, _, new_end = edits[index]
+            finish = new_end if end < old_end else end + new_end - old_end
+            if end < old_end:
+                break
+            shift = new_end - old_end
+            index += 1
+        yield first, finish
+
+
+def _original_known_spans(value, known):
+    spans = []
+    if known:
+        for decoded, positions in _decoded_levels(value):
+            for start, end in _known_spans(decoded, known):
+                spans.append(
+                    (positions[start][0], positions[end - 1][1])
+                    if positions is not None
+                    else (start, end)
+                )
+    return _merged_spans(spans)
+
+
+def _shared_redaction(value, known):
+    from metamuse._muse_codec import _BEARER
+
+    # Select complete known values before even public-key placeholders can hide
+    # their spelling. Shared raw/canonical views retain credential introducers
+    # until all selected ranges have been united in the original coordinates.
+    original_spans = _original_known_spans(value, known)
+    rendered, edits, protected = _public_view(value)
+    projected = _merged_spans(_project_spans(original_spans, edits))
+
+    def private_spans(view, *, original):
+        spans = [*(projected if original else ()), *_known_spans(view, known)]
+        spans.extend(
+            (match.end(1), match.end())
+            for match in _BEARER.finditer(view)
+            if view[match.end(1) : match.end()] != "redacted"
+        )
+        return _merged_spans(spans)
+
+    cleaned = redact_text(rendered, private_spans=private_spans)[0]
+    # One replacement pass even when there are many public assignment keys.
+    if protected:
+        cleaned = re.sub(
+            r"musepublicfield[0-9]+end", lambda match: protected.get(match[0], match[0]), cleaned
+        )
+    return cleaned
+
+
 def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
+    # The shared scanner must see the credential context, including
+    # folds, before an owned match can erase a header or enclosing assignment.
+    value = _shared_redaction(value, known)
     spans = []
     for decoded, positions in _decoded_levels(value):
         whole_wake = _WAKE_OBJECT.fullmatch(decoded)
@@ -262,27 +365,7 @@ def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
                 if positions is not None
                 else (start, end)
             )
-    rendered = _render_spans(value, spans)
-    # Core historically classifies session_id as a cookie. Protect only these
-    # public key spellings; values still pass known-value and core scrubbing.
-    protected = {}
-
-    def mask_public(match):
-        key = match[2]
-        if not public_key(_text_key(match)):
-            return match[0]
-        placeholder = "musepublicfield" + str(len(protected)) + "end"
-        protected[placeholder] = key
-        return match[0].replace(key, placeholder, 1)
-
-    rendered = _ASSIGNMENT.sub(mask_public, rendered)
-    cleaned = redact_text(rendered)[0]
-    # One replacement pass even when there are many public assignment keys.
-    if protected:
-        cleaned = re.sub(
-            r"musepublicfield[0-9]+end", lambda match: protected.get(match[0], match[0]), cleaned
-        )
-    return cleaned
+    return _render_spans(value, spans)
 
 
 def sanitize_document(value: Any, known: tuple[str, ...] = (), depth=0) -> Any:

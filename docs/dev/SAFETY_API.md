@@ -397,7 +397,8 @@ import and rebind.
 
 ## B16a classifier and finding classes
 
-`redact_text(text) -> (text, findings)` keeps its API. [SPEC](../design/02_SPEC.md)
+`redact_text(text, *, private_spans=None) -> (text, findings)` preserves existing
+calls and their default scanning path. [SPEC](../design/02_SPEC.md)
 contains every closed exemption, name exclusion, syntax, encoding and refused-by-design
 form. `redaction_sensitive_key` classifies names; `redaction_sensitive_value` applies
 those closed exemptions, including whole structured numbers/arrays/objects. Names are
@@ -407,7 +408,7 @@ is copied and no dependency or migration is added.
 
 | Finding kind | Trigger |
 | --- | --- |
-| sensitive_field | Quoted JSON fields, XML values and curl user credentials |
+| sensitive_field | Quoted JSON fields, XML values, curl user credentials and additive private spans |
 | session_cookie | Sensitive unquoted assignment or flag |
 | authorization | Authorization/Proxy-Authorization header value |
 | cookie | Cookie/Set-Cookie, cookie-like chains or jar value |
@@ -417,6 +418,35 @@ is copied and no dependency or migration is added.
 | private_key | PEM/PGP private-key blocks or PuTTY private-key files |
 | redaction_unstable | Fourth single-pass application still changes text; whole output is masked |
 | local_path | Plausible private path or explicit local_path field |
+
+### Optional additive private spans
+
+Trusted in-process sanitizers may supply `private_spans(view, *, original: bool)`
+to compose known private values with complete shared credential extents before
+any replacement. It returns an iterable of ordered half-open `(start, end)` Python string offsets.
+Endpoints must be exact `int` values (not `bool`), with
+`0 <= start < end <= len(view)`, sorted and nonoverlapping; adjacent pairs are valid.
+The callback cannot select a finding class, replacement, exemption or permission.
+Its additions use `sensitive_field` and `[REDACTED]`, and union with core spans
+through the existing overlap/count/replacement rules. Core masks are never removed.
+
+On the first single-pass application only, `original=True` receives the exact input
+before decoding or replacement. If the existing canonical decoded view differs,
+`original=False` receives that final view once, using the same three-layer percent
+and JSON budgets, scoped form decoding and sparse original-offset mapping. Decoded
+spans map to whole contributing source escapes. Intermediate views and subsequent
+fixpoint/confirmation applications never invoke the callback. The existing maximum
+of four applications and whole-value `redaction_unstable` fallback stay unchanged.
+
+The hook's results are fully validated before rendering. Invalid results or an
+ordinary callback exception raise fixed `ValueError("Invalid additive private spans")`
+outside the exception handler, with no cause/context or partial successful return.
+Cancellation exceptions derived directly from `BaseException` propagate. This is
+an internal composition API, not a public request field or a model permission.
+Without a hook, the existing scanner/index path is unchanged. Empty hook results
+also create no additional span index or merge; only actual additions enter extra
+span indexes and merges. Existing default CPU/RSS evidence remains bound to its recorded source,
+not a fresh measurement of this optional composition API.
 
 Sensitive header ownership includes following CRLF/LF continuation lines indented
 with spaces or tabs, including members written as name=value or name: value.

@@ -290,11 +290,12 @@ curl exception are never copied into any exception, envelope or log. Redaction c
 the tested Unicode component nonce/token/proof/secret/notary/noise-key/attempt-id/request-id/recovery
 families and existing RV/endorsement/wake aliases, including prefixes/suffixes, snake/camel/hyphen/dotted
 keys in query, header, repr, JSON, arrow and XML forms. Ordinary vm_id/discussion_id/job_id remain visible.
-Known values are decoded through two percent-encoding levels (including quote_plus and lowercase escapes),
-then scrubbed over the union of matching spans. Alias scanning includes full WSS URLs; an ordinary
+Known values match the shared original/canonical views under its existing decoding budget;
+Muse also retains raw and two-percent-level coordinates (including quote_plus and lowercase escapes),
+then scrubs the union of matching spans. Alias scanning includes full WSS URLs; an ordinary
 scheme or identifier cannot consume a later query key. Text requiring no redaction preserves its
 original percent encoding. Raw envelopes and embedded wake bodies are scrubbed.
-Triple percent encoding, base32, colon-separated hex and bytes repr are outside this tested scope.
+Base32, colon-separated hex and bytes repr are outside this tested scope.
 Handshake nonce hex/base64/base64url and WSS request IDs are held per connection for scrubbing.
 Credential/binding/header/body dataclass reprs suppress those fields.
 The response body is not copied into these errors. Unavailable VM is not an auth failure. Provider and guard exceptions are replaced with a fixed message. The public error is raised outside the handler, so its chain does not carry the original text.
@@ -314,7 +315,13 @@ The response body is not copied into these errors. Unavailable VM is not an auth
 | `error_code` | set when the collect did not finish |
 | `body` | scrubbed UTF-8 body for persistence, or empty when the bytes are not UTF-8 |
 
-The verdict is classified on the original bounded body, then a separate public body is scrubbed. Known credential values held on that call are removed, then `safety.redact_text` runs. Undecodable bytes are not returned.
+The verdict is classified on the original bounded body, then a separate public body is scrubbed.
+Complete known-value ranges are selected before public-key placeholders or any destructive mask,
+and projected through those sparse spelling edits. The shared `redact_text` additive hook combines
+known values and codec Bearer credential spans from its original/canonical views with complete
+header folds before rendering; it reuses the existing decoder budgets and mappings. Muse's bounded
+syntax fallback follows that scan. Known values override public-key exemptions, including private
+key fragments, while independent public boundaries remain visible. Undecodable bytes are not returned.
 
 A broadcast can also interrupt an exchange already waiting on a socket. It closes the
 socket without replaying the request. An incomplete read returns `E_NETWORK_TIMEOUT`;
@@ -939,8 +946,9 @@ Quoted keys scan plain runs between escapes. Classification caches retain only k
 of at most 256 characters, so large authenticated keys cannot accumulate across connections. Authorization consumes a whole
 run on failure and redacts scheme-less and scheme-plus-credential values. Every
 codec-hidden value must also be hidden by text/body sanitization (seeded 5,000-case
-compositions). Known raw and twice-decoded percent-coordinate spans are unioned,
-merged, and rendered with one join; bodies are never truncated before redaction.
+compositions). Known raw and twice-decoded percent-coordinate spans are united with
+the shared original/canonical selections before masking; each selected union is
+rendered with one join. Bodies are never truncated before redaction.
 CPU doubling tests cover k:, k=>, a=1;, k:v|, ;p=1 and authorization:, raw and in
 JSON string wrappers, 128 KiB–1 MiB, for owned scanning and public text/body paths.
 The B16a integration carries the linear core scanner and converts the five
