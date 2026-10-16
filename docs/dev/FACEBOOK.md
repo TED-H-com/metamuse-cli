@@ -334,9 +334,14 @@ a failing cohort is incomplete and needs a cause fix on new source, never an unc
 retry for green. A 30-second faulthandler dump is diagnostic only. Successful jobs
 run every selected node, preserving existing assertions, strict xfails and browser
 skip refusal. No per-test deadline or production limit changes.
+The cohort Python process enables unbuffered output and faulthandler. Flushed
+`COHORT_START <node ID>` and `COHORT_FINISH <node ID>` lines identify actual runtime
+progress even if pytest exits abruptly. A finish line records the end of a node,
+including a failed test; manifests and exit codes still determine success. These
+diagnostics do not recover or explain the earlier hosted Muse exit 139.
 
 The required `check` depends on the entire matrix, `static-wheel`, and
-`installed-journeys`. It runs
+both `installed-journeys` and `privacy-load`. It runs
 even after upstream failure, checks every job result, and verifies five manifests:
 same source SHA, identical sorted full node IDs and SHA-256, nonempty disjoint
 selected sets whose union equals the full collection, and completed runtime nodes
@@ -384,6 +389,41 @@ under `installed-<runtime SHA>-journeys`, outside the `ci-<SHA>-*` cohort artifa
 pattern. This job adds one runner and another wheel build/dependency installation.
 Hosted exact-source full and installed passes plus independent review remain required;
 local helper probes and collection do not establish acceptance or LIVE.
+
+`privacy-load` adds one required 30-minute hosted job on the combined final repaired
+tree. Five serial measurements each run the same unchanged six regression nodes:
+
+```text
+tests/test_muse_round5_growth.py::test_r5_5_ordinary_pairs_core_growth
+tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-False-text]
+tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-True-text]
+tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-False-body]
+tests/test_muse_round6_growth.py::test_r6_2_adversarial_grammars_linear[k=>-True-body]
+tests/test_at042_review_fixes.py::test_b16a_bare_muse_cookie_must_not_leak_into_redacted_bundle
+```
+
+The fixed `1 2 3 4 5` loop stops at its first failed run and propagates its exit.
+Each run has a unique disk RUNNER_TEMP basetemp, cleaned by the exit trap, and
+prints the original CPU_GROWTH tables and pytest summary with `-q -s`. No size,
+sample count, slope, ratio, time or RSS assertion changes. Five successful runs
+must provide 25 original tables, 300 CPU samples and 30 test passes; the orchestrator
+independently checks those logs. Earlier measurements on different redactor code
+cannot certify a later Muse entrypoint repair. Do not execute the load runs locally
+while preparing this workflow.
+
+Each `load-N.log` includes the initial clean runtime commit/tree/parents, candidate
+SHA, actual managed 3.12.13 interpreter and SHA-256 of both redactors, the CPU helper
+and the three harness modules. `identity.json` and `results.tsv` retain that identity,
+attempted runs, completed runs with exit zero, and the job exit. A terminated job
+can leave an attempted run without a completion record. An always-upload step keeps
+only these small diagnostics and logs under `privacy-load-<runtime SHA>` for seven
+days, outside the cohort artifact pattern. No workspace or database is uploaded.
+This adds a runner and repeated measurements alongside the five-cohort full union;
+it neither replaces nor enters that union. Missing, failed, skipped or cancelled
+`privacy-load` fails `check`, even if all other jobs pass. All eight execution jobs
+(five cohorts, static/wheel, installed journeys and privacy load) remain bounded;
+their aggregate also retains its 30-minute limit. Final hosted success, exact source
+and worst resource-cap audits and independent review remain required.
 
 Manifests contain node IDs and execution metadata, without captured fixture bodies.
 An always-upload step retains manifests and diagnostic logs for seven days under

@@ -106,9 +106,10 @@ def test_fake_tool_preserves_failures_and_requires_two_passes(
 
 
 @pytest.mark.parametrize("result", ["success", "failure", "cancelled", "skipped", ""])
-def test_required_gate_refuses_any_nonpassing_installed_job(tmp_path, result):
+@pytest.mark.parametrize("required_job", ["INSTALLED_RESULT", "PRIVACY_LOAD_RESULT"])
+def test_required_gate_refuses_any_nonpassing_installed_or_load_job(tmp_path, result, required_job):
     # Execute the actual gate shell with a successful fake cohort verifier.
-    # All cohort/static results succeed: installed failure must still fail it.
+    # All other jobs succeed: either additional required job must still fail it.
     workflow = (ROOT / ".github/workflows/ci.yml").read_text()
     gate = workflow.split("- name: Require every job and exact full-suite runtime coverage\n")[1]
     command = textwrap.dedent(gate.split("run: |\n")[1])
@@ -121,7 +122,9 @@ def test_required_gate_refuses_any_nonpassing_installed_job(tmp_path, result):
         "GITHUB_SHA": "a" * 40,
         "COHORT_RESULT": "success",
         "STATIC_RESULT": "success",
-        "INSTALLED_RESULT": result,
+        "INSTALLED_RESULT": "success",
+        "PRIVACY_LOAD_RESULT": "success",
+        required_job: result,
     }
     completed = subprocess.run(
         ["bash", "-e", "-o", "pipefail", "-c", command],

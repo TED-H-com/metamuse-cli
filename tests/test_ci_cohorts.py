@@ -162,6 +162,20 @@ def test_runner_preserves_nonpassing_exits(tmp_path, group, body, args, exit_cod
         assert manifest["pytest_exit_code"] == exit_code
     if exit_code == 1:
         assert "assert False" in result.stdout
+        assert "COHORT_START test_probe.py::test_failure\n" in result.stdout
+        assert "COHORT_FINISH test_probe.py::test_failure\n" in result.stdout
+
+
+def test_abrupt_exit_retains_flushed_active_node_without_success(tmp_path):
+    (tmp_path / "pytest.ini").write_text("[pytest]\n")
+    (tmp_path / "test_probe.py").write_text("import os\ndef test_abrupt(): os._exit(139)\n")
+    result = run_probe(tmp_path, "core")
+    assert result.returncode == 139
+    assert "COHORT_START test_probe.py::test_abrupt\n" in result.stdout
+    assert "COHORT_FINISH test_probe.py::test_abrupt" not in result.stdout
+    manifest = json.loads((tmp_path / "core.json").read_text())
+    assert manifest["selected"] == ["test_probe.py::test_abrupt"]
+    assert manifest["pytest_exit_code"] is None and manifest["finished"] == []
 
 
 def test_workflow_requires_all_cohorts_static_wheel_and_exact_coverage():
@@ -171,7 +185,7 @@ def test_workflow_requires_all_cohorts_static_wheel_and_exact_coverage():
             r"^  ([a-z-]+):\n(.*?)(?=^  [a-z-]+:\n|\Z)", workflow.split("jobs:\n")[1], re.M | re.S
         )
     )
-    assert set(jobs) == {"static-wheel", "cohorts", "installed-journeys", "check"}
+    assert set(jobs) == {"static-wheel", "cohorts", "installed-journeys", "privacy-load", "check"}
     for job in jobs.values():
         assert "timeout-minutes: 30\n" in job
         assert "runs-on: ubuntu-24.04\n" in job
@@ -185,6 +199,7 @@ def test_workflow_requires_all_cohorts_static_wheel_and_exact_coverage():
     assert "cohort: [core, muse, media, facebook, privacy]" in cohorts
     assert "fail-fast: false" in cohorts and "max-parallel: 5" in cohorts
     assert "--maxfail=1 -o faulthandler_timeout=30 --basetemp" in cohorts
+    assert "python -u -X faulthandler scripts/ci_cohorts.py run" in cohorts
     assert 'mktemp -d "${RUNNER_TEMP}/metamuse-pytest.XXXXXX"' in cohorts
     assert "trap 'rm -rf \"$pytest_temp_dir\"' EXIT" in cohorts
     assert "set -o pipefail" in cohorts
@@ -193,14 +208,30 @@ def test_workflow_requires_all_cohorts_static_wheel_and_exact_coverage():
     assert "if: always()\n        uses: actions/upload-artifact@" in cohorts
     assert "ci-${{ github.sha }}-${{ matrix.cohort }}" in cohorts
     check = jobs["check"]
-    assert "needs: [static-wheel, cohorts, installed-journeys]\n    if: always()" in check
+    assert (
+        "needs: [static-wheel, cohorts, installed-journeys, privacy-load]\n    if: always()"
+        in check
+    )
     assert "pattern: ci-${{ github.sha }}-*" in check
     assert 'verify --manifest-dir ci-evidence --source-sha "$GITHUB_SHA"' in check
     assert 'test "$COHORT_RESULT" = success' in check
     assert 'test "$STATIC_RESULT" = success' in check
     assert 'test "$INSTALLED_RESULT" = success' in check
+    assert "PRIVACY_LOAD_RESULT: ${{ needs.privacy-load.result }}" in check
+    assert 'test "$PRIVACY_LOAD_RESULT" = success' in check
     assert "if: always()\n        env:" in check
     assert "continue-on-error" not in workflow
+    privacy = jobs["privacy-load"]
+    assert "for run in 1 2 3 4 5; do" in privacy
+    assert "set -euo pipefail" in privacy
+    assert "python -u -X faulthandler -m pytest -q -s" in privacy
+    assert 'mktemp -d "$RUNNER_TEMP/metamuse-privacy-load.XXXXXX"' in privacy
+    assert "trap cleanup EXIT" in privacy and 'rm -rf -- "$pytest_temp_dir"' in privacy
+    assert 'git("rev-parse", "HEAD") == os.environ["GITHUB_SHA"]' in privacy
+    for path in ("safety.py", "_muse_redact.py", "cpu_growth.py"):
+        assert path in privacy
+    assert "if: always()\n        uses: actions/upload-artifact@" in privacy
+    assert "name: privacy-load-${{ github.sha }}" in privacy
     for action in re.findall(r"uses: (\S+)", workflow):
         assert re.fullmatch(r"(?:actions|astral-sh)/[\w-]+@[a-f0-9]{40}", action)
     static = jobs["static-wheel"]
