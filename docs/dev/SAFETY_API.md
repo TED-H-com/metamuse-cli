@@ -397,8 +397,8 @@ import and rebind.
 
 ## B16a classifier and finding classes
 
-`redact_text(text, *, private_spans=None) -> (text, findings)` preserves existing
-calls and their default scanning path. [SPEC](../design/02_SPEC.md)
+`redact_text(text, *, private_spans=None, private_placeholder="[REDACTED]")`
+returns `(text, findings)` and preserves existing calls and their default scanning path. [SPEC](../design/02_SPEC.md)
 contains every closed exemption, name exclusion, syntax, encoding and refused-by-design
 form. `redaction_sensitive_key` classifies names; `redaction_sensitive_value` applies
 those closed exemptions, including whole structured numbers/arrays/objects. Names are
@@ -427,8 +427,22 @@ any replacement. It returns an iterable of ordered half-open `(start, end)` Pyth
 Endpoints must be exact `int` values (not `bool`), with
 `0 <= start < end <= len(view)`, sorted and nonoverlapping; adjacent pairs are valid.
 The callback cannot select a finding class, replacement, exemption or permission.
-Its additions use `sensitive_field` and `[REDACTED]`, and union with core spans
-through the existing overlap/count/replacement rules. Core masks are never removed.
+Its additions use `sensitive_field`. The optional trusted `private_placeholder`
+keyword selects only the default `[REDACTED]` or the fixed legacy display marker
+`redacted`; it must be an exact plain `str`, never a subclass. Other choices raise
+fixed `ValueError("Invalid private placeholder")` before invoking a callback or
+returning output, even with no hook. Rejection never compares or represents an
+untrusted object and introduces no sensitive exception chain.
+
+The choice changes only validated additions' replacement slots. Union still uses
+existing overlap/count/replacement precedence, so it does not force the legacy
+marker over a covering shared structured replacement or a later core redaction.
+Shared-only masks and pre-existing public literal markers are unchanged. Original
+and canonical additions use the choice only on the first application; confirmation
+passes and the complete unstable fallback retain `[REDACTED]`. The existing counts
+still include findings from any subsequent core application. Core masks are never
+removed. This is internal display compatibility, not a model permission or a way
+to inject arbitrary text.
 
 On the first single-pass application only, `original=True` receives the exact input
 before decoding or replacement. If the existing canonical decoded view differs,

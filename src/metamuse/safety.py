@@ -4450,9 +4450,16 @@ def _form_prefix_ranges(text, depths, prefix, start, end, level):
 
 
 def _redact_once(
-    text: str, *, private_spans: Callable[..., Iterable[tuple[int, int]]] | None = None
+    text: str,
+    *,
+    private_spans: Callable[..., Iterable[tuple[int, int]]] | None = None,
+    private_placeholder: str = _REDACTED,
 ) -> tuple[str, list[dict[str, str | int]]]:
     """Canonical decoded views, forward scans, sparse offsets, one output join."""
+    if type(private_placeholder) is not str or (
+        private_placeholder != _REDACTED and private_placeholder != "redacted"
+    ):
+        raise ValueError("Invalid private placeholder")
     if private_spans is not None:
 
         def additions(value, *, original):
@@ -4468,7 +4475,7 @@ def _redact_once(
                     ):
                         valid = False
                         break
-                    result.append((start, end, "sensitive_field", _REDACTED))
+                    result.append((start, end, "sensitive_field", private_placeholder))
                     previous = end
             except Exception:
                 valid = False
@@ -4627,13 +4634,22 @@ def _redact_once(
 
 
 def redact_text(
-    text: str, *, private_spans: Callable[..., Iterable[tuple[int, int]]] | None = None
+    text: str,
+    *,
+    private_spans: Callable[..., Iterable[tuple[int, int]]] | None = None,
+    private_placeholder: str = _REDACTED,
 ) -> tuple[str, list[dict[str, str | int]]]:
     """Bounded fixpoint; optional additive spans apply only to the initial input."""
+    if type(private_placeholder) is not str or (
+        private_placeholder != _REDACTED and private_placeholder != "redacted"
+    ):
+        raise ValueError("Invalid private placeholder")
     counts = {}
     for attempt in range(4):
         if attempt == 0 and private_spans is not None:
-            output, findings = _redact_once(text, private_spans=private_spans)
+            output, findings = _redact_once(
+                text, private_spans=private_spans, private_placeholder=private_placeholder
+            )
         else:
             output, findings = _redact_once(text)
         for finding in findings:
