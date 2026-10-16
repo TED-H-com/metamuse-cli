@@ -92,6 +92,7 @@ def check_parity_order(selected: list[str], group: str) -> None:
 
 def run_cohort(group: str, manifest: Path, source_sha: str, pytest_args: list[str]) -> int:
     import pytest
+    import pytest_diagnostics
 
     class Selection:
         def __init__(self):
@@ -165,7 +166,7 @@ def run_cohort(group: str, manifest: Path, source_sha: str, pytest_args: list[st
     manifest.parent.mkdir(parents=True, exist_ok=True)
     manifest.write_text(json.dumps(plugin.data, indent=2) + "\n")
     try:
-        result = int(pytest.main(pytest_args, plugins=[plugin]))
+        result = int(pytest.main(pytest_args, plugins=[plugin, pytest_diagnostics]))
         if result == 0:
             selected = plugin.data["selected"]
             finished = plugin.data["finished"]

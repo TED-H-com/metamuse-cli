@@ -25,6 +25,17 @@ NODES = (
     "tests/test_muse_research.py::test_one_cli_approval_two_mcp_questions_restart_citations_export",
 )
 
+DIAGNOSTIC_SOURCE = "scripts/pytest_diagnostics.py"
+DIAGNOSTIC_COPY = "conftest.py"
+
+
+def diagnostic_identity(root: Path) -> dict:
+    return {
+        "source": DIAGNOSTIC_SOURCE,
+        "destination": "checks/" + DIAGNOSTIC_COPY,
+        "sha256": hashlib.sha256((root / DIAGNOSTIC_SOURCE).read_bytes()).hexdigest(),
+    }
+
 
 def source_identity(root: Path, expected: str) -> dict:
     def git(*args):
@@ -59,7 +70,8 @@ def hashes(root: Path) -> dict[str, str]:
 
 def verify_harness(root: Path, work: Path) -> dict[str, str]:
     expected = {name: hashlib.sha256((root / name).read_bytes()).hexdigest() for name in HARNESS}
-    if hashes(work / "checks") != expected:
+    expected[DIAGNOSTIC_COPY] = diagnostic_identity(root)["sha256"]
+    if (work / "checks" / DIAGNOSTIC_COPY).is_symlink() or hashes(work / "checks") != expected:
         raise ValueError("Copied harness/corpus differs from the exact source")
     return expected
 
@@ -95,6 +107,8 @@ def prepare(root: Path, work: Path, evidence: Path, expected: str) -> None:
         destination = work / "checks" / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / name, destination)
+    shutil.copyfile(root / DIAGNOSTIC_SOURCE, work / "checks" / DIAGNOSTIC_COPY)
+    data["diagnostic_helper"] = diagnostic_identity(root)
     (work / "run").mkdir()
     data["harness_hashes"] = verify_harness(root, work)
     write_manifest(evidence, data)
@@ -163,6 +177,9 @@ def run_pytest(python: str, work: Path, evidence: Path, data: dict) -> int:
         env.pop(name, None)
     command = [
         python,
+        "-u",
+        "-X",
+        "faulthandler",
         "-s",
         "-m",
         "pytest",
@@ -176,7 +193,7 @@ def run_pytest(python: str, work: Path, evidence: Path, data: dict) -> int:
         "-p",
         "no:cacheprovider",
         "-o",
-        "faulthandler_timeout=30",
+        "faulthandler_timeout=0",
         "--basetemp",
         str(work / "pytest"),
         "--junitxml",
@@ -250,6 +267,8 @@ def run(root: Path, work: Path, evidence: Path, expected: str) -> int:
     origin = Path(metamuse.__file__).resolve()
     data["package_hashes"] = verify_package(root, origin.parent, prefix)
     data["harness_hashes"] = verify_harness(root, work)
+    if data["diagnostic_helper"] != diagnostic_identity(root):
+        raise ValueError("Diagnostic helper identity changed after wheel build")
     data.update(
         verified=True,
         package_origin=str(origin),

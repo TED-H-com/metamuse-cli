@@ -78,7 +78,7 @@ jobs:
             --cohort "${{ matrix.cohort }}" \
             --source-sha "$GITHUB_SHA" \
             --manifest "ci-evidence/${{ matrix.cohort }}.json" -- \
-            -q --maxfail=1 -o faulthandler_timeout=30 --basetemp "$pytest_temp_dir" \
+            -q --maxfail=1 -o faulthandler_timeout=0 --basetemp "$pytest_temp_dir" \
             2>&1 | tee "ci-evidence/${{ matrix.cohort }}.log"
       - name: Retain manifest and diagnostic log even on failure
         if: always()
