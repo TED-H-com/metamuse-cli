@@ -339,7 +339,7 @@ def _shared_redaction(value, known):
         )
         return _merged_spans(spans)
 
-    cleaned = redact_text(rendered, private_spans=private_spans)[0]
+    cleaned = redact_text(rendered, private_spans=private_spans, private_placeholder="redacted")[0]
     # One replacement pass even when there are many public assignment keys.
     if protected:
         cleaned = re.sub(

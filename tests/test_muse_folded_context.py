@@ -250,3 +250,50 @@ def test_known_ranges_cross_and_overlap_public_key_placeholders():
             assert_private(output, known_parts)
             assert "public-value" in output
             assert sanitize_text(output, known_parts) == output
+
+
+def test_legacy_known_marker_preserves_shared_masks_and_literal_neighbours():
+    known = "a1b2c3d4-0000-0000-0000-000000001234"
+    text = (
+        "literal [REDACTED] / redacted; id "
+        + known
+        + " KEEP-THIS-CONTEXT\nAuthorization: Bearer ZqSharedOnly42Synthetic"
+    )
+    expected = (
+        "literal [REDACTED] / redacted; id redacted KEEP-THIS-CONTEXT\nAuthorization: [REDACTED]"
+    )
+    secrets = _Secrets()
+    secrets.add(known)
+    for output in (
+        sanitize_text(text, (known,)),
+        secrets.text(text),
+        secrets.body(text.encode()).decode(),
+    ):
+        assert output == expected
+        assert sanitize_text(output, (known,)) == output
+    # Exempt fields keep literal marker values; a remembered value still wins.
+    assert sanitize_document(
+        {"session_id": "redacted", "discussion_id": "[REDACTED]", "job_id": known},
+        (known,),
+    ) == {"session_id": "redacted", "discussion_id": "[REDACTED]", "job_id": "redacted"}
+
+
+def test_legacy_known_marker_keeps_encoded_neighbours_and_json_structure():
+    known = "OUTsyntheticHEADbcdeTAILsynthetic"
+    for representation in ("raw", "json", "json_in_json", "pct1", "pct2", "form_plus"):
+        text = encode("left " + known + " right", representation)
+        secrets = _Secrets()
+        secrets.add(known)
+        secrets.add("bcde")
+        for output in (
+            sanitize_text(text, (known, "bcde")),
+            secrets.text(text),
+            secrets.body(text.encode()).decode(),
+        ):
+            decoded = unquote_plus(unquote_plus(output))
+            assert "left redacted right" in decoded
+            assert "[REDACTED]" not in output
+            assert_private(output, (known, "bcde"))
+            assert sanitize_text(output, (known, "bcde")) == output
+            if representation in ("json", "json_in_json"):
+                json.loads(output)
