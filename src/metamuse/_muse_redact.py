@@ -51,6 +51,11 @@ def _embedded_wake(match):
 
 _ENVELOPE = re.compile(r"(?i)\b(?:s0:|delegation\.|endorsement\.)[A-Za-z0-9_.~+/=-]+")
 _NOTARY = re.compile(r"(?<![A-Za-z0-9_.-])(?:[A-Za-z0-9_-]+\.){5}[A-Za-z0-9_-]+(?![A-Za-z0-9_.-])")
+# The shared scanner owns complete header folds and their enclosing boundaries.
+# Erasing these introducers first would leave their continuation values untyped.
+_HEADER_CONTEXT_KEYS = frozenset(
+    ("cookie", "setcookie", "cookieheader", "authorization", "proxyauthorization")
+)
 
 
 _COUNTS = frozenset(
@@ -217,17 +222,19 @@ def _text_key(match):
 def _syntax_spans(value):
     from metamuse._muse_codec import _BEARER, _COOKIE, _PAIR
 
-    for match in re.finditer(
-        r"(?i)(?<![a-z0-9_.-])(?:proxy-)?authorization\s*:\s*\S+(?:[ \t]+[^\s,}]+)?", value
-    ):
-        yield match.span()
-    # Match these before a generic assignment can treat 'Bearer' as the value.
-    for pattern in (_BEARER, _COOKIE, _PAIR):
-        yield from (match.span() for match in pattern.finditer(value))
+    # Preserve shared header masks and their enclosing boundaries. The codec
+    # fallback still covers untyped text without consuming a masked Cookie line.
+    for match in _BEARER.finditer(value):
+        yield match.end(1), match.end()
+    for match in _COOKIE.finditer(value):
+        if not match[0].split(":", 1)[1].lstrip().startswith("[REDACTED]"):
+            yield match.span()
+    yield from (match.span() for match in _PAIR.finditer(value))
     offset = 0
     while match := _ASSIGNMENT.search(value, offset):
         offset = match.end()
-        if sensitive_key(_text_key(match)):
+        key = _text_key(match)
+        if sensitive_key(key) and compact(key) not in _HEADER_CONTEXT_KEYS:
             body = _VALUE.match(value, offset)
             if body is not None:
                 yield match.start(), body.end()
@@ -248,7 +255,47 @@ def _syntax_spans(value):
         yield from (match.span() for match in pattern.finditer(value))
 
 
+def _shared_redaction(value):
+    # Core historically classifies session_id as a cookie. Protect only these
+    # public key spellings; values still pass known-value and core scrubbing.
+    protected = {}
+
+    def mask_public(match):
+        key = match[2]
+        if not public_key(_text_key(match)):
+            return match[0]
+        placeholder = "musepublicfield" + str(len(protected)) + "end"
+        protected[placeholder] = key
+        return match[0].replace(key, placeholder, 1)
+
+    rendered = _ASSIGNMENT.sub(mask_public, value)
+
+    def mask_public_tag(match):
+        if not public_key(match[2]):
+            return match[0]
+        placeholder = "musepublicfield" + str(len(protected)) + "end"
+        protected[placeholder] = match[2]
+        return "<" + match[1] + placeholder + ">"
+
+    rendered = re.sub(r"<(/?)([^\s<>/]+)>", mask_public_tag, rendered)
+    cleaned = redact_text(rendered)[0]
+    # One replacement pass even when there are many public assignment keys.
+    if protected:
+        cleaned = re.sub(
+            r"musepublicfield[0-9]+end", lambda match: protected.get(match[0], match[0]), cleaned
+        )
+    return cleaned
+
+
 def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
+    from metamuse._muse_codec import _BEARER
+
+    # Keep codec parity even if a neighbouring malformed assignment would make
+    # the shared scan consume only the scheme. Retain the complete introducer.
+    value = _BEARER.sub(lambda match: match[1] + "redacted", value)
+    # The shared scanner must see the credential context, including
+    # folds, before an owned match can erase a header or enclosing assignment.
+    value = _shared_redaction(value)
     spans = []
     for decoded, positions in _decoded_levels(value):
         whole_wake = _WAKE_OBJECT.fullmatch(decoded)
@@ -262,27 +309,7 @@ def sanitize_text(value: str, known: tuple[str, ...] = ()) -> str:
                 if positions is not None
                 else (start, end)
             )
-    rendered = _render_spans(value, spans)
-    # Core historically classifies session_id as a cookie. Protect only these
-    # public key spellings; values still pass known-value and core scrubbing.
-    protected = {}
-
-    def mask_public(match):
-        key = match[2]
-        if not public_key(_text_key(match)):
-            return match[0]
-        placeholder = "musepublicfield" + str(len(protected)) + "end"
-        protected[placeholder] = key
-        return match[0].replace(key, placeholder, 1)
-
-    rendered = _ASSIGNMENT.sub(mask_public, rendered)
-    cleaned = redact_text(rendered)[0]
-    # One replacement pass even when there are many public assignment keys.
-    if protected:
-        cleaned = re.sub(
-            r"musepublicfield[0-9]+end", lambda match: protected.get(match[0], match[0]), cleaned
-        )
-    return cleaned
+    return _render_spans(value, spans)
 
 
 def sanitize_document(value: Any, known: tuple[str, ...] = (), depth=0) -> Any:
