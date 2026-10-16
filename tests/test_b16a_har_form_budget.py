@@ -25,7 +25,7 @@ def test_form_owned_har_masks_at_exhausted_other_budgets(encoding, shape):
     values = {"string": marker, "number": 7319, "container": [marker]}
     record = {"name": "password", "value": values.get(shape, marker), "public": "inner"}
     plain = json.dumps(
-        {"cookies" if shape == "cookies" else "headers": [record], "public": "visible"}
+        {"cookies" if shape == "cookies" else "entries": [record], "public": "visible"}
     )
     text = "q=" + encoding(plain, safe="") + "&outside=public"
     spans = list(safety._har_spans(text, _depth=3, _percent_depth=3, _form_depth=2))
@@ -36,7 +36,7 @@ def test_form_owned_har_masks_at_exhausted_other_budgets(encoding, shape):
         {"cookies": "[REDACTED]", "public": "visible"}
         if shape == "cookies"
         else {
-            "headers": [{"name": "password", "value": "[REDACTED]", "public": "inner"}],
+            "entries": [{"name": "password", "value": "[REDACTED]", "public": "inner"}],
             "public": "visible",
         }
     )
@@ -73,3 +73,35 @@ def test_form_percent_decoding_does_not_reinterpret_string_data_as_har_structure
     plain = json.dumps({"name": "theme", "value": literal, "public": "visible + %22"})
     text = "q=" + quote_plus(plain)
     assert list(safety._har_candidates(text, _depth=3, _percent_depth=3)) == []
+
+
+def test_sensitive_outer_headers_keep_their_whole_mask_after_har_mapping():
+    marker = "FormBudget_" + "Synthetic_7319"
+    for value in (marker, 7319, [marker]):
+        for encoding in (quote, quote_plus):
+            plain = json.dumps(
+                {
+                    "headers": [{"name": "password", "value": value, "public": "inner"}],
+                    "public": "visible",
+                }
+            )
+            text = "q=" + encoding(plain, safe="") + "&outside=public"
+            intermediate = render(
+                text,
+                safety._har_spans(text, _depth=3, _percent_depth=3, _form_depth=2),
+            )
+            # The HAR helper masks one value. The public API additionally owns
+            # the sensitive outer headers field; its contents are not public.
+            assert json.loads(parse_qs(intermediate)["q"][0]) == {
+                "headers": [{"name": "password", "value": "[REDACTED]", "public": "inner"}],
+                "public": "visible",
+            }
+            output, findings = safety.redact_text(intermediate)
+            assert json.loads(parse_qs(output)["q"][0]) == {
+                "headers": "[REDACTED]",
+                "public": "visible",
+            }
+            assert parse_qs(output)["outside"] == ["public"]
+            assert marker not in output
+            assert len(findings) == 1 and findings[0]["count"] == 1
+            assert safety.redact_text(output) == (output, [])
