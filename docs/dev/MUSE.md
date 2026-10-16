@@ -320,7 +320,9 @@ Complete known-value ranges are selected before public-key placeholders or any d
 and projected through those sparse spelling edits. The shared `redact_text` additive hook combines
 known values and codec Bearer credential spans from its original/canonical views with complete
 header folds before rendering; it reuses the existing decoder budgets and mappings. Muse's bounded
-syntax fallback follows that scan. Known values override public-key exemptions, including private
+syntax fallback follows that scan. Muse opts into the closed legacy `redacted` marker for additive
+selections; independent shared masks keep their own replacements, and covering structured masks
+retain valid source-layer JSON. Known values override public-key exemptions, including private
 key fragments, while independent public boundaries remain visible. Undecodable bytes are not returned.
 
 A broadcast can also interrupt an exchange already waiting on a socket. It closes the
