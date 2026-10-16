@@ -246,7 +246,7 @@ def test_r33_nonrefusable_display_masks_unstable_value(monkeypatch):
     monkeypatch.setattr(
         safety,
         "_redact_once",
-        lambda text, *, private_spans=None: (
+        lambda text, *, private_spans=None, private_placeholder=None: (
             (text + "!", []) if text.startswith(value) else (text, [])
         ),
     )
@@ -266,7 +266,7 @@ def test_r33_nonrefusable_display_masks_unstable_key(monkeypatch):
     monkeypatch.setattr(
         safety,
         "_redact_once",
-        lambda text, *, private_spans=None: (
+        lambda text, *, private_spans=None, private_placeholder=None: (
             (text + "!", []) if text.startswith(key) else (text, [])
         ),
     )
