@@ -21,7 +21,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from functools import lru_cache
+from functools import lru_cache, wraps
 from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, BinaryIO, Literal
@@ -1431,14 +1431,28 @@ _REDACTED = "[REDACTED]"
 _NAME = r"[A-Za-z_][A-Za-z0-9_.-]{0,127}+"
 
 
-@lru_cache(maxsize=2048)
+def _short_name_cache(function):
+    """Retain bounded names while classifying longer names in full."""
+    cached = lru_cache(maxsize=2048)(function)
+
+    @wraps(function)
+    def classify(key):
+        return cached(key) if len(key) <= 256 else function(key)
+
+    classify.cache_info = cached.cache_info
+    classify.cache_clear = cached.cache_clear
+    classify.cache_parameters = cached.cache_parameters
+    return classify
+
+
+@_short_name_cache
 def _credential_name(key: str) -> str:
     for _ in range(3):
         key = unquote(key)
     return key.lower().replace("_", "").replace("-", "")
 
 
-@lru_cache(maxsize=2048)
+@_short_name_cache
 def redaction_sensitive_key(key: str) -> bool:
     """Credential names, with closed pagination/tokenizer exclusions by name."""
     name = _credential_name(key)
