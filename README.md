@@ -18,10 +18,10 @@ Search currently matches literal text. Your assistant handles interpretation and
 
 ## Try it
 
-You need [Git](https://git-scm.com/downloads) and [uv](https://docs.astral.sh/uv/getting-started/installation/). Install this alpha from source as a command, then run the bundled example.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the [alpha package](https://pypi.org/project/metamuse-cli/0.1.0a1/) and run the bundled example. uv manages the Python version and creates an isolated environment for the command.
 
 ```sh
-uv tool install --python 3.12.13 "git+https://github.com/TED-H-com/metamuse-cli.git@main"
+uv tool install --python 3.12.13 'metamuse-cli==0.1.0a1'
 metamuse demo
 ```
 

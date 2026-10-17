@@ -59,8 +59,8 @@
         "zh": "範例不需要帳號"
       },
       {
-        "en": "Source preview",
-        "zh": "原始碼預覽版"
+        "en": "Alpha package",
+        "zh": "Alpha 試用版"
       }
     ],
     "visual": {
@@ -376,8 +376,8 @@
           "zh": "這是網頁版工具嗎？"
         },
         "body": {
-          "en": "This page introduces a tool that runs on your computer through a terminal or a connected AI assistant. The source preview can be installed today; a packaged release is not published yet.",
-          "zh": "這裡是介紹頁。工具在你的電腦上，透過終端機或已連接的 AI 助理操作。目前可從原始碼安裝預覽版，尚未發布套件。"
+          "en": "This page introduces a tool you install on your computer. Use it through a terminal or connect it to your AI assistant. The example below shows you how to start.",
+          "zh": "這裡是介紹頁。先把工具安裝在你的電腦上，再透過終端機或已連接的 AI 助理操作。下方的範例會帶你開始。"
         }
       }
     ]
@@ -392,8 +392,8 @@
       "zh": "打開你的第一份有來源回顧。"
     },
     "intro": {
-      "en": "Install Git and uv first, then install the source preview as a command. The alpha is being prepared and is not on PyPI yet. Installation downloads Python and dependencies; the demo needs no account or AI service.",
-      "zh": "先安裝 Git 與 uv，再把原始碼預覽版裝成指令。alpha 套件正在準備，尚未上架 PyPI。安裝會下載 Python 與依賴；範例不需要帳號或 AI 服務。"
+      "en": "Install uv, then run these two commands to try the alpha. Installation downloads Python and dependencies; the demo needs no account or AI service.",
+      "zh": "先安裝 uv，再執行這兩行指令，就能試用 alpha 版。安裝會下載 Python 與依賴；範例不需要帳號或 AI 服務。"
     },
     "nav": {
       "en": "Try it",
@@ -420,10 +420,10 @@
           "zh": "安裝指令"
         },
         "body": {
-          "en": "uv creates an isolated environment for the source preview.",
-          "zh": "uv 會為原始碼預覽版建立獨立的安裝環境。"
+          "en": "uv downloads the alpha package from PyPI and creates an isolated environment for the command.",
+          "zh": "uv 會從 PyPI 下載 alpha 套件，並為指令建立獨立的安裝環境。"
         },
-        "code": "uv tool install --python 3.12.13 \"git+https://github.com/TED-H-com/metamuse-cli.git@main\""
+        "code": "uv tool install --python 3.12.13 'metamuse-cli==0.1.0a1'"
       },
       {
         "title": {
@@ -538,7 +538,7 @@
         "en": "Version",
         "zh": "版本"
       },
-      "value": "0.1.0a1 (release candidate)"
+      "value": "0.1.0a1 (alpha)"
     },
     {
       "label": {
