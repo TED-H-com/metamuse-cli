@@ -804,10 +804,57 @@ def _wss_url(vm_id: str, token: str, notary: str | None = None) -> str:
     return HATCH_WSS_BASE + "?" + urllib.parse.urlencode(query)
 
 
+def _server_endorsement_shape(value: str) -> bool:
+    """Recognize the bounded server-issued v1 wire envelope, not its signatures.
+
+    The gateway verifies this opaque credential. Its presence neither selects a
+    VM tier nor replaces the authenticated standard Noise key/nonce checks.
+    """
+    if (
+        len(value) > 4096
+        or re.fullmatch(
+            r"endorsement\.v1\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+",
+            value,
+        )
+        is None
+    ):
+        return False
+    try:
+        decoded = []
+        for segment in value.split(".")[2:]:
+            raw = base64.b64decode(
+                segment + "=" * (-len(segment) % 4), altchars=b"-_", validate=True
+            )
+            if base64.urlsafe_b64encode(raw).decode().rstrip("=") != segment:
+                return False
+            decoded.append(raw)
+        document, signature, binding, binding_signature = decoded
+        if len(signature) != 64 or len(binding_signature) != 64:
+            return False
+        metadata, destination = _json_value(document), _json_value(binding)
+        return (
+            isinstance(metadata, dict)
+            and not _duplicate_json(metadata)
+            and isinstance(metadata.get("identity"), str)
+            and bool(metadata["identity"])
+            and isinstance(metadata.get("public_key"), dict)
+            and bool(metadata["public_key"])
+            and isinstance(metadata.get("restrictions"), list)
+            and all(isinstance(item, str) for item in metadata["restrictions"])
+            and isinstance(destination, dict)
+            and not _duplicate_json(destination)
+            and destination == {"uri": "/v1/noise"}
+        )
+    except (ValueError, CoreError):
+        return False
+
+
 def _credential_shape(value: Any) -> None:
     if isinstance(value, str):
         trimmed = value.strip()
-        if trimmed.lower().startswith(("delegation.", "endorsement.")):
+        if trimmed.lower().startswith("delegation.") or (
+            trimmed.lower().startswith("endorsement.") and not _server_endorsement_shape(trimmed)
+        ):
             raise protocol_stop()
         if trimmed.lower().startswith("s0:") and (
             len(value) > 4096
@@ -839,7 +886,7 @@ def _notary_token(value: Any) -> str | None:
     if not value:
         return None
     if (
-        value.lower().startswith(("delegation.", "endorsement.", "s0:"))
+        value.lower().startswith(("delegation.", "s0:"))
         or re.fullmatch(r"(?:[A-Za-z0-9_-]+\.){5}[A-Za-z0-9_-]+", value) is None
     ):
         raise protocol_stop()
@@ -1120,7 +1167,19 @@ class MuseTransport:
             if prepared is not None or authorization is not None:
                 raise MuseProgrammingError("reads do not take a mutation authorization")
             marker = str(uuid.uuid4())
-            raw = b""
+            # The daemon reads GET /chat/history's JSON body. A URL-only
+            # session_id can silently select the main chat on this protocol.
+            raw = (
+                m.canonical_json(
+                    {
+                        key: value
+                        for key, value in (query or {}).items()
+                        if value is not None and key != "transcript_mode"
+                    }
+                )
+                if route == "chat.history"
+                else b""
+            )
             payload = None
         if not self._lock.acquire(blocking=False):
             raise ProtocolMismatch("concurrent collection")
@@ -1140,7 +1199,11 @@ class MuseTransport:
                 spec,
                 raw=raw,
                 path=(
-                    prepared.path if prepared is not None else _apply_query(spec.path, query or {})
+                    prepared.path
+                    if prepared is not None
+                    else spec.path
+                    if route == "chat.history"
+                    else _apply_query(spec.path, query or {})
                 ),
                 verb=prepared.verb if prepared is not None else spec.verb,
                 timeout_s=timeout_s,

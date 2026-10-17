@@ -322,7 +322,7 @@ permanent confidential tier before refusing even malformed/unsupported RV fields
 accepted handshake varints are minimal uint64 and RV attestation is nonempty bytes. Both
 standard equalities and mature Noise/TLS remain mandatory. No reset tool exists.
 
-All credential aliases are validated. Case-insensitive delegation/endorsement prefixes,
+All credential aliases are validated. At this historical implementation, delegation/endorsement prefixes,
 malformed/oversized s0 and conflicting notary aliases refuse with protocol/never; legacy
 opaque tokens no longer admit dots. Nonpositive budgets stop before wake/dial/msg1. Only
 endpoint-specific success statuses are admitted: bootstrap 200 from the spike contract,
@@ -335,6 +335,20 @@ Raw/encoded query/JSON aliases, embedded wakes, nonce encodings, request IDs and
 reprs are scrubbed. Regressions cover all five currentness boundaries, cross-process changes,
 SQL replacement/rowid/deletion, backup/restore and cross-label refusal; mutation evidence is
 recorded in the task report. OFFLINE/FIXTURE only; AT-038/AT-043 remain unproven LIVE.
+
+### 9.2 Server-issued notary format correction, 2026-10-17
+
+An operator-authorized run of the installed PyPI alpha passed auth/check and VM
+selection, then stopped before wake/dial or any gateway frame. The notary returned
+by hatch/token was `endorsement.v1`, not a delegation. The blanket endorsement
+refusal in §9.1 therefore also rejected this standard-VM credential. The live token
+and account evidence remain outside the public repository; regression inputs are synthetic.
+
+The inspected first-party web client chunk `28_ha0dlt8f1j.js` from the 2026-10-14
+snapshot distinguishes delegation (needs a local signer) from an already issued
+notary (passed through). This is protocol observation; no web client code is copied.
+The narrowed accepted envelope and unchanged independent VM/Noise checks are in
+[MUSE.md](MUSE.md#connection) and SDS §8. No local signature verification is claimed.
 
 ## 10. Historical inputs for B09 (2026-10-13; current handshake/wake in §9.1)
 

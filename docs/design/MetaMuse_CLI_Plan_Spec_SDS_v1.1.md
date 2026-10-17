@@ -1823,8 +1823,14 @@ Browser context一個控制者，原生登入／2FA由人類處理。人接手�
 選唯一一致hatch_vm row，mint body用row endpoint_url及name；WSS query固定vm_id/auth_token/
 optional non-delegation notary_token/app_id=hatch-web/fresh request UUID4，Origin固定Muse。
 access/hatch token grammar分開；legacy hatch不含dot；s0 opaque不改寫、不冒稱驗signature。每個
-token/notary_token/notaryToken/noiseNotaryToken/endorsement alias先驗；case-insensitive delegation./
-endorsement.及malformed s0回protocol/never，不silent drop。
+token/notary_token/notaryToken/noiseNotaryToken/endorsement alias先驗；case-insensitive delegation.、
+未知或malformed endorsement.及malformed s0回protocol/never，不silent drop。
+2026-10-17 LIVE bootstrap確認standard VM也回傳server-issued `endorsement.v1` notary。
+只在notary欄位接受此六段canonical base64url envelope：metadata是無duplicate的object，
+含非空identity、非空public_key object及string restrictions list；兩signature各64bytes；
+最後document精確為 `{"uri":"/v1/noise"}`。原bytes交gateway驗證，不本機宣稱驗簽或以它
+選擇VM tier。hatch access token仍不接受endorsement，CVM/RV、Noise key/nonce、TLS及sticky
+confidentiality規則不變。不從delegation簽出新endorsement。
 payload/全部vms先normalize VM id、scan hatch_cvm/CVM_*/truthy cvm_required/cvmReplacementEnabled，
 即使unassigned/ambiguous/invalid也先record sticky，再stop；無VM id只record account。wire保留server
 exact id，與storage id只可差case/外側whitespace。msg1帶fresh 32-byte challenge；握手varint minimal
@@ -1877,6 +1883,15 @@ value decides stale iff expiry <= now + 60 seconds; ignore later entries. None u
 means not stale. Mint at most twice; a twice-stale remint stops before wake or dial.
 
 ### Session建立
+
+Daemon wire固定為 `POST /session/start`，body是method `/api/session/start`及params
+`origin:fresh`、`lifecycle:persistent`、精確title。`POST /chat/stream`以單一
+`items:[{type:text,text:question+"\n\n"+packet}]`、固定client node及空capabilities送出。
+client node是project ID SHA-256前16個hex，同project跨重啟穩定；不是研究round ID。
+history的session_id/limit放在 `GET /chat/history` JSON body，不能只放URL query而讀錯main chat。
+接受明示成功的 `{ok:true,result:{...}}` wrapper，history欄位是chat_events；舊flat成功
+response及events仍可讀，duplicate/conflicting/error wrapper拒絕。開題接受一致的session_id/id。
+舊frozen flat mutation不改寫或重送；原grant綁原bytes，不移轉到新wire。
 
 先建本地discussion＋open intent，再遠端create；回remote id才完成mapping。timeout時列open_uncertain。list對帳必須可靠識別，同標題不夠；找不到也不證明沒建。需要人選擇已有session時只顯示核准範圍，不掃其他私人對話猜。
 

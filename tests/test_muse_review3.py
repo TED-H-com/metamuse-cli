@@ -321,7 +321,7 @@ def test_markerless_echo_uses_the_same_redaction_as_outbound_text(
     run(ctx)
     exchange = ctx.store.get(m.Exchange, identity)
     # An accepted question is retained exactly for the wire; association uses normalization.
-    assert exchange.outbound_payload.body["text"].startswith(question + "\n\n")
+    assert exchange.outbound_payload.body["items"][0]["text"].startswith(question + "\n\n")
     if mode == "send_timeout":
         assert ctx.store.get(m.JobStep, exchange.submission_step_id).state == "send_uncertain"
     markerless_history(ctx, did)

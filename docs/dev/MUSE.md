@@ -29,6 +29,15 @@ remain unproven pending the orchestrator's separately authorized LIVE run.
 
 Any other route name, including `cmd_raw`, raises `MuseProgrammingError` before I/O. There is no escape hatch. `chat.history` drops `transcript_mode` when a caller passes it. Service id 0 is omitted on the wire.
 
+The daemon's session body is `{"method":"/api/session/start","params":{"origin":"fresh",
+"lifecycle":"persistent","title":"..."}}`. Sends use `items: [{type: "text", text: "..."}]`,
+the mapped `session_id`, a stable 16-hex project client node and empty `capabilities`.
+History sends `session_id` and `limit` in the GET request's JSON body, matching the
+documented daemon protocol; URL query parameters alone can select the wrong chat.
+Successful `{ok: true, result: {...}}` responses are unwrapped once. History accepts
+`chat_events` and the older `events` field, refusing conflicting aliases or error wrappers.
+Old frozen flat mutation bodies and their grants are never rewritten into new wire bytes.
+
 Default hosts, and the only real hosts in this module:
 
 - `https://muse.ai`
@@ -65,7 +74,12 @@ never credential-checked during send/read/reconciliation.
 prepared = prepare_muse_request(
     "chat.stream",
     marker=stored_marker,
-    body={"text": question},
+    body={
+        "session_id": session_id,
+        "items": [{"type": "text", "text": question}],
+        "node_id": "0123456789abcdef",
+        "capabilities": {},
+    },
     target={"origin": "https://muse.ai", "route": "chat.stream"},
     payload={"text": question},
 )
@@ -149,8 +163,16 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    `s0:<base64url>.<base64url>.<base64url>` verbatim. A present non-delegation notary must have
    six nonempty base64url segments after trimming; pass it unchanged. Missing/blank omits it.
    Every present `token`, `notary_token`, `notaryToken`, `noiseNotaryToken` and `endorsement`
-   is validated. Case-insensitive delegation./endorsement. prefixes and malformed/oversized
+   is validated. Delegation, unknown/malformed endorsement envelopes and malformed/oversized
    s0 envelopes stop with `E_PROTOCOL_MISMATCH` (`never`); aliases are never silently dropped.
+   A standard VM can return a server-issued `endorsement.v1` notary. Only its bounded
+   six-part canonical base64url format is accepted in a notary field: object metadata
+   with nonempty identity/public_key and string restrictions, two 64-byte signatures,
+   and an exact `{"uri":"/v1/noise"}` destination object, without duplicate JSON keys.
+   The original token goes to the gateway for verification. This is format recognition,
+   not local signature verification, CVM support or permission to sign a delegation.
+   Endorsements remain invalid as the hatch access token. Standard Noise key/nonce,
+   TLS and durable confidentiality checks still run independently.
    Conflicting nonempty notary aliases also stop.
    No local signature/expiry verification is claimed. This is only a cache hint:
    decode the third notary segment as before; missing/undecodable/non-object JSON or
@@ -280,7 +302,7 @@ no JSON body. Read/mint success still requires bounded valid JSON and its own fi
 | 200 explicit `ok: false` on auth | `E_AUTH_REQUIRED` | `user_action` |
 | Twice-stale notary after one remint (MUSE_SPIKE §9.1 one-remint stop; unavailable/retry-later is an inference) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | 200 session status `unavailable`, or no identity key, without confidential hints | `E_RESOURCE_UNAVAILABLE` | `user_action` |
-| CVM/RV/delegation/endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
+| CVM/RV/delegation/unsupported endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
 
 Upgrade 401/403 is `E_AUTH_REQUIRED`, 429 is `E_RATE_LIMITED`; DNS/connect/TLS failure
 is `E_NETWORK_TIMEOUT`, with `E_SCOPE_REQUIRED` when the guard refuses. Trust contention is `E_STORAGE` / `safe_read`; environment failures use `user_action`.
@@ -408,7 +430,7 @@ mapped discussion's open reconciliation request with an access approval first. A
 fixture session has a known empty baseline. Sequence observations do not claim full
 history coverage. See [OFFLINE_SLICE.md](OFFLINE_SLICE.md) for a rerunnable journey.
 
-The daemon `text` is exactly `question + "\n\n" + packet.rendered_text`; the two host
+The daemon `items[0].text` is exactly `question + "\n\n" + packet.rendered_text`; the two host
 texts retain CRLF and Unicode composition. The separator is the only joining text.
 Question and packet are independently capped at 8192/49152 UTF-8 bytes, and their
 exact joined text is checked against the verified payload before transport use.

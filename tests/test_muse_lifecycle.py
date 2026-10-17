@@ -225,7 +225,7 @@ def test_open_send_read_close_multipart_late(fixture_ctx, project):
     exchange = ctx.store.get(m.Exchange, response.data["exchange_id"])
     assert exchange.bytes_handed_off is True and exchange.attempt_verdict == "acked"
     assert (
-        exchange.outbound_payload.body["text"]
+        exchange.outbound_payload.body["items"][0]["text"]
         == req.question + "\n\n" + ctx.store.get(m.Packet, req.packet_id).rendered_text
     )
     first = refresh(ctx, exchange.id)
@@ -794,7 +794,7 @@ def test_question_and_packet_caps_allow_exact_joined_gateway_text(fixture_ctx, p
     from metamuse._muse_lifecycle import _wire
 
     wire = _wire(prepared)
-    assert json.loads(wire.body)["text"] == req.question + "\n\n" + exact.rendered_text
+    assert json.loads(wire.body)["items"][0]["text"] == req.question + "\n\n" + exact.rendered_text
     assert len(wire.body) < 65519
 
 

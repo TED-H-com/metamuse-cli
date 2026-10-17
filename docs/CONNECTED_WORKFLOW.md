@@ -8,7 +8,34 @@
 
 ## 先準備自己的工作區
 
-從專案目錄執行以下指令。工作區要放在 Git 專案外；後續都使用同一個路徑：
+已從 PyPI 安裝的人，不需要下載原始碼或切換到專案目錄。先選擇需要的功能：
+
+```bash
+# 本機檔案、Muse 對話與粉專文字發布
+uv tool install --python 3.12.13 'metamuse-cli==0.1.0a1'
+
+# 另外需要 Facebook 收集與遠端影音時，改用這行安裝或更新同一個工具
+uv tool install --python 3.12.13 'metamuse-cli[facebook,remote]==0.1.0a1'
+```
+
+只需要其中一種收集功能時，可將 `[facebook,remote]` 改成 `[facebook]` 或 `[remote]`。
+只有 Facebook 收集需要 Chromium；安裝與套件相同版本的瀏覽器：
+
+```bash
+uv tool run --python 3.12.13 --from 'playwright==1.63.0' playwright install chromium
+```
+
+這些是 [uv 的工具安裝指令](https://docs.astral.sh/uv/guides/tools/)，不依賴目前目錄。
+若終端機找不到 `metamuse`，執行 `uv tool update-shell` 後重新開啟終端機。
+
+工作區要放在 Git 專案外；後續都使用同一個路徑：
+
+```bash
+export WORKSPACE="$HOME/.local/share/metamuse/my-content"
+metamuse --workspace "$WORKSPACE" init
+```
+
+開發者若已經有 checkout，也可以從專案目錄執行：
 
 ```bash
 export WORKSPACE="$HOME/.local/share/metamuse/my-content"
@@ -17,7 +44,7 @@ uv run metamuse --workspace "$WORKSPACE" init
 uv run playwright install chromium
 ```
 
-以下省略 `uv run`；從原始碼執行時，請在 `metamuse` 前加上它。
+以下使用已安裝的 `metamuse`；從原始碼執行時，請在它前面加上 `uv run`。
 
 ## 只接上你需要的帳號
 
@@ -64,7 +91,16 @@ metamuse --workspace "$WORKSPACE" connect publishing \
 metamuse --workspace "$WORKSPACE" doctor
 ```
 
-doctor 不檢查遠端登入是否有效。Facebook 需要可用的 Chromium sandbox；若啟動受阻，
+請分清楚目前到哪一步：
+
+| 狀態 | 可以根據什麼判斷 |
+|---|---|
+| 已設定 | `connect` 成功，回傳 `configured: true`、`account_verified: false`。憑證格式與帳號綁定已保存。 |
+| 已確認能連線 | 獲准的遠端工作完成登入及服務通訊；只有 `connect` 或離線 `doctor` 不算。 |
+| 已完成指定工作 | 檢查該 job 的完成狀態與實際內容，例如讀到的 Muse 回答、收集範圍或粉專回執；部分結果仍須保留缺漏。 |
+
+目前沒有單獨的遠端登入驗證指令；`doctor` 不檢查遠端登入是否有效。
+Facebook 需要可用的 Chromium sandbox；若啟動受阻，
 依 [Facebook 設定指南](dev/FACEBOOK.md#browser-sandbox-is-required)處理。
 如果你的助理已連上 MCP，帳號設定完成後重新啟動該 MCP 連線。
 
