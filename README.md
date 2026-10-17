@@ -6,7 +6,7 @@ Have event feedback to review, or a video transcript to quote? MetaMuse keeps yo
 
 Use it from a terminal, or connect it to an AI assistant that can run CLI or MCP tools. The tool runs on your machine.
 
-[Try the example](#try-it) · [繁體中文上手指南](docs/GETTING_STARTED.md) · [Connect accounts and publish](docs/CONNECTED_WORKFLOW.md) · [Connect your assistant](docs/dev/SKILL.md)
+[Try the example](#try-it) · [繁體中文上手指南](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md) · [Connect accounts and publish](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md) · [Connect your assistant](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/SKILL.md)
 
 ## What can I do with it?
 
@@ -31,22 +31,22 @@ You will import three records, search for `字幕` (subtitles), and export a Mar
 
 Every run creates a separate workspace outside the checkout, under your system's user data directory (`metamuse/demos/`). It stays there so you can inspect it. Delete the workspace printed by the example when you no longer need it.
 
-The [getting started guide (繁體中文)](docs/GETTING_STARTED.md) shows the expected result and how to move on to your own files. The sample inputs are in [src/metamuse/data/examples/event-comments.jsonl](src/metamuse/data/examples/event-comments.jsonl).
+The [getting started guide (繁體中文)](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md) shows the expected result and how to move on to your own files. The sample inputs are in [src/metamuse/data/examples/event-comments.jsonl](https://github.com/TED-H-com/metamuse-cli/blob/main/src/metamuse/data/examples/event-comments.jsonl).
 
 ## Use it with your AI assistant
 
-Connect the installed CLI using the [Skill setup guide](docs/dev/SKILL.md), or configure the [MCP server](docs/dev/MCP.md). Loading the Skill supplies instructions; your assistant also needs access to the working CLI or MCP backend.
+Connect the installed CLI using the [Skill setup guide](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/SKILL.md), or configure the [MCP server](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/MCP.md). Loading the Skill supplies instructions; your assistant also needs access to the working CLI or MCP backend.
 
 Once connected, try a request like this:
 
 > Use MetaMuse to review the event comments I provide and have permission to use. Find feedback about subtitles, group the requests, and draft a recap with links to the original comments. Show me the sources and gaps before saving. Export Markdown and keep this work local.
 
-Muse is an optional collaborator for further questions. Local import, search, drafts and exports work without a Muse account. A real Muse connection needs separate configuration and human approval; the [Muse guide](docs/dev/MUSE.md) covers that path. Real-account LIVE verification is still pending.
+Muse is an optional collaborator for further questions. Local import, search, drafts and exports work without a Muse account. A real Muse connection needs separate configuration and human approval; the [Muse guide](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/MUSE.md) covers that path. Real-account LIVE verification is still pending.
 
 Use `metamuse connect muse`, `connect facebook`, or `connect publishing` to validate your
 private credential file and bind the account without editing TOML. Add `--enable-network`
 to explicitly enable network use; each external action still needs its own approval.
-The [connected workflow guide (中文)](docs/CONNECTED_WORKFLOW.md) walks through setup,
+The [connected workflow guide (中文)](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md) walks through setup,
 collecting one post, Muse follow-ups, a cited draft and Page publication. This complete
 sequence has synthetic integration coverage; real-account acceptance is pending.
 
@@ -63,17 +63,17 @@ Start with files on your computer. You can search, save drafts and export withou
 | Work with your AI assistant | Connect your assistant first | Connect your assistant to MetaMuse, then ask it to find material and draft a recap with citations. |
 | Ask Muse follow-up questions | Needs extra setup; real-account use is unverified | Set up your Muse connection and approve what may be shared before asking questions. Real-account use has not been verified. |
 | Collect a Facebook post or remote video | Needs extra setup; real-account use is unverified | Additional setup and your approval are required. These collectors have not been verified with real accounts. |
-| Publish a text post to a Facebook Page | Needs extra setup; real-account use is unverified | Preview a saved draft, approve its exact text and Page, then send and check the saved receipt. Text-only Page posts are experimental; [setup and limits](docs/dev/PUBLISHING.md). |
+| Publish a text post to a Facebook Page | Needs extra setup; real-account use is unverified | Preview a saved draft, approve its exact text and Page, then send and check the saved receipt. Text-only Page posts are experimental; [setup and limits](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md). |
 
-See the [getting started guide](docs/GETTING_STARTED.md) to try the local example,
-or [connect your assistant](docs/dev/SKILL.md) to use your own material.
-Developers can find the [implementation and verification inventory](docs/dev/STATUS.md)
+See the [getting started guide](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md) to try the local example,
+or [connect your assistant](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/SKILL.md) to use your own material.
+Developers can find the [implementation and verification inventory](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/STATUS.md)
 in the development documentation.
 
 <details>
 <summary>Advanced: ask Muse follow-up questions with one bounded approval</summary>
 
-The implemented [bounded research workflow](docs/dev/MUSE.md#bounded-research-workflow-synthetic-evidence) lets a human approve a fixed packet, topic, expiry and question/read budget. Your assistant can then ask varied questions within that scope, keep the discussion across restarts, and save a draft citing sources and Muse observations. Changed data or scope needs new consent. This has synthetic test coverage; it does not establish real-account LIVE success.
+The implemented [bounded research workflow](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/MUSE.md#bounded-research-workflow-synthetic-evidence) lets a human approve a fixed packet, topic, expiry and question/read budget. Your assistant can then ask varied questions within that scope, keep the discussion across restarts, and save a draft citing sources and Muse observations. Changed data or scope needs new consent. This has synthetic test coverage; it does not establish real-account LIVE success.
 
 </details>
 
@@ -210,11 +210,11 @@ if [ "${SLICE_KEEP:-0}" != 1 ]; then rm -rf -- "$SLICE_DIR"; fi
 
 ## Skill
 
-The canonical Skill tree is [skills/metamuse/](skills/metamuse/SKILL.md). The wheel ships the same files, and `metamuse skill export --dest DIR` writes them to a directory the operator names. It is not an MCP tool. Installation steps are in [SKILL.md](docs/dev/SKILL.md). The Skill requires an installed, reachable MetaMuse backend (CLI or MCP server) to execute operations; when the backend is unavailable, operations cannot be simulated.
+The canonical Skill tree is [skills/metamuse/](https://github.com/TED-H-com/metamuse-cli/blob/main/skills/metamuse/SKILL.md). The wheel ships the same files, and `metamuse skill export --dest DIR` writes them to a directory the operator names. It is not an MCP tool. Installation steps are in [SKILL.md](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/SKILL.md). The Skill requires an installed, reachable MetaMuse backend (CLI or MCP server) to execute operations; when the backend is unavailable, operations cannot be simulated.
 
 ## Development and project details
 
-One package (`metamuse`) and one shared application serve the CLI, MCP server and Skill. See the [design baseline](docs/design/README.md), [core API](docs/dev/CORE_API.md), [collection formats](docs/dev/COLLECT.md), and [full offline walkthrough](docs/dev/OFFLINE_SLICE.md).
+One package (`metamuse`) and one shared application serve the CLI, MCP server and Skill. See the [design baseline](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/design/README.md), [core API](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/CORE_API.md), [collection formats](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/COLLECT.md), and [full offline walkthrough](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/OFFLINE_SLICE.md).
 
 For development, use Python 3.12 managed by uv:
 
@@ -227,4 +227,4 @@ Runtime workspaces belong outside the checkout. Credentials, account settings, r
 
 This is an unofficial project, unaffiliated with Meta, Facebook or Muse. It does not claim official API access, terms-of-service compliance or protection against account restrictions.
 
-License: [Apache-2.0](LICENSE). Dependency notices: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+License: [Apache-2.0](https://github.com/TED-H-com/metamuse-cli/blob/main/LICENSE). Dependency notices: [THIRD_PARTY_NOTICES.md](https://github.com/TED-H-com/metamuse-cli/blob/main/THIRD_PARTY_NOTICES.md).
