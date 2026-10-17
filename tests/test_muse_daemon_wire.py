@@ -64,6 +64,8 @@ def test_wrapped_native_history_returns_events_without_dropping_the_page():
         b'{"ok":false,"result":{"chat_events":[]}}',
         b'{"result":{"chat_events":[]}}',
         b'{"ok":true,"result":null}',
+        b'{"ok":true,"result":{"ok":false,"chat_events":[]}}',
+        b'{"ok":true,"ok":false,"result":{"chat_events":[]}}',
         b'{"ok":true,"result":{"chat_events":[],"events":[{}]}}',
         b'{"ok":true,"result":{"chat_events":[],"chat_events":[{}]}}',
     ],
