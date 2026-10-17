@@ -78,6 +78,7 @@ def parser() -> Parser:
     root.add_argument("--json", action="store_true")
     root.add_argument("--non-interactive", action="store_true")
     commands = root.add_subparsers(dest="command", required=True)
+    commands.add_parser("demo", help="Try synthetic comments and export a sourced recap")
     commands.add_parser("init")
     doctor = commands.add_parser("doctor")
     doctor.add_argument("--live", action="store_true")
@@ -388,6 +389,12 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
 
 
 def dispatch(args: argparse.Namespace) -> m.Envelope | None:
+    if args.command == "demo":
+        from metamuse.demo import run_demo
+
+        return m.Envelope(
+            status="ok", data=run_demo(Path(args.workspace) if args.workspace else None)
+        )
     if args.non_interactive and args.command in {"auth", "permit", "connect"}:
         raise m.CoreError(m.ErrorCode.SCOPE_REQUIRED, "Human interaction is disabled")
     if args.command == "skill":
@@ -754,6 +761,10 @@ def render(result: m.Envelope, *, as_json: bool) -> None:
         print(f"{result.error.code.value}: {_terminal_text(result.error.message)}", file=sys.stderr)
         if result.error.next_action:
             print(_terminal_text(result.error.next_action), file=sys.stderr)
+    elif isinstance(result.data, dict) and result.data.get("demo") is True:
+        from metamuse.demo import describe
+
+        print(_terminal_text(describe(result.data), multiline=True))
     elif isinstance(result.data, dict) and result.data.get("configured") is True:
         data = result.data
         print(f"Saved {data['service']} settings for {_terminal_text(data['account'])}.")

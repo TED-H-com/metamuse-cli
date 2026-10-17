@@ -21,7 +21,7 @@ from mcp.server.lowlevel.server import OpenTelemetryMiddleware
 from mcp.server.stdio import stdio_server
 from pydantic import ValidationError
 
-from metamuse import app
+from metamuse import __version__, app
 from metamuse import models as m
 from metamuse.jobs import Executor
 from metamuse.safe_log import known_job_id, log_safe_exception
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from metamuse.app import AppContext
 
 SERVER_NAME = "metamuse"
-SERVER_VERSION = "0.1.0.dev0"
+SERVER_VERSION = __version__
 _WORKER_START_HANDOFF_SECONDS = 2.0
 
 

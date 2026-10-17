@@ -7,13 +7,21 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 REPO = Path(__file__).resolve().parents[1]
 
 
-def test_try_local_exports_real_sourced_markdown(tmp_path):
+@pytest.mark.parametrize("entrypoint", ["script", "cli"])
+def test_try_local_exports_real_sourced_markdown(tmp_path, entrypoint):
     workspace = tmp_path / "first-use"
+    command = (
+        [sys.executable, "scripts/try_local.py", "--workspace", str(workspace)]
+        if entrypoint == "script"
+        else [sys.executable, "-m", "metamuse.cli", "--workspace", str(workspace), "demo"]
+    )
     result = subprocess.run(
-        [sys.executable, "scripts/try_local.py", "--workspace", str(workspace)],
+        command,
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -38,11 +46,17 @@ def test_try_local_exports_real_sourced_markdown(tmp_path):
         assert hashlib.sha256(payload).hexdigest() == member["sha256"]
 
 
-def test_try_local_keeps_existing_directory_untouched(tmp_path):
+@pytest.mark.parametrize("entrypoint", ["script", "cli"])
+def test_try_local_keeps_existing_directory_untouched(tmp_path, entrypoint):
     marker = tmp_path / "keep.txt"
     marker.write_text("User data stays here.")
+    command = (
+        [sys.executable, "scripts/try_local.py", "--workspace", str(tmp_path)]
+        if entrypoint == "script"
+        else [sys.executable, "-m", "metamuse.cli", "--workspace", str(tmp_path), "demo"]
+    )
     result = subprocess.run(
-        [sys.executable, "scripts/try_local.py", "--workspace", str(tmp_path)],
+        command,
         cwd=REPO,
         capture_output=True,
         text=True,
@@ -52,3 +66,21 @@ def test_try_local_keeps_existing_directory_untouched(tmp_path):
     assert "existing data is kept" in result.stderr
     assert marker.read_text() == "User data stays here."
     assert sorted(p.name for p in tmp_path.iterdir()) == ["keep.txt"]
+
+
+def test_demo_json_is_one_envelope_and_uses_default_private_location(tmp_path):
+    result = subprocess.run(
+        [sys.executable, "-m", "metamuse.cli", "--json", "demo"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=90,
+        env={**os.environ, "UV_OFFLINE": "1", "XDG_DATA_HOME": str(tmp_path / "data")},
+    )
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    data = json.loads(result.stdout)["data"]
+    assert data["synthetic_data"] is True and data["prewritten_recap"] is True
+    workspace = Path(data["workspace"])
+    assert workspace.is_relative_to(tmp_path / "data" / "metamuse" / "demos")
+    assert workspace.stat().st_mode & 0o077 == 0
+    assert list(Path(data["export_directory"]).glob("*.md"))

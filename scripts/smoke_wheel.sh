@@ -116,6 +116,29 @@ for name in sys.argv[1:]:
 print("init and doctor ok")
 PY
 
+env -u PYTHONPATH "$bin" --workspace "$work/demo" --json demo >"$work/demo.json"
+env -u PYTHONPATH "$py" - "$work/demo.json" <<'PY'
+import hashlib
+import json
+import sys
+from pathlib import Path
+
+envelope = json.loads(Path(sys.argv[1]).read_text())
+assert envelope["status"] == "ok"
+demo = envelope["data"]
+assert demo["synthetic_data"] and demo["prewritten_recap"]
+assert demo["network_mode"] == "offline"
+assert demo["imported_records"] == 3 and demo["search_hits"] == 1
+directory = Path(demo["export_directory"])
+manifest = json.loads((directory / "manifest.json").read_text())
+markdown = "\n".join(path.read_text() for path in directory.glob("*.md"))
+assert "預寫示例，非 AI 分析" in markdown
+assert "https://example.org/events/demo/comments/1" in markdown
+for member in manifest["files"]:
+    assert hashlib.sha256((directory / member["name"]).read_bytes()).hexdigest() == member["sha256"]
+print("installed demo ok: packaged synthetic input, cited Markdown, verified manifest hashes")
+PY
+
 env -u PYTHONPATH "$py" - "$bin" "$work" <<'PY'
 import json
 import os

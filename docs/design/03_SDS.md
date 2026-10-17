@@ -40,6 +40,8 @@ metamuse-cli/
 
 Wheel 另含 `metamuse/data/skills/metamuse/`，內容與 `skills/metamuse/` 相同。`metamuse skill export` 把那份打包副本寫到操作者指定的目錄。
 
+Wheel 也包含 `metamuse/data/examples/event-comments.jsonl`。`metamuse demo` 是既有 CLI 操作的範例入口，子程序以同一 Python 的 isolated mode 執行，避免從使用者目前目錄載入程式；不新增 application API、MCP tool、store 或權限。`scripts/try_local.py` 只轉送到相同入口，離開 checkout 安裝 wheel 後仍可使用。
+
 Python 3.12作首個參考環境；型別/schema、官方MCP SDK、platformdirs、SQLite、yt-dlp、Playwright與Muse所需標準庫按B01驗證lock。ffmpeg/browser binary由人類明確安裝；不提權、不隱藏下載。延遲import非必要功能，缺browser不阻擋離線。
 
 ## 2. Runtime與信任邊界
