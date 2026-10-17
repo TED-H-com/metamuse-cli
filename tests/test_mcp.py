@@ -15,7 +15,7 @@ from mcp import types
 from mcp.client.session import LATEST_HANDSHAKE_VERSION, ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from metamuse import app, mcp
+from metamuse import __version__, app, mcp
 from metamuse import models as m
 from metamuse.schemas import schema_for
 
@@ -78,7 +78,7 @@ def test_mcp_stdio_initialize_and_tools_list(tmp_path: Path) -> None:
                     init_result = await session.initialize()
                     assert init_result.protocol_version == LATEST_HANDSHAKE_VERSION == "2025-11-25"
                     assert init_result.server_info.name == "metamuse"
-                    assert init_result.server_info.version == "0.1.0.dev0"
+                    assert init_result.server_info.version == __version__
 
                     tools_result = await session.list_tools()
                     tools = tools_result.tools

@@ -6,15 +6,13 @@
 
 ## 先跑範例，不用帳號
 
-需要先安裝 [Git](https://git-scm.com/downloads) 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)。目前提供原始碼預覽，尚未發布套件；請從專案下載安裝。uv 會管理這裡使用的 Python 3.12。
+需要先安裝 [Git](https://git-scm.com/downloads) 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)。先把目前的原始碼預覽版安裝成指令，就可以直接跑內附範例。首個 alpha 套件正在準備，尚未上架 PyPI。uv 會管理這裡使用的 Python 3.12。
 
 在終端機依序執行：
 
 ```sh
-git clone https://github.com/TED-H-com/metamuse-cli.git
-cd metamuse-cli
-uv sync --locked --python 3.12.13
-uv run python scripts/try_local.py
+uv tool install --python 3.12.13 "git+https://github.com/TED-H-com/metamuse-cli.git@main"
+metamuse demo
 ```
 
 第一次安裝需要下載 Python 與依賴。安裝完成後，範例本身只用本地檔案，不登入帳號、不連 Muse。
@@ -25,7 +23,7 @@ uv run python scripts/try_local.py
 2. 搜尋「字幕」，找到「希望下次的影片能加上字幕，方便回看。」
 3. 預覽這則留言的來源，保存一份預寫回顧，再匯出 Markdown。
 
-回顧文字是預寫示例，沒有呼叫 AI，也不是對真實活動的分析。範例資料可在 [event-comments.jsonl](../examples/event-comments.jsonl) 查看。
+回顧文字是預寫示例，沒有呼叫 AI，也不是對真實活動的分析。範例資料可在 [event-comments.jsonl](../src/metamuse/data/examples/event-comments.jsonl) 查看。
 
 ## 到哪裡看結果？
 

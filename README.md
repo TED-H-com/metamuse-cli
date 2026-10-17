@@ -18,13 +18,11 @@ Search currently matches literal text. Your assistant handles interpretation and
 
 ## Try it
 
-You need [Git](https://git-scm.com/downloads) and [uv](https://docs.astral.sh/uv/getting-started/installation/). This is a source preview: install from the checkout below. A packaged release has not been published yet.
+You need [Git](https://git-scm.com/downloads) and [uv](https://docs.astral.sh/uv/getting-started/installation/). Install the current source preview as a command, then run the bundled example. The first alpha package is being prepared; it is not on PyPI yet.
 
 ```sh
-git clone https://github.com/TED-H-com/metamuse-cli.git
-cd metamuse-cli
-uv sync --locked --python 3.12.13
-uv run python scripts/try_local.py
+uv tool install --python 3.12.13 "git+https://github.com/TED-H-com/metamuse-cli.git@main"
+metamuse demo
 ```
 
 Installation downloads Python and dependencies. The example itself runs locally with **synthetic comments and a prewritten recap**. It needs no account, Muse connection or AI service.
@@ -33,7 +31,7 @@ You will import three records, search for `字幕` (subtitles), and export a Mar
 
 Every run creates a separate workspace outside the checkout, under your system's user data directory (`metamuse/demos/`). It stays there so you can inspect it. Delete the workspace printed by the example when you no longer need it.
 
-The [getting started guide (繁體中文)](docs/GETTING_STARTED.md) shows the expected result and how to move on to your own files. The sample inputs are in [examples/event-comments.jsonl](examples/event-comments.jsonl).
+The [getting started guide (繁體中文)](docs/GETTING_STARTED.md) shows the expected result and how to move on to your own files. The sample inputs are in [src/metamuse/data/examples/event-comments.jsonl](src/metamuse/data/examples/event-comments.jsonl).
 
 ## Use it with your AI assistant
 

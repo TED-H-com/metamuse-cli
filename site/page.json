@@ -129,66 +129,6 @@
       "zh": "想知道大家提了哪些需求、找出一段值得引用的話，再寫成一份能核對的回顧。把你有權使用的留言或本地字幕交給助理整理，MetaMuse 留下來源，讓你隨時回頭確認原文。"
     }
   },
-  "flow": {
-    "kicker": {
-      "en": "From input to a file you can keep",
-      "zh": "從資料到一份可保存的文件"
-    },
-    "title": {
-      "en": "Bring the comments. Leave with a sourced draft.",
-      "zh": "帶入留言，帶走有來源的草稿。"
-    },
-    "intro": {
-      "en": "You can use the terminal directly, or connect an AI assistant that can run MetaMuse tools.",
-      "zh": "你可以直接使用終端機，也可以接上能操作 MetaMuse 工具的 AI 助理。"
-    },
-    "nav": {
-      "en": "How it works",
-      "zh": "怎麼使用"
-    },
-    "steps": [
-      {
-        "title": {
-          "en": "Bring your files",
-          "zh": "匯入資料"
-        },
-        "body": {
-          "en": "Import permitted local comments, text or SRT/VTT subtitles into a project.",
-          "zh": "將有權使用的本地留言、文字或 SRT/VTT 字幕匯入專案。"
-        }
-      },
-      {
-        "title": {
-          "en": "Find the original",
-          "zh": "找到原文"
-        },
-        "body": {
-          "en": "Search for a word such as subtitles. Open the matching text and its source reference.",
-          "zh": "例如搜尋「字幕」，查看命中的原文與來源引用。"
-        }
-      },
-      {
-        "title": {
-          "en": "Write with your assistant",
-          "zh": "一起寫回顧"
-        },
-        "body": {
-          "en": "Your assistant groups requests and writes. Save the draft with the sources you reviewed.",
-          "zh": "由你的 AI 助理分組、判讀與撰寫，再連同你核對過的引用保存草稿。"
-        }
-      },
-      {
-        "title": {
-          "en": "Read and keep it",
-          "zh": "閱讀並留下"
-        },
-        "body": {
-          "en": "Preview the draft and export Markdown or another local format. Check the wording against the cited material.",
-          "zh": "預覽草稿，匯出 Markdown 等本地格式，對照引用確認文字是否忠實。"
-        }
-      }
-    ]
-  },
   "capabilities": {
     "kicker": {
       "en": "When it helps",
@@ -452,8 +392,8 @@
       "zh": "打開你的第一份有來源回顧。"
     },
     "intro": {
-      "en": "You need Git and uv. Install from source; uv manages Python 3.12. Installation downloads dependencies. The example then uses only local synthetic data and a prewritten recap, with no account or AI service.",
-      "zh": "需要先安裝 Git 與 uv。目前從原始碼安裝，由 uv 管理 Python 3.12。安裝時會下載依賴；之後的範例只用本地合成資料與預寫回顧，不需要帳號或 AI 服務。"
+      "en": "Install Git and uv first, then install the source preview as a command. The alpha is being prepared and is not on PyPI yet. Installation downloads Python and dependencies; the demo needs no account or AI service.",
+      "zh": "先安裝 Git 與 uv，再把原始碼預覽版裝成指令。alpha 套件正在準備，尚未上架 PyPI。安裝會下載 Python 與依賴；範例不需要帳號或 AI 服務。"
     },
     "nav": {
       "en": "Try it",
@@ -476,36 +416,25 @@
     "steps": [
       {
         "title": {
-          "en": "Get the project",
-          "zh": "下載專案"
+          "en": "Install the command",
+          "zh": "安裝指令"
         },
         "body": {
-          "en": "Open a terminal and run these commands in order.",
-          "zh": "打開終端機，依序執行這些指令。"
+          "en": "uv creates an isolated environment for the source preview.",
+          "zh": "uv 會為原始碼預覽版建立獨立的安裝環境。"
         },
-        "code": "git clone https://github.com/TED-H-com/metamuse-cli.git\ncd metamuse-cli"
+        "code": "uv tool install --python 3.12.13 \"git+https://github.com/TED-H-com/metamuse-cli.git@main\""
       },
       {
         "title": {
-          "en": "Install",
-          "zh": "安裝"
+          "en": "Run the bundled example",
+          "zh": "跑內附範例"
         },
         "body": {
-          "en": "uv installs Python and the locked dependencies.",
-          "zh": "uv 會安裝 Python 與固定版本的依賴。"
+          "en": "Import synthetic comments, find the subtitle request, and export Markdown. Open the .md files in the printed Export directory. Each run keeps a new local workspace.",
+          "zh": "匯入合成留言、找到字幕需求並匯出 Markdown。打開終端機顯示的 Export directory 裡的 .md 檔。每次執行都保留獨立的本地工作區。"
         },
-        "code": "uv sync --locked --python 3.12.13"
-      },
-      {
-        "title": {
-          "en": "Run the example",
-          "zh": "跑範例，看結果"
-        },
-        "body": {
-          "en": "Import comments, find the subtitle request and export Markdown. Open the .md files in the printed Export directory. Each run keeps a new workspace outside the checkout.",
-          "zh": "匯入留言、找到字幕需求並匯出 Markdown。打開終端機顯示的 Export directory 裡的 .md 檔。每次執行都會在專案目錄之外保留獨立的新工作區。"
-        },
-        "code": "uv run python scripts/try_local.py"
+        "code": "metamuse demo"
       }
     ]
   },
@@ -609,7 +538,7 @@
         "en": "Version",
         "zh": "版本"
       },
-      "value": "0.1.0.dev0"
+      "value": "0.1.0a1 (release candidate)"
     },
     {
       "label": {
@@ -656,6 +585,227 @@
       "label": {
         "en": "Developer verification notes",
         "zh": "開發驗證紀錄"
+      }
+    }
+  ],
+  "flows": [
+    {
+      "id": "comments-to-recap",
+      "heading": {
+        "en": "From your files to a sourced draft",
+        "zh": "從你的資料，走到有來源的草稿"
+      },
+      "intro": {
+        "en": "Bring a comment export or local subtitles. Find the passages you need, write with your assistant, then keep the draft and its sources together.",
+        "zh": "帶入留言匯出檔或本地字幕，找出需要的原文，和 AI 助理一起寫，再把草稿與引用一起留下。"
+      },
+      "spec": {
+        "columns": [
+          [
+            0,
+            1
+          ],
+          [
+            2
+          ],
+          [
+            3
+          ],
+          [
+            4
+          ]
+        ],
+        "core": 2
+      },
+      "steps": [
+        {
+          "title": {
+            "en": "Comment exports",
+            "zh": "留言匯出檔"
+          },
+          "note": {
+            "en": "Posts and comments you may use.",
+            "zh": "你有權使用的貼文與留言。"
+          },
+          "tone": "neutral",
+          "icon": "chat"
+        },
+        {
+          "title": {
+            "en": "Video subtitles",
+            "zh": "影片字幕"
+          },
+          "note": {
+            "en": "Local SRT or VTT files.",
+            "zh": "本地 SRT 或 VTT 檔案。"
+          },
+          "tone": "neutral",
+          "icon": "doc"
+        },
+        {
+          "title": {
+            "en": "Find the originals",
+            "zh": "找到可引用原文"
+          },
+          "note": {
+            "en": "Search words and keep exact sources.",
+            "zh": "用關鍵字搜尋，保留原文與來源。"
+          },
+          "tone": "accent",
+          "icon": "search"
+        },
+        {
+          "title": {
+            "en": "Write together",
+            "zh": "你與 AI 一起寫"
+          },
+          "note": {
+            "en": "Your connected assistant helps you write.",
+            "zh": "讓已連接的 AI 助理判讀與撰寫。"
+          },
+          "tone": "info",
+          "icon": "people"
+        },
+        {
+          "title": {
+            "en": "Keep the draft",
+            "zh": "保存有來源的草稿"
+          },
+          "note": {
+            "en": "Review and export Markdown or text.",
+            "zh": "預覽後匯出 Markdown 或文字。"
+          },
+          "tone": "neutral",
+          "icon": "download"
+        }
+      ],
+      "ticks": [
+        {
+          "en": "Choose your files",
+          "zh": "選好要匯入的檔案"
+        },
+        {
+          "en": "Check the original passages",
+          "zh": "核對引用的原文"
+        },
+        {
+          "en": "Keep a draft you can review",
+          "zh": "留下可以回頭核對的草稿"
+        }
+      ],
+      "caption": {
+        "en": "Workflow illustration. Writing uses your own assistant; the local demo uses a prewritten recap and makes no AI call.",
+        "zh": "流程示意。撰寫使用你自己的 AI 助理；本地範例使用預寫回顧，沒有呼叫 AI。"
+      }
+    },
+    {
+      "id": "publish-after-review",
+      "heading": {
+        "en": "Read it first. Then approve the post.",
+        "zh": "先看全文與粉專，再決定要不要發"
+      },
+      "intro": {
+        "en": "If you want to publish, MetaMuse prepares the exact text and destination for your review. You approve that post before anything is sent.",
+        "zh": "想把草稿發到 Facebook 粉專時，先看這次要送出的全文與目的地。由你核對並批准，才會送出。"
+      },
+      "after": "features",
+      "spec": {
+        "columns": [
+          [
+            0
+          ],
+          [
+            1
+          ],
+          [
+            2
+          ],
+          [
+            3
+          ]
+        ],
+        "core": 2,
+        "boundaryAfter": 2
+      },
+      "zones": {
+        "en": [
+          "On your computer",
+          "Your approval",
+          "Facebook Page"
+        ],
+        "zh": [
+          "在你的電腦上",
+          "由你批准",
+          "Facebook 粉專"
+        ]
+      },
+      "steps": [
+        {
+          "title": {
+            "en": "Choose a draft",
+            "zh": "選一份文字草稿"
+          },
+          "note": {
+            "en": "Use the saved text you want to post.",
+            "zh": "選好這次要發布的草稿版本。"
+          },
+          "tone": "neutral",
+          "icon": "doc"
+        },
+        {
+          "title": {
+            "en": "Read the preview",
+            "zh": "核對全文與粉專"
+          },
+          "note": {
+            "en": "Check the full text and destination.",
+            "zh": "看清楚送出全文與目標粉專。"
+          },
+          "tone": "info",
+          "icon": "eye"
+        },
+        {
+          "title": {
+            "en": "You approve",
+            "zh": "你批准這一次"
+          },
+          "note": {
+            "en": "Consent covers this exact post.",
+            "zh": "批准只涵蓋這次核對的內容。"
+          },
+          "tone": "accent",
+          "icon": "shield"
+        },
+        {
+          "title": {
+            "en": "Send and keep receipt",
+            "zh": "發文並留下回執"
+          },
+          "note": {
+            "en": "Check the receipt; reconcile unclear results.",
+            "zh": "保存貼文回執，結果不明先查核。"
+          },
+          "tone": "neutral",
+          "icon": "ledger"
+        }
+      ],
+      "ticks": [
+        {
+          "en": "Choose the saved draft",
+          "zh": "選擇已保存的草稿"
+        },
+        {
+          "en": "Read the exact post",
+          "zh": "核對這次送出的全文"
+        },
+        {
+          "en": "Approve before sending",
+          "zh": "批准後才送出"
+        }
+      ],
+      "caption": {
+        "en": "Requires your Page connection and token. Covered with synthetic tests; real-account posting is still unverified. An unclear result is checked before retrying.",
+        "zh": "需要先設定你的粉專連線與權杖。已用合成資料測試，真實帳號發文仍待驗證；結果不明時先查核，不直接重送。"
       }
     }
   ]

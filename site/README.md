@@ -4,6 +4,8 @@ This directory is the GitHub Pages site for MetaMuse CLI. `page.json` is the sou
 
 Renderer: `kit/render.py` from `teddashh/teddashh.github.io` at commit `5e51fb954acef56e9f75b4cfd2b57dc76afcdfd8`.
 
+Keep the existing `teal` palette, typography, and shared kit components. User workflows belong in the top-level `flows` array, which renders the same animated SVG diagrams used by sibling project pages. Each diagram needs plain-language steps, bilingual labels, a readable mobile legend, and an accurate description of account setup or approval. Do not replace these with a second diagram library or a custom visual theme.
+
 Set `PAGE_KIT_DIR` to a checkout of that `kit/` directory when rendering or running `scripts/check_site.py`.
 
 License: MIT, Copyright (c) 2026 Ted Huang (`LICENSE` in `teddashh/teddashh.github.io` at commit `5e51fb954acef56e9f75b4cfd2b57dc76afcdfd8`). The generated `styles.css`, `lang.js`, `app.js`, `flow.js`, and `flow.css` are portions of that kit.

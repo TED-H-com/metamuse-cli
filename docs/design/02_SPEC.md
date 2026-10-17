@@ -333,6 +333,7 @@ real-account LIVE success.
 所有命令是開發目標。全域 --workspace、--json、--non-interactive 放子命令前。
 
 ```text
+metamuse demo
 metamuse init
 metamuse doctor [--live]
 metamuse project create --name NAME --request-key KEY
@@ -366,6 +367,8 @@ metamuse permit research --open-request-file PATH --packet ID --rounds N --max-r
 ```
 
 更新草稿加 --draft ID --expected-revision N。明示引用／附件／變體／偏好可用 --facts-file、--assets-file、--variant-file、--preferences-file（JSON）。人類本地auth import／permit create另提供；不是能讓MCP自己approved:true的工具。憑證匯入需操作者指定檔案，不讀任意主瀏覽器profile。
+
+`metamuse demo` 使用套件內的合成留言與預寫草稿，在新的私有工作區執行既有 CLI 匯入、搜尋、引用與匯出。無帳號、無網路或 AI 呼叫；既有路徑拒絕覆寫。`--json` 仍只輸出一個 envelope，`--workspace` 可指定尚不存在的範例工作區。
 
 CLI add預設持久化；--run前景執行。沒有長駐worker時前景命令結束不代表工作會在背景繼續。MCP預設附同套件worker；--no-worker退出。使用與worker run相同Executor／OS lock，同workspace只能一個executor。若鎖被持有，server仍服務但worker_available:false、附next action；本process不重試取得鎖，原owner退出後重啟MCP。附worker使用獨立Store instance連同一workspace，MCP reader不排在worker write wait後；startup ready handoff最多2秒，未commit仍starting不可用。只有附帶worker持鎖且運作時MCP envelope才回true，停止server後不承諾背景續跑。
 
