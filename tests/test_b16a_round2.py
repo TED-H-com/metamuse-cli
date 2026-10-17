@@ -58,7 +58,7 @@ def test_f3_path_preview_approves_exact_outbound_text(fixture_ctx, project):
     opening = m.MuseOpenRequest(project_id=project, topic=text, request_key="path-topic")
     preview = invoke(ctx, "open", opening).approval
     assert preview.topic == preview.request["topic"] == text and text in preview.summary
-    assert prepare_open(ctx, opening).body["title"] == text
+    assert prepare_open(ctx, opening).body["params"]["title"] == text
     accepted, _ = opened(ctx, project)
     request = m.MuseSendRequest(
         discussion_id=accepted.data["discussion_id"],
@@ -68,7 +68,7 @@ def test_f3_path_preview_approves_exact_outbound_text(fixture_ctx, project):
     )
     preview = invoke(ctx, "send", request).approval
     assert preview.question == preview.request["question"] == text and text in preview.summary
-    assert prepare_send(ctx, request).body["text"].startswith(text + "\n\n")
+    assert prepare_send(ctx, request).body["items"][0]["text"].startswith(text + "\n\n")
 
 
 def adversarial_redaction(text):

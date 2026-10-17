@@ -259,7 +259,7 @@ def test_packet_bundle_fixture_outbound_jobs_and_mcp(
         request_key="privacy-send",
     )
     prepared = prepare_send(ctx, request)
-    assert prepared.body["text"] == request.question + "\n\n" + packet.rendered_text
+    assert prepared.body["items"][0]["text"] == request.question + "\n\n" + packet.rendered_text
     request.share_grant_id = grant(
         ctx,
         project,

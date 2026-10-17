@@ -33,6 +33,24 @@ def test_calibrated_complete_statuses_stay_empty():
     assert CALIBRATED_COMPLETE_STATUSES == frozenset()
 
 
+def test_native_user_echo_uses_exact_content_before_display_text():
+    exchange = _exchange()
+    event = _user(11, "presentation text", payload={"content": exchange.sent_text})
+    assert user_echo(exchange, [event]) == event
+    association = _paired([event, _assistant("sess-a", 12, "reply")], exchange)
+    assert association.state == REPLY_OBSERVED
+
+
+def test_matching_display_text_does_not_override_different_user_content_or_marker():
+    exchange = _exchange()
+    different = _user(11, exchange.sent_text, payload={"content": "another question"})
+    assert user_echo(exchange, [different]) is None
+    conflict = _user(
+        11, "presentation text", payload={"content": exchange.sent_text, "request_marker": "req-2"}
+    )
+    assert user_echo(exchange, [conflict]) is None
+
+
 def _exchange() -> Exchange:
     return Exchange(
         session_id="sess-a",

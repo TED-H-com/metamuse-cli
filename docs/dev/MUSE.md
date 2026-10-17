@@ -10,9 +10,11 @@ The spike under `spikes/muse/` is the historical record. Production code is `mus
 
 Historical B09 (2026-10-13) had no authorized account. On 2026-10-14 the orchestrator
 recorded one authorized LIVE standard msg1/msg2 observation: nested key equaled the
-responder static key and nested nonce equaled the fresh client nonce. This implementation
-and its tests are OFFLINE/FIXTURE only. Msg3/split/application readiness and AT-038/AT-043
-remain unproven pending the orchestrator's separately authorized LIVE run.
+responder static key and nested nonce equaled the fresh client nonce. On 2026-10-17,
+an explicitly authorized run completed the standard handshake and a synthetic
+two-turn CLI journey with restart, cited draft and exports across corrected candidate
+builds. See [the run's scope and defects](MUSE_SPIKE.md#11-authorized-live-diagnostics-2026-10-17).
+The published `0.1.0a1` lacks these fixes; this is not clean-install release acceptance.
 
 ## Allowlist
 
@@ -28,6 +30,17 @@ remain unproven pending the orchestrator's separately authorized LIVE run.
 | `chat.history` | daemon service 0, `GET /chat/history` | no |
 
 Any other route name, including `cmd_raw`, raises `MuseProgrammingError` before I/O. There is no escape hatch. `chat.history` drops `transcript_mode` when a caller passes it. Service id 0 is omitted on the wire.
+
+The daemon's session body is `{"method":"/api/session/start","params":{"origin":"fresh",
+"lifecycle":"persistent","title":"..."}}`. Sends use `items: [{type: "text", text: "..."}]`,
+the mapped `session_id`, a stable 16-hex project client node and empty `capabilities`.
+History sends `session_id` and `limit` as URL query parameters with an empty GET
+body. Upstream `request()` converts its callers' dict body to query parameters;
+putting them in a wire JSON body instead can select the main chat. Native events'
+nested payload session identity is preserved; conflicting outer/nested IDs stop.
+Successful `{ok: true, result: {...}}` responses are unwrapped once. History accepts
+`chat_events` and the older `events` field, refusing conflicting aliases or error wrappers.
+Old frozen flat mutation bodies and their grants are never rewritten into new wire bytes.
 
 Default hosts, and the only real hosts in this module:
 
@@ -65,7 +78,12 @@ never credential-checked during send/read/reconciliation.
 prepared = prepare_muse_request(
     "chat.stream",
     marker=stored_marker,
-    body={"text": question},
+    body={
+        "session_id": session_id,
+        "items": [{"type": "text", "text": question}],
+        "node_id": "0123456789abcdef",
+        "capabilities": {},
+    },
     target={"origin": "https://muse.ai", "route": "chat.stream"},
     payload={"text": question},
 )
@@ -149,8 +167,16 @@ bound credentials, guard and network policy. Direct adapters may instead inject 
    `s0:<base64url>.<base64url>.<base64url>` verbatim. A present non-delegation notary must have
    six nonempty base64url segments after trimming; pass it unchanged. Missing/blank omits it.
    Every present `token`, `notary_token`, `notaryToken`, `noiseNotaryToken` and `endorsement`
-   is validated. Case-insensitive delegation./endorsement. prefixes and malformed/oversized
+   is validated. Delegation, unknown/malformed endorsement envelopes and malformed/oversized
    s0 envelopes stop with `E_PROTOCOL_MISMATCH` (`never`); aliases are never silently dropped.
+   A standard VM can return a server-issued `endorsement.v1` notary. Only its bounded
+   six-part canonical base64url format is accepted in a notary field: object metadata
+   with nonempty identity/public_key and string restrictions, two 64-byte signatures,
+   and an exact `{"uri":"/v1/noise"}` destination object, without duplicate JSON keys.
+   The original token goes to the gateway for verification. This is format recognition,
+   not local signature verification, CVM support or permission to sign a delegation.
+   Endorsements remain invalid as the hatch access token. Standard Noise key/nonce,
+   TLS and durable confidentiality checks still run independently.
    Conflicting nonempty notary aliases also stop.
    No local signature/expiry verification is claimed. This is only a cache hint:
    decode the third notary segment as before; missing/undecodable/non-object JSON or
@@ -280,7 +306,7 @@ no JSON body. Read/mint success still requires bounded valid JSON and its own fi
 | 200 explicit `ok: false` on auth | `E_AUTH_REQUIRED` | `user_action` |
 | Twice-stale notary after one remint (MUSE_SPIKE §9.1 one-remint stop; unavailable/retry-later is an inference) | `E_RESOURCE_UNAVAILABLE` | `user_action` |
 | 200 session status `unavailable`, or no identity key, without confidential hints | `E_RESOURCE_UNAVAILABLE` | `user_action` |
-| CVM/RV/delegation/endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
+| CVM/RV/delegation/unsupported endorsement/malformed s0/crypto/key/nonce mismatch | `E_PROTOCOL_MISMATCH` | `never` |
 
 Upgrade 401/403 is `E_AUTH_REQUIRED`, 429 is `E_RATE_LIMITED`; DNS/connect/TLS failure
 is `E_NETWORK_TIMEOUT`, with `E_SCOPE_REQUIRED` when the guard refuses. Trust contention is `E_STORAGE` / `safe_read`; environment failures use `user_action`.
@@ -340,6 +366,13 @@ After a mutation handoff, a read failure does not use safe-read retry guidance. 
 `chat_stream` does not raise for a timeout, a non-2xx status, `ok: false`, or a body that is not a JSON object. Those stay `send_uncertain` after handoff, with `app_error` or `undecided` on the evidence. `failed_before_send` is only when no frame bytes were handed off. A later user echo of this exchange promotes the state to `sent` and leaves the evidence row in place. A recognized marker that is not this request disqualifies the event even when another marker matches. Pass the real `Exchange` and the history events into `chat_stream` when they are already known.
 
 `delivery_state`, `attempt_evidence`, `associate_reply`, `observe`, `Exchange.earlier_unresolved`, and `ObservationMemory` are re-exported from `metamuse.muse`. `CALIBRATED_COMPLETE_STATUSES` is empty. `ambiguous` is an association result, not an exchange state. `closed` does not reopen. The transport never resends.
+
+For a native user echo, exact `payload.content` takes precedence over the
+presentation field `display_text`; the latter is a fallback only when content is
+absent or empty. A conflicting request marker still disqualifies the event.
+Assistant display text remains available for presentation. This distinction was
+observed during the authorized synthetic LIVE run; it does not calibrate a
+completion status or declare the research finished.
 
 ## Schema
 
@@ -408,7 +441,7 @@ mapped discussion's open reconciliation request with an access approval first. A
 fixture session has a known empty baseline. Sequence observations do not claim full
 history coverage. See [OFFLINE_SLICE.md](OFFLINE_SLICE.md) for a rerunnable journey.
 
-The daemon `text` is exactly `question + "\n\n" + packet.rendered_text`; the two host
+The daemon `items[0].text` is exactly `question + "\n\n" + packet.rendered_text`; the two host
 texts retain CRLF and Unicode composition. The separator is the only joining text.
 Question and packet are independently capped at 8192/49152 UTF-8 bytes, and their
 exact joined text is checked against the verified payload before transport use.
@@ -456,13 +489,17 @@ reservation or requeue. Quarantine clears only after settlement. Late observatio
 remain visible and are labeled `late`; `closed` never reopens. Uncalibrated statuses,
 including `completed`, remain progress; an answer never asserts research completion.
 
-## Bounded research workflow (synthetic evidence)
+<a id="bounded-research-workflow-synthetic-evidence"></a>
+
+## Bounded research workflow
 
 Use exact `permit approve` for a verbatim action. For a few host-authored questions
 with one fixed packet, the human may instead approve one bounded research scope.
-This workflow is implemented with synthetic coverage; real-account LIVE verification
-is still pending. The existing CLI/MCP requests,
-worker and durable discussion/exchange/results remain the same.
+This workflow has synthetic coverage and one authorized real-account CLI journey
+using a synthetic packet. That LIVE run crossed candidate builds while protocol
+defects were fixed; it does not verify a fresh installation of the published alpha.
+The existing CLI/MCP requests, worker and durable discussion/exchange/results remain
+the same.
 Credential-bearing new topics/questions are refused by the shared Muse checks. A legacy
 packet that fails the current preview redaction check needs a new packet before approval.
 
