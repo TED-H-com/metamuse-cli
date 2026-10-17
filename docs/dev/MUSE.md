@@ -10,9 +10,11 @@ The spike under `spikes/muse/` is the historical record. Production code is `mus
 
 Historical B09 (2026-10-13) had no authorized account. On 2026-10-14 the orchestrator
 recorded one authorized LIVE standard msg1/msg2 observation: nested key equaled the
-responder static key and nested nonce equaled the fresh client nonce. This implementation
-and its tests are OFFLINE/FIXTURE only. Msg3/split/application readiness and AT-038/AT-043
-remain unproven pending the orchestrator's separately authorized LIVE run.
+responder static key and nested nonce equaled the fresh client nonce. On 2026-10-17,
+an explicitly authorized run completed the standard handshake and a synthetic
+two-turn CLI journey with restart, cited draft and exports across corrected candidate
+builds. See [the run's scope and defects](MUSE_SPIKE.md#11-authorized-live-diagnostics-2026-10-17).
+The published `0.1.0a1` lacks these fixes; this is not clean-install release acceptance.
 
 ## Allowlist
 
@@ -32,8 +34,10 @@ Any other route name, including `cmd_raw`, raises `MuseProgrammingError` before 
 The daemon's session body is `{"method":"/api/session/start","params":{"origin":"fresh",
 "lifecycle":"persistent","title":"..."}}`. Sends use `items: [{type: "text", text: "..."}]`,
 the mapped `session_id`, a stable 16-hex project client node and empty `capabilities`.
-History sends `session_id` and `limit` in the GET request's JSON body, matching the
-documented daemon protocol; URL query parameters alone can select the wrong chat.
+History sends `session_id` and `limit` as URL query parameters with an empty GET
+body. Upstream `request()` converts its callers' dict body to query parameters;
+putting them in a wire JSON body instead can select the main chat. Native events'
+nested payload session identity is preserved; conflicting outer/nested IDs stop.
 Successful `{ok: true, result: {...}}` responses are unwrapped once. History accepts
 `chat_events` and the older `events` field, refusing conflicting aliases or error wrappers.
 Old frozen flat mutation bodies and their grants are never rewritten into new wire bytes.
@@ -363,6 +367,13 @@ After a mutation handoff, a read failure does not use safe-read retry guidance. 
 
 `delivery_state`, `attempt_evidence`, `associate_reply`, `observe`, `Exchange.earlier_unresolved`, and `ObservationMemory` are re-exported from `metamuse.muse`. `CALIBRATED_COMPLETE_STATUSES` is empty. `ambiguous` is an association result, not an exchange state. `closed` does not reopen. The transport never resends.
 
+For a native user echo, exact `payload.content` takes precedence over the
+presentation field `display_text`; the latter is a fallback only when content is
+absent or empty. A conflicting request marker still disqualifies the event.
+Assistant display text remains available for presentation. This distinction was
+observed during the authorized synthetic LIVE run; it does not calibrate a
+completion status or declare the research finished.
+
 ## Schema
 
 B09 migration `005_muse_trust.sql` is amended in place for round 4, with no 006.
@@ -478,13 +489,15 @@ reservation or requeue. Quarantine clears only after settlement. Late observatio
 remain visible and are labeled `late`; `closed` never reopens. Uncalibrated statuses,
 including `completed`, remain progress; an answer never asserts research completion.
 
-## Bounded research workflow (synthetic evidence)
+## Bounded research workflow
 
 Use exact `permit approve` for a verbatim action. For a few host-authored questions
 with one fixed packet, the human may instead approve one bounded research scope.
-This workflow is implemented with synthetic coverage; real-account LIVE verification
-is still pending. The existing CLI/MCP requests,
-worker and durable discussion/exchange/results remain the same.
+This workflow has synthetic coverage and one authorized real-account CLI journey
+using a synthetic packet. That LIVE run crossed candidate builds while protocol
+defects were fixed; it does not verify a fresh installation of the published alpha.
+The existing CLI/MCP requests, worker and durable discussion/exchange/results remain
+the same.
 Credential-bearing new topics/questions are refused by the shared Muse checks. A legacy
 packet that fails the current preview redaction check needs a new packet before approval.
 

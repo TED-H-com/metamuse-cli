@@ -84,3 +84,25 @@ def test_old_flat_session_body_is_refused_without_rewriting_frozen_bytes():
     with pytest.raises(CoreError):
         life._wire(old)
     assert old.body == flat
+
+
+def test_native_nested_session_is_not_relabelled_as_the_query_session():
+    event = {
+        "event_name": "message.assistant",
+        "seq": 17,
+        "payload": {"session_id": "foreign-synthetic", "role": "assistant", "content": "Other"},
+    }
+    normalized = life._normalize([event], "approved-synthetic")
+    assert normalized[0]["session_id"] == "foreign-synthetic"
+    assert "session_id" not in event
+
+
+def test_conflicting_native_session_aliases_are_refused_before_storage():
+    event = {
+        "session_id": "approved-synthetic",
+        "event_name": "message.assistant",
+        "seq": 17,
+        "payload": {"session_id": "foreign-synthetic", "role": "assistant", "content": "Other"},
+    }
+    with pytest.raises(CoreError):
+        life._normalize([event], "approved-synthetic")

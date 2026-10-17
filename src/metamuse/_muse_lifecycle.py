@@ -1319,6 +1319,12 @@ def _normalize(events, session):
         seq = event.get("seq")
         name = event.get("event_name")
         payload = event.get("payload", {})
+        if isinstance(payload, dict) and payload.get("session_id") not in (
+            None,
+            "",
+            event.get("session_id"),
+        ):
+            _error(m.ErrorCode.PROTOCOL_MISMATCH, "Muse event session identities conflict")
         for ident in (
             event.get("session_id"),
             name,

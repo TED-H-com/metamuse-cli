@@ -388,6 +388,34 @@ retained as delivery-uncertain. Authorized safe-read reconciliation did not prov
 the original session mapping; no question was sent or mutation replayed. Inspection
 against the already pinned upstream session/chat/history contracts found the flat
 lifecycle bodies and missing response wrapper handling corrected in this branch.
-The candidate containing all protocol corrections has only offline/fixture and
-installed-package verification so far. AT-038 and AT-043 have not passed; neither
-the successful bootstrap nor the corrected fixtures establish a two-round LIVE journey.
+That first attempt alone did not establish a two-round LIVE journey.
+
+The operator then explicitly approved one independent conversation with a fixed
+synthetic packet, two questions, twelve history reads and a two-hour expiry.
+Through isolated installed candidate wheels and the shipped CLI/worker, this
+conversation was created, both questions received acknowledgements, and both
+assistant answers were read back from the mapped side chat. The second question
+followed up on the first answer's use of import completeness; the answer correctly
+distinguished a complete import from missing activity facts. Separate CLI processes
+then read both exchanges after host closure. A host-written draft citing the
+original source and both exact assistant observation refs was exported as bundle
+and Markdown; file lengths, hashes and citations were checked. Records retain
+`mock=false`, `research_complete=false`; the host reviewed the answers and closed
+both outcomes as `answered`. No automatic completion status was calibrated.
+
+This run also caught a regression introduced in this branch: putting history's
+GET parameters in a JSON body returned main-chat history instead of the requested
+side chat. Upstream's `request()` converts its caller body to URL query parameters;
+the final transport restores query parameters and an empty body. Native nested
+session IDs now survive normalization, conflicting outer/nested IDs are refused,
+and user-echo matching uses exact `content` before presentation `display_text`.
+The earlier mislabelled observations remain immutable in private diagnostic
+storage and were excluded from draft/export selection. Export checks found none
+of that unrelated content. Neither question nor the uncertain create was replayed.
+
+This is bounded LIVE evidence for the AT-038 operations and AT-043's
+local-import → Muse → cited draft/export path. It was completed while candidate
+builds changed; a clean journey on one unchanged released wheel, real Facebook
+collection, remote media, publishing, and the broader beta gate remain unverified.
+The published `0.1.0a1` still lacks the protocol fixes. No credentials, account IDs,
+raw conversations or private evidence are included here.

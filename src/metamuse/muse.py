@@ -1167,19 +1167,7 @@ class MuseTransport:
             if prepared is not None or authorization is not None:
                 raise MuseProgrammingError("reads do not take a mutation authorization")
             marker = str(uuid.uuid4())
-            # The daemon reads GET /chat/history's JSON body. A URL-only
-            # session_id can silently select the main chat on this protocol.
-            raw = (
-                m.canonical_json(
-                    {
-                        key: value
-                        for key, value in (query or {}).items()
-                        if value is not None and key != "transcript_mode"
-                    }
-                )
-                if route == "chat.history"
-                else b""
-            )
+            raw = b""
             payload = None
         if not self._lock.acquire(blocking=False):
             raise ProtocolMismatch("concurrent collection")
@@ -1199,11 +1187,7 @@ class MuseTransport:
                 spec,
                 raw=raw,
                 path=(
-                    prepared.path
-                    if prepared is not None
-                    else spec.path
-                    if route == "chat.history"
-                    else _apply_query(spec.path, query or {})
+                    prepared.path if prepared is not None else _apply_query(spec.path, query or {})
                 ),
                 verb=prepared.verb if prepared is not None else spec.verb,
                 timeout_s=timeout_s,

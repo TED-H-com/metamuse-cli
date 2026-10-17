@@ -1888,7 +1888,9 @@ Daemon wire固定為 `POST /session/start`，body是method `/api/session/start`�
 `origin:fresh`、`lifecycle:persistent`、精確title。`POST /chat/stream`以單一
 `items:[{type:text,text:question+"\n\n"+packet}]`、固定client node及空capabilities送出。
 client node是project ID SHA-256前16個hex，同project跨重啟穩定；不是研究round ID。
-history的session_id/limit放在 `GET /chat/history` JSON body，不能只放URL query而讀錯main chat。
+history的session_id/limit放在 `GET /chat/history` URL query，body為空；上游request()將caller
+dict body轉成query，不可誤當wire JSON body而讀錯main chat。保留payload的明示session_id，
+outer/nested session_id矛盾則拒絕，不以query覆寫其他session身分。
 接受明示成功的 `{ok:true,result:{...}}` wrapper，history欄位是chat_events；舊flat成功
 response及events仍可讀，duplicate/conflicting/error wrapper拒絕。開題接受一致的session_id/id。
 舊frozen flat mutation不改寫或重送；原grant綁原bytes，不移轉到新wire。
@@ -1921,6 +1923,7 @@ consume綁owner/epoch/job/step/operation/target/action digest。read不mint。tr
 record_not_submitted，commit_not_submitted以issuer proof保持fencing並在cancel之前atomic保存記帳；原step經settle_uncertain變local failed/remote not_submitted。closed保留host outcome，不reopen；原step settlement後guarded callback才清quarantine。寫入失敗記durable event並保留uncertain，worker清process registry後繼續queue；crash則unknown，不退用量。
 history/list在另一safe_read job，讀取current access grant；原step settlement不再reserve/send/requeue。
 echo比較對prepared text與stored observation套用同一sanitize_document，wire仍精確使用host文字；redaction collision保留ambiguous。
+native user echo以payload.content精確比對，只有content缺少或空值才fallback display_text；presentation欄位不得蓋過不同的原始content，marker衝突仍拒絕。assistant顯示沿用display_text優先，這不代表已校準completion status。
 send boundary持久化write-once submitted_observation_high_water；history關聯排除prepared/zero-handoff，並要求訊息首次observation在此高水位之後。多個同文exchange共享markerless echo時保持ambiguous，不按rowid先後認領。user_echo SQL guard也檢查已提交與首次observation；transport首結果保留既有history proof、另存真實ack/verdict，不reopen closed。
 live send先有已完成、授權的history baseline；已mapped discussion_id的open走history read，不做第二次create。
 open boundary在reservation與token之前重查未解create；拒絕時transaction rollback，不接觸remote、不標uncertain。
