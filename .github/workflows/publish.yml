@@ -84,7 +84,7 @@ jobs:
               f'metamuse_cli-{version}-py3-none-any.whl',
               f'metamuse_cli-{version}.tar.gz',
           }
-          files = sorted(Path('dist').iterdir())
+          files = sorted(p for p in Path('dist').iterdir() if p.name != '.gitignore')
           if {p.name for p in files} != expected:
               raise SystemExit('Expected exactly one wheel and one source distribution.')
           sums = []
