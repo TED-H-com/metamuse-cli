@@ -22,7 +22,8 @@ def test_r5_9_page_schema_matches_store():
     # Traverse the page's map without coupling to its section layout.
     def strings(node):
         if isinstance(node, dict):
-            if node.get("en", "").startswith("Schema "):
+            english = node.get("en")
+            if isinstance(english, str) and english.startswith("Schema "):
                 yield node
             for child in node.values():
                 yield from strings(child)
