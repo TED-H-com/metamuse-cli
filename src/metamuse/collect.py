@@ -131,12 +131,26 @@ def _remote_media_request(request: m.CollectRequest) -> bool:
     )
 
 
-# Facebook approval uses the human permit-create command; this preview is B12-only.
-_REMOTE_APPROVAL_ROUTES = {remote_media.OPERATION: remote_media.preview_remote_media}
+def _facebook_approval_preview(ctx: Any, request: m.CollectRequest) -> m.ApprovalPreview:
+    from metamuse import facebook
+
+    return facebook.preview_facebook_collect(ctx, request)
+
+
+_REMOTE_APPROVAL_ROUTES = {
+    remote_media.OPERATION: remote_media.preview_remote_media,
+    "collect.facebook_post": _facebook_approval_preview,
+}
 
 
 def _remote_route(request: m.CollectRequest) -> str | None:
-    return remote_media.OPERATION if _remote_media_request(request) else None
+    from metamuse import facebook
+
+    if _remote_media_request(request):
+        return remote_media.OPERATION
+    if facebook.is_facebook_post_request(request):
+        return facebook.OPERATION
+    return None
 
 
 def _remote_approval_preview(ctx: Any, request: m.CollectRequest) -> m.ApprovalPreview:

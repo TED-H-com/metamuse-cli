@@ -115,7 +115,18 @@ class Entrypoints:
     def honest(envelope):
         raw = json.dumps(envelope)
         assert SECRET not in raw and COOKIE not in raw
-        assert "live_verified" not in raw
+
+        def no_live_claim(value):
+            if isinstance(value, dict):
+                assert value.get("live_verified") is not True
+                assert value.get("verification") != "live_verified"
+                for child in value.values():
+                    no_live_claim(child)
+            elif isinstance(value, list):
+                for child in value:
+                    no_live_claim(child)
+
+        no_live_claim(envelope)
         assert envelope["status"] != "complete"
         data = envelope.get("data") or {}
         if envelope["status"] == "accepted":

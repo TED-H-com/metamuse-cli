@@ -6,7 +6,7 @@ Have event feedback to review, or a video transcript to quote? MetaMuse keeps yo
 
 Use it from a terminal, or connect it to an AI assistant that can run CLI or MCP tools. The tool runs on your machine.
 
-[Try the example](#try-it) · [繁體中文上手指南](docs/GETTING_STARTED.md) · [Connect your assistant](docs/dev/SKILL.md)
+[Try the example](#try-it) · [繁體中文上手指南](docs/GETTING_STARTED.md) · [Connect accounts and publish](docs/CONNECTED_WORKFLOW.md) · [Connect your assistant](docs/dev/SKILL.md)
 
 ## What can I do with it?
 
@@ -44,6 +44,13 @@ Once connected, try a request like this:
 > Use MetaMuse to review the event comments I provide and have permission to use. Find feedback about subtitles, group the requests, and draft a recap with links to the original comments. Show me the sources and gaps before saving. Export Markdown and keep this work local.
 
 Muse is an optional collaborator for further questions. Local import, search, drafts and exports work without a Muse account. A real Muse connection needs separate configuration and human approval; the [Muse guide](docs/dev/MUSE.md) covers that path. Real-account LIVE verification is still pending.
+
+Use `metamuse connect muse`, `connect facebook`, or `connect publishing` to validate your
+private credential file and bind the account without editing TOML. Add `--enable-network`
+to explicitly enable network use; each external action still needs its own approval.
+The [connected workflow guide (中文)](docs/CONNECTED_WORKFLOW.md) walks through setup,
+collecting one post, Muse follow-ups, a cited draft and Page publication. This complete
+sequence has synthetic integration coverage; real-account acceptance is pending.
 
 ## What can I use today?
 

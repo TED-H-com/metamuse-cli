@@ -138,6 +138,20 @@ def _use(target, digest, operation="publication.send"):
 def _approval(ctx, request, target, payload, digest):
     operation = target["operation"]
     request_file = str(ctx.paths.root / ("approval-" + digest + ".json"))
+    base_key = "approve-" + digest[:32]
+    with ctx.store.connection() as conn:
+        used = {
+            row["request_key"]
+            for row in conn.execute(
+                "SELECT request_key FROM request_receipts "
+                "WHERE operation='permit.create' AND request_key LIKE ?",
+                (base_key + "%",),
+            )
+        }
+    key, ordinal = base_key, 0
+    while key in used:
+        ordinal += 1
+        key = base_key + "-" + str(ordinal)
     command = safety.operator_command(
         ctx,
         "permit",
@@ -149,8 +163,24 @@ def _approval(ctx, request, target, payload, digest):
         "--exact-digest",
         digest,
         "--request-key",
-        "approve-" + digest[:32],
+        key,
     )
+    destination = "Facebook Page " + target["destination"]
+    summary = [
+        "New Facebook Page text post"
+        if operation == "publication.send"
+        else "Read the saved Facebook post receipt only; do not send another post",
+        "Destination: " + destination,
+        "Provider/account: " + PROVIDER + "/" + target["account"],
+        "Project: " + target["project_id"],
+        "Action digest: " + digest,
+    ]
+    if operation == "publication.send":
+        summary.append("Exact text:\n" + payload["message"])
+    else:
+        summary.append("Saved receipt: " + payload["remote_id"])
+    review = request.model_dump(mode="json")
+    review["publication_grant"] = None
     return m.ApprovalPreview(
         operation=operation,
         permit_operation=operation,
@@ -159,16 +189,11 @@ def _approval(ctx, request, target, payload, digest):
         provider=PROVIDER,
         account=target["account"],
         action_digest=digest,
-        destination="Facebook Page " + target["destination"],
-        summary=(
-            "New Facebook Page text post\n" + payload["message"]
-            if operation == "publication.send"
-            else "Read the saved Facebook post receipt only; do not send another post"
-        ),
+        destination=destination,
+        summary="\n".join(summary),
         request_file=request_file,
-        request=request.model_dump(mode="json"),
-        next_action="Save approval.request as the indicated UTF-8 JSON file, review, then run: "
-        + command,
+        request=review,
+        next_action=command,
     )
 
 
@@ -191,7 +216,9 @@ def preview_publication(ctx, request):
     return m.Envelope(
         status="ok",
         data={
-            "text": preview.summary.split("\n", 1)[1],
+            "text": ctx.store.get(
+                m.DraftRevision, request.draft_id, revision=request.revision
+            ).text,
             "account": preview.account,
             "destination": request.destination,
             "action_digest": preview.action_digest,
@@ -778,6 +805,14 @@ def _resolve(host, timeout=10):
         raise m.CoreError(m.ErrorCode.NETWORK_TIMEOUT, "Graph DNS lookup timed out") from None
 
 
+def validate_page_token(token: bytes) -> None:
+    """Check the supported raw token format without starting a request."""
+    if not token or len(token) > 8192 or re.fullmatch(rb"[A-Za-z0-9_|.\-]+", token) is None:
+        raise m.CoreError(
+            m.ErrorCode.AUTH_REQUIRED, "Import a raw Page access token without whitespace"
+        )
+
+
 class GraphPageGateway:
     """Fixed HTTPS Graph endpoints. API version is an explicit operator choice."""
 
@@ -795,11 +830,7 @@ class GraphPageGateway:
     ):
         from metamuse._muse_http import CurlHttp
 
-        # This backend accepts a raw Page access token, never a credential-bearing URL.
-        if not token or len(token) > 8192 or re.fullmatch(rb"[A-Za-z0-9_|.\-]+", token) is None:
-            raise m.CoreError(
-                m.ErrorCode.AUTH_REQUIRED, "Import a raw Page access token without whitespace"
-            )
+        validate_page_token(token)
         if re.fullmatch(r"v[0-9]{1,2}\.0", api_version) is None:
             raise m.CoreError(
                 m.ErrorCode.INPUT_INVALID, "An explicit Graph API version is required"

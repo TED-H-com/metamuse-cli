@@ -10,6 +10,11 @@
 
 ## 準備粉專與權杖
 
+現在可以直接使用 `metamuse connect publishing --account LABEL --auth-file PATH
+--page PAGE_ID --api-version VERSION --enable-network`，檢查私人權杖檔並寫入以下設定，
+不必手動編輯 TOML。這不會聯絡粉專或批准發文。完整連線流程見
+[接上帳號](../CONNECTED_WORKFLOW.md)；以下保留分開匯入與設定的方法。
+
 你需要自己管理的粉專、該粉專可用的 Page access token，以及你的 Meta app
 目前可用的 Graph API 版本與讀寫權限。請在你自己的 Meta developer 帳號確認，
 並參考 [Pages API 文件](https://developers.facebook.com/docs/pages-api/posts/)。

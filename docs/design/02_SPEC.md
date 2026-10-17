@@ -356,6 +356,9 @@ metamuse export --project ID --refs-file PATH --format FORMAT --request-key KEY
 metamuse auth import --file PATH [--provider LABEL] [--account LABEL]
 metamuse auth list
 metamuse auth revoke --auth-ref REF
+metamuse connect muse --account LABEL --auth-file PATH [--provider LABEL] [--enable-network]
+metamuse connect facebook --account LABEL --auth-file PATH [--enable-network]
+metamuse connect publishing --account LABEL --auth-file PATH --page ID --api-version VERSION [--enable-network]
 metamuse skill export --dest DIR [--force]
 metamuse mcp [--no-worker]
 metamuse permit approve --operation OP --request-file PATH --request-key KEY [--exact-digest SHA256] [--expires-at TIMESTAMP] [--max-uses N]
@@ -384,6 +387,28 @@ the revoked ref, with a next action to import and rebind. Config is not rewritte
 Resolving a revoked, missing or corrupt ref returns fixed `E_AUTH_REQUIRED`, with neither
 an exception cause nor context retaining the file contents. Auth lifecycle commands
 require human interaction and have no MCP tools.
+
+Human-only `connect` validates the named Muse cookie-header JSON, Facebook Playwright
+storage-state JSON or raw Page token using the runtime's format validator, imports it
+and atomically binds that service's existing configuration. TOML comments and unrelated
+settings remain. Setup is local and returns account_verified=false; it never grants an
+action or claims a working remote login. `--enable-network` explicitly sets the workspace
+network mode to live; otherwise the current mode remains. Concurrent connect commands
+use an exclusive workspace lock; a detected config edit or failed file replacement
+removes the new credential reference and preserves the prior configuration. Old refs
+are not implicitly revoked. Auth list/revoke report config_bound for Muse, Facebook,
+publishing and remote-media bindings.
+
+B13 Facebook collect without/with an unknown permit uses the shared collect.remote
+approval preview, following the same human permit approve workflow as remote media.
+Review performs no credential resolution, browser launch or network IO. Existing access
+digests bind project/account, normalized single-post URL and resources; request/browser
+limits remain operator controlled and are displayed as such. Review/submit reload current
+workspace configuration. Disabled, offline, invalid-input and missing-account/auth-ref
+settings produce their actual refusal without a review. Denied grants never acquire a
+new review implicitly. Publication reviews also return an executable operator command,
+full text and authoritative Page/account/project/digest, with a fresh approval key when
+a prior key has been used. Local publication data.text remains the verbatim draft text.
 
 `metamuse skill export` copies the packaged Skill into the directory named by `--dest`.
 It refuses to overwrite an existing file unless `--force` is set. It does not choose an

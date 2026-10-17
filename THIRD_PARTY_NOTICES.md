@@ -123,6 +123,7 @@ Runtime dependencies:
 |---|---|---|---|
 | pydantic | 2.14.1 | MIT | Mature typed validation and JSON Schema generation; avoid hand-built validators. |
 | platformdirs | 4.13.0 | MIT | Mature OS user-directory discovery; avoid hardcoded runtime roots. |
+| tomlkit | 0.15.2 | MIT | Preserve operator comments and valid TOML while binding accounts; use the established parser/writer instead of patching TOML with regex. Upstream: https://github.com/python-poetry/tomlkit; installed dependency only, no copied source. |
 | pydantic-core | 2.50.1 | MIT | Pydantic validation engine. |
 | annotated-types | 0.8.0 | MIT | Pydantic annotation support. |
 | typing-inspection | 0.4.4 | MIT | Pydantic typing support. |

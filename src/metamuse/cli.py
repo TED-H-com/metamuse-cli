@@ -184,6 +184,19 @@ def parser() -> Parser:
     reconcile.add_argument("--run", action="store_true")
     _request_key(reconcile)
     commands.add_parser("mcp").add_argument("--no-worker", action="store_true")
+    connect = commands.add_parser(
+        "connect", help="Import a private credential file and configure an account locally"
+    ).add_subparsers(dest="action", required=True)
+    for service in ("muse", "facebook", "publishing"):
+        setup = connect.add_parser(service)
+        setup.add_argument("--auth-file", required=True)
+        setup.add_argument("--account", required=True)
+        setup.add_argument("--enable-network", action="store_true")
+        if service == "muse":
+            setup.add_argument("--provider", default="muse")
+        if service == "publishing":
+            setup.add_argument("--page", required=True)
+            setup.add_argument("--api-version", required=True)
     for command, action in (("auth", "import"), ("permit", "create")):
         sub = commands.add_parser(command).add_subparsers(dest="action", required=True)
         stub = sub.add_parser(action)
@@ -375,7 +388,7 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
 
 
 def dispatch(args: argparse.Namespace) -> m.Envelope | None:
-    if args.non_interactive and args.command in {"auth", "permit"}:
+    if args.non_interactive and args.command in {"auth", "permit", "connect"}:
         raise m.CoreError(m.ErrorCode.SCOPE_REQUIRED, "Human interaction is disabled")
     if args.command == "skill":
         from metamuse.skill_export import export_skill
@@ -404,6 +417,21 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
     if args.command in ("worker", "add", "packet", "muse", "draft", "export", "mcp", "publication"):
         app.register_builtin_operations()
     match args.command:
+        case "connect":
+            from metamuse.connect import ConnectRequest, connect_account
+
+            return connect_account(
+                ctx,
+                ConnectRequest(
+                    service=args.action,
+                    account=args.account,
+                    auth_file=args.auth_file,
+                    provider=getattr(args, "provider", "muse"),
+                    page_id=getattr(args, "page", None),
+                    api_version=getattr(args, "api_version", None),
+                    enable_network=args.enable_network,
+                ),
+            )
         case "init":
             return m.Envelope(
                 status="ok", data={"initialized": True, "schema_version": ctx.store.schema_version}
@@ -726,6 +754,11 @@ def render(result: m.Envelope, *, as_json: bool) -> None:
         print(f"{result.error.code.value}: {_terminal_text(result.error.message)}", file=sys.stderr)
         if result.error.next_action:
             print(_terminal_text(result.error.next_action), file=sys.stderr)
+    elif isinstance(result.data, dict) and result.data.get("configured") is True:
+        data = result.data
+        print(f"Saved {data['service']} settings for {_terminal_text(data['account'])}.")
+        print(f"Network mode: {data['network_mode']}. Remote login has not been verified.")
+        print("Next: " + _terminal_text(data["next_action"]))
     else:
         print(
             _terminal_text(json.dumps(result.data, ensure_ascii=False, indent=2), multiline=True),

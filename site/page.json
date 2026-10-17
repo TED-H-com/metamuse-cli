@@ -527,8 +527,8 @@
       "zh": "用自己的檔案就能開始"
     },
     "limits_title": {
-      "en": "Extra setup and features still to come",
-      "zh": "需要另外設定，或尚未提供"
+      "en": "Connect an account to use these workflows",
+      "zh": "接上帳號，就能使用的流程"
     },
     "nav": {
       "en": "What you can do",
@@ -578,24 +578,24 @@
     ],
     "limits": [
       {
-        "en": "<strong>Ask Muse follow-up questions</strong><br>Set up your Muse connection and approve what may be shared before asking questions. Real-account use has not been verified.",
-        "zh": "<strong>把選好的資料拿去問 Muse</strong><br>需要先設定 Muse 帳號連線，再由你核准要分享的內容。這條流程尚未以真實帳號驗證。",
+        "en": "<strong>Ask Muse follow-up questions</strong><br>Choose source material, ask a question, continue the discussion and cite the replies in your draft. Use connect muse to bind your account. Real-account acceptance is pending. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">Setup and steps</a>.",
+        "zh": "<strong>把選好的資料拿去問 Muse</strong><br>選好資料問問題、繼續追問，再把回答與來源一起存進草稿。現在有連線指令，不用手動編輯設定檔。真實帳號驗收仍待完成。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">連線與操作步驟</a>。",
         "availability": {
           "en": "Needs extra setup; real-account use is unverified",
           "zh": "需額外設定，尚未驗證真實使用"
         }
       },
       {
-        "en": "<strong>Collect a Facebook post or remote video</strong><br>Additional setup and your approval are required. These collectors have not been verified with real accounts.",
-        "zh": "<strong>收集 Facebook 貼文或遠端影片</strong><br>需要額外設定與你的授權。目前尚未以真實帳號驗證，建議先用已匯出的檔案。",
+        "en": "<strong>Collect a Facebook post or remote video</strong><br>Collect one specified post and its comments, or video metadata and available subtitles. Review the exact target and approve the read first. Real-account acceptance is pending. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">Setup and steps</a>.",
+        "zh": "<strong>收集 Facebook 貼文或遠端影片</strong><br>指定一篇貼文收集原文與留言，或取得影片資訊與可用字幕。先看網址與讀取範圍，批准後再執行。真實帳號驗收仍待完成。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">連線與操作步驟</a>。",
         "availability": {
           "en": "Needs extra setup; real-account use is unverified",
           "zh": "需額外設定，尚未驗證真實使用"
         }
       },
       {
-        "en": "<strong>Publish a text post to a Facebook Page</strong><br>Preview your saved draft, approve the exact text and Page, then send and check the receipt. Experimental; requires a Page token and setup. Real-account use is unverified.",
-        "zh": "<strong>把文字草稿發到 Facebook 粉專</strong><br>先核對全文與粉專，再由你批准送出，並保存貼文回執。這項功能仍在實驗階段，需要設定粉專權杖，尚未驗證真實帳號。",
+        "en": "<strong>Publish a text post to a Facebook Page</strong><br>Connect your Page, review the full draft and destination, then approve one send and keep its receipt. Real-account acceptance is pending. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">Setup and steps</a>.",
+        "zh": "<strong>把文字草稿發到 Facebook 粉專</strong><br>接上你管理的粉專，核對草稿全文與目的地，批准後送出，並保存與核對貼文回執。真實帳號驗收仍待完成。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">連線與操作步驟</a>。",
         "availability": {
           "en": "Needs extra setup; real-account use is unverified",
           "zh": "需額外設定，尚未驗證真實使用"

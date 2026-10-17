@@ -993,9 +993,18 @@ def auth_context(workspace: str | Path | None):
     return AppContext(paths, None, policy=load_config(paths.root))
 
 
+def _config_uses_auth(ctx: AppContext, auth_ref: str) -> bool:
+    policy = ctx.policy
+    return (
+        (policy.muse.binding is not None and policy.muse.binding.auth_ref == auth_ref)
+        or policy.facebook.auth_ref == auth_ref
+        or policy.publishing.auth_ref == auth_ref
+        or any(entry.auth_ref == auth_ref for entry in policy.remote_media.approvals)
+    )
+
+
 def list_auth(ctx: AppContext, *, workspace: str | Path | None = None) -> m.Envelope:
     ctx.require_interactive()
-    binding = ctx.policy.muse.binding
     corrupt: list[dict[str, str]] = []
     records = (ctx.secret_store or SecretStore()).list(corrupt=corrupt)
     if workspace is not None:
@@ -1005,7 +1014,7 @@ def list_auth(ctx: AppContext, *, workspace: str | Path | None = None) -> m.Enve
                     ctx, "auth", "revoke", "--auth-ref", record["auth_ref"]
                 )
     for record in records:
-        record["config_bound"] = binding is not None and binding.auth_ref == record["auth_ref"]
+        record["config_bound"] = _config_uses_auth(ctx, record["auth_ref"])
     return m.Envelope(
         status="partial" if corrupt else "ok",
         data={
@@ -1021,8 +1030,7 @@ def list_auth(ctx: AppContext, *, workspace: str | Path | None = None) -> m.Enve
 def revoke_auth(ctx: AppContext, auth_ref: str) -> m.Envelope:
     ctx.require_interactive()
     (ctx.secret_store or SecretStore()).revoke(auth_ref)
-    binding = ctx.policy.muse.binding
-    bound = binding is not None and binding.auth_ref == auth_ref
+    bound = _config_uses_auth(ctx, auth_ref)
     return m.Envelope(
         status="ok",
         data={

@@ -30,9 +30,24 @@ Entries are bare hostnames; query/fragment delimiters are refused, never strippe
 There is no operator fixture/loopback mode. Browser exceptions cannot come from job
 payloads, MCP arguments, permits or source content.
 
-Create an access permit for `provider="facebook"`, the configured account,
-`operations=["collect.remote"]`, and the exact `facebook.permit_digest` of the URL
-and requested resources. Supply its ID as `access_grant_id`. A permit use is reserved
+For one-command account binding use human-only `metamuse connect facebook --account LABEL
+--auth-file PATH --enable-network`; it validates the named storage-state file locally
+and sets the existing Facebook configuration. It performs no remote action and grants
+no collection permit. See the [connected workflow](../CONNECTED_WORKFLOW.md).
+
+Call collect without a grant to obtain the shared CLI/MCP `E_SCOPE_REQUIRED` approval
+preview. It displays the canonical single-post URL, configured account, requested
+resources and current limits without reading secrets, launching a browser or resolving
+a hostname. Save `approval.request` at `approval.request_file`; the human runs the
+displayed `permit approve` command and supplies the returned ID as `access_grant_id`.
+Unknown permits return the same review; revoked/expired/exhausted/mismatched permits
+retain their actual refusal without a preview. A fresh review chooses an unused
+approval key so it cannot replay an old exhausted grant.
+
+The existing exact access scope binds project/account, canonical URL and resources,
+not request/browser limits or credential identity; operator configuration continues
+to control those. Review and submit reload current workspace policy. Manual
+`permit create` and `facebook.permit_digest` remain available. A permit use is reserved
 once at the external read boundary; resume re-verifies it without another use.
 `accepted` means queued; a worker must run it.
 

@@ -3703,13 +3703,106 @@ def _parse_json_payload(
     )
 
 
-def submit_facebook_collect(ctx: Any, request: m.CollectRequest) -> m.Envelope:
-    """Validate and submit a bounded single-post Facebook collection job."""
-    register_operations()
-    fb_cfg = ctx.policy.facebook
+def preview_facebook_collect(ctx: Any, request: m.CollectRequest) -> m.ApprovalPreview:
+    """Review a single read locally; never resolve secrets, launch Chromium or dial."""
+    permalink, workspace = prepare_facebook_collect(ctx, request)
+    cfg = workspace.facebook
+    if not cfg.auth_ref:
+        raise m.CoreError(
+            m.ErrorCode.AUTH_REQUIRED,
+            "Facebook storage-state auth_ref is not configured",
+            next_action="Import a Playwright storage state and set facebook.auth_ref",
+        )
+    account = cfg.account
+    safety._label(account)
+    if safety.redact_text(account)[0] != account:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid Facebook account label")
+    target = build_target(
+        project_id=request.project_id, account=account, url=permalink.canonical_url
+    )
+    payload = build_action_payload(url=permalink.canonical_url, resources=request.resources)
+    digest = safety.action_digest(target, payload)
+    review = request.model_dump(mode="json")
+    review["access_grant_id"] = None
+    review["inputs"][0]["url"] = permalink.canonical_url
+    # All free-form fields are either validated labels or the canonical permalink.
+    review["request_key"] = safety.redact_text(review["request_key"])[0]
+    request_file = str(ctx.paths.root / ("approval-" + digest + ".json"))
+    base_key = "approve-" + digest
+    with ctx.store.connection() as conn:
+        used = {
+            row["request_key"]
+            for row in conn.execute(
+                "SELECT request_key FROM request_receipts "
+                "WHERE operation='permit.create' AND request_key LIKE ?",
+                (base_key + "%",),
+            )
+        }
+    key = base_key
+    ordinal = 0
+    while key in used:
+        ordinal += 1
+        key = base_key + "-" + str(ordinal)
+    details = [
+        "Would: read one Facebook post; resources: " + ", ".join(request.resources),
+        "Destination: " + permalink.canonical_url,
+        "Provider/account: facebook/" + account,
+        "Project: " + request.project_id,
+        "Action digest: " + digest,
+        "Limits: "
+        + "; ".join(f"{name}={value}" for name, value in request.limits.model_dump().items()),
+        f"Browser: max_expansions={cfg.max_expansions}; pacing_ms={cfg.pacing_ms}",
+        "This permit binds the exact post URL and resources. Request and operator limits "
+        "apply at execution; changing these limits does not change this permit's scope.",
+        "Stores: original post/comment text, reply parents, source and coverage evidence. "
+        "This does not share data with Muse or publish a post.",
+    ]
+    if permalink.is_share:
+        details.append(
+            "The share URL resolves only during the approved read, to one post. "
+            "The permit binds the share locator; no redirect is followed during review."
+        )
+    return m.ApprovalPreview(
+        operation="collect.remote",
+        permit_operation="collect.remote",
+        kind="access",
+        project_id=request.project_id,
+        provider="facebook",
+        account=account,
+        action_digest=digest,
+        destination=permalink.canonical_url,
+        summary="\n".join(details),
+        request=review,
+        request_file=request_file,
+        next_action=safety.operator_command(
+            ctx,
+            "permit",
+            "approve",
+            "--operation",
+            "collect.remote",
+            "--request-file",
+            request_file,
+            "--exact-digest",
+            digest,
+            "--request-key",
+            key,
+        ),
+    )
+
+
+def prepare_facebook_collect(
+    ctx: Any, request: m.CollectRequest
+) -> tuple[PostPermalinkTarget, Any]:
+    """Validate the local request and operator policy, without credentials or network IO."""
+    from metamuse.config import load_config
+
+    workspace = load_config(ctx.store.paths.root)
+    fb_cfg = workspace.facebook
 
     # 1. Non-Facebook URLs and mixed inputs stay E_UNSUPPORTED; loopback/private are E_SCOPE_DENIED
     for item in request.inputs:
+        if item.kind == "url" and safety.redact_text(item.url)[0] != item.url:
+            raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid Facebook post URL")
         if item.kind != "url":
             raise m.CoreError(
                 m.ErrorCode.UNSUPPORTED,
@@ -3748,7 +3841,7 @@ def submit_facebook_collect(ctx: Any, request: m.CollectRequest) -> m.Envelope:
     # 2. Project and workspace limit checks
     ctx.store.get(m.Project, request.project_id)
     for name in m.CollectLimits.model_fields:
-        if getattr(request.limits, name) > getattr(ctx.limits, name):
+        if getattr(request.limits, name) > getattr(workspace.limits, name):
             raise m.CoreError(
                 m.ErrorCode.SCOPE_DENIED,
                 "Request limit exceeds the workspace limit",
@@ -3783,7 +3876,7 @@ def submit_facebook_collect(ctx: Any, request: m.CollectRequest) -> m.Envelope:
         )
 
     # 4. Network mode check
-    if ctx.policy.app.network_mode != "live":
+    if workspace.app.network_mode != "live":
         raise m.CoreError(
             m.ErrorCode.SCOPE_DENIED,
             "External Facebook collection is disabled when app.network_mode is offline",
@@ -3799,14 +3892,14 @@ def submit_facebook_collect(ctx: Any, request: m.CollectRequest) -> m.Envelope:
             "Facebook account label is not configured",
             next_action="Set facebook.account in metamuse.toml to match the permit and auth_ref",
         )
-    if not request.access_grant_id:
-        raise m.CoreError(
-            m.ErrorCode.SCOPE_REQUIRED,
-            "An access_grant_id permit is required for Facebook collection",
-            next_action=(
-                "Create an access permit with metamuse permit create and pass access_grant_id"
-            ),
-        )
+    return permalink, workspace
+
+
+def submit_facebook_collect(ctx: Any, request: m.CollectRequest) -> m.Envelope:
+    """Validate and submit a bounded single-post Facebook collection job."""
+    register_operations()
+    permalink, workspace = prepare_facebook_collect(ctx, request)
+    fb_cfg = workspace.facebook
     target = build_target(
         project_id=request.project_id,
         account=fb_cfg.account,

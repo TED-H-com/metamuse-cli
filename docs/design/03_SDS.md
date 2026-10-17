@@ -139,6 +139,15 @@ worker run、預設MCP附帶worker、CLI --run都搶相同OS lock。MCP --no-wor
 有獨立RLock；MCP tools保留ctx.store，因此WAL read不排在worker的SQLite wait後。
 Store建立也走unclaimed retry。writer如跨process一般由SQLite仲裁，同一database及maintenance／worker OS lock不變。網路下載／模型等待不持有長transaction或connection lock。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
 
+Live SQLite sidecar validation permits at most four pathname inspections when lstat
+observes a regular inode with nlink=0 during last-connection close, yielding 1/2/4 ms
+before rechecks (at most 7 ms of sleep). Every inspection
+repeats the normal symlink/path/type/link checks; disappearance is handled as an absent
+sidecar. Repeated churn beyond that bound returns fixed E_RESOURCE_UNAVAILABLE with
+local retry guidance. Database and archive files retain strict single-pass checks;
+symlinks, hardlinks and nonregular replacements are always refused. No external action
+is retried by this local pathname handling.
+
 未claim step時（startup epoch/recovery、heartbeat、atomic claim/cancel sweep、idle及
 safe-read已requeue後的等待維護）只對_StorageBusy重試。transaction先rollback，exponential
 backoff加jitter：25–50 ms起，倍增至1–2秒，每次wait最多2秒，stop喚醒且不再開始下一次。
@@ -574,6 +583,23 @@ separate from enforced identity/budget checks. The implemented workflow has synt
 OFFLINE/FIXTURE coverage; real-account LIVE verification is still pending.
 
 ## Operator approval preview seam (B08/B10/B14)
+
+`collect.remote` dispatches review through the same narrow route predicates as submit:
+media-only inputs use B12; Facebook post/comments use B13. B13's read-only preparation
+validates current config and request before exposing canonical URL/resources/account;
+review does not read storage state, probe Chromium or resolve DNS. Existing URL/resources
+access digests are unchanged. Publication review emits the same exact-command next_action
+contract and authoritative summary fields; immutable draft text is read directly from
+DraftRevision instead of parsing the human summary. Fresh digest-based approval keys
+avoid accidentally replaying expired/revoked/used permits.
+
+Human-only `connect` uses existing private credential storage and service format
+validators, then tomlkit to update the existing config while retaining comments.
+The workspace connect lock serializes setup; a private staging file is flushed before
+atomic replacement; a config edit detected just before replacement refuses. Failed replacement removes
+the new credential ref; a process crash between credential import and config replacement
+can leave an unbound private ref, removable through auth list/revoke. Setup does no remote
+IO, issues no permit and does not change schemas or the application/MCP tool registry.
 
 Fixed feature registration uses `safety.register_approval_preview(operation, fn,
 request_model=...)`. The shared app wrapper calls it after grant failure, before any

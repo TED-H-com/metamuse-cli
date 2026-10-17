@@ -116,6 +116,37 @@ for name in sys.argv[1:]:
 print("init and doctor ok")
 PY
 
+env -u PYTHONPATH "$py" - "$bin" "$work" <<'PY'
+import json
+import os
+import subprocess
+import sys
+import tomllib
+from pathlib import Path
+
+binary, directory = sys.argv[1:]
+root = Path(directory)
+token = root / "synthetic-page-token.txt"
+token.write_text("SYNTHETIC_WHEEL_PAGE_TOKEN")
+token.chmod(0o600)
+workspace = root / "connect-ws"
+result = subprocess.run(
+    [binary, "--workspace", str(workspace), "--json", "connect", "publishing",
+     "--account", "synthetic-page", "--auth-file", str(token),
+     "--page", "123456", "--api-version", "v25.0"],
+    env={**os.environ, "XDG_CONFIG_HOME": str(root / "config")},
+    capture_output=True, text=True, timeout=30, check=True,
+)
+body = json.loads(result.stdout)["data"]
+policy = tomllib.loads((workspace / "metamuse.toml").read_text())
+assert body["configured"] is True and body["account_verified"] is False
+assert policy["app"]["network_mode"] == "offline"
+assert policy["publishing"]["auth_ref"] == body["auth_ref"]
+assert "SYNTHETIC_WHEEL_PAGE_TOKEN" not in result.stdout + result.stderr
+assert "SYNTHETIC_WHEEL_PAGE_TOKEN" not in (workspace / "metamuse.toml").read_text()
+print("installed account setup ok: offline, private binding, no remote verification claim")
+PY
+
 env -u PYTHONPATH "$py" - "$bin" "$work/ws" "$work" "$ROOT/src/metamuse/data/schemas/mcp-tools.json" <<'PY'
 import asyncio
 import json

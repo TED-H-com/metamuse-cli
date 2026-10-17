@@ -14,6 +14,7 @@ import sqlite3
 import stat
 import tempfile
 import threading
+import time
 import warnings
 import weakref
 from collections.abc import Callable, Iterator
@@ -2162,19 +2163,29 @@ def _write_restore_marker(paths: WorkspacePaths) -> None:
 
 
 def _regular_file(path: Path, *, _recheck_unlinked: bool = False) -> None:
-    if path.is_symlink() or path.resolve() != path:
-        raise m.CoreError(m.ErrorCode.RESOURCE_UNAVAILABLE, "Linked archive file is unavailable")
-    info = path.lstat()
-    if _recheck_unlinked and stat.S_ISREG(info.st_mode) and info.st_nlink == 0:
-        # A racing lstat can observe SQLite's now-unlinked sidecar inode. Check
-        # the current pathname once: absence is handled by _open_database, and
-        # a replacement must still pass every normal link/type check.
-        _regular_file(path)
+    for attempt in range(4 if _recheck_unlinked else 1):
+        if path.is_symlink() or path.resolve() != path:
+            raise m.CoreError(
+                m.ErrorCode.RESOURCE_UNAVAILABLE, "Linked archive file is unavailable"
+            )
+        info = path.lstat()
+        if _recheck_unlinked and stat.S_ISREG(info.st_mode) and info.st_nlink == 0:
+            # Each short-lived SQLite connection can remove another sidecar.
+            # Recheck the current name with every link/type guard, with a bound.
+            # _open_database handles a name that has disappeared altogether.
+            if attempt < 3:
+                time.sleep(0.001 * 2**attempt)
+            continue
+        if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+            raise m.CoreError(
+                m.ErrorCode.RESOURCE_UNAVAILABLE, "Archive file is not a private regular file"
+            )
         return
-    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
-        raise m.CoreError(
-            m.ErrorCode.RESOURCE_UNAVAILABLE, "Archive file is not a private regular file"
-        )
+    raise m.CoreError(
+        m.ErrorCode.RESOURCE_UNAVAILABLE,
+        "SQLite sidecar changed repeatedly during inspection",
+        next_action="Retry the local operation after current database activity settles",
+    )
 
 
 def _copy_private_file(source: Path, target: Path) -> None:

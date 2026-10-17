@@ -39,25 +39,7 @@ class BoundMuseCredentials:
                 account=self.binding.account,
                 secret_store=self.secret_store,
             )
-            if len(raw) > COOKIE_MAX_BYTES:
-                raise ValueError
-            document = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object)
-            if (
-                set(document) != {"format", "cookie_header"}
-                or document["format"] != "cookie-header"
-            ):
-                raise ValueError
-            value = document["cookie_header"]
-            if (
-                not isinstance(value, str)
-                or not value
-                or any(ord(c) < 32 or ord(c) >= 127 for c in value)
-            ):
-                raise ValueError
-            for cookie in value.split(";"):
-                name, sep, content = cookie.strip().partition("=")
-                if not sep or not re.fullmatch(r"[A-Za-z0-9_!#$%&'*+.^`|~-]+", name) or not content:
-                    raise ValueError
+            value = parse_cookie_header(raw)
         except Exception:
             failed = True
         if failed:
@@ -67,6 +49,42 @@ class BoundMuseCredentials:
                 next_action="Import cookie-header JSON and configure provider/account/auth_ref",
             )
         return value
+
+
+def parse_cookie_header(raw: bytes) -> str:
+    """Validate the supported private-file format without accessing an account."""
+    value = None
+    failed = False
+    try:
+        if len(raw) > COOKIE_MAX_BYTES:
+            raise ValueError
+        document = json.loads(raw.decode("utf-8"), object_pairs_hook=_unique_object)
+        if (
+            not isinstance(document, dict)
+            or set(document) != {"format", "cookie_header"}
+            or document["format"] != "cookie-header"
+        ):
+            raise ValueError
+        value = document["cookie_header"]
+        if (
+            not isinstance(value, str)
+            or not value
+            or any(ord(c) < 32 or ord(c) >= 127 for c in value)
+        ):
+            raise ValueError
+        for cookie in value.split(";"):
+            name, sep, content = cookie.strip().partition("=")
+            if not sep or not re.fullmatch(r"[A-Za-z0-9_!#$%&'*+.^`|~-]+", name) or not content:
+                raise ValueError
+    except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
+        failed = True
+    if failed:
+        raise m.CoreError(
+            m.ErrorCode.AUTH_REQUIRED,
+            "Invalid Muse cookie-header JSON",
+            next_action="Use a JSON object with format=cookie-header and cookie_header",
+        )
+    return value
 
 
 def resolve_all(host: str) -> tuple[str, ...]:

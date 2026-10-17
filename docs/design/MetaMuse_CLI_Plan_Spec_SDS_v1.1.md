@@ -447,6 +447,9 @@ metamuse export --project ID --refs-file PATH --format FORMAT --request-key KEY
 metamuse auth import --file PATH [--provider LABEL] [--account LABEL]
 metamuse auth list
 metamuse auth revoke --auth-ref REF
+metamuse connect muse --account LABEL --auth-file PATH [--provider LABEL] [--enable-network]
+metamuse connect facebook --account LABEL --auth-file PATH [--enable-network]
+metamuse connect publishing --account LABEL --auth-file PATH --page ID --api-version VERSION [--enable-network]
 metamuse skill export --dest DIR [--force]
 metamuse mcp [--no-worker]
 metamuse permit approve --operation OP --request-file PATH --request-key KEY [--exact-digest SHA256] [--expires-at TIMESTAMP] [--max-uses N]
@@ -475,6 +478,28 @@ the revoked ref, with a next action to import and rebind. Config is not rewritte
 Resolving a revoked, missing or corrupt ref returns fixed `E_AUTH_REQUIRED`, with neither
 an exception cause nor context retaining the file contents. Auth lifecycle commands
 require human interaction and have no MCP tools.
+
+Human-only `connect` validates the named Muse cookie-header JSON, Facebook Playwright
+storage-state JSON or raw Page token using the runtime's format validator, imports it
+and atomically binds that service's existing configuration. TOML comments and unrelated
+settings remain. Setup is local and returns account_verified=false; it never grants an
+action or claims a working remote login. `--enable-network` explicitly sets the workspace
+network mode to live; otherwise the current mode remains. Concurrent connect commands
+use an exclusive workspace lock; a detected config edit or failed file replacement
+removes the new credential reference and preserves the prior configuration. Old refs
+are not implicitly revoked. Auth list/revoke report config_bound for Muse, Facebook,
+publishing and remote-media bindings.
+
+B13 Facebook collect without/with an unknown permit uses the shared collect.remote
+approval preview, following the same human permit approve workflow as remote media.
+Review performs no credential resolution, browser launch or network IO. Existing access
+digests bind project/account, normalized single-post URL and resources; request/browser
+limits remain operator controlled and are displayed as such. Review/submit reload current
+workspace configuration. Disabled, offline, invalid-input and missing-account/auth-ref
+settings produce their actual refusal without a review. Denied grants never acquire a
+new review implicitly. Publication reviews also return an executable operator command,
+full text and authoritative Page/account/project/digest, with a fresh approval key when
+a prior key has been used. Local publication data.text remains the verbatim draft text.
 
 `metamuse skill export` copies the packaged Skill into the directory named by `--dest`.
 It refuses to overwrite an existing file unless `--force` is set. It does not choose an
@@ -1705,6 +1730,15 @@ worker run、預設MCP附帶worker、CLI --run都搶相同OS lock。MCP --no-wor
 有獨立RLock；MCP tools保留ctx.store，因此WAL read不排在worker的SQLite wait後。
 Store建立也走unclaimed retry。writer如跨process一般由SQLite仲裁，同一database及maintenance／worker OS lock不變。網路下載／模型等待不持有長transaction或connection lock。每批結果commit checkpoint。純讀取可按規則重試；存取拒絕／challenge不當timeout重試。
 
+Live SQLite sidecar validation permits at most four pathname inspections when lstat
+observes a regular inode with nlink=0 during last-connection close, yielding 1/2/4 ms
+before rechecks (at most 7 ms of sleep). Every inspection
+repeats the normal symlink/path/type/link checks; disappearance is handled as an absent
+sidecar. Repeated churn beyond that bound returns fixed E_RESOURCE_UNAVAILABLE with
+local retry guidance. Database and archive files retain strict single-pass checks;
+symlinks, hardlinks and nonregular replacements are always refused. No external action
+is retried by this local pathname handling.
+
 未claim step時（startup epoch/recovery、heartbeat、atomic claim/cancel sweep、idle及
 safe-read已requeue後的等待維護）只對_StorageBusy重試。transaction先rollback，exponential
 backoff加jitter：25–50 ms起，倍增至1–2秒，每次wait最多2秒，stop喚醒且不再開始下一次。
@@ -2140,6 +2174,23 @@ separate from enforced identity/budget checks. The implemented workflow has synt
 OFFLINE/FIXTURE coverage; real-account LIVE verification is still pending.
 
 ## Operator approval preview seam (B08/B10/B14)
+
+`collect.remote` dispatches review through the same narrow route predicates as submit:
+media-only inputs use B12; Facebook post/comments use B13. B13's read-only preparation
+validates current config and request before exposing canonical URL/resources/account;
+review does not read storage state, probe Chromium or resolve DNS. Existing URL/resources
+access digests are unchanged. Publication review emits the same exact-command next_action
+contract and authoritative summary fields; immutable draft text is read directly from
+DraftRevision instead of parsing the human summary. Fresh digest-based approval keys
+avoid accidentally replaying expired/revoked/used permits.
+
+Human-only `connect` uses existing private credential storage and service format
+validators, then tomlkit to update the existing config while retaining comments.
+The workspace connect lock serializes setup; a private staging file is flushed before
+atomic replacement; a config edit detected just before replacement refuses. Failed replacement removes
+the new credential ref; a process crash between credential import and config replacement
+can leave an unbound private ref, removable through auth list/revoke. Setup does no remote
+IO, issues no permit and does not change schemas or the application/MCP tool registry.
 
 Fixed feature registration uses `safety.register_approval_preview(operation, fn,
 request_model=...)`. The shared app wrapper calls it after grant failure, before any
