@@ -17,9 +17,36 @@ this alpha does not claim the beta or LIVE publishing gates have passed. See
 [the connected workflow](CONNECTED_WORKFLOW.md) and the README capability table.
 
 Python 3.12 on Linux is the reference environment. Other operating systems have not
-received equivalent end-to-end acceptance. The design's full performance target
-(AT-036: 30-run p95 and RSS) is a declared release deviation; no performance SLA is
-claimed. Alpha does not change existing workspace schemas or permission rules.
+received equivalent end-to-end acceptance. The design's full reference-environment
+performance target (AT-036) remains a declared release deviation; measurements
+below are not a performance SLA. Alpha does not change existing workspace schemas
+or permission rules.
+
+## Performance observations, 2026-10-17
+
+The unchanged installed PyPI alpha was measured on Linux/Python 3.12.13, on a shared
+host with 24 visible logical CPUs and about 61 GiB RAM. This differs from the
+specified dedicated 4-vCPU/8-GiB SSD environment. All data was synthetic and offline.
+Each CLI measurement includes process startup; p95 is the nearest-rank 29th value
+of 30 samples.
+
+| Workload | Observed result |
+|---|---|
+| 30 serial demos, each in a fresh workspace, under syscall tracing | 30 passed; p95 3.534 s, maximum 3.635 s. Export file hashes and source citations checked. |
+| Submit a queued local import, with 10,000 records already stored; 30 fresh request keys | p95 0.623 s. Jobs remained queued without a worker; this measures submission, not execution. |
+| Search the first 50 matches in those 10,000 records; 30 requests | p95 0.195 s, with 50 results checked each time. |
+| Import exactly 20 MiB of JSONL containing those 10,000 records | 10,000 committed, none rejected; 31.450 s wall time, peak individual-process RSS 125,372 KiB (about 122 MiB). No browser or codec ran. |
+
+The import used an explicit `limits.max_items = 10000`; the normal 500-item default
+remains unchanged. Demo tracing separates child commands: init p95 0.609 s, import
+with its worker p95 0.715 s, and the longest individual lock syscall below 0.5 ms in
+these successful samples. It does not separately measure worker startup.
+
+A separate installed initialization took 46.516 s and was observed waiting for a
+filesystem journal commit. This is direct evidence of storage waiting in that run,
+not proof of the earlier release demo timeouts' cause. Those timeouts remain open;
+no timeout, durability setting or retry rule was changed. The measurements also do
+not establish cold-cache installation performance or aggregate process-tree RSS.
 
 ## Prepare and verify
 

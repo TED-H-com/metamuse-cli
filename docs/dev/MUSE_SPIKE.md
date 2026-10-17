@@ -336,20 +336,6 @@ reprs are scrubbed. Regressions cover all five currentness boundaries, cross-pro
 SQL replacement/rowid/deletion, backup/restore and cross-label refusal; mutation evidence is
 recorded in the task report. OFFLINE/FIXTURE only; AT-038/AT-043 remain unproven LIVE.
 
-### 9.2 Server-issued notary format correction, 2026-10-17
-
-An operator-authorized run of the installed PyPI alpha passed auth/check and VM
-selection, then stopped before wake/dial or any gateway frame. The notary returned
-by hatch/token was `endorsement.v1`, not a delegation. The blanket endorsement
-refusal in §9.1 therefore also rejected this standard-VM credential. The live token
-and account evidence remain outside the public repository; regression inputs are synthetic.
-
-The inspected first-party web client chunk `28_ha0dlt8f1j.js` from the 2026-10-14
-snapshot distinguishes delegation (needs a local signer) from an already issued
-notary (passed through). This is protocol observation; no web client code is copied.
-The narrowed accepted envelope and unchanged independent VM/Noise checks are in
-[MUSE.md](MUSE.md#connection) and SDS §8. No local signature verification is claimed.
-
 ## 10. Historical inputs for B09 (2026-10-13; current handshake/wake in §9.1)
 
 - Pin `noiseprotocol==0.3.1` and use `cryptography` only through it. Pattern `Noise_XX_25519_AESGCM_SHA256`, empty handshake payloads, `verify=True`, Chrome impersonation via `curl_cffi==0.16.3`. Do not add the `websockets` package for this gateway.
@@ -381,3 +367,27 @@ Confidential writes invalidate all workspace listeners. Nested hints use a bound
 key/value scan; false positives remain permanently sticky. Confidential provenance freezes
 in place, and redaction merges decoded known spans and covers the tested alias grammar.
 Evidence is OFFLINE/FIXTURE (timings MEASURE); AT-038 and AT-043 LIVE remain unrun, CVM unsupported.
+
+## 11. Authorized LIVE diagnostics, 2026-10-17
+
+An operator-authorized run of the installed PyPI alpha passed auth/check and VM
+selection, then stopped before wake/dial or any gateway frame. The notary returned
+by hatch/token was `endorsement.v1`, not a delegation. The blanket endorsement
+refusal in §9.1 therefore also rejected this standard-VM credential. The live token
+and account evidence remain outside the public repository; regression inputs are synthetic.
+
+The inspected first-party web client chunk `28_ha0dlt8f1j.js` from the 2026-10-14
+snapshot distinguishes delegation (needs a local signer) from an already issued
+notary (passed through). This is protocol observation; no web client code is copied.
+The narrowed accepted envelope and unchanged independent VM/Noise checks are in
+[MUSE.md](MUSE.md#connection) and SDS §8. No local signature verification is claimed.
+
+An isolated candidate with that correction completed the authenticated standard
+gateway handshake. Its create request then returned an application error and is
+retained as delivery-uncertain. Authorized safe-read reconciliation did not prove
+the original session mapping; no question was sent or mutation replayed. Inspection
+against the already pinned upstream session/chat/history contracts found the flat
+lifecycle bodies and missing response wrapper handling corrected in this branch.
+The candidate containing all protocol corrections has only offline/fixture and
+installed-package verification so far. AT-038 and AT-043 have not passed; neither
+the successful bootstrap nor the corrected fixtures establish a two-round LIVE journey.

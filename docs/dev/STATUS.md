@@ -16,7 +16,7 @@ not independently accepted; not done; needs a real account (LIVE).
 | Drafts | implemented with offline tests | Host-supplied text. MetaMuse makes no generation call. |
 | Exports | implemented with offline tests | `bundle`, `jsonl`, `markdown`, `text`, and `csv`. No publish or upload. |
 | Muse lifecycle with the fixture backend | implemented with offline tests | Open, send, read, and close through `OfflineMuseGateway`. Derived records stay `backend=fixture`, `mock=true`, `research_complete=false`. |
-| Muse standard-VM transport | implemented with offline tests | Strict Noise key/nonce verification, durable trust and bounded wake/redial. AT-038 and AT-043 LIVE have not run; CVM is unsupported. |
+| Muse standard-VM transport | offline tests and partial LIVE diagnostics; complete journey unverified | Authorized authentication and standard gateway handshake succeeded. A create attempt remains delivery-uncertain after an application error and safe-read reconciliation; no question was sent. This branch fixes credential/request compatibility; the published `0.1.0a1` lacks these fixes. AT-038 and AT-043 have not passed; CVM is unsupported. See [diagnostics](MUSE_SPIKE.md#11-authorized-live-diagnostics-2026-10-17). |
 | MCP stdio | implemented with offline tests | Nineteen tools (fifteen P0 tools and four experimental publishing tools). Stdout is the protocol; logs go to stderr. |
 | MCP attached worker | implemented with offline tests | `metamuse mcp` starts one worker; `--no-worker` opts out. The workspace OS lock allows one executor. |
 | Approval previews and `metamuse permit approve` | implemented with offline tests | Human-only approval of the exact action; no MCP approval tool. |
