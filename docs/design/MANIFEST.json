@@ -9,13 +9,13 @@
     },
     {
       "path": "02_SPEC.md",
-      "bytes": 113615,
-      "sha256": "a677f49e2565c62ad3c3624264fc75f71b7d7247b591f00fdfcb97fa812c342b"
+      "bytes": 113931,
+      "sha256": "d8c9c7e9bde4ea81b38d60335e41a78997fb1c664e485ce39af13e788628827f"
     },
     {
       "path": "03_SDS.md",
-      "bytes": 133848,
-      "sha256": "8d6bebf66eb2d97df774ed48da81eb967a72cfbf5c2d5dc33b6383b9299e7780"
+      "bytes": 134220,
+      "sha256": "d5077b1d21d3e66e13d29c99117f3b5344725130e422a34f7294fc5aff967b86"
     },
     {
       "path": "04_BACKLOG.md",
@@ -49,8 +49,8 @@
     },
     {
       "path": "MetaMuse_CLI_Plan_Spec_SDS_v1.1.md",
-      "bytes": 256755,
-      "sha256": "d3f2541c600dd4585fa7a9a7734759aa4cee2a6ddb2e74557a14a76c03f67f8d"
+      "bytes": 257443,
+      "sha256": "a4c5598337237d6cbef82239f6a7421060b24073e5c4379e4adca9dfd4852ded"
     },
     {
       "path": "README.md",
@@ -119,8 +119,8 @@
     },
     {
       "path": "skills/metamuse/SKILL.md",
-      "bytes": 6288,
-      "sha256": "58f3e723266abef1c6d924a90a017c0f84ca3bbd7467deea99770e72c7d9f7be"
+      "bytes": 6285,
+      "sha256": "6029849dd55b6c71b3da09caa06fea6669318edbe16277270c61a3fd1114b865"
     },
     {
       "path": "validate_design_pack.py",
