@@ -6,12 +6,12 @@
 
 ## 先跑範例，不用帳號
 
-需要先安裝 [Git](https://git-scm.com/downloads) 和 [uv](https://docs.astral.sh/uv/getting-started/installation/)。先把目前的原始碼預覽版安裝成指令，就可以直接跑內附範例。首個 alpha 套件正在準備，尚未上架 PyPI。uv 會管理這裡使用的 Python 3.12。
+先安裝 [uv](https://docs.astral.sh/uv/getting-started/installation/)，再安裝 [alpha 套件](https://pypi.org/project/metamuse-cli/0.1.0a1/)，就可以直接跑內附範例。uv 會管理這裡使用的 Python 3.12，並為指令建立獨立的安裝環境。
 
 在終端機依序執行：
 
 ```sh
-uv tool install --python 3.12.13 "git+https://github.com/TED-H-com/metamuse-cli.git@main"
+uv tool install --python 3.12.13 'metamuse-cli==0.1.0a1'
 metamuse demo
 ```
 

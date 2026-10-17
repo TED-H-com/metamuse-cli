@@ -1,7 +1,8 @@
 # First alpha: 0.1.0a1
 
-This version is a release candidate, not a published PyPI package. The current
-source installation and bundled example are in [Getting started](GETTING_STARTED.md).
+This document describes the first alpha and its publication procedure. The
+installation and bundled example are in [Getting started](GETTING_STARTED.md).
+Operator approval to publish does not itself establish that an upload succeeded.
 
 The alpha lets you import local comments and subtitles, search the original text,
 keep fixed source references, save your own or your assistant's drafts, and export
@@ -44,27 +45,75 @@ release evidence. Both archives must contain the license and notices; the wheel
 must contain the synthetic example. Keep credentials and private evidence outside
 both archives and the public repository.
 
-## Publish only after operator approval
+## Configure the publisher
+
+The release workflow is `.github/workflows/publish.yml`. It runs manually from
+`main`, requires a successful GitHub Actions `check` for that exact commit, builds
+the distributions, and passes those immutable artifacts to a separate publishing
+job. Only that job receives `id-token: write`, in the `pypi` environment. It uses
+PyPI Trusted Publishing; no stored PyPI token is needed.
+
+For a first release through this workflow, the PyPI account owner must add a
+[pending GitHub publisher](https://pypi.org/manage/account/publishing/) with:
+
+| Field | Value |
+|---|---|
+| PyPI project name | `metamuse-cli` |
+| GitHub owner | `TED-H-com` |
+| Repository | `metamuse-cli` |
+| Workflow filename | `publish.yml` |
+| Environment | `pypi` |
+
+This account step can create the project on first publication. It does not reserve
+the package name. See [PyPI's pending publisher documentation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+
+## Publish after operator approval
 
 Publishing to PyPI is a separate account action. Use the operator's configured
 Trusted Publisher or a PyPI API token supplied through the environment; never put
 credentials in a command, file in this repository, or release notes. The publishing
-command names only the two reviewed artifacts:
+command names only the two reviewed artifacts. Before building those final
+artifacts, prepare the README, getting-started guide and site installation commands
+on the release branch. The README is the package's PyPI long description. Keep
+these changes off `main` and the deployed site until the index upload and a fresh
+installation have been verified.
+
+The normal path is to dispatch the reviewed workflow after CI succeeds:
+
+```sh
+gh workflow run publish.yml --ref main -f version=0.1.0a1
+```
+
+The build artifact includes `SHA256SUMS`; retain it together with the workflow's
+source commit. The publishing job checks the downloaded hashes before uploading
+and then checks PyPI's reported file hashes. If upload fails or its result is
+uncertain, inspect the index before rerunning; never rebuild different bytes under
+the same published filename.
+
+Alternatively, a reviewed release branch that has passed normal CI can be
+published locally using an API token. Store it through the hidden prompt:
+
+```sh
+uv auth login https://upload.pypi.org/legacy/ --username __token__
+```
+
+uv stores this credential outside the repository. Read it directly into the
+publishing process environment, without printing it or putting it in an argument.
+Use `UV_PUBLISH_TOKEN` and the exact reviewed artifact paths:
 
 ```sh
 uv publish dist/metamuse_cli-0.1.0a1-py3-none-any.whl dist/metamuse_cli-0.1.0a1.tar.gz
 ```
 
 After confirming PyPI has the exact version and matching file hashes, verify a fresh
-installation from the index. Then replace the source installation in the README,
-getting-started guide, and `site/page.json` with:
+installation from the index using the prepared instructions:
 
 ```sh
 uv tool install --python 3.12.13 'metamuse-cli==0.1.0a1'
 metamuse demo
 ```
 
-Render and deploy the site after updating those claims. Keep the real-account
+Then merge the release branch and deploy the rendered site. Keep the real-account
 limitations visible. Version and alpha classification follow the
 [Python packaging versioning guide](https://packaging.python.org/en/latest/discussions/versioning/);
 build and publication commands follow the
