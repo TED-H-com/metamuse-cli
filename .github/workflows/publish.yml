@@ -1,0 +1,176 @@
+name: Publish Python package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact reviewed version from pyproject.toml
+        required: true
+        default: 0.1.0a1
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-pypi
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      checks: read
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - name: Configure isolated demo directories
+        run: |
+          echo "UV_TOOL_DIR=$RUNNER_TEMP/release-tools" >> "$GITHUB_ENV"
+          echo "UV_TOOL_BIN_DIR=$RUNNER_TEMP/release-bin" >> "$GITHUB_ENV"
+          echo "XDG_DATA_HOME=$RUNNER_TEMP/release-data" >> "$GITHUB_ENV"
+      - name: Require successful CI for this exact source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?per_page=100" > "$RUNNER_TEMP/checks.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          checks = json.loads((Path(os.environ['RUNNER_TEMP']) / 'checks.json').read_text())
+          passed = any(
+              check['name'] == 'check'
+              and check['app']['id'] == 15368
+              and check['head_sha'] == os.environ['GITHUB_SHA']
+              and check['conclusion'] == 'success'
+              for check in checks['check_runs']
+          )
+          if not passed:
+              raise SystemExit('The required Actions check has not passed for this commit.')
+          PY
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+        with:
+          python-version: "3.12.13"
+      - name: Check version and build both distributions
+        run: |
+          python3 - <<'PY'
+          import os
+          import tomllib
+          from pathlib import Path
+
+          project = tomllib.loads(Path('pyproject.toml').read_text())['project']
+          if project['version'] != os.environ['RELEASE_VERSION']:
+              raise SystemExit('Requested version differs from pyproject.toml.')
+          PY
+          uv build --no-sources
+      - name: Verify metadata and create artifact hashes
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+          import tarfile
+          import zipfile
+          from email.parser import BytesParser
+          from pathlib import Path
+
+          version = os.environ['RELEASE_VERSION']
+          expected = {
+              f'metamuse_cli-{version}-py3-none-any.whl',
+              f'metamuse_cli-{version}.tar.gz',
+          }
+          files = sorted(Path('dist').iterdir())
+          if {p.name for p in files} != expected:
+              raise SystemExit('Expected exactly one wheel and one source distribution.')
+          sums = []
+          for path in files:
+              if path.suffix == '.whl':
+                  with zipfile.ZipFile(path) as archive:
+                      name = next(n for n in archive.namelist() if n.endswith('.dist-info/METADATA'))
+                      metadata = BytesParser().parsebytes(archive.read(name))
+              else:
+                  with tarfile.open(path) as archive:
+                      metadata = BytesParser().parsebytes(archive.extractfile(f'metamuse_cli-{version}/PKG-INFO').read())
+              if metadata['Name'] != 'metamuse-cli' or metadata['Version'] != version:
+                  raise SystemExit(f'Unexpected package metadata: {path.name}')
+              sums.append(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}')
+          Path('dist/SHA256SUMS').write_text('\n'.join(sums) + '\n')
+          print('\n'.join(sums))
+          PY
+      - name: Install the exact release wheel
+        run: uv tool install --python 3.12.13 dist/*.whl
+      - name: Run bundled example outside the checkout
+        working-directory: ${{ runner.temp }}
+        run: '"$UV_TOOL_BIN_DIR/metamuse" demo > "$RUNNER_TEMP/release-demo.log"'
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: pypi-${{ github.sha }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 90
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: release-demo-${{ github.sha }}
+          path: ${{ runner.temp }}/release-demo.log
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/metamuse-cli/${{ inputs.version }}/
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          name: pypi-${{ github.sha }}
+          path: dist/
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884  # v10.3.0
+      - name: Verify downloaded artifact hashes
+        working-directory: dist
+        run: sha256sum --check SHA256SUMS
+      - name: Publish reviewed artifacts through PyPI OIDC
+        run: uv publish --trusted-publishing always dist/*.whl dist/*.tar.gz
+      - name: Verify PyPI has these exact bytes
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          version = os.environ['RELEASE_VERSION']
+          expected = {
+              p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+              for p in Path('dist').iterdir()
+              if p.name.endswith(('.whl', '.tar.gz'))
+          }
+          for attempt in range(6):
+              try:
+                  with urllib.request.urlopen(f'https://pypi.org/pypi/metamuse-cli/{version}/json', timeout=20) as response:
+                      release = json.load(response)
+                  actual = {item['filename']: item['digests']['sha256'] for item in release['urls']}
+                  if actual == expected:
+                      print(f'PyPI {version}: both file hashes match the reviewed artifacts.')
+                      break
+              except (urllib.error.URLError, TimeoutError):
+                  pass
+              if attempt == 5:
+                  raise SystemExit('PyPI hashes are unconfirmed; inspect the index before retrying.')
+              time.sleep(5)
+          PY

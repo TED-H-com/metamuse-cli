@@ -1,7 +1,9 @@
 # First alpha: 0.1.0a1
 
-This version is a release candidate, not a published PyPI package. The current
-source installation and bundled example are in [Getting started](GETTING_STARTED.md).
+This document describes the first alpha and its publication procedure. Until the
+index upload is confirmed, use the source installation and bundled example in
+[Getting started](GETTING_STARTED.md). Operator approval to publish does not itself
+establish that an upload succeeded.
 
 The alpha lets you import local comments and subtitles, search the original text,
 keep fixed source references, save your own or your assistant's drafts, and export
@@ -44,12 +46,51 @@ release evidence. Both archives must contain the license and notices; the wheel
 must contain the synthetic example. Keep credentials and private evidence outside
 both archives and the public repository.
 
-## Publish only after operator approval
+## Configure the publisher
+
+The release workflow is `.github/workflows/publish.yml`. It runs manually from
+`main`, requires a successful GitHub Actions `check` for that exact commit, builds
+the distributions, and passes those immutable artifacts to a separate publishing
+job. Only that job receives `id-token: write`, in the `pypi` environment. It uses
+PyPI Trusted Publishing; no stored PyPI token is needed.
+
+For the first release, the PyPI account owner must add a
+[pending GitHub publisher](https://pypi.org/manage/account/publishing/) with:
+
+| Field | Value |
+|---|---|
+| PyPI project name | `metamuse-cli` |
+| GitHub owner | `TED-H-com` |
+| Repository | `metamuse-cli` |
+| Workflow filename | `publish.yml` |
+| Environment | `pypi` |
+
+This account step can create the project on first publication. It does not reserve
+the package name. See [PyPI's pending publisher documentation](https://docs.pypi.org/trusted-publishers/creating-a-project-through-oidc/).
+
+## Publish after operator approval
 
 Publishing to PyPI is a separate account action. Use the operator's configured
 Trusted Publisher or a PyPI API token supplied through the environment; never put
 credentials in a command, file in this repository, or release notes. The publishing
-command names only the two reviewed artifacts:
+command names only the two reviewed artifacts. Before building those final
+artifacts, ensure the README long description has no stale prepublication claim.
+Keep public installation instructions on the working source path until the index
+upload and a fresh installation have been verified.
+
+The normal path is to dispatch the reviewed workflow after CI succeeds:
+
+```sh
+gh workflow run publish.yml --ref main -f version=0.1.0a1
+```
+
+The build artifact includes `SHA256SUMS`; retain it together with the workflow's
+source commit. The publishing job checks the downloaded hashes before uploading
+and then checks PyPI's reported file hashes. If upload fails or its result is
+uncertain, inspect the index before rerunning; never rebuild different bytes under
+the same published filename.
+
+For an explicitly configured local API-token publisher, the equivalent command is:
 
 ```sh
 uv publish dist/metamuse_cli-0.1.0a1-py3-none-any.whl dist/metamuse_cli-0.1.0a1.tar.gz

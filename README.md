@@ -18,7 +18,7 @@ Search currently matches literal text. Your assistant handles interpretation and
 
 ## Try it
 
-You need [Git](https://git-scm.com/downloads) and [uv](https://docs.astral.sh/uv/getting-started/installation/). Install the current source preview as a command, then run the bundled example. The first alpha package is being prepared; it is not on PyPI yet.
+You need [Git](https://git-scm.com/downloads) and [uv](https://docs.astral.sh/uv/getting-started/installation/). Install this alpha from source as a command, then run the bundled example.
 
 ```sh
 uv tool install --python 3.12.13 "git+https://github.com/TED-H-com/metamuse-cli.git@main"
