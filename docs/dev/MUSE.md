@@ -489,6 +489,8 @@ reservation or requeue. Quarantine clears only after settlement. Late observatio
 remain visible and are labeled `late`; `closed` never reopens. Uncalibrated statuses,
 including `completed`, remain progress; an answer never asserts research completion.
 
+<a id="bounded-research-workflow-synthetic-evidence"></a>
+
 ## Bounded research workflow
 
 Use exact `permit approve` for a verbatim action. For a few host-authored questions
