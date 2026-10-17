@@ -38,7 +38,7 @@ metadata:
 
 ## 5. 權限與安全邊界
 
-- `metamuse connect`、`metamuse auth import` 與 `metamuse permit create`、`metamuse permit approve`、`metamuse permit research` 為僅限人類操作的 CLI 命令。Skill、工具標註（tool annotations）與模型輸出絕不能授予權限或簽發 `approved: true`。connect 只設定帳號，不代表已批准收集、分享或發文；參考 [連線流程](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md)。
+- `metamuse connect muse`、`metamuse connect facebook`、`metamuse connect publishing`、`metamuse auth import` 與 `metamuse permit create`、`metamuse permit approve`、`metamuse permit research` 為僅限人類操作的 CLI 命令。Skill、工具標註（tool annotations）與模型輸出絕不能授予權限或簽發 `approved: true`。connect 只設定帳號，不代表已批准收集、分享或發文；參考 [連線流程](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md)。
 - 保存與匯出僅為本機儲存，不等於發布；P0 不提供任何發布工具。發布須經已驗收的後端、精確 payload 與目標批准；結果不明先對帳。
 
 - 缺grant時顯示envelope.approval的destination、topic/question、packet digest/bytes及packet_preview_command。把request JSON與next_action交給人類；Agent只顯示命令，絕不可自行執行permit approve或帶--exact-digest自批。人類回傳permit ID後重試同一request；精確模式改問題或packet需要新批准。approval不建立job／grant。
