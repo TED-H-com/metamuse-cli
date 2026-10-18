@@ -381,7 +381,13 @@ quarantines unresolved draft/account/destination across revisions. Proven pre-bo
 failure with no attempt may be explicitly requeued with a new grant and job; an entered
 attempt forbids this path. The existing external-action transaction consumes the exact
 publication Permit, inserts the attempt and commits submitting before a single send.
-Receipts are saved immediately before exact read-back. A fixed, optional database-only
+Receipts are saved immediately before read-back. Message comparison is exact except
+for omission of a single terminal LF by the Facebook Page provider; terminal CRLF,
+other whitespace and content changes remain uncertain. This comparison never changes
+the approved/sent/stored payload or action digest. Successful results and the original
+step checkpoint retain message_readback with comparison mode and approved/observed
+UTF-8 SHA-256 hashes. Reconciliation uses the same rule and only reads the saved receipt;
+it does not create another send attempt. A fixed, optional database-only
 Operation.on_finish callback runs in the existing executor finalization transaction,
 including settle_uncertain; publication sent_verified and original job/step success are
 atomic. A callback failure rolls back both and retains uncertainty, never another send.
