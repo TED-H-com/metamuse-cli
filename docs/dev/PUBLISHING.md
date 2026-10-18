@@ -2,8 +2,10 @@
 
 這個實驗功能讓你預覽已保存的草稿、確認要發到哪個粉專，再由你批准送出。
 送出後會保存貼文回執，並回讀核對文字與粉專身分。已有一次獲准的真實粉專測試：
-取得回執並讀到已發布貼文，但 Facebook 移除了文末換行，全文精確核對未通過，
-因此 CLI 保留 `needs_reconcile`，沒有重發。完整真實帳號驗收仍未完成。
+取得回執並讀到已發布貼文，後續只讀對帳已結案為 `sent_verified`，重啟後仍只有
+一次發文嘗試。測試發現 Facebook 移除了一個文末 LF，修正版只允許這項讀回差異，
+並留下比對方式及原文／讀回文字的雜湊。這項修正尚未發行至 PyPI；送出與修正後
+對帳使用不同候選版本，並非同一個未改動正式版本的全新完整驗收。
 
 第一版只接受 **Facebook 粉專的新文字貼文**。個人動態、社團、留言回覆、圖片、
 影片及草稿變體會直接拒絕。其他平台、排程、批次發布與刪除貼文尚未提供。
@@ -82,8 +84,11 @@ metamuse --workspace "$WORKSPACE" --json jobs get "$JOB"
 ```
 
 只有 `state = "sent_verified"` 才表示取得回執，且回讀的貼文 ID、粉專 ID、
-原文與已發布狀態都吻合。fixture 的這個狀態只代表虛構測試結果。
-發布程式不做改寫、換行正規化或靜默刪除附件；平台可能改寫文字，造成需要人工核對。
+原文與已發布狀態都吻合。文字比對只允許 Facebook 少回傳一個文末 LF（不含 CRLF）；
+其他字元、空白、前置或內部換行必須完全相同。fixture 的這個狀態只代表虛構測試結果。
+發布程式送出並保存核准原文，不改寫或去除換行。`jobs get` 的核對紀錄會保存
+`message_readback.comparison` 與核准／讀回文字的 UTF-8 SHA-256；允許的文末換行
+差異會標成 `single_terminal_lf_removed`，完全相同則是 `exact`。
 平台長度限制尚未以真實帳號驗收，不硬編未確認的字數。
 
 ## 送達不確定時
@@ -143,7 +148,9 @@ Graph 只能連 `https://graph.facebook.com/{operator-version}/...`，使用既�
 
 `tests/test_publishing.py` 使用注入的虛構 gateway 與 HTTP responses，沒有真實網路或帳號。
 其驗證類別是 OFFLINE／FIXTURE／INTEGRATION，不是 LIVE。AT-047／048 的離線部分
-可驗證；B20／AT-049 真實粉專驗收仍 blocked，AT-050 跨平台部分成功尚無對應平台實作。
+可驗證。B20／AT-049 已有一篇獲准粉專文字貼文、原回執只讀對帳與重啟防重送的
+有界 LIVE 證據；送出與修正後對帳跨候選版本，不代表未改動正式版本的全新完整流程。
+其他帳號、頁型、平台長度上限尚未驗收，AT-050 跨平台部分成功尚無對應平台實作。
 
 API 介面參考 Meta 官方
 [PageFeedPost.py](https://github.com/facebook/facebook-python-business-sdk/blob/efd8423a2e595ea8d4c04eb824ce113f2f1d68cd/examples/PageFeedPost.py)、

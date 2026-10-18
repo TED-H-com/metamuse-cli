@@ -5,7 +5,7 @@
   "mark": "Mm",
   "palette": "teal",
   "default_branch": "main",
-  "verified": "2026-10-17",
+  "verified": "2026-10-18",
   "language": "Python",
   "license": {
     "label": {
@@ -448,8 +448,8 @@
       "zh": "找到原文，留下能核對的草稿。"
     },
     "intro": {
-      "en": "Start with local files to search, save drafts and export. An unreleased correction has completed a bounded real Muse test. Facebook collection and remote media are not yet verified with real accounts; Page publishing still needs acceptance.",
-      "zh": "先用本地檔案搜尋、保存草稿與匯出。尚未發行的修正版已完成一次有界的真實 Muse 測試；Facebook 收集與遠端影音尚未驗收，粉專發布也仍待完整核對。"
+      "en": "Start with local files to search, save drafts and export. Unreleased corrections completed bounded real Muse and Page-post receipt tests across candidate builds. Facebook collection and remote media are not yet verified with real accounts.",
+      "zh": "先用本地檔案搜尋、保存草稿與匯出。尚未發行的修正版已完成有界的真實 Muse 測試與粉專貼文對帳，測試過程曾更換修正版。Facebook 收集與遠端影音尚未完成真實帳號驗收。"
     },
     "works_title": {
       "en": "Start with your own files",
@@ -523,11 +523,11 @@
         }
       },
       {
-        "en": "<strong>Publish a text post to a Facebook Page</strong><br>Connect your Page, review the full draft and destination, then approve one send. One real test post was published; Facebook removed its terminal newline, so exact read-back remains unresolved. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md\">Setup and limits</a>.",
-        "zh": "<strong>把文字草稿發到 Facebook 粉專</strong><br>接上粉專，核對全文與目的地，再批准送出。一次真實測試已發出貼文；Facebook 移除了文末換行，精確核對仍待處理。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md\">設定與限制</a>。",
+        "en": "<strong>Publish a text post to a Facebook Page</strong><br>Connect your Page, review the full draft and destination, then approve one send. One real test post and read-only reconciliation succeeded across corrected candidate builds; PyPI 0.1.0a1 still needs the read-back fix. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md\">Setup and limits</a>.",
+        "zh": "<strong>把文字草稿發到 Facebook 粉專</strong><br>接上粉專，核對全文與目的地，再批准送出。一篇真實測試貼文已完成只讀對帳，重啟後仍只有一次發文嘗試；測試過程曾更換修正版，PyPI 0.1.0a1 尚未包含讀回修正。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md\">設定與限制</a>。",
         "availability": {
-          "en": "Needs extra setup; real-account use is unverified",
-          "zh": "需額外設定，尚未驗證真實使用"
+          "en": "Needs setup and an unreleased compatibility fix",
+          "zh": "需要設定，修正尚未發行"
         }
       }
     ]
@@ -804,8 +804,8 @@
         }
       ],
       "caption": {
-        "en": "Requires your Page connection and token. Covered with synthetic tests; real-account posting is still unverified. An unclear result is checked before retrying.",
-        "zh": "需要先設定你的粉專連線與權杖。已用合成資料測試，真實帳號發文仍待驗證；結果不明時先查核，不直接重送。"
+        "en": "Requires your Page connection and token. One authorized real test post and read-only receipt reconciliation succeeded across corrected candidate builds. The PyPI alpha still needs the read-back fix; uncertain results never resend.",
+        "zh": "需要先設定你的粉專連線與權杖。一篇獲准的真實測試貼文已完成只讀對帳；測試過程曾更換修正版，PyPI alpha 尚未包含讀回修正。送達不明時不重送。"
       }
     }
   ]

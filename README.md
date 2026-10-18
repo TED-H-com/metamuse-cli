@@ -63,7 +63,7 @@ Start with files on your computer. You can search, save drafts and export withou
 | Work with your AI assistant | Connect your assistant first | Connect your assistant to MetaMuse, then ask it to find material and draft a recap with citations. |
 | Ask Muse follow-up questions | Needs setup and an unreleased compatibility fix | Select material to share, ask Muse a question, then follow up in the same conversation. A bounded synthetic-input test with a real account succeeded across corrected candidate builds; the PyPI alpha still needs those fixes. |
 | Collect a Facebook post or remote video | Needs extra setup; real-account use is unverified | Additional setup and your approval are required. These collectors have not been verified with real accounts. |
-| Publish a text post to a Facebook Page | Needs extra setup; real-account use is unverified | Preview a saved draft, approve its exact text and Page, then send and check the saved receipt. Text-only Page posts are experimental; [setup and limits](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md). |
+| Publish a text post to a Facebook Page | Needs setup and an unreleased compatibility fix | Approve the exact text and Page, then send and check the receipt. One real test post and read-only reconciliation succeeded across corrected candidate builds; the PyPI alpha still needs the read-back fix. Text-only and experimental; [setup and limits](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md). |
 
 See the [getting started guide](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md) to try the local example,
 or [connect your assistant](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/SKILL.md) to use your own material.
