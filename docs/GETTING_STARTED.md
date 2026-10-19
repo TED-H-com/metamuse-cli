@@ -6,12 +6,12 @@
 
 ## 先跑範例，不用帳號
 
-先安裝 [uv](https://docs.astral.sh/uv/getting-started/installation/)，再安裝 [alpha 套件](https://pypi.org/project/metamuse-cli/0.1.0a1/)，就可以直接跑內附範例。uv 會管理這裡使用的 Python 3.12，並為指令建立獨立的安裝環境。
+先安裝 [uv](https://docs.astral.sh/uv/getting-started/installation/)，再安裝 alpha 套件，就可以直接跑內附範例。這份指令適用於 `0.1.0a2`；可安裝的發行版以 [PyPI 清單](https://pypi.org/project/metamuse-cli/#history)為準。uv 會管理這裡使用的 Python 3.12，並為指令建立獨立的安裝環境。
 
 在終端機依序執行：
 
 ```sh
-uv tool install --python 3.12.13 'metamuse-cli==0.1.0a1'
+uv tool install --python 3.12.13 'metamuse-cli==0.1.0a2'
 metamuse demo
 ```
 
@@ -58,8 +58,8 @@ metamuse demo
 [接上帳號，把資料一路整理成貼文](CONNECTED_WORKFLOW.md)。提供帳號連線指令，
 不用手動編輯設定檔；收集、分享與發文仍分別由你批准。
 
-本地匯入、搜尋、草稿與匯出不需要 Muse 帳號。Muse 是可選的討論對象，需要另外設定連線、帳號與操作者授權。尚未發行的修正版已用合成資料完成真實帳號的兩輪問答、重啟讀回與附引用匯出；測試過程有更換修正版，並非同一發行套件從頭到尾的安裝驗收。PyPI 的 `0.1.0a1` 尚未包含這些修正。詳見 [Muse 指南](dev/MUSE.md)。
+本地匯入、搜尋、草稿與匯出不需要 Muse 帳號。Muse 是可選的討論對象，需要另外設定連線、帳號與操作者授權。`0.1.0a2` 包含相容性修正，修正過程已用合成資料完成真實帳號的兩輪問答、重啟讀回與附引用匯出；測試過程有更換修正版，並非同一發行套件從頭到尾的安裝驗收。`0.1.0a1` 不含這些修正。詳見 [Muse 指南](dev/MUSE.md)。
 
-遠端影音與 Facebook 收集也需要各自的設定與授權，目前只有合成資料測試。第一個範例不會替你抓取網頁。完成草稿後可先匯出；另有[實驗性的 Facebook 粉專文字發布](dev/PUBLISHING.md)，需要自行設定粉專權杖並逐次批准，尚未完成真實帳號驗收。
+遠端影音與 Facebook 收集也需要各自的設定與授權，目前只有合成資料測試。第一個範例不會替你抓取網頁。完成草稿後可先匯出；另有[實驗性的 Facebook 粉專文字發布](dev/PUBLISHING.md)，需要自行設定粉專權杖並逐次批准。一篇真實貼文已完成只讀對帳，重啟後仍只有一次發文嘗試；測試跨修正版執行，並非同一發行套件的完整驗收。讀回修正包含在 `0.1.0a2`，`0.1.0a1` 不含此修正。
 
 完整功能狀態與進階的離線 Muse 範例見 [README](../README.md)。

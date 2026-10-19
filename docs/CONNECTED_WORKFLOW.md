@@ -10,17 +10,18 @@
 
 已從 PyPI 安裝的人，不需要下載原始碼或切換到專案目錄。先選擇需要的功能：
 
-**版本提醒：** 以下是已發布的 `0.1.0a1`。真實測試已發現該版的 Muse 連線與請求格式
-相容性問題；本分支的修正尚未發行。可以先跑 `metamuse demo` 與本機資料流程，
-不要把安裝或設定成功當作完整 Muse 流程已通過。協定修正與驗證範圍見
+**版本提醒：** 以下指令適用於 `0.1.0a2`，可安裝版本以
+[PyPI 清單](https://pypi.org/project/metamuse-cli/#history)為準。`0.1.0a2` 包含
+Muse 連線／請求格式及粉專貼文讀回修正；`0.1.0a1` 不含這些修正。
+真實測試跨修正版執行，不要把安裝或設定成功當作完整流程已通過。驗證範圍見
 [Muse spike 紀錄](dev/MUSE_SPIKE.md)。
 
 ```bash
 # 本機檔案、Muse 對話與粉專文字發布
-uv tool install --python 3.12.13 'metamuse-cli==0.1.0a1'
+uv tool install --python 3.12.13 'metamuse-cli==0.1.0a2'
 
 # 另外需要 Facebook 收集與遠端影音時，改用這行安裝或更新同一個工具
-uv tool install --python 3.12.13 'metamuse-cli[facebook,remote]==0.1.0a1'
+uv tool install --python 3.12.13 'metamuse-cli[facebook,remote]==0.1.0a2'
 ```
 
 只需要其中一種收集功能時，可將 `[facebook,remote]` 改成 `[facebook]` 或 `[remote]`。

@@ -14,7 +14,8 @@ responder static key and nested nonce equaled the fresh client nonce. On 2026-10
 an explicitly authorized run completed the standard handshake and a synthetic
 two-turn CLI journey with restart, cited draft and exports across corrected candidate
 builds. See [the run's scope and defects](MUSE_SPIKE.md#11-authorized-live-diagnostics-2026-10-17).
-The published `0.1.0a1` lacks these fixes; this is not clean-install release acceptance.
+Version `0.1.0a2` includes these fixes; `0.1.0a1` lacks them. The cross-build LIVE
+journey is not clean-install release acceptance.
 
 ## Allowlist
 

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "metamuse-cli"
-version = "0.1.0a1"
+version = "0.1.0a2"
 description = "Turn comments and transcripts into checkable drafts with source citations"
 readme = "README.md"
 license = "Apache-2.0"
