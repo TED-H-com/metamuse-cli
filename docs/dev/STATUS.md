@@ -4,8 +4,8 @@ This is the technical verification inventory for developers. User tasks and
 setup requirements are described in the [README](../../README.md#what-can-i-use-today).
 Implementation test coverage does not establish real-account success.
 
-Each row uses one of four states: implemented with offline tests; implemented but
-not independently accepted; not done; needs a real account (LIVE).
+Each row states its implementation and evidence scope. Offline tests and bounded
+LIVE observations are recorded separately; neither implies full beta acceptance.
 
 | Capability | State | Note |
 |---|---|---|
@@ -35,4 +35,5 @@ boundaries; it is INTEGRATION/FIXTURE evidence, not LIVE acceptance.
 GitHub Actions `check` runs the offline gates, sandboxed loopback Chromium browser tests (browser skips fail CI), and wheel smoke on every PR and `main` push; required status check on `main` since 2026-10-14.
 
 The fixture journey is exercised by `tests/test_at042_slice.py` and
-`tests/test_at042_evidence.py`. No real-account integration is claimed.
+`tests/test_at042_evidence.py`. Those tests do not establish real-account success;
+the bounded Muse and Page LIVE observations are recorded separately above.
