@@ -423,7 +423,7 @@
           "en": "uv downloads the alpha package from PyPI and creates an isolated environment for the command.",
           "zh": "uv 會從 PyPI 下載 alpha 套件，並為指令建立獨立的安裝環境。"
         },
-        "code": "uv tool install --python 3.12.13 'metamuse-cli==0.1.0a1'"
+        "code": "uv tool install --python 3.12.13 'metamuse-cli==0.1.0a2'"
       },
       {
         "title": {
@@ -538,7 +538,7 @@
         "en": "Version",
         "zh": "版本"
       },
-      "value": "0.1.0a1 (alpha)"
+      "value": "0.1.0a2 (alpha)"
     },
     {
       "label": {

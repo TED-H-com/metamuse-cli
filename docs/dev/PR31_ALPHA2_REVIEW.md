@@ -186,3 +186,40 @@ The failed CI log and manifest are retained outside Git. Earlier candidate
 artifacts are superseded and must not be published; the corrected commit needs
 new hosted CI and fresh publication artifacts. Scope additionally includes B15,
 FR-018 and AT-027 for packaged Skill/version consistency.
+
+## Integration and publication record, 2026-10-19
+
+PR #31's main CI completed successfully. The retained five cohort manifests were
+verified for `d82ae371b224b369819498964c5cc7aa635edb71`: all 8,346 nodes executed,
+with no missing or overlapping selections. Installed provenance records exit 0
+and `verified=true` for that exact commit.
+
+The corrected [PR #32 CI](https://github.com/TED-H-com/metamuse-cli/actions/runs/39205644522)
+also passed every job. Its five manifests were downloaded and checked with
+`uv run --locked python scripts/ci_cohorts.py verify --manifest-dir "$EVIDENCE/pr32-manifests" --source-sha 62ef2b02b9ca8da3bd73162d2fe5753482d1ad70`.
+All 8,346 cases passed: core 4,173, Muse 1,929, media 654, Facebook 724 and privacy
+866. Installed provenance is verified for candidate `2eb44d3` and tested tree
+`f74619bb32fc505da405b3dfdae106849f224476`. These remain
+OFFLINE/FIXTURE/INTEGRATION results, not new LIVE account activity.
+
+An additional local run selected exactly the 196 nodes absent from the first
+failed core run's `finished` list. `uv run --locked pytest -q --maxfail=1`, with
+disk scratch, a JUnit output and those recorded node IDs, passed all 196 in
+38.47 seconds. The complete argument vector, log and JUnit file remain outside
+Git. The corrected wheel smoke also passed. Superseded candidate archives were
+not published.
+
+PR #32 merged as `55b65587028eebfa15eb3b411a6ba2bbcaafb504`, with the same tree as
+its successful PR check. The separate
+[main CI](https://github.com/TED-H-com/metamuse-cli/actions/runs/39208136334)
+must succeed before publication. Final source identity, publication workflow,
+distribution hashes and fresh PyPI-install verification belong to the
+[0.1.0a2 release record](https://github.com/TED-H-com/metamuse-cli/releases/tag/v0.1.0a2),
+not the historical local artifact table above.
+
+The announcement changes `docs/ALPHA_RELEASE.md`, this report and the site's
+displayed version/install command (`site/page.json` and generated `site/index.html`).
+It remains a draft until index hashes, fresh installation and GitHub release
+assets are verified. Scope: B17, FR-018/FR-021, AT-025/AT-026/AT-035. Migrations,
+dependencies, third-party notices and core change requests: none. Existing LIVE,
+private-string-scan, platform and visual-capture limits above still apply.

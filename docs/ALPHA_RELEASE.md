@@ -1,14 +1,17 @@
-# Alpha release candidate: 0.1.0a2
+# Alpha release: 0.1.0a2
 
-`0.1.0a1` is the published alpha. `0.1.0a2` is the next candidate, containing the
-Muse compatibility and Facebook Page reconciliation corrections from
-[PR #31](https://github.com/TED-H-com/metamuse-cli/pull/31). It has not been uploaded
-to PyPI. The README and [getting-started instructions](GETTING_STARTED.md) target
-`0.1.0a2` and link to PyPI for actual release availability. The public site's install
-command stays on `0.1.0a1` until index publication and installation are verified.
-Operator approval to publish does not establish upload success.
+`0.1.0a2` is available on [PyPI](https://pypi.org/project/metamuse-cli/0.1.0a2/).
+It includes the Muse compatibility and Facebook Page reconciliation corrections
+from [PR #31](https://github.com/TED-H-com/metamuse-cli/pull/31). The
+[GitHub release](https://github.com/TED-H-com/metamuse-cli/releases/tag/v0.1.0a2)
+records the source commit, publication workflow, matching distribution hashes and
+fresh index-install verification. The README, [getting-started instructions](GETTING_STARTED.md)
+and public site now install `0.1.0a2`.
 
-## Changes in the candidate
+The commands below document this release procedure. Future releases need a new
+version; published distribution files cannot be replaced with different bytes.
+
+## Changes in 0.1.0a2
 
 - Muse standard-VM connections accept the bounded server-issued credential shape
   and use native session, text and history requests. Wrapped replies and nested
@@ -49,7 +52,7 @@ or permission rules.
 
 ## Performance observations, 2026-10-17
 
-The unchanged installed PyPI alpha was measured on Linux/Python 3.12.13, on a shared
+The unchanged installed PyPI `0.1.0a1` was measured on Linux/Python 3.12.13, on a shared
 host with 24 visible logical CPUs and about 61 GiB RAM. This differs from the
 specified dedicated 4-vCPU/8-GiB SSD environment. All data was synthetic and offline.
 Each CLI measurement includes process startup; p95 is the nearest-rank 29th value
