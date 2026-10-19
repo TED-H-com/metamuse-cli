@@ -5,7 +5,7 @@
   "mark": "Mm",
   "palette": "teal",
   "default_branch": "main",
-  "verified": "2026-10-16",
+  "verified": "2026-10-18",
   "language": "Python",
   "license": {
     "label": {
@@ -193,8 +193,8 @@
           "zh": "選擇向 Muse 追問"
         },
         "body": {
-          "en": "Muse is optional and needs separate setup and human approval. Real-account use is still awaiting LIVE verification.",
-          "zh": "Muse 是可選的協作者，需要另外設定及人類授權。真實帳號使用仍待 LIVE 驗證。"
+          "en": "Muse needs separate setup and approval. A corrected candidate completed two real turns; the published alpha still needs those fixes.",
+          "zh": "Muse 需要另外設定與授權。修正版已完成兩輪真實問答；已發布的 alpha 尚未包含這些修正。"
         }
       },
       {
@@ -448,8 +448,8 @@
       "zh": "找到原文，留下能核對的草稿。"
     },
     "intro": {
-      "en": "Start with files on your computer. Search, save drafts and export without a Muse account. Muse and remote collection are not yet verified with real accounts.",
-      "zh": "先從你電腦上的檔案開始。不需要 Muse 帳號，也能搜尋資料、保存草稿、匯出文件。Muse 與遠端收集尚未以真實帳號驗證。"
+      "en": "Start with local files to search, save drafts and export. Unreleased corrections completed bounded real Muse and Page-post receipt tests across candidate builds. Facebook collection and remote media are not yet verified with real accounts.",
+      "zh": "先用本地檔案搜尋、保存草稿與匯出。尚未發行的修正版已完成有界的真實 Muse 測試與粉專貼文對帳，測試過程曾更換修正版。Facebook 收集與遠端影音尚未完成真實帳號驗收。"
     },
     "works_title": {
       "en": "Start with your own files",
@@ -507,11 +507,11 @@
     ],
     "limits": [
       {
-        "en": "<strong>Ask Muse follow-up questions</strong><br>Choose source material, ask a question, continue the discussion and cite the replies in your draft. Use connect muse to bind your account. Real-account acceptance is pending. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">Setup and steps</a>.",
-        "zh": "<strong>把選好的資料拿去問 Muse</strong><br>選好資料問問題、繼續追問，再把回答與來源一起存進草稿。現在有連線指令，不用手動編輯設定檔。真實帳號驗收仍待完成。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">連線與操作步驟</a>。",
+        "en": "<strong>Ask Muse follow-up questions</strong><br>Select material, ask a question, then follow up in the same conversation. An unreleased correction completed two real Muse turns and cited draft exports across candidate builds; PyPI 0.1.0a1 still needs those fixes. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">Setup and steps</a>.",
+        "zh": "<strong>把選好的資料拿去問 Muse</strong><br>選好資料問問題，在同一個對話繼續追問，再保存有引用的草稿。修正版已完成真實 Muse 兩輪問答與匯出；測試過程曾更換修正版，PyPI 0.1.0a1 尚未包含修正。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">連線與操作步驟</a>。",
         "availability": {
-          "en": "Needs extra setup; real-account use is unverified",
-          "zh": "需額外設定，尚未驗證真實使用"
+          "en": "Needs setup and an unreleased compatibility fix",
+          "zh": "需要設定，修正尚未發行"
         }
       },
       {
@@ -523,11 +523,11 @@
         }
       },
       {
-        "en": "<strong>Publish a text post to a Facebook Page</strong><br>Connect your Page, review the full draft and destination, then approve one send and keep its receipt. Real-account acceptance is pending. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">Setup and steps</a>.",
-        "zh": "<strong>把文字草稿發到 Facebook 粉專</strong><br>接上你管理的粉專，核對草稿全文與目的地，批准後送出，並保存與核對貼文回執。真實帳號驗收仍待完成。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">連線與操作步驟</a>。",
+        "en": "<strong>Publish a text post to a Facebook Page</strong><br>Connect your Page, review the full draft and destination, then approve one send. One real test post and read-only reconciliation succeeded across corrected candidate builds; PyPI 0.1.0a1 still needs the read-back fix. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md\">Setup and limits</a>.",
+        "zh": "<strong>把文字草稿發到 Facebook 粉專</strong><br>接上粉專，核對全文與目的地，再批准送出。一篇真實測試貼文已完成只讀對帳，重啟後仍只有一次發文嘗試；測試過程曾更換修正版，PyPI 0.1.0a1 尚未包含讀回修正。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md\">設定與限制</a>。",
         "availability": {
-          "en": "Needs extra setup; real-account use is unverified",
-          "zh": "需額外設定，尚未驗證真實使用"
+          "en": "Needs setup and an unreleased compatibility fix",
+          "zh": "需要設定，修正尚未發行"
         }
       }
     ]
@@ -804,8 +804,8 @@
         }
       ],
       "caption": {
-        "en": "Requires your Page connection and token. Covered with synthetic tests; real-account posting is still unverified. An unclear result is checked before retrying.",
-        "zh": "需要先設定你的粉專連線與權杖。已用合成資料測試，真實帳號發文仍待驗證；結果不明時先查核，不直接重送。"
+        "en": "Requires your Page connection and token. One authorized real test post and read-only receipt reconciliation succeeded across corrected candidate builds. The PyPI alpha still needs the read-back fix; uncertain results never resend.",
+        "zh": "需要先設定你的粉專連線與權杖。一篇獲准的真實測試貼文已完成只讀對帳；測試過程曾更換修正版，PyPI alpha 尚未包含讀回修正。送達不明時不重送。"
       }
     }
   ]

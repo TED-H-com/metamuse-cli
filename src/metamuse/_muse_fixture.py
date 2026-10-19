@@ -43,6 +43,14 @@ class OfflineMuseGateway:
         from metamuse.muse import _thaw
         from metamuse.safety import action_digest
 
+        body = json.loads(prepared.body)
+        if (
+            body.get("method") != "/api/session/start"
+            or body.get("params", {}).get("origin") != "fresh"
+            or body.get("params", {}).get("lifecycle") != "persistent"
+            or not isinstance(body.get("params", {}).get("title"), str)
+        ):
+            raise m.CoreError(m.ErrorCode.PROTOCOL_MISMATCH, "Fixture refused invalid session wire")
         authorization.consume(
             action_digest=action_digest(_thaw(prepared.target), _thaw(prepared.payload))
         )
@@ -58,7 +66,7 @@ class OfflineMuseGateway:
             )
         return self._result(
             "session.start",
-            {"ok": True, "session_id": session},
+            {"ok": True, "result": {"session_id": session}},
             prepared.marker,
             sha256(prepared.body).hexdigest(),
         )
@@ -96,7 +104,7 @@ class OfflineMuseGateway:
                     "seq": baseline + 1,
                     "message_id": prepared.marker + "-user",
                     "request_marker": prepared.marker,
-                    "payload": {"role": "user", "content": body["text"]},
+                    "payload": {"role": "user", "content": body["items"][0]["text"]},
                 },
                 {
                     "session_id": session,
@@ -139,7 +147,9 @@ class OfflineMuseGateway:
                     self.sessions.setdefault(
                         session, {"session_id": session, "request_marker": marker}
                     )
-        return self._result("sessions.list", {"sessions": list(self.sessions.values())})
+        return self._result(
+            "sessions.list", {"ok": True, "result": {"sessions": list(self.sessions.values())}}
+        )
 
     def chat_history(self, *, session_id, **kwargs):
         self.calls.append(("chat.history", session_id))
@@ -166,7 +176,7 @@ class OfflineMuseGateway:
                             "seq": seq + 1,
                             "request_marker": exchange.request_marker,
                             "message_id": exchange.request_marker + "-user",
-                            "payload": {"role": "user", "content": body["text"]},
+                            "payload": {"role": "user", "content": body["items"][0]["text"]},
                         },
                         {
                             "session_id": session_id,
@@ -180,4 +190,4 @@ class OfflineMuseGateway:
                             },
                         },
                     ]
-        return self._result("chat.history", {"events": events})
+        return self._result("chat.history", {"ok": True, "result": {"chat_events": events}})

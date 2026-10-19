@@ -16,6 +16,7 @@ AVAILABILITY_STATES = {
     "Ready with local files": "可用本地檔案",
     "Connect your assistant first": "先連接你的 AI 助理",
     "Needs extra setup; real-account use is unverified": "需額外設定，尚未驗證真實使用",
+    "Needs setup and an unreleased compatibility fix": "需要設定，修正尚未發行",
     "Not available": "目前未提供",
 }
 

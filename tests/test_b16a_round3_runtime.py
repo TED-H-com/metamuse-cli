@@ -58,7 +58,7 @@ def test_r2_5_stored_topic_and_benign_topic_stranded(fixture_ctx, project, monke
     preview = safety.approval_preview(ctx, "muse.send", request.model_dump())
     prepared = lifecycle.prepare_send(ctx, request)
     assert preview.action_digest == safety.action_digest(prepared.target, prepared.payload)
-    assert prepared.body["text"] == request.question + "\n\n" + pkt.rendered_text
+    assert prepared.body["items"][0]["text"] == request.question + "\n\n" + pkt.rendered_text
     request.share_grant_id = grant(ctx, project, preview.action_digest, kind="share", packet=pkt)
     accepted = invoke(ctx, "send", request)
     assert accepted.status == "accepted"

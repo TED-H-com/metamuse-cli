@@ -588,12 +588,20 @@ An entered attempt is unique per publication and cannot be replaced, refunded or
 A proven failure before the committed boundary can accept a fresh human grant and new
 queued job; the prior step cannot execute the replacement action.
 
-Read-back must match the saved post receipt, Page identity, exact message and published
-state. Saving the receipt precedes read-back; domain sent_verified and original job/step
+Read-back must match the saved post receipt, Page identity, message and published state.
+The Facebook Page provider permits exactly one observed difference: omission of one
+terminal LF from the approved text (not a terminal CRLF). All remaining characters must
+match verbatim; no trimming of spaces, other line endings, leading or internal whitespace
+is allowed. The outbound payload, approval digest and saved draft stay unchanged.
+The job result and original step checkpoint record the comparison mode and SHA-256 of
+both approved and observed message bytes, so this exception is not reported as exact.
+Saving the receipt precedes read-back; domain sent_verified and original job/step
 success commit together. Reconcile is a separately approved safe read of only that saved
 receipt and settles the original uncertain step. No receipt remains unknown; lack of a
-search result never permits resending. B19 has synthetic evidence only. B20/AT-049 real
-account verification and AT-050 cross-platform partial success remain unverified/out of
+search result never permits resending. B20/AT-049 now has bounded LIVE evidence from one
+explicitly approved Page text post, receipt reconciliation and a one-attempt restart
+check. Sending and corrected read-back used different candidate builds; this is not a
+fresh unchanged-release journey. AT-050 cross-platform partial success remains outside
 this single-provider scope. Setup and limitations are in docs/dev/PUBLISHING.md.
 
 所有state handle顯式傳ID，不靠connection上次選過project。stdout只給SDK協定；log、下載器和warning導向stderr。資料分頁或受保護resource引用，不回整部影片。
@@ -1823,8 +1831,14 @@ Browser context一個控制者，原生登入／2FA由人類處理。人接手�
 選唯一一致hatch_vm row，mint body用row endpoint_url及name；WSS query固定vm_id/auth_token/
 optional non-delegation notary_token/app_id=hatch-web/fresh request UUID4，Origin固定Muse。
 access/hatch token grammar分開；legacy hatch不含dot；s0 opaque不改寫、不冒稱驗signature。每個
-token/notary_token/notaryToken/noiseNotaryToken/endorsement alias先驗；case-insensitive delegation./
-endorsement.及malformed s0回protocol/never，不silent drop。
+token/notary_token/notaryToken/noiseNotaryToken/endorsement alias先驗；case-insensitive delegation.、
+未知或malformed endorsement.及malformed s0回protocol/never，不silent drop。
+2026-10-17 LIVE bootstrap確認standard VM也回傳server-issued `endorsement.v1` notary。
+只在notary欄位接受此六段canonical base64url envelope：metadata是無duplicate的object，
+含非空identity、非空public_key object及string restrictions list；兩signature各64bytes；
+最後document精確為 `{"uri":"/v1/noise"}`。原bytes交gateway驗證，不本機宣稱驗簽或以它
+選擇VM tier。hatch access token仍不接受endorsement，CVM/RV、Noise key/nonce、TLS及sticky
+confidentiality規則不變。不從delegation簽出新endorsement。
 payload/全部vms先normalize VM id、scan hatch_cvm/CVM_*/truthy cvm_required/cvmReplacementEnabled，
 即使unassigned/ambiguous/invalid也先record sticky，再stop；無VM id只record account。wire保留server
 exact id，與storage id只可差case/外側whitespace。msg1帶fresh 32-byte challenge；握手varint minimal
@@ -1878,6 +1892,17 @@ means not stale. Mint at most twice; a twice-stale remint stops before wake or d
 
 ### Session建立
 
+Daemon wire固定為 `POST /session/start`，body是method `/api/session/start`及params
+`origin:fresh`、`lifecycle:persistent`、精確title。`POST /chat/stream`以單一
+`items:[{type:text,text:question+"\n\n"+packet}]`、固定client node及空capabilities送出。
+client node是project ID SHA-256前16個hex，同project跨重啟穩定；不是研究round ID。
+history的session_id/limit放在 `GET /chat/history` URL query，body為空；上游request()將caller
+dict body轉成query，不可誤當wire JSON body而讀錯main chat。保留payload的明示session_id，
+outer/nested session_id矛盾則拒絕，不以query覆寫其他session身分。
+接受明示成功的 `{ok:true,result:{...}}` wrapper，history欄位是chat_events；舊flat成功
+response及events仍可讀，duplicate/conflicting/error wrapper拒絕。開題接受一致的session_id/id。
+舊frozen flat mutation不改寫或重送；原grant綁原bytes，不移轉到新wire。
+
 先建本地discussion＋open intent，再遠端create；回remote id才完成mapping。timeout時列open_uncertain。list對帳必須可靠識別，同標題不夠；找不到也不證明沒建。需要人選擇已有session時只顯示核准範圍，不掃其他私人對話猜。
 
 ### 送訊息
@@ -1906,6 +1931,7 @@ consume綁owner/epoch/job/step/operation/target/action digest。read不mint。tr
 record_not_submitted，commit_not_submitted以issuer proof保持fencing並在cancel之前atomic保存記帳；原step經settle_uncertain變local failed/remote not_submitted。closed保留host outcome，不reopen；原step settlement後guarded callback才清quarantine。寫入失敗記durable event並保留uncertain，worker清process registry後繼續queue；crash則unknown，不退用量。
 history/list在另一safe_read job，讀取current access grant；原step settlement不再reserve/send/requeue。
 echo比較對prepared text與stored observation套用同一sanitize_document，wire仍精確使用host文字；redaction collision保留ambiguous。
+native user echo以payload.content精確比對，只有content缺少或空值才fallback display_text；presentation欄位不得蓋過不同的原始content，marker衝突仍拒絕。assistant顯示沿用display_text優先，這不代表已校準completion status。
 send boundary持久化write-once submitted_observation_high_water；history關聯排除prepared/zero-handoff，並要求訊息首次observation在此高水位之後。多個同文exchange共享markerless echo時保持ambiguous，不按rowid先後認領。user_echo SQL guard也檢查已提交與首次observation；transport首結果保留既有history proof、另存真實ack/verdict，不reopen closed。
 live send先有已完成、授權的history baseline；已mapped discussion_id的open走history read，不做第二次create。
 open boundary在reservation與token之前重查未解create；拒絕時transaction rollback，不接觸remote、不標uncertain。
@@ -1957,7 +1983,13 @@ quarantines unresolved draft/account/destination across revisions. Proven pre-bo
 failure with no attempt may be explicitly requeued with a new grant and job; an entered
 attempt forbids this path. The existing external-action transaction consumes the exact
 publication Permit, inserts the attempt and commits submitting before a single send.
-Receipts are saved immediately before exact read-back. A fixed, optional database-only
+Receipts are saved immediately before read-back. Message comparison is exact except
+for omission of a single terminal LF by the Facebook Page provider; terminal CRLF,
+other whitespace and content changes remain uncertain. This comparison never changes
+the approved/sent/stored payload or action digest. Successful results and the original
+step checkpoint retain message_readback with comparison mode and approved/observed
+UTF-8 SHA-256 hashes. Reconciliation uses the same rule and only reads the saved receipt;
+it does not create another send attempt. A fixed, optional database-only
 Operation.on_finish callback runs in the existing executor finalization transaction,
 including settle_uncertain; publication sent_verified and original job/step success are
 atomic. A callback failure rolls back both and retains uncertainty, never another send.

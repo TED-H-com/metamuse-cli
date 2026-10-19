@@ -143,7 +143,7 @@ def test_changed_review_conflicts_after_bound_open(research_ctx, change):
         changed["scope"]["rounds"] = 1
         changed["share_max_uses"] = 1
     elif change == "wire":
-        changed["open_payload"]["body"]["title"] = "Unreviewed synthetic topic"
+        changed["open_payload"]["body"]["params"]["title"] = "Unreviewed synthetic topic"
     else:
         changed["expires_at"] = (
             datetime.fromisoformat(reviewed["expires_at"]) + timedelta(minutes=1)

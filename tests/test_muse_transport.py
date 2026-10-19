@@ -570,8 +570,10 @@ def test_history_omits_transcript_mode():
     connector.thread.join(2)
     assert connector.errors == []
     assert frames[0].request.path == "/chat/history?session_id=sess-a&limit=10"
+    assert frames[0].request.body == b""
     assert "transcript_mode" not in frames[1].request.path
     assert "session_id=sess-b" in frames[1].request.path
+    assert frames[1].request.body == b""
 
 
 def test_session_start_timeout_is_unknown_and_does_not_create_another():

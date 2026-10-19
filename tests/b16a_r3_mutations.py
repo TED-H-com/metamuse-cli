@@ -92,7 +92,7 @@ add(
 add(
     "skip_body_equality_in_wire",
     LIFE,
-    exact('if payload.body.get("text") != question + "\\n\\n" + packet_text:', "if False:"),
+    exact("if payload.body != {", "if False and payload.body != {"),
     R2,
     "test_f12_wire_binds_checked_text_to_actual_body",
 )
@@ -226,7 +226,7 @@ add(
 add(
     "wire_skips_title_check",
     LIFE,
-    within("_wire", '        _check_question(payload.body["title"])\n', ""),
+    within("_wire", '        _check_question(params["title"])\n', ""),
     R2,
     "test_f4",
 )

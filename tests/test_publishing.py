@@ -1,5 +1,6 @@
 """B19 exact approval and durable publication recovery with no network or accounts."""
 
+import hashlib
 import io
 import json
 from dataclasses import replace
@@ -287,6 +288,144 @@ def test_receipt_persists_before_read_failure_reconcile_settles_original_step(se
     assert ctx2.store.get(m.JobStep, final["step_id"]).state == "succeeded"
     assert ctx2.store.get(m.Job, final["job_id"]).remote_state == "confirmed"
     assert len(env.gateway.sent) == 1
+
+
+@pytest.mark.parametrize("reconcile", [False, True])
+def test_terminal_lf_readback_preserves_approved_payload_and_one_attempt(setup, reconcile):
+    env = setup
+    text = "活動回顧 😀\r\n字幕與講義。\n"
+    draft = app.save_draft(
+        env.ctx,
+        {
+            "project_id": env.request["project_id"],
+            "text": text,
+            "platform": "facebook",
+            "request_key": "terminal-lf-draft",
+        },
+    )
+    env.request = {**env.request, "draft_id": draft.data["draft_id"]}
+    env.gateway.observed = {
+        "id": "123456_98765",
+        "from": {"id": "123456"},
+        "message": text[:-1],
+        "is_published": True,
+    }
+    env.gateway.read_error = reconcile
+    request = approve(env)
+    accepted = app.submit_publication(env.ctx, request)
+    run(env)
+    publication_id = accepted.data["publication_id"]
+    if reconcile:
+        before = app.get_publication(env.ctx, {"publication_id": publication_id}).data
+        assert before["state"] == "needs_reconcile"
+        env.ctx = app.AppContext.open(env.ctx.paths.root, clock=env.ctx.clock)
+        env.gateway.read_error = False
+        read_request = approve(
+            env,
+            {"publication_id": publication_id, "request_key": "terminal-lf-read"},
+            "publication.reconcile",
+            "approve-terminal-lf-read",
+        )
+        assert app.reconcile_publication(env.ctx, read_request).status == "accepted"
+        run(env)
+    saved = app.get_publication(env.ctx, {"publication_id": publication_id}).data
+    assert saved["state"] == "sent_verified" and saved["live_verified"] is False
+    assert saved["payload"] == {"message": text}
+    assert len(saved["attempts"]) == 1 and env.gateway.sent == [("123456", text)]
+    step = env.ctx.store.get(m.JobStep, saved["step_id"])
+    assert step.state == "succeeded"
+    assert step.checkpoint["message_readback"] == {
+        "comparison": "single_terminal_lf_removed",
+        "approved_sha256": hashlib.sha256(text.encode()).hexdigest(),
+        "observed_sha256": hashlib.sha256(text[:-1].encode()).hexdigest(),
+    }
+    # A fresh process and a new request key cannot turn reconciliation into another send.
+    env.ctx = app.AppContext.open(env.ctx.paths.root, clock=env.ctx.clock)
+    replay = app.submit_publication(env.ctx, {**request, "request_key": "terminal-lf-alias"})
+    assert replay.data["publication_id"] == publication_id
+    run(env)
+    assert len(env.gateway.sent) == 1
+
+
+@pytest.mark.parametrize(
+    "approved,observed",
+    [
+        ("正文\n", "正文\n"),
+        ("正文\n", "正文"),
+        ("正文\n\n", "正文\n"),
+        ("正文 \n", "正文 "),
+        ("首行\r\n末行\n", "首行\r\n末行"),
+        ("正文", "正文"),
+    ],
+)
+def test_readback_comparison_records_exact_or_one_terminal_lf(approved, observed):
+    publication = SimpleNamespace(
+        remote_id="123456_98765", destination="123456", payload={"message": approved}
+    )
+    result = publishing._verified(
+        publication,
+        {
+            "id": publication.remote_id,
+            "from": {"id": publication.destination},
+            "message": observed,
+            "is_published": True,
+        },
+    )
+    assert result["comparison"] == (
+        "exact" if approved == observed else "single_terminal_lf_removed"
+    )
+    assert result["observed_sha256"] == hashlib.sha256(observed.encode()).hexdigest()
+
+
+@pytest.mark.parametrize(
+    "approved,observed",
+    [
+        ("正文\r\n", "正文"),
+        ("正文\r\n", "正文\r"),
+        ("正文\n\n", "正文"),
+        ("正文 \n", "正文"),
+        ("正文\t\n", "正文"),
+        ("正文\u00a0\n", "正文"),
+        ("\n正文\n", "正文"),
+        ("首行\n末行\n", "首行末行"),
+        ("首行\r\n末行\n", "首行\n末行"),
+        ("正文\n", "改文"),
+        ("正文", "正文\n"),
+        ("正文\n", None),
+    ],
+)
+def test_readback_does_not_trim_other_whitespace_or_rewrite_text(approved, observed):
+    publication = SimpleNamespace(
+        remote_id="123456_98765", destination="123456", payload={"message": approved}
+    )
+    with pytest.raises(m.CoreError) as caught:
+        publishing._verified(
+            publication,
+            {
+                "id": publication.remote_id,
+                "from": {"id": publication.destination},
+                "message": observed,
+                "is_published": True,
+            },
+        )
+    assert caught.value.detail.code == m.ErrorCode.EXTERNAL_STATE_UNKNOWN
+
+
+@pytest.mark.parametrize("bad", ["id", "from", "is_published"])
+def test_terminal_lf_exception_never_ignores_receipt_page_or_published_state(bad):
+    publication = SimpleNamespace(
+        remote_id="123456_98765", destination="123456", payload={"message": "正文\n"}
+    )
+    observed = {
+        "id": publication.remote_id,
+        "from": {"id": publication.destination},
+        "message": "正文",
+        "is_published": True,
+    }
+    observed[bad] = {"id": "999999"} if bad == "from" else False
+    with pytest.raises(m.CoreError) as caught:
+        publishing._verified(publication, observed)
+    assert caught.value.detail.code == m.ErrorCode.EXTERNAL_STATE_UNKNOWN
 
 
 @pytest.mark.parametrize("crash", [False, True])

@@ -156,8 +156,12 @@ def normalize_event(event: dict, query_session_id: str | None) -> dict:
     """
     out = dict(event)
     named = out.get("session_id")
+    payload = out.get("payload")
+    nested = payload.get("session_id") if isinstance(payload, dict) else None
     if named in (None, ""):
-        out["session_id"] = query_session_id
+        # Native history can name its session only inside payload. That explicit
+        # identity must win over the query, including a foreign session.
+        out["session_id"] = nested if nested not in (None, "") else query_session_id
     return out
 
 
@@ -288,7 +292,14 @@ def _is_our_echo(exchange: Exchange, event: dict) -> bool:
     # A marker for a different request wins over identical text.
     if _marker_conflict(exchange, event):
         return False
-    if _text(event) == exchange.sent_text:
+    # Native user history keeps the exact submitted text in content while
+    # display_text can be a presentation transform. Never let a matching
+    # display value override different explicit content.
+    payload = _payload(event)
+    echoed_text = payload.get("content")
+    if echoed_text in (None, ""):
+        echoed_text = payload.get("display_text")
+    if isinstance(echoed_text, str) and echoed_text == exchange.sent_text:
         return True
     return _marker_echoed(event, exchange.request_marker)
 

@@ -497,12 +497,20 @@ An entered attempt is unique per publication and cannot be replaced, refunded or
 A proven failure before the committed boundary can accept a fresh human grant and new
 queued job; the prior step cannot execute the replacement action.
 
-Read-back must match the saved post receipt, Page identity, exact message and published
-state. Saving the receipt precedes read-back; domain sent_verified and original job/step
+Read-back must match the saved post receipt, Page identity, message and published state.
+The Facebook Page provider permits exactly one observed difference: omission of one
+terminal LF from the approved text (not a terminal CRLF). All remaining characters must
+match verbatim; no trimming of spaces, other line endings, leading or internal whitespace
+is allowed. The outbound payload, approval digest and saved draft stay unchanged.
+The job result and original step checkpoint record the comparison mode and SHA-256 of
+both approved and observed message bytes, so this exception is not reported as exact.
+Saving the receipt precedes read-back; domain sent_verified and original job/step
 success commit together. Reconcile is a separately approved safe read of only that saved
 receipt and settles the original uncertain step. No receipt remains unknown; lack of a
-search result never permits resending. B19 has synthetic evidence only. B20/AT-049 real
-account verification and AT-050 cross-platform partial success remain unverified/out of
+search result never permits resending. B20/AT-049 now has bounded LIVE evidence from one
+explicitly approved Page text post, receipt reconciliation and a one-attempt restart
+check. Sending and corrected read-back used different candidate builds; this is not a
+fresh unchanged-release journey. AT-050 cross-platform partial success remains outside
 this single-provider scope. Setup and limitations are in docs/dev/PUBLISHING.md.
 
 所有state handle顯式傳ID，不靠connection上次選過project。stdout只給SDK協定；log、下載器和warning導向stderr。資料分頁或受保護resource引用，不回整部影片。

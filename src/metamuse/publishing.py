@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
 import json
 import queue
@@ -585,15 +586,34 @@ def _verified(publication, observed):
     if (
         not isinstance(observed, dict)
         or observed.get("id") != publication.remote_id
-        or observed.get("message") != publication.payload["message"]
         or not isinstance(observed.get("from"), dict)
         or observed["from"].get("id") != publication.destination
         or observed.get("is_published") is not True
     ):
         _unknown()
+    approved = publication.payload["message"]
+    message = observed.get("message")
+    if message == approved:
+        comparison = "exact"
+    elif (
+        isinstance(message, str)
+        and approved.endswith("\n")
+        and not approved.endswith("\r\n")
+        and message == approved[:-1]
+    ):
+        # One authorized LIVE read-back lost a single terminal LF. Allow only
+        # that provider-side omission; never strip or normalize the sent text.
+        comparison = "single_terminal_lf_removed"
+    else:
+        _unknown()
+    return {
+        "comparison": comparison,
+        "approved_sha256": hashlib.sha256(approved.encode("utf-8")).hexdigest(),
+        "observed_sha256": hashlib.sha256(message.encode("utf-8")).hexdigest(),
+    }
 
 
-def _result(publication):
+def _result(publication, message_readback):
     return m.JobResult(
         coverage_status="scope_satisfied",
         stop_reason="post_read_back",
@@ -602,6 +622,7 @@ def _result(publication):
             "remote_id": publication.remote_id,
             "backend": publication.target["backend"],
             "state": "sent_verified",
+            "message_readback": message_readback,
         },
     )
 
@@ -683,10 +704,12 @@ def _send(step):
     step.commit_checkpoint({"receipt_saved": True}, write_batch=receipt)
     publication = step.store.get(m.Publication, publication.id)
     observed = gateway.read(remote_id)
-    _verified(publication, observed)
+    message_readback = _verified(publication, observed)
 
-    step.commit_checkpoint({"receipt_saved": True, "read_back_verified": True})
-    return _result(publication)
+    step.commit_checkpoint(
+        {"receipt_saved": True, "read_back_verified": True, "message_readback": message_readback}
+    )
+    return _result(publication, message_readback)
 
 
 def _reconcile(step):
@@ -714,7 +737,7 @@ def _reconcile(step):
     )
     _identity(gateway, publication)
     observed = gateway.read(publication.remote_id)
-    _verified(publication, observed)
+    message_readback = _verified(publication, observed)
     step.guard()
     original = step.store.get(m.JobStep, publication.step_id)
 
@@ -726,8 +749,8 @@ def _reconcile(step):
     def complete(writer):
         writer.execute(
             "UPDATE job_steps SET checkpoint=json_set(checkpoint, "
-            "'$.read_back_verified',json('true')) WHERE id=?",
-            (publication.step_id,),
+            "'$.read_back_verified',json('true'), '$.message_readback',json(?)) WHERE id=?",
+            (json.dumps(message_readback), publication.step_id),
         )
 
     if original.state in UNCERTAIN:
@@ -735,14 +758,14 @@ def _reconcile(step):
             publication.step_id,
             expected_target=publication.target,
             verify=validate,
-            result=_result(publication),
+            result=_result(publication, message_readback),
             write_batch=complete,
         )
     elif original.state == "succeeded" and publication.state == "sent_verified":
         pass
     else:
         _unknown()
-    return _result(publication)
+    return _result(publication, message_readback)
 
 
 def _finish_publication(writer, step, result):

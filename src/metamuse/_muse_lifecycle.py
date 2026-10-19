@@ -164,14 +164,35 @@ def _target(project, binding, backend, operation, *, intent=None, session=None, 
 
 
 def _prepared(route, target, body, marker, node):
+    # One shared pure builder is also used when research scopes reconstruct the
+    # frozen wire. Application arguments are not the daemon's JSON protocol.
+    client_node = hashlib.sha256(node.encode()).hexdigest()[:16]
+    if route == "session.start":
+        body = {
+            "method": "/api/session/start",
+            "params": {"origin": "fresh", "lifecycle": "persistent", "title": body["title"]},
+        }
+    else:
+        body = {
+            "session_id": body["session_id"],
+            "items": [{"type": "text", "text": body["text"]}],
+            "node_id": client_node,
+            "capabilities": {},
+        }
     path = "/session/start" if route == "session.start" else "/chat/stream"
     headers = {"x-request-id": marker, "content-type": "application/json"}
-    payload = {"verb": "POST", "path": path, "headers": headers, "body": body, "node_id": node}
+    payload = {
+        "verb": "POST",
+        "path": path,
+        "headers": headers,
+        "body": body,
+        "node_id": client_node,
+    }
     return m.MusePayload(
         route=route,
         path=path,
         marker=marker,
-        node_id=node,
+        node_id=client_node,
         headers=headers,
         body=body,
         target=target,
@@ -470,8 +491,19 @@ def _wire(payload):
     if any(payload.payload.get(key) != value for key, value in expected.items()):
         _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared wire bytes differ from verified payload")
     if payload.route == "session.start":
-        _check_question(payload.body["title"])
-        if len(payload.body["title"].encode("utf-8")) > 8192:
+        params = payload.body.get("params")
+        if (
+            set(payload.body) != {"method", "params"}
+            or payload.body.get("method") != "/api/session/start"
+            or not isinstance(params, dict)
+            or set(params) != {"origin", "lifecycle", "title"}
+            or params.get("origin") != "fresh"
+            or params.get("lifecycle") != "persistent"
+            or not isinstance(params.get("title"), str)
+        ):
+            _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared session body is unsupported")
+        _check_question(params["title"])
+        if len(params["title"].encode("utf-8")) > 8192:
             _error(m.ErrorCode.LIMIT_REACHED, "Muse text exceeds its UTF-8 limit")
     if payload.route == "chat.stream":
         question = payload.payload.get("question")
@@ -487,7 +519,12 @@ def _wire(payload):
                 "Packet is stale; prepare a new packet",
                 "Prepare a new packet and send request with a new exact share grant",
             )
-        if payload.body.get("text") != question + "\n\n" + packet_text:
+        if payload.body != {
+            "session_id": payload.target.get("session_id"),
+            "items": [{"type": "text", "text": question + "\n\n" + packet_text}],
+            "node_id": payload.node_id,
+            "capabilities": {},
+        }:
             _error(m.ErrorCode.PROTOCOL_MISMATCH, "Prepared send body differs from checked inputs")
     return prepare_muse_request(
         payload.route,
@@ -883,7 +920,10 @@ def _exchange_view(store, discussion, exchange, conn=None):
             earlier = unresolved(db)
     else:
         earlier = unresolved(conn)
-    outbound_text = exchange.outbound_payload.body["text"]
+    body = exchange.outbound_payload.body
+    # Historical observations can still be read/associated; _wire never sends
+    # these old flat bodies again or rewrites a frozen intent/grant.
+    outbound_text = body["items"][0]["text"] if "items" in body else body["text"]
     if len(outbound_text.encode("utf-8")) > 49152 + 8192 + 2:
         _error(
             m.ErrorCode.LIMIT_REACHED,
@@ -1061,8 +1101,10 @@ def _save_open(step, discussion, result, failure):
             stream_complete=True, stream_status=result.status, body=result.body
         ).verdict
         try:
-            value = json.loads(result.body)
-            session = value.get("session_id")
+            value = _response_object(result.body)
+            session = value.get("session_id", value.get("id"))
+            if value.get("session_id") is not None and value.get("id", session) != session:
+                session = None
             if (
                 not isinstance(session, str)
                 or not session
@@ -1071,7 +1113,7 @@ def _save_open(step, discussion, result, failure):
                 or any(ord(c) < 32 for c in session)
             ):
                 session = None
-        except (ValueError, TypeError, AttributeError):
+        except (ValueError, TypeError, AttributeError, m.CoreError):
             session = None
     reliable = verdict == "acked" and session is not None
     proof = (
@@ -1231,6 +1273,21 @@ def _queue_read(ctx, discussion, permit_id, *, sessions=False, request_key=None,
     return result
 
 
+def _response_object(body):
+    from metamuse.muse import _duplicate_json, _json_value
+
+    value = _json_value(body)
+    if not isinstance(value, dict) or _duplicate_json(value) or value.get("ok") is False:
+        _error(m.ErrorCode.PROTOCOL_MISMATCH, "Muse response is not a successful object")
+    if "result" in value:
+        if value.get("ok") is not True or not isinstance(value["result"], dict):
+            _error(m.ErrorCode.PROTOCOL_MISMATCH, "Muse response wrapper is unsupported")
+        value = value["result"]
+        if value.get("ok") is False:
+            _error(m.ErrorCode.PROTOCOL_MISMATCH, "Muse response is not a successful object")
+    return value
+
+
 def _events(body):
     from metamuse._muse_codec import json_depth
 
@@ -1238,8 +1295,10 @@ def _events(body):
         _error(m.ErrorCode.PROTOCOL_MISMATCH, "Muse history exceeds JSON bounds")
     failed = False
     try:
-        value = json.loads(body)
-        events = value["events"]
+        value = _response_object(body)
+        events = value.get("chat_events", value.get("events"))
+        if "chat_events" in value and "events" in value and value["chat_events"] != value["events"]:
+            raise ValueError
         if not isinstance(events, list) or len(events) > 200:
             raise ValueError
     except (ValueError, TypeError, KeyError, RecursionError):
@@ -1260,6 +1319,12 @@ def _normalize(events, session):
         seq = event.get("seq")
         name = event.get("event_name")
         payload = event.get("payload", {})
+        if isinstance(payload, dict) and payload.get("session_id") not in (
+            None,
+            "",
+            event.get("session_id"),
+        ):
+            _error(m.ErrorCode.PROTOCOL_MISMATCH, "Muse event session identities conflict")
         for ident in (
             event.get("session_id"),
             name,
@@ -1679,7 +1744,7 @@ def _read_job(step):
 def _reconcile_open(step, discussion, body):
     failed = False
     try:
-        sessions = json.loads(body)["sessions"]
+        sessions = _response_object(body)["sessions"]
         if not isinstance(sessions, list) or len(sessions) > 200:
             raise ValueError
         matches = [

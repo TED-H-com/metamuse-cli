@@ -322,7 +322,7 @@ permanent confidential tier before refusing even malformed/unsupported RV fields
 accepted handshake varints are minimal uint64 and RV attestation is nonempty bytes. Both
 standard equalities and mature Noise/TLS remain mandatory. No reset tool exists.
 
-All credential aliases are validated. Case-insensitive delegation/endorsement prefixes,
+All credential aliases are validated. At this historical implementation, delegation/endorsement prefixes,
 malformed/oversized s0 and conflicting notary aliases refuse with protocol/never; legacy
 opaque tokens no longer admit dots. Nonpositive budgets stop before wake/dial/msg1. Only
 endpoint-specific success statuses are admitted: bootstrap 200 from the spike contract,
@@ -367,3 +367,55 @@ Confidential writes invalidate all workspace listeners. Nested hints use a bound
 key/value scan; false positives remain permanently sticky. Confidential provenance freezes
 in place, and redaction merges decoded known spans and covers the tested alias grammar.
 Evidence is OFFLINE/FIXTURE (timings MEASURE); AT-038 and AT-043 LIVE remain unrun, CVM unsupported.
+
+## 11. Authorized LIVE diagnostics, 2026-10-17
+
+An operator-authorized run of the installed PyPI alpha passed auth/check and VM
+selection, then stopped before wake/dial or any gateway frame. The notary returned
+by hatch/token was `endorsement.v1`, not a delegation. The blanket endorsement
+refusal in §9.1 therefore also rejected this standard-VM credential. The live token
+and account evidence remain outside the public repository; regression inputs are synthetic.
+
+The inspected first-party web client chunk `28_ha0dlt8f1j.js` from the 2026-10-14
+snapshot distinguishes delegation (needs a local signer) from an already issued
+notary (passed through). This is protocol observation; no web client code is copied.
+The narrowed accepted envelope and unchanged independent VM/Noise checks are in
+[MUSE.md](MUSE.md#connection) and SDS §8. No local signature verification is claimed.
+
+An isolated candidate with that correction completed the authenticated standard
+gateway handshake. Its create request then returned an application error and is
+retained as delivery-uncertain. Authorized safe-read reconciliation did not prove
+the original session mapping; no question was sent or mutation replayed. Inspection
+against the already pinned upstream session/chat/history contracts found the flat
+lifecycle bodies and missing response wrapper handling corrected in this branch.
+That first attempt alone did not establish a two-round LIVE journey.
+
+The operator then explicitly approved one independent conversation with a fixed
+synthetic packet, two questions, twelve history reads and a two-hour expiry.
+Through isolated installed candidate wheels and the shipped CLI/worker, this
+conversation was created, both questions received acknowledgements, and both
+assistant answers were read back from the mapped side chat. The second question
+followed up on the first answer's use of import completeness; the answer correctly
+distinguished a complete import from missing activity facts. Separate CLI processes
+then read both exchanges after host closure. A host-written draft citing the
+original source and both exact assistant observation refs was exported as bundle
+and Markdown; file lengths, hashes and citations were checked. Records retain
+`mock=false`, `research_complete=false`; the host reviewed the answers and closed
+both outcomes as `answered`. No automatic completion status was calibrated.
+
+This run also caught a regression introduced in this branch: putting history's
+GET parameters in a JSON body returned main-chat history instead of the requested
+side chat. Upstream's `request()` converts its caller body to URL query parameters;
+the final transport restores query parameters and an empty body. Native nested
+session IDs now survive normalization, conflicting outer/nested IDs are refused,
+and user-echo matching uses exact `content` before presentation `display_text`.
+The earlier mislabelled observations remain immutable in private diagnostic
+storage and were excluded from draft/export selection. Export checks found none
+of that unrelated content. Neither question nor the uncertain create was replayed.
+
+This is bounded LIVE evidence for the AT-038 operations and AT-043's
+local-import → Muse → cited draft/export path. It was completed while candidate
+builds changed; a clean journey on one unchanged released wheel, real Facebook
+collection, remote media, publishing, and the broader beta gate remain unverified.
+The published `0.1.0a1` still lacks the protocol fixes. No credentials, account IDs,
+raw conversations or private evidence are included here.
