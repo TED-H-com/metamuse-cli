@@ -2,7 +2,7 @@
 name: metamuse
 description: 整理獲准使用的社群貼文、留言、影音與字幕，建立可追溯資料包，與Muse討論，保存草稿和報告；僅在明確授權及能力驗收後執行社群操作。中性功能，不帶作者策略。
 metadata:
-  version: "0.1.0a1"
+  version: "0.1.0a2"
 ---
 
 # MetaMuse

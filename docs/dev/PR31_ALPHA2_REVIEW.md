@@ -173,3 +173,16 @@ browser for a loopback-only visual check. Launching it with
 `chromium_sandbox=True` failed because this host has no usable Chromium sandbox.
 No screenshots were produced; sandboxing and host policy were not weakened.
 The static render/parity checks passed, but this follow-up has no new visual captures.
+
+The first PR #32 CI run, `39204696647`, exposed a release-metadata omission:
+`tests/test_skill.py::test_frontmatter_and_line_limits` found Skill version
+`0.1.0a1` alongside package version `0.1.0a2`. Its core cohort stopped after
+3,976 passes and that one failure; this was not classified as a transient failure.
+The canonical Skill and byte-identical design copy now both say `0.1.0a2`, and
+the design manifest was regenerated for that file. No Skill instructions changed.
+`uv run --locked pytest -q tests/test_skill.py tests/test_site_check.py` then passed
+54 tests in 1.40 seconds; design validation and whitespace checks also passed.
+The failed CI log and manifest are retained outside Git. Earlier candidate
+artifacts are superseded and must not be published; the corrected commit needs
+new hosted CI and fresh publication artifacts. Scope additionally includes B15,
+FR-018 and AT-027 for packaged Skill/version consistency.
