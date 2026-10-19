@@ -1,5 +1,6 @@
 # PR #31 review and second-alpha candidate, 2026-10-18
 
+This section records the review as of 2026-10-18; see the dated follow-up below.
 PR #31 has no blocking finding from this review. Its final hosted CI is green,
 and its tested merge tree is identical to the PR head. A local `0.1.0a2` candidate
 has passed installed-wheel verification. It has not been pushed or published;
@@ -131,3 +132,44 @@ or copied. Existing pinned dependencies and notices are reused and ship in the w
   existing workflow. Verify the index hashes and a fresh index installation before
   promoting public installation instructions. Do not resend any earlier Muse
   question or Page post as a release check.
+
+## Orchestrator follow-up, 2026-10-19
+
+The operator authorized this session to act as orchestrator and proceed with the
+proposed push, merge and release sequence. PR #31 was merged at
+`d82ae371b224b369819498964c5cc7aa635edb71`; its main CI is
+[run 39204214535](https://github.com/TED-H-com/metamuse-cli/actions/runs/39204214535).
+The earlier candidate hashes above remain historical, not final release hashes.
+
+Migration inventory inspection found no tracked-change patches or saved stashes
+for this workspace. All 29 recorded worktrees have zero tracked modifications;
+28 detached review heads were preserved under local archival refs from the bundle.
+The sole untracked archive contains 4,000 files, all under `runs/`, with no absolute
+or parent-traversal paths. These are retained review outputs, not product changes;
+the archive was not applied or extracted into the public checkout. Historical
+review heads were not cherry-picked over the newer accepted implementation.
+No credential or private-runtime file was opened for this inventory check.
+
+Publication preparation now updates the README before building, because it is the
+immutable PyPI long description. README/getting-started/connected instructions
+target `0.1.0a2` and link to the index for availability; descriptions identify which
+version contains the fixes without asserting that an upload has happened. The
+homepage install command and displayed version remain `0.1.0a1` until verified
+publication. This replaces the earlier plan to update all installation text only
+after uploading, which would have left the wheel's PyPI description on `0.1.0a1`.
+
+README and bilingual site availability now require `0.1.0a2` and account setup for
+Muse/Page operations. Existing bounded LIVE limits remain. Changes are confined
+to documentation and the site's availability vocabulary; no runtime, dependency,
+schema, migration or third-party notice change was added.
+
+Additional verification: `uv run --locked pytest -q tests/test_site_check.py`
+passed all 42 cases in 0.12 seconds. The pinned page-kit `render.py` and
+`PAGE_KIT_DIR=... uv run --locked python scripts/check_site.py` passed, as did Ruff
+check/format and `git diff --check`. These are OFFLINE checks, not new LIVE evidence.
+
+`uv run --locked python -m playwright install chromium` installed the locked
+browser for a loopback-only visual check. Launching it with
+`chromium_sandbox=True` failed because this host has no usable Chromium sandbox.
+No screenshots were produced; sandboxing and host policy were not weakened.
+The static render/parity checks passed, but this follow-up has no new visual captures.

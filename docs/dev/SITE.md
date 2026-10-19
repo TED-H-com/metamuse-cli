@@ -125,18 +125,19 @@ That inventory lives in [STATUS.md](STATUS.md).
 
 The `What can I use today?` table in the README is the source for the homepage's
 ordered task names and availability. The page's bilingual `availability` metadata
-uses these four setup states:
+uses these five setup states:
 
 - Ready with local files.
 - Connect your assistant first.
 - Needs extra setup; real-account use is unverified.
+- Requires 0.1.0a2 and account setup.
 - Not available.
 
 The first two belong in `works`; the others belong in `limits`. This metadata
 is checked without displaying status codes in the public copy. Each task's
 visible text explains the action, result and any setup it needs in plain language.
-The introduction states that Muse and remote collection have not been verified
-with real accounts.
+The introduction distinguishes the bounded Muse/Page tests across candidate builds
+from Facebook collection and remote media, which are not yet verified with real accounts.
 
 When a user-task row changes, update its matching row and availability metadata
 in `site/page.json` in both languages, re-render, and run `scripts/check_site.py`

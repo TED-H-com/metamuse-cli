@@ -18,10 +18,10 @@ Search currently matches literal text. Your assistant handles interpretation and
 
 ## Try it
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the [alpha package](https://pypi.org/project/metamuse-cli/0.1.0a1/) and run the bundled example. uv manages the Python version and creates an isolated environment for the command.
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then install the alpha package and run the bundled example. These instructions target `0.1.0a2`; [PyPI lists the available releases](https://pypi.org/project/metamuse-cli/#history). uv manages the Python version and creates an isolated environment for the command.
 
 ```sh
-uv tool install --python 3.12.13 'metamuse-cli==0.1.0a1'
+uv tool install --python 3.12.13 'metamuse-cli==0.1.0a2'
 metamuse demo
 ```
 
@@ -41,7 +41,7 @@ Once connected, try a request like this:
 
 > Use MetaMuse to review the event comments I provide and have permission to use. Find feedback about subtitles, group the requests, and draft a recap with links to the original comments. Show me the sources and gaps before saving. Export Markdown and keep this work local.
 
-Muse is an optional collaborator for further questions. Local import, search, drafts and exports work without a Muse account. A real Muse connection needs separate configuration and human approval. An unreleased correction has completed two real Muse turns using synthetic input, restart/read-back and cited draft exports; the [Muse guide](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/MUSE.md) records that scope. The published `0.1.0a1` does not include those fixes.
+Muse is an optional collaborator for further questions. Local import, search, drafts and exports work without a Muse account. A real Muse connection needs separate configuration and human approval. Version `0.1.0a2` includes the compatibility fixes tested with two real Muse turns using synthetic input, restart/read-back and cited draft exports. That test crossed candidate builds; it was not a fresh end-to-end test of one unchanged release. The [Muse guide](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/MUSE.md) records the scope. Version `0.1.0a1` lacks these fixes.
 
 Use `metamuse connect muse`, `connect facebook`, or `connect publishing` to validate your
 private credential file and bind the account without editing TOML. Add `--enable-network`
@@ -61,9 +61,9 @@ Start with files on your computer. You can search, save drafts and export withou
 | Keep a draft with its sources | Ready with local files | Save text you or your assistant wrote, together with the original material you cited. |
 | Export a file you can edit | Ready with local files | Keep your draft and material as text documents or spreadsheet-friendly files for further editing. |
 | Work with your AI assistant | Connect your assistant first | Connect your assistant to MetaMuse, then ask it to find material and draft a recap with citations. |
-| Ask Muse follow-up questions | Needs setup and an unreleased compatibility fix | Select material to share, ask Muse a question, then follow up in the same conversation. A bounded synthetic-input test with a real account succeeded across corrected candidate builds; the PyPI alpha still needs those fixes. |
+| Ask Muse follow-up questions | Requires 0.1.0a2 and account setup | Select material to share, ask Muse a question, then follow up in the same conversation. A bounded synthetic-input test with a real account succeeded across corrected candidate builds; `0.1.0a2` includes those fixes. |
 | Collect a Facebook post or remote video | Needs extra setup; real-account use is unverified | Additional setup and your approval are required. These collectors have not been verified with real accounts. |
-| Publish a text post to a Facebook Page | Needs setup and an unreleased compatibility fix | Approve the exact text and Page, then send and check the receipt. One real test post and read-only reconciliation succeeded across corrected candidate builds; the PyPI alpha still needs the read-back fix. Text-only and experimental; [setup and limits](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md). |
+| Publish a text post to a Facebook Page | Requires 0.1.0a2 and account setup | Approve the exact text and Page, then send and check the receipt. One real test post and read-only reconciliation succeeded across corrected candidate builds; `0.1.0a2` includes the read-back fix. Text-only and experimental; [setup and limits](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md). |
 
 See the [getting started guide](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md) to try the local example,
 or [connect your assistant](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/SKILL.md) to use your own material.
@@ -73,7 +73,7 @@ in the development documentation.
 <details>
 <summary>Advanced: ask Muse follow-up questions with one bounded approval</summary>
 
-The implemented [bounded research workflow](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/MUSE.md#bounded-research-workflow-synthetic-evidence) lets a human approve a fixed packet, topic, expiry and question/read budget. Your assistant can then ask varied questions within that scope, keep the discussion across restarts, and save a draft citing sources and Muse observations. Changed data or scope needs new consent. The guide distinguishes fixture coverage from the bounded real-account test and the fixes still missing from the published alpha.
+The implemented [bounded research workflow](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/MUSE.md#bounded-research-workflow-synthetic-evidence) lets a human approve a fixed packet, topic, expiry and question/read budget. Your assistant can then ask varied questions within that scope, keep the discussion across restarts, and save a draft citing sources and Muse observations. Changed data or scope needs new consent. The guide distinguishes fixture coverage from the bounded real-account test and documents the fixes included in `0.1.0a2`.
 
 </details>
 

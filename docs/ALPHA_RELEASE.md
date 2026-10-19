@@ -3,9 +3,10 @@
 `0.1.0a1` is the published alpha. `0.1.0a2` is the next candidate, containing the
 Muse compatibility and Facebook Page reconciliation corrections from
 [PR #31](https://github.com/TED-H-com/metamuse-cli/pull/31). It has not been uploaded
-to PyPI. The [getting-started instructions](GETTING_STARTED.md) and public site
-continue to install `0.1.0a1` until publication and an installation from the index
-are verified. Operator approval to publish does not establish upload success.
+to PyPI. The README and [getting-started instructions](GETTING_STARTED.md) target
+`0.1.0a2` and link to PyPI for actual release availability. The public site's install
+command stays on `0.1.0a1` until index publication and installation are verified.
+Operator approval to publish does not establish upload success.
 
 ## Changes in the candidate
 
@@ -129,10 +130,11 @@ the repository's [agent protocol](../AGENTS.md).
 
 The normal workflow builds from `main`, so the orchestrator first merges the
 reviewed candidate and waits for `check` to pass on that exact main commit.
-PR CI on an earlier commit does not satisfy that gate. Keep the public installation
-instructions on the available `0.1.0a1` throughout this step. The README packaged
-with the candidate therefore describes the published version and its limits;
-the candidate changes are recorded here without claiming they are already on PyPI.
+PR CI on an earlier commit does not satisfy that gate. The README is also the
+immutable PyPI long description, so prepare its `0.1.0a2` commands before building
+the final artifacts. It describes the code in that version and points to the index
+for availability, without claiming an upload succeeded. Keep the site's advertised
+install version on `0.1.0a1` until the index is verified.
 
 After operator approval, dispatch the reviewed workflow:
 
@@ -170,11 +172,11 @@ uv tool install --python 3.12.13 'metamuse-cli==0.1.0a2'
 metamuse demo
 ```
 
-Only after that succeeds, update the README, getting-started and connected guides,
-and both languages of `site/page.json` to install `0.1.0a2`. Replace the unreleased
-compatibility wording while retaining the bounded LIVE evidence and alpha limits.
-Re-render with the pinned page kit, validate README/site parity, and let the
-orchestrator merge and deploy that documentation update. For the alternative local
+Only after that succeeds, update the installation command and displayed version
+in `site/page.json` to `0.1.0a2`, and record the publication in this document.
+Retain the bounded LIVE evidence and alpha limits. Re-render with the pinned page
+kit, validate README/site parity, and let the orchestrator merge and deploy that
+documentation update. For the alternative local
 upload path, the release branch also needs merging after the index is verified.
 
 Version and alpha classification follow the
