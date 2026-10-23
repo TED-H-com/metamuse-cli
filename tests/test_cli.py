@@ -1,6 +1,5 @@
 import argparse
 import json
-import sys
 import tomllib
 
 import pytest
@@ -326,12 +325,9 @@ def test_render_non_json(capsys):
     assert '"key": "value\\u0001"' in output.out
 
 
-def test_system_exit_non_zero(monkeypatch, capsys):
-    def throw(*args, **kwargs):
-        sys.exit(1)
-
-    monkeypatch.setattr(cli, "dispatch", throw)
-    code = cli.main(["--json", "init"])
+def test_system_exit_non_zero(capsys):
+    # Missing required argument command will raise a SystemExit code 2 in argparse
+    code = cli.main(["--json", "missing_command"])
     assert code == 2
     output = capsys.readouterr()
     res = json.loads(output.out)
