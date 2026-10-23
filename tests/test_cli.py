@@ -4,7 +4,6 @@ import sys
 import tomllib
 
 import pytest
-from pydantic import ValidationError
 
 from metamuse import cli
 from metamuse import models as m
@@ -217,7 +216,8 @@ def test_validation_error(capsys):
 def test_cli_operation_helper():
     assert cli._cli_operation(None) == "cli"
     assert cli._cli_operation(argparse.Namespace()) == "cli"
-    assert cli._cli_operation(argparse.Namespace(command="project", action="create")) == "project create"
+    ns_create = argparse.Namespace(command="project", action="create")
+    assert cli._cli_operation(ns_create) == "project create"
     assert cli._cli_operation(argparse.Namespace(command="init")) == "init"
     assert cli._cli_operation(argparse.Namespace(command="init", action=None)) == "init"
 
@@ -269,20 +269,33 @@ def test_parser_error():
 def test_render_non_json(capsys):
     err_env = m.Envelope(
         status="error",
-        error=m.ErrorDetail(code=m.ErrorCode.INPUT_INVALID, message="Oops", next_action="Fix it", retry_class="never")
+        error=m.ErrorDetail(
+            code=m.ErrorCode.INPUT_INVALID,
+            message="Oops",
+            next_action="Fix it",
+            retry_class="never"
+        )
     )
     cli.render(err_env, as_json=False)
     output = capsys.readouterr()
     assert "E_INPUT_INVALID: Oops\nFix it\n" in output.err
 
     # Demo mode test requires specific keys
-    demo_env = m.Envelope(status="ok", data={"demo": True, "log": [], "workspace": "ws", "project_id": "prj", "export_directory": "dir"})
+    demo_data = {
+        "demo": True, "log": [], "workspace": "ws",
+        "project_id": "prj", "export_directory": "dir"
+    }
+    demo_env = m.Envelope(status="ok", data=demo_data)
     cli.render(demo_env, as_json=False)
     output = capsys.readouterr()
     assert "Workspace: ws" in output.out
 
     # Configured service test
-    config_env = m.Envelope(status="ok", data={"configured": True, "service": "muse", "account": "test", "network_mode": "offline", "next_action": "Do something"})
+    config_data = {
+        "configured": True, "service": "muse", "account": "test",
+        "network_mode": "offline", "next_action": "Do something"
+    }
+    config_env = m.Envelope(status="ok", data=config_data)
     cli.render(config_env, as_json=False)
     output = capsys.readouterr()
     assert "Saved muse settings for test." in output.out
