@@ -1,4 +1,6 @@
+import argparse
 import json
+import tomllib
 
 import pytest
 
@@ -157,3 +159,176 @@ def test_corrupt_database_returns_storage_error(tmp_path, capsys):
     (tmp_path / "workspace/state.sqlite3").write_bytes(b"synthetic corruption")
     code, result, _ = run(tmp_path, capsys, ["doctor"])
     assert code == 7 and result["error"]["code"] == "E_STORAGE"
+
+
+def test_help_flag(capsys):
+    code = cli.main(["--help"])
+    assert code == 0
+    output = capsys.readouterr()
+    assert "usage:" in output.out
+
+
+def test_json_help_flag(capsys):
+    code = cli.main(["--json", "--help"])
+    assert code == 0
+    output = capsys.readouterr()
+    res = json.loads(output.out)
+    assert res["status"] == "ok"
+    assert res["data"]["help"] is True
+
+
+def test_unhandled_exception(monkeypatch, capsys):
+    def throw(*args, **kwargs):
+        raise ValueError("Something unexpected")
+
+    monkeypatch.setattr(cli, "dispatch", throw)
+    code = cli.main(["--json", "init"])
+    assert code == 7
+    output = capsys.readouterr()
+    res = json.loads(output.out)
+    assert res["error"]["code"] == "E_STORAGE"
+
+
+def test_toml_decode_error(monkeypatch, capsys):
+    def throw(*args, **kwargs):
+        raise tomllib.TOMLDecodeError("Bad TOML")
+
+    monkeypatch.setattr(cli, "dispatch", throw)
+    code = cli.main(["--json", "init"])
+    assert code == 2
+    output = capsys.readouterr()
+    res = json.loads(output.out)
+    assert res["error"]["code"] == "E_INPUT_INVALID"
+
+
+def test_oserror(monkeypatch, capsys):
+    def throw(*args, **kwargs):
+        raise OSError("File not found")
+
+    monkeypatch.setattr(cli, "dispatch", throw)
+    code = cli.main(["--json", "init"])
+    assert code == 7
+    output = capsys.readouterr()
+    res = json.loads(output.out)
+    assert res["error"]["code"] == "E_STORAGE"
+
+
+def test_validation_error(capsys):
+    code = cli.main(["--json", "jobs", "list", "--limit", "bad"])
+    assert code == 2
+    output = capsys.readouterr()
+    res = json.loads(output.out)
+    assert res["error"]["code"] == "E_INPUT_INVALID"
+
+
+def test_cli_operation_helper():
+    assert cli._cli_operation(None) == "cli"
+    assert cli._cli_operation(argparse.Namespace()) == "cli"
+    ns_create = argparse.Namespace(command="project", action="create")
+    assert cli._cli_operation(ns_create) == "project create"
+    assert cli._cli_operation(argparse.Namespace(command="init")) == "init"
+    assert cli._cli_operation(argparse.Namespace(command="init", action=None)) == "init"
+
+
+def test_terminal_text():
+    assert cli._terminal_text("hello\nworld") == "hello\\u000aworld"
+    assert cli._terminal_text("hello\nworld", multiline=True) == "hello\nworld"
+    assert cli._terminal_text("\x01") == "\\u0001"
+
+
+def test_read_utf8_and_json(tmp_path):
+    path = tmp_path / "test.json"
+
+    path.write_bytes(b"12345")
+    with pytest.raises(m.CoreError) as exc:
+        cli._read_utf8(str(path), max_bytes=4)
+    assert exc.value.detail.code == m.ErrorCode.LIMIT_REACHED
+
+    path.write_bytes(b"\xff\xfe")
+    with pytest.raises(m.CoreError) as exc:
+        cli._read_utf8(str(path), max_bytes=10)
+    assert exc.value.detail.code == m.ErrorCode.INPUT_INVALID
+
+    path.write_bytes(b"{bad}")
+    with pytest.raises(m.CoreError) as exc:
+        cli._read_json(str(path), max_bytes=10)
+    assert exc.value.detail.code == m.ErrorCode.INPUT_INVALID
+
+    path.write_bytes(b"NaN")
+    with pytest.raises(m.CoreError) as exc:
+        cli._read_json(str(path), max_bytes=10)
+    assert exc.value.detail.code == m.ErrorCode.INPUT_INVALID
+
+    path.write_bytes(b"1e999999999")
+    with pytest.raises(m.CoreError) as exc:
+        cli._read_json(str(path), max_bytes=20)
+    assert exc.value.detail.code == m.ErrorCode.INPUT_INVALID
+
+    path.write_bytes(b'{"a": 1, "a": 2}')
+    with pytest.raises(m.CoreError) as exc:
+        cli._read_json(str(path), max_bytes=20)
+    assert exc.value.detail.code == m.ErrorCode.INPUT_INVALID
+
+
+def test_parser_error():
+    parser = cli.parser()
+    with pytest.raises(m.CoreError) as exc:
+        parser.error("some message")
+    assert exc.value.detail.code == m.ErrorCode.INPUT_INVALID
+
+
+def test_render_non_json(capsys):
+    err_env = m.Envelope(
+        status="error",
+        error=m.ErrorDetail(
+            code=m.ErrorCode.INPUT_INVALID,
+            message="Oops",
+            next_action="Fix it",
+            retry_class="never",
+        ),
+    )
+    cli.render(err_env, as_json=False)
+    output = capsys.readouterr()
+    assert "E_INPUT_INVALID: Oops\nFix it\n" in output.err
+
+    # Demo mode test requires specific keys
+    demo_data = {
+        "demo": True,
+        "log": [],
+        "workspace": "ws",
+        "project_id": "prj",
+        "export_directory": "dir",
+    }
+    demo_env = m.Envelope(status="ok", data=demo_data)
+    cli.render(demo_env, as_json=False)
+    output = capsys.readouterr()
+    assert "Workspace: ws" in output.out
+
+    # Configured service test
+    config_data = {
+        "configured": True,
+        "service": "muse",
+        "account": "test",
+        "network_mode": "offline",
+        "next_action": "Do something",
+    }
+    config_env = m.Envelope(status="ok", data=config_data)
+    cli.render(config_env, as_json=False)
+    output = capsys.readouterr()
+    assert "Saved muse settings for test." in output.out
+    assert "Next: Do something" in output.out
+
+    # General dict render test
+    gen_env = m.Envelope(status="ok", data={"key": "value\x01"})
+    cli.render(gen_env, as_json=False)
+    output = capsys.readouterr()
+    assert '"key": "value\\u0001"' in output.out
+
+
+def test_system_exit_non_zero(capsys):
+    # Missing required argument command will raise a SystemExit code 2 in argparse
+    code = cli.main(["--json", "missing_command"])
+    assert code == 2
+    output = capsys.readouterr()
+    res = json.loads(output.out)
+    assert res["error"]["code"] == "E_INPUT_INVALID"
