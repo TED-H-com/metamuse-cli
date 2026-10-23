@@ -15,16 +15,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from pydantic import ValidationError
+from typing import TYPE_CHECKING
 
-from metamuse import app
-from metamuse import models as m
-from metamuse.jobs import TERMINAL, Executor, worker_available
-from metamuse.safe_log import log_safe_exception
+if TYPE_CHECKING:
+    from pydantic import ValidationError
+    from metamuse import app
+    from metamuse import models as m
+    from metamuse.jobs import TERMINAL, Executor, worker_available
+    from metamuse.safe_log import log_safe_exception
 
 
 class Parser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
+        from metamuse import models as m
+
         raise m.CoreError(
             m.ErrorCode.INPUT_INVALID,
             "Invalid command arguments",
@@ -47,6 +51,8 @@ def _terminal_text(text: str, *, multiline: bool = False) -> str:
 
 
 def _approval_review(preview: m.ApprovalPreview) -> str:
+    from metamuse import models as m
+
     # Callback summaries can contain source/model text, including forged labels.
     # Keep every such line quoted; authoritative binding fields follow outside it.
     details = _terminal_text(preview.summary, multiline=True)
@@ -249,6 +255,8 @@ def parser() -> Parser:
 
 def _read_utf8(path: str, max_bytes: int) -> str:
     """Count actual bytes and preserve all string contents, including CRLF."""
+    from metamuse import models as m
+
     try:
         with Path(path).expanduser().open("rb") as stream:
             content = stream.read(max_bytes + 1)
@@ -265,6 +273,8 @@ def _read_utf8(path: str, max_bytes: int) -> str:
 
 
 def _read_json(path: str, max_bytes: int) -> Any:
+    from metamuse import models as m
+
     def reject_constant(value: str) -> None:
         raise ValueError("Nonfinite JSON number")
 
@@ -292,6 +302,8 @@ def _read_json(path: str, max_bytes: int) -> Any:
 
 
 def _collect_request(ctx: app.AppContext, args: argparse.Namespace) -> m.CollectRequest:
+    from metamuse import models as m
+
     if args.file:
         if args.kind is None:
             raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Local add requires --kind")
@@ -328,6 +340,9 @@ def _collect_request(ctx: app.AppContext, args: argparse.Namespace) -> m.Collect
 
 
 def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
+    from metamuse import models as m
+    from metamuse.jobs import TERMINAL, Executor, worker_available
+
     if accepted.status != "accepted":
         return accepted
     if not isinstance(accepted.data, dict) or not isinstance(accepted.data.get("job_id"), str):
@@ -389,6 +404,9 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
 
 
 def dispatch(args: argparse.Namespace) -> m.Envelope | None:
+    from metamuse import app
+    from metamuse import models as m
+
     if args.command == "demo":
         from metamuse.demo import run_demo
 
@@ -421,6 +439,10 @@ def dispatch(args: argparse.Namespace) -> m.Envelope | None:
 
 
 def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | None:
+    from metamuse import app
+    from metamuse import models as m
+    from metamuse.jobs import Executor
+
     if args.command in ("worker", "add", "packet", "muse", "draft", "export", "mcp", "publication"):
         app.register_builtin_operations()
     match args.command:
@@ -753,6 +775,8 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
 
 
 def render(result: m.Envelope, *, as_json: bool) -> None:
+    from metamuse import models as m
+
     for warning in result.warnings:
         print(f"Warning: {_terminal_text(warning)}", file=sys.stderr)
     if as_json:
@@ -790,6 +814,7 @@ def _cli_operation(args: argparse.Namespace | None) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+
     argv = list(sys.argv[1:] if argv is None else argv)
     logging.basicConfig(
         stream=sys.stderr, level=logging.WARNING, format="%(levelname)s: %(message)s"
@@ -800,34 +825,45 @@ def main(argv: Sequence[str] | None = None) -> int:
         with redirect_stdout(sys.stderr) if as_json else nullcontext():
             args = parser().parse_args(argv)
         as_json = args.json
+
+        from pydantic import ValidationError
+        from metamuse import models as m
+        from metamuse.safe_log import log_safe_exception
         result = dispatch(args)
-    except m.CoreError as exc:
-        result = m.failure(exc)
     except SystemExit as exc:
         if exc.code == 0:
             if not as_json:
                 return 0
+            from metamuse import models as m
             result = m.Envelope(status="ok", data={"help": True})
         else:
+            from metamuse import models as m
             result = m.failure(m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid command arguments"))
-    except ValidationError as exc:
-        result = m.failure(m.validation_error(exc))
-    except tomllib.TOMLDecodeError:
-        result = m.failure(
-            m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid input or workspace configuration")
-        )
-    except OSError:
-        result = m.failure(m.CoreError(m.ErrorCode.STORAGE, "Workspace I/O failed"))
     except Exception as exc:
-        result = m.failure(m.CoreError(m.ErrorCode.STORAGE, "Command execution failed"))
-        log_safe_exception(
-            logging.getLogger("metamuse"),
-            exc,
-            operation=_cli_operation(args),
-            code=m.ErrorCode.STORAGE.value,
-            request_id=result.request_id,
-        )
+        from metamuse import models as m
+        from pydantic import ValidationError
+        from metamuse.safe_log import log_safe_exception
+        if isinstance(exc, m.CoreError):
+            result = m.failure(exc)
+        elif isinstance(exc, ValidationError):
+            result = m.failure(m.validation_error(exc))
+        elif isinstance(exc, tomllib.TOMLDecodeError):
+            result = m.failure(
+                m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid input or workspace configuration")
+            )
+        elif isinstance(exc, OSError):
+            result = m.failure(m.CoreError(m.ErrorCode.STORAGE, "Workspace I/O failed"))
+        else:
+            result = m.failure(m.CoreError(m.ErrorCode.STORAGE, "Command execution failed"))
+            log_safe_exception(
+                logging.getLogger("metamuse"),
+                exc,
+                operation=_cli_operation(args),
+                code=m.ErrorCode.STORAGE.value,
+                request_id=result.request_id,
+            )
     except KeyboardInterrupt:
+        from metamuse import models as m
         result = m.Envelope(
             status="partial",
             warnings=["Interrupted; persisted jobs remain available"],
