@@ -168,6 +168,7 @@ def test_help_flag(capsys):
     output = capsys.readouterr()
     assert "usage:" in output.out
 
+
 def test_json_help_flag(capsys):
     code = cli.main(["--json", "--help"])
     assert code == 0
@@ -176,9 +177,11 @@ def test_json_help_flag(capsys):
     assert res["status"] == "ok"
     assert res["data"]["help"] is True
 
+
 def test_unhandled_exception(monkeypatch, capsys):
     def throw(*args, **kwargs):
         raise ValueError("Something unexpected")
+
     monkeypatch.setattr(cli, "dispatch", throw)
     code = cli.main(["--json", "init"])
     assert code == 7
@@ -186,9 +189,11 @@ def test_unhandled_exception(monkeypatch, capsys):
     res = json.loads(output.out)
     assert res["error"]["code"] == "E_STORAGE"
 
+
 def test_toml_decode_error(monkeypatch, capsys):
     def throw(*args, **kwargs):
         raise tomllib.TOMLDecodeError("Bad TOML")
+
     monkeypatch.setattr(cli, "dispatch", throw)
     code = cli.main(["--json", "init"])
     assert code == 2
@@ -196,15 +201,18 @@ def test_toml_decode_error(monkeypatch, capsys):
     res = json.loads(output.out)
     assert res["error"]["code"] == "E_INPUT_INVALID"
 
+
 def test_oserror(monkeypatch, capsys):
     def throw(*args, **kwargs):
         raise OSError("File not found")
+
     monkeypatch.setattr(cli, "dispatch", throw)
     code = cli.main(["--json", "init"])
     assert code == 7
     output = capsys.readouterr()
     res = json.loads(output.out)
     assert res["error"]["code"] == "E_STORAGE"
+
 
 def test_validation_error(capsys):
     code = cli.main(["--json", "jobs", "list", "--limit", "bad"])
@@ -213,6 +221,7 @@ def test_validation_error(capsys):
     res = json.loads(output.out)
     assert res["error"]["code"] == "E_INPUT_INVALID"
 
+
 def test_cli_operation_helper():
     assert cli._cli_operation(None) == "cli"
     assert cli._cli_operation(argparse.Namespace()) == "cli"
@@ -220,6 +229,7 @@ def test_cli_operation_helper():
     assert cli._cli_operation(ns_create) == "project create"
     assert cli._cli_operation(argparse.Namespace(command="init")) == "init"
     assert cli._cli_operation(argparse.Namespace(command="init", action=None)) == "init"
+
 
 def test_terminal_text():
     assert cli._terminal_text("hello\nworld") == "hello\\u000aworld"
@@ -260,11 +270,13 @@ def test_read_utf8_and_json(tmp_path):
         cli._read_json(str(path), max_bytes=20)
     assert exc.value.detail.code == m.ErrorCode.INPUT_INVALID
 
+
 def test_parser_error():
     parser = cli.parser()
     with pytest.raises(m.CoreError) as exc:
         parser.error("some message")
     assert exc.value.detail.code == m.ErrorCode.INPUT_INVALID
+
 
 def test_render_non_json(capsys):
     err_env = m.Envelope(
@@ -273,8 +285,8 @@ def test_render_non_json(capsys):
             code=m.ErrorCode.INPUT_INVALID,
             message="Oops",
             next_action="Fix it",
-            retry_class="never"
-        )
+            retry_class="never",
+        ),
     )
     cli.render(err_env, as_json=False)
     output = capsys.readouterr()
@@ -282,8 +294,11 @@ def test_render_non_json(capsys):
 
     # Demo mode test requires specific keys
     demo_data = {
-        "demo": True, "log": [], "workspace": "ws",
-        "project_id": "prj", "export_directory": "dir"
+        "demo": True,
+        "log": [],
+        "workspace": "ws",
+        "project_id": "prj",
+        "export_directory": "dir",
     }
     demo_env = m.Envelope(status="ok", data=demo_data)
     cli.render(demo_env, as_json=False)
@@ -292,8 +307,11 @@ def test_render_non_json(capsys):
 
     # Configured service test
     config_data = {
-        "configured": True, "service": "muse", "account": "test",
-        "network_mode": "offline", "next_action": "Do something"
+        "configured": True,
+        "service": "muse",
+        "account": "test",
+        "network_mode": "offline",
+        "next_action": "Do something",
     }
     config_env = m.Envelope(status="ok", data=config_data)
     cli.render(config_env, as_json=False)
@@ -307,9 +325,11 @@ def test_render_non_json(capsys):
     output = capsys.readouterr()
     assert '"key": "value\\u0001"' in output.out
 
+
 def test_system_exit_non_zero(monkeypatch, capsys):
     def throw(*args, **kwargs):
         sys.exit(1)
+
     monkeypatch.setattr(cli, "dispatch", throw)
     code = cli.main(["--json", "init"])
     assert code == 2
