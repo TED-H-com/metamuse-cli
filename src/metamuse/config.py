@@ -168,9 +168,19 @@ pacing_ms = 1500
 
 
 def load_config(root: Path) -> Config:
+    import stat
+    import os
     path = root / "metamuse.toml"
     if not path.exists():
         return Config()
+
+    try:
+        st = os.stat(path)
+        if not stat.S_ISREG(st.st_mode) or st.st_mode & 0o077:
+            raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Config file permissions are too open")
+    except OSError:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Config file permissions are too open")
+
     error = None
     try:
         return Config.model_validate(tomllib.loads(path.read_text(encoding="utf-8")))
