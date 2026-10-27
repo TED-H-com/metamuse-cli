@@ -7,7 +7,7 @@ from metamuse.config import load_config
 def test_config_permissions(tmp_path):
     config = tmp_path / "metamuse.toml"
     config.write_text("[app]\nnetwork_mode = 'offline'")
-    import os; os.chmod(str(config), 0o600)
+    os.chmod(str(config), 0o600)
     config.chmod(0o644)
     with pytest.raises(m.CoreError) as exc:
         load_config(tmp_path)
