@@ -5,6 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 def test_e2e_social_evidence_harvesting_and_drafting(tmp_path):
     workspace = tmp_path / "workspace"
     inputs = tmp_path / "inputs"
@@ -27,7 +28,9 @@ def test_e2e_social_evidence_harvesting_and_drafting(tmp_path):
             check=False,
             timeout=60,
         )
-        assert process.returncode == 0, f"Command failed: {arguments}\nError: {process.stderr}\nOutput: {process.stdout}"
+        assert process.returncode == 0, (
+            f"Command failed: {arguments}\nError: {process.stderr}\nOutput: {process.stdout}"
+        )
         return json.loads(process.stdout)["data"]
 
     mm("init")
@@ -44,7 +47,9 @@ def test_e2e_social_evidence_harvesting_and_drafting(tmp_path):
         )
     )
 
-    project = mm("project", "create", "--name", "Social Evidence Test", "--request-key", "demo-project")
+    project = mm(
+        "project", "create", "--name", "Social Evidence Test", "--request-key", "demo-project"
+    )
     project_id = project["id"]
 
     imported = mm(
