@@ -249,8 +249,17 @@ def parser() -> Parser:
 
 def _read_utf8(path: str, max_bytes: int) -> str:
     """Count actual bytes and preserve all string contents, including CRLF."""
+    import os
+    import stat
+    p = Path(path).expanduser()
+    if ".." in p.parts:
+        raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid or unsafe input file path")
+
     try:
-        with Path(path).expanduser().open("rb") as stream:
+        st = os.lstat(p)
+        if not stat.S_ISREG(st.st_mode):
+            raise m.CoreError(m.ErrorCode.INPUT_INVALID, "Invalid or unsafe input file path")
+        with p.open("rb") as stream:
             content = stream.read(max_bytes + 1)
     except OSError as exc:
         raise m.CoreError(

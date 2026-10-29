@@ -115,7 +115,10 @@ def _write_facebook_config(
         lines.append(f'account = "{account}"')
     if extra_facebook_lines:
         lines.extend(extra_facebook_lines)
-    (workspace / "metamuse.toml").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    config_path = workspace / "metamuse.toml"
+    config_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    import os
+    os.chmod(config_path, 0o600)
 
 
 def _synthetic_storage_state_bytes(
