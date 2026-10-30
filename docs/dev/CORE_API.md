@@ -1,4 +1,4 @@
-# MetaMuse core API (0.1.0a1, contract 1.1, schema 7)
+# MetaMuse core API (0.1.0a2, contract 1.1, schema 7)
 
 B02–B04 owns `app.py`, `cli.py`, `models.py`, `store.py`, `jobs.py`, migration SQL and
 generated schemas. Other tasks must build against these APIs without editing them.
@@ -618,6 +618,9 @@ imported lazily by `remote_media.py`. Playwright is not a dependency.
 | B08 | `safety.py`: safety helpers, `import_auth`, `create_permit`, external-action verifier |
 | B09/B10 | `muse.py`: `open_muse_discussion`, `submit_muse_exchange`, `read_muse_exchange`, `close_muse_exchange` |
 | B14 | `mcp.py`: `run(ctx)`, tools through `app.TOOL_FUNCTIONS`, attached worker through the shared Executor |
+| B12 | `remote_media.py`: `collect.remote_media` for bounded remote media via yt-dlp API |
+| B13 | `facebook.py`: bounded Facebook single-post permalink collection via Chromium |
+| B19 | `publishing.py`: exact human-approved Facebook Page text posts (`preview_publication`, `submit_publication`, `get_publication`, `reconcile_publication`) |
 
 Owners edit their modules, supporting feature files and tests. They do not edit `app.py`,
 `cli.py`, `models.py`, `store.py`, `jobs.py`, migrations or generated schemas. All SPEC §8

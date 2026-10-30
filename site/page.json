@@ -503,6 +503,22 @@
           "en": "Connect your assistant first",
           "zh": "先連接你的 AI 助理"
         }
+      },
+      {
+        "en": "<strong>Start MCP server</strong><br>The MCP server can be started using <code>metamuse mcp</code>. It exposes tools for collecting, searching, and managing projects and drafts. See <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/MCP.md\">MCP server</a>.",
+        "zh": "<strong>啟動 MCP 伺服器</strong><br>使用 <code>metamuse mcp</code> 啟動 MCP 伺服器，它提供收集、搜尋與管理專案和草稿的工具。參見 <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/MCP.md\">MCP 伺服器</a>。",
+        "availability": {
+          "en": "Connect your assistant first",
+          "zh": "先連接你的 AI 助理"
+        }
+      },
+      {
+        "en": "<strong>List available jobs</strong><br>List all running, completed, or failed jobs for a specific project or the whole workspace using <code>metamuse jobs list</code>.",
+        "zh": "<strong>列出所有工作</strong><br>使用 <code>metamuse jobs list</code> 列出指定專案或整個工作區中執行中、已完成或失敗的工作。",
+        "availability": {
+          "en": "Ready with local files",
+          "zh": "可用本地檔案"
+        }
       }
     ],
     "limits": [

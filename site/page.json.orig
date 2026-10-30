@@ -1,0 +1,812 @@
+{
+  "repo": "TED-H-com/metamuse-cli",
+  "slug": "metamuse-cli",
+  "name": "MetaMuse CLI",
+  "mark": "Mm",
+  "palette": "teal",
+  "default_branch": "main",
+  "verified": "2026-10-18",
+  "language": "Python",
+  "license": {
+    "label": {
+      "en": "Apache-2.0",
+      "zh": "Apache-2.0"
+    },
+    "href": "LICENSE"
+  },
+  "title": {
+    "en": "Comments and transcripts, ready for your recap",
+    "zh": "把留言與字幕，整理成有來源的回顧"
+  },
+  "description": {
+    "en": "Find the original comments, work with your AI assistant on a recap, and keep a draft with citations. Try the local example without an account.",
+    "zh": "找到原始留言，與你的 AI 助理一起寫回顧，再把草稿與引用一起留下。先跑本地範例，不需要帳號。"
+  },
+  "hero": {
+    "eyebrow": {
+      "en": "For your next event recap",
+      "zh": "從下一份活動回顧開始"
+    },
+    "headline": {
+      "en": "Turn comments into a recap with sources.",
+      "zh": "把留言與字幕，整理成有來源的回顧。"
+    },
+    "lede": {
+      "en": "Have event feedback to review or a transcript to quote? Your AI assistant helps you make sense of it. MetaMuse keeps the originals, finds matching passages, and saves your draft with its citations.",
+      "zh": "活動後的留言想整理？影片裡的一段話想引用？讓你慣用的 AI 助理幫忙判讀與撰寫，MetaMuse 負責保存原文、搜尋段落，把草稿與引用一起留下。"
+    },
+    "primary": {
+      "href": "#start",
+      "label": {
+        "en": "Try the local example",
+        "zh": "先跑一個範例"
+      }
+    },
+    "secondary": {
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md",
+      "label": {
+        "en": "Read the getting started guide (中文)",
+        "zh": "看上手指南"
+      }
+    },
+    "notes": [
+      {
+        "en": "Runs on your computer",
+        "zh": "在你的電腦上操作"
+      },
+      {
+        "en": "No account needed for the example",
+        "zh": "範例不需要帳號"
+      },
+      {
+        "en": "Alpha package",
+        "zh": "Alpha 試用版"
+      }
+    ],
+    "visual": {
+      "type": "receipt",
+      "top": {
+        "en": "Your first recap",
+        "zh": "你的第一份回顧"
+      },
+      "meta": {
+        "en": "Synthetic example · prewritten recap",
+        "zh": "合成資料示範 · 預寫回顧"
+      },
+      "rows": [
+        {
+          "label": {
+            "en": "Import a post and two comments",
+            "zh": "匯入一則貼文與兩則留言"
+          },
+          "state": "ok"
+        },
+        {
+          "label": {
+            "en": "Find the request for video subtitles",
+            "zh": "找到「希望影片加上字幕」的留言"
+          },
+          "state": "ok"
+        },
+        {
+          "label": {
+            "en": "Keep the original comment as a citation",
+            "zh": "保留原始留言作為引用"
+          },
+          "state": "ok"
+        },
+        {
+          "label": {
+            "en": "Open the recap as a Markdown file",
+            "zh": "打開 Markdown，閱讀回顧與來源"
+          },
+          "state": "ok"
+        }
+      ],
+      "footer": {
+        "left": {
+          "en": "Local files only",
+          "zh": "全程使用本地檔案"
+        },
+        "right": {
+          "en": "No AI call in this example",
+          "zh": "範例沒有呼叫 AI"
+        }
+      }
+    }
+  },
+  "problem": {
+    "kicker": {
+      "en": "A familiar task",
+      "zh": "你可能也遇過"
+    },
+    "title": {
+      "en": "The event is over. The feedback is still scattered.",
+      "zh": "活動結束了，留言與影片還散在各處。"
+    },
+    "body": {
+      "en": "You want to know what people asked for, find a useful quote, and write a recap you can stand behind. Give your assistant permitted comments or local subtitles. MetaMuse keeps those sources available so you can check a draft against the original words.",
+      "zh": "想知道大家提了哪些需求、找出一段值得引用的話，再寫成一份能核對的回顧。把你有權使用的留言或本地字幕交給助理整理，MetaMuse 留下來源，讓你隨時回頭確認原文。"
+    }
+  },
+  "capabilities": {
+    "kicker": {
+      "en": "When it helps",
+      "zh": "適合拿來做什麼"
+    },
+    "title": {
+      "en": "Less hunting for the original. More time for the recap.",
+      "zh": "少一點翻找原文，多一點時間整理重點。"
+    },
+    "intro": {
+      "en": "Start with local files. Add an assistant when you want help interpreting and writing.",
+      "zh": "先從本地檔案開始，需要判讀與撰寫時，再交給你的 AI 助理協助。"
+    },
+    "nav": {
+      "en": "Use cases",
+      "zh": "使用情境"
+    },
+    "items": [
+      {
+        "title": {
+          "en": "Review event feedback",
+          "zh": "整理活動回饋"
+        },
+        "body": {
+          "en": "Find comments about the next event, accessibility requests or missing materials. Your assistant can turn the selected evidence into a recap.",
+          "zh": "找出對下一場活動的建議、無障礙需求或索取講義的留言，再讓助理依選好的原文寫回顧。"
+        }
+      },
+      {
+        "title": {
+          "en": "Find a transcript passage",
+          "zh": "找回字幕段落"
+        },
+        "body": {
+          "en": "Import local SRT or VTT files and search for the words you want to quote.",
+          "zh": "匯入本地 SRT 或 VTT 字幕，用關鍵字找出想引用的段落。"
+        }
+      },
+      {
+        "title": {
+          "en": "Check where a claim came from",
+          "zh": "核對一句話的來源"
+        },
+        "body": {
+          "en": "Keep source references and exact text revisions alongside a draft, so you can compare the wording with the original.",
+          "zh": "將來源引用與原文版本連同草稿保存，需要時可以對照文字。"
+        }
+      },
+      {
+        "title": {
+          "en": "Use your usual AI assistant",
+          "zh": "接上慣用的 AI 助理"
+        },
+        "body": {
+          "en": "Connect through CLI or MCP. The assistant asks questions and writes; MetaMuse handles the local records.",
+          "zh": "透過 CLI 或 MCP 連接。助理負責提問與撰寫，MetaMuse 負責保存本地資料。"
+        }
+      },
+      {
+        "title": {
+          "en": "Ask Muse a follow-up",
+          "zh": "選擇向 Muse 追問"
+        },
+        "body": {
+          "en": "Muse needs separate setup and approval. Two real turns succeeded across candidate builds; use 0.1.0a2 or later for the tested fixes.",
+          "zh": "Muse 需要另外設定與授權。修正版已完成兩輪真實問答；請使用包含修正的 0.1.0a2 或後續版本。"
+        }
+      },
+      {
+        "title": {
+          "en": "Keep a file you can use",
+          "zh": "留下能接著使用的文件"
+        },
+        "body": {
+          "en": "Export Markdown, text, CSV, JSONL or a bundle for your own review and editing. Facebook Page text publishing is experimental and requires separate setup and your exact approval.",
+          "zh": "匯出 Markdown、文字、CSV、JSONL 或資料套件，方便後續閱讀與編輯。Facebook 粉專文字發文仍在實驗階段，需要另外設定，並由你核對批准。"
+        }
+      }
+    ]
+  },
+  "showcase": {
+    "kicker": {
+      "en": "See the output",
+      "zh": "看看實際輸出"
+    },
+    "title": {
+      "en": "Search, draft, export. In the real CLI.",
+      "zh": "搜尋、草稿、匯出，實際畫面在這裡。"
+    },
+    "intro": {
+      "en": "These are real terminal captures from a separate synthetic walkthrough, including fixture Muse replies. Each image links to a readable transcript. They demonstrate the workflow, not real-account results.",
+      "zh": "這些是真實終端機截圖，來自另一份包含 fixture Muse 回覆的合成資料範例。每張都有純文字紀錄可閱讀，用來展示流程，不代表真實帳號的執行結果。"
+    },
+    "shots": [
+      {
+        "src": "site/images/03-search.png",
+        "alt": {
+          "en": "Search hit with an exact item revision, Chinese snippet and source labels.",
+          "zh": "搜尋命中包含精確項目版本、中文片段與來源標籤。"
+        },
+        "caption": {
+          "en": "One hit cites its exact item revision. Its source labels remain file_import and synthetic_fixture. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/03-search.txt\">Read transcript</a>.",
+          "zh": "一筆命中引用精確項目版本。來源標籤維持 file_import 與 synthetic_fixture。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/03-search.txt\">閱讀純文字紀錄</a>。"
+        }
+      },
+      {
+        "src": "site/images/09-host-draft.png",
+        "alt": {
+          "en": "Host-written draft citing the item and two Muse observations",
+          "zh": "主代理草稿引用項目與兩筆 Muse 觀察"
+        },
+        "caption": {
+          "en": "The host saves its own text with the item revision and observations from both fixture exchanges. No generation call. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/09-host-draft.txt\">Read transcript</a>.",
+          "zh": "主代理保存自行撰寫的文字，引用項目版本與兩輪 fixture 討論的觀察。沒有呼叫生成模型。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/09-host-draft.txt\">閱讀純文字紀錄</a>。"
+        }
+      },
+      {
+        "src": "site/images/10-local-export.png",
+        "alt": {
+          "en": "Local bundle manifest, fixture labels and no-publication warnings",
+          "zh": "本地套件清單、fixture 標記與未發布警告"
+        },
+        "caption": {
+          "en": "The local bundle manifest lists file hashes and retains the fixture labels. Stderr says nothing was published or uploaded, and redaction is a guard. <a href=\"https://ted-h-com.github.io/metamuse-cli/images/10-local-export.txt\">Read transcript</a>.",
+          "zh": "本地套件清單列出檔案雜湊並保留 fixture 標記。stderr 寫明沒有發布或上傳，遮蔽只是一道防護。<a href=\"https://ted-h-com.github.io/metamuse-cli/images/10-local-export.txt\">閱讀純文字紀錄</a>。"
+        }
+      }
+    ],
+    "nav": false
+  },
+  "architecture": {
+    "kicker": {
+      "en": "With your assistant",
+      "zh": "與你的助理一起使用"
+    },
+    "title": {
+      "en": "Your assistant writes. You can check the sources.",
+      "zh": "助理幫你寫，你查得到來源。"
+    },
+    "intro": {
+      "en": "Install MetaMuse locally, then give an assistant access through CLI or MCP. The Skill explains how to use the connected tools.",
+      "zh": "先在本地安裝 MetaMuse，再讓助理透過 CLI 或 MCP 使用工具。Skill 提供已連接工具的操作說明。"
+    },
+    "nav": false,
+    "nodes": [
+      {
+        "name": {
+          "en": "Your files",
+          "zh": "你的檔案"
+        },
+        "lines": [
+          {
+            "en": "Comments and subtitles",
+            "zh": "留言與字幕"
+          }
+        ]
+      },
+      {
+        "name": {
+          "en": "MetaMuse",
+          "zh": "MetaMuse"
+        },
+        "core": true,
+        "lines": [
+          {
+            "en": "Search and source references",
+            "zh": "搜尋與來源引用"
+          }
+        ]
+      },
+      {
+        "name": {
+          "en": "Your assistant",
+          "zh": "你的助理"
+        },
+        "lines": [
+          {
+            "en": "Interpret and write",
+            "zh": "判讀與撰寫"
+          }
+        ]
+      },
+      {
+        "name": {
+          "en": "Your recap",
+          "zh": "你的回顧"
+        },
+        "lines": [
+          {
+            "en": "Review and export",
+            "zh": "核對並匯出"
+          }
+        ]
+      }
+    ]
+  },
+  "decisions": {
+    "kicker": {
+      "en": "Before you start",
+      "zh": "開始之前"
+    },
+    "title": {
+      "en": "A few practical questions.",
+      "zh": "幾個你可能想問的問題。"
+    },
+    "intro": {
+      "en": "The first example uses local synthetic files, so you can see the result before connecting accounts or an assistant.",
+      "zh": "第一個範例只用本地合成檔案，先看到結果，再決定是否連接帳號或 AI 助理。"
+    },
+    "nav": false,
+    "items": [
+      {
+        "title": {
+          "en": "Do I need a Muse account?",
+          "zh": "一定要有 Muse 帳號嗎？"
+        },
+        "body": {
+          "en": "No account is needed for local import, search, drafts or exports. Muse is a separately configured, optional discussion partner.",
+          "zh": "本地匯入、搜尋、草稿與匯出不需要帳號。Muse 是需要另外設定的選用討論對象。"
+        }
+      },
+      {
+        "title": {
+          "en": "Will the example write with AI?",
+          "zh": "範例會直接用 AI 寫回顧嗎？"
+        },
+        "body": {
+          "en": "It saves a clearly labelled prewritten recap. For your own work, connect an AI assistant or provide the text yourself.",
+          "zh": "範例保存的是清楚標記的預寫回顧。處理自己的資料時，可以連接 AI 助理，或自行提供文字。"
+        }
+      },
+      {
+        "title": {
+          "en": "Can I paste a Facebook or video URL?",
+          "zh": "可以直接貼 Facebook 或影片網址嗎？"
+        },
+        "body": {
+          "en": "Remote collectors need their own setup and operator approval. They currently have synthetic tests, with real-account LIVE validation pending. Start with local files.",
+          "zh": "遠端收集需要各自的設定與操作者授權。目前已有合成資料測試，真實帳號 LIVE 驗證仍待完成。建議先從本地檔案開始。"
+        }
+      },
+      {
+        "title": {
+          "en": "Is this a web app?",
+          "zh": "這是網頁版工具嗎？"
+        },
+        "body": {
+          "en": "This page introduces a tool you install on your computer. Use it through a terminal or connect it to your AI assistant. The example below shows you how to start.",
+          "zh": "這裡是介紹頁。先把工具安裝在你的電腦上，再透過終端機或已連接的 AI 助理操作。下方的範例會帶你開始。"
+        }
+      }
+    ]
+  },
+  "quickstart": {
+    "kicker": {
+      "en": "Try it on your computer",
+      "zh": "在你的電腦上試試"
+    },
+    "title": {
+      "en": "Open your first sourced recap.",
+      "zh": "打開你的第一份有來源回顧。"
+    },
+    "intro": {
+      "en": "Install uv, then run these two commands to try the alpha. Installation downloads Python and dependencies; the demo needs no account or AI service.",
+      "zh": "先安裝 uv，再執行這兩行指令，就能試用 alpha 版。安裝會下載 Python 與依賴；範例不需要帳號或 AI 服務。"
+    },
+    "nav": {
+      "en": "Try it",
+      "zh": "開始試用"
+    },
+    "primary": {
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md",
+      "label": {
+        "en": "Getting started guide (中文)",
+        "zh": "完整上手指南"
+      }
+    },
+    "secondary": {
+      "href": "https://docs.astral.sh/uv/getting-started/installation/",
+      "label": {
+        "en": "Install uv",
+        "zh": "安裝 uv"
+      }
+    },
+    "steps": [
+      {
+        "title": {
+          "en": "Install the command",
+          "zh": "安裝指令"
+        },
+        "body": {
+          "en": "uv downloads the alpha package from PyPI and creates an isolated environment for the command.",
+          "zh": "uv 會從 PyPI 下載 alpha 套件，並為指令建立獨立的安裝環境。"
+        },
+        "code": "uv tool install --python 3.12.13 'metamuse-cli==0.1.0a2'"
+      },
+      {
+        "title": {
+          "en": "Run the bundled example",
+          "zh": "跑內附範例"
+        },
+        "body": {
+          "en": "Import synthetic comments, find the subtitle request, and export Markdown. Open the .md files in the printed Export directory. Each run keeps a new local workspace.",
+          "zh": "匯入合成留言、找到字幕需求並匯出 Markdown。打開終端機顯示的 Export directory 裡的 .md 檔。每次執行都保留獨立的本地工作區。"
+        },
+        "code": "metamuse demo"
+      }
+    ]
+  },
+  "status": {
+    "kicker": {
+      "en": "What you can do today",
+      "zh": "現在能拿來做什麼"
+    },
+    "title": {
+      "en": "Find the original. Keep a draft you can check.",
+      "zh": "找到原文，留下能核對的草稿。"
+    },
+    "intro": {
+      "en": "Start with local files to search, save drafts and export. The fixes in 0.1.0a2 were tested in bounded real Muse and Page-post receipt journeys across candidate builds. Facebook collection and remote media are not yet verified with real accounts.",
+      "zh": "先用本地檔案搜尋、保存草稿與匯出。0.1.0a2 包含已完成有界真實 Muse 測試與粉專貼文對帳的修正；測試過程曾更換修正版。Facebook 收集與遠端影音尚未完成真實帳號驗收。"
+    },
+    "works_title": {
+      "en": "Start with your own files",
+      "zh": "用自己的檔案就能開始"
+    },
+    "limits_title": {
+      "en": "Connect an account to use these workflows",
+      "zh": "接上帳號，就能使用的流程"
+    },
+    "nav": {
+      "en": "What you can do",
+      "zh": "能做什麼"
+    },
+    "works": [
+      {
+        "en": "<strong>Import saved comments and subtitles</strong><br>Bring together the saved comments, articles and subtitle files you already have, so you can find them later.",
+        "zh": "<strong>整理手邊的留言與字幕</strong><br>把已匯出的留言、文章和字幕放進同一個專案，之後方便查找。",
+        "availability": {
+          "en": "Ready with local files",
+          "zh": "可用本地檔案"
+        }
+      },
+      {
+        "en": "<strong>Find a comment or transcript passage</strong><br>Search for a word such as subtitles, then read the matching text and its source.",
+        "zh": "<strong>找出想引用的留言或字幕段落</strong><br>例如搜尋「字幕」，找到相關留言，再打開原文與來源核對。",
+        "availability": {
+          "en": "Ready with local files",
+          "zh": "可用本地檔案"
+        }
+      },
+      {
+        "en": "<strong>Keep a draft with its sources</strong><br>Save text you or your assistant wrote, together with the original material you cited.",
+        "zh": "<strong>保存附來源的草稿</strong><br>把你或 AI 助理寫好的文字連同引用保存，之後仍能對照原文。",
+        "availability": {
+          "en": "Ready with local files",
+          "zh": "可用本地檔案"
+        }
+      },
+      {
+        "en": "<strong>Export a file you can edit</strong><br>Keep your draft and material as text documents or spreadsheet-friendly files for further editing.",
+        "zh": "<strong>匯出能繼續編輯的文件</strong><br>把草稿與資料匯出成文字文件或試算表可讀的檔案，留在電腦上繼續編輯。",
+        "availability": {
+          "en": "Ready with local files",
+          "zh": "可用本地檔案"
+        }
+      },
+      {
+        "en": "<strong>Work with your AI assistant</strong><br>Connect your assistant to MetaMuse, then ask it to find material and draft a recap with citations.",
+        "zh": "<strong>讓慣用的 AI 助理幫忙整理</strong><br>先接上你慣用的 AI 助理，再請它搜尋資料、整理需求，寫一份附來源的回顧。",
+        "availability": {
+          "en": "Connect your assistant first",
+          "zh": "先連接你的 AI 助理"
+        }
+      }
+    ],
+    "limits": [
+      {
+        "en": "<strong>Ask Muse follow-up questions</strong><br>Select material, ask a question, then follow up in the same conversation. Two real Muse turns and cited draft exports succeeded across candidate builds; use 0.1.0a2 or later for those fixes. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">Setup and steps</a>.",
+        "zh": "<strong>把選好的資料拿去問 Muse</strong><br>選好資料問問題，在同一個對話繼續追問，再保存有引用的草稿。修正版已完成真實 Muse 兩輪問答與匯出；測試過程曾更換修正版，請使用包含修正的 0.1.0a2 或後續版本。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">連線與操作步驟</a>。",
+        "availability": {
+          "en": "Requires 0.1.0a2 and account setup",
+          "zh": "需要 0.1.0a2 與帳號設定"
+        }
+      },
+      {
+        "en": "<strong>Collect a Facebook post or remote video</strong><br>Collect one specified post and its comments, or video metadata and available subtitles. Review the exact target and approve the read first. Real-account acceptance is pending. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">Setup and steps</a>.",
+        "zh": "<strong>收集 Facebook 貼文或遠端影片</strong><br>指定一篇貼文收集原文與留言，或取得影片資訊與可用字幕。先看網址與讀取範圍，批准後再執行。真實帳號驗收仍待完成。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/CONNECTED_WORKFLOW.md\">連線與操作步驟</a>。",
+        "availability": {
+          "en": "Needs extra setup; real-account use is unverified",
+          "zh": "需額外設定，尚未驗證真實使用"
+        }
+      },
+      {
+        "en": "<strong>Publish a text post to a Facebook Page</strong><br>Connect your Page, review the full draft and destination, then approve one send. One real test post and read-only reconciliation succeeded across corrected candidate builds; Use 0.1.0a2 or later for the read-back fix. <a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md\">Setup and limits</a>.",
+        "zh": "<strong>把文字草稿發到 Facebook 粉專</strong><br>接上粉專，核對全文與目的地，再批准送出。一篇真實測試貼文已完成只讀對帳，重啟後仍只有一次發文嘗試；測試過程曾更換修正版，請使用包含讀回修正的 0.1.0a2 或後續版本。<a href=\"https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md\">設定與限制</a>。",
+        "availability": {
+          "en": "Requires 0.1.0a2 and account setup",
+          "zh": "需要 0.1.0a2 與帳號設定"
+        }
+      }
+    ]
+  },
+  "facts": [
+    {
+      "label": {
+        "en": "Version",
+        "zh": "版本"
+      },
+      "value": "0.1.0a2 (alpha)"
+    },
+    {
+      "label": {
+        "en": "License",
+        "zh": "授權"
+      },
+      "value": "Apache-2.0"
+    },
+    {
+      "label": {
+        "en": "Affiliation",
+        "zh": "關係"
+      },
+      "value": {
+        "en": "Unofficial",
+        "zh": "非官方"
+      }
+    }
+  ],
+  "links": [
+    {
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md",
+      "label": {
+        "en": "Getting started (中文)",
+        "zh": "上手指南"
+      }
+    },
+    {
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/SKILL.md",
+      "label": {
+        "en": "Connect your assistant",
+        "zh": "連接 AI 助理"
+      }
+    },
+    {
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/design/README.md",
+      "label": {
+        "en": "Design and development",
+        "zh": "設計與開發文件"
+      }
+    },
+    {
+      "href": "https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/STATUS.md",
+      "label": {
+        "en": "Developer verification notes",
+        "zh": "開發驗證紀錄"
+      }
+    }
+  ],
+  "flows": [
+    {
+      "id": "comments-to-recap",
+      "heading": {
+        "en": "From your files to a sourced draft",
+        "zh": "從你的資料，走到有來源的草稿"
+      },
+      "intro": {
+        "en": "Bring a comment export or local subtitles. Find the passages you need, write with your assistant, then keep the draft and its sources together.",
+        "zh": "帶入留言匯出檔或本地字幕，找出需要的原文，和 AI 助理一起寫，再把草稿與引用一起留下。"
+      },
+      "spec": {
+        "columns": [
+          [
+            0,
+            1
+          ],
+          [
+            2
+          ],
+          [
+            3
+          ],
+          [
+            4
+          ]
+        ],
+        "core": 2
+      },
+      "steps": [
+        {
+          "title": {
+            "en": "Comment exports",
+            "zh": "留言匯出檔"
+          },
+          "note": {
+            "en": "Posts and comments you may use.",
+            "zh": "你有權使用的貼文與留言。"
+          },
+          "tone": "neutral",
+          "icon": "chat"
+        },
+        {
+          "title": {
+            "en": "Video subtitles",
+            "zh": "影片字幕"
+          },
+          "note": {
+            "en": "Local SRT or VTT files.",
+            "zh": "本地 SRT 或 VTT 檔案。"
+          },
+          "tone": "neutral",
+          "icon": "doc"
+        },
+        {
+          "title": {
+            "en": "Find the originals",
+            "zh": "找到可引用原文"
+          },
+          "note": {
+            "en": "Search words and keep exact sources.",
+            "zh": "用關鍵字搜尋，保留原文與來源。"
+          },
+          "tone": "accent",
+          "icon": "search"
+        },
+        {
+          "title": {
+            "en": "Write together",
+            "zh": "你與 AI 一起寫"
+          },
+          "note": {
+            "en": "Your connected assistant helps you write.",
+            "zh": "讓已連接的 AI 助理判讀與撰寫。"
+          },
+          "tone": "info",
+          "icon": "people"
+        },
+        {
+          "title": {
+            "en": "Keep the draft",
+            "zh": "保存有來源的草稿"
+          },
+          "note": {
+            "en": "Review and export Markdown or text.",
+            "zh": "預覽後匯出 Markdown 或文字。"
+          },
+          "tone": "neutral",
+          "icon": "download"
+        }
+      ],
+      "ticks": [
+        {
+          "en": "Choose your files",
+          "zh": "選好要匯入的檔案"
+        },
+        {
+          "en": "Check the original passages",
+          "zh": "核對引用的原文"
+        },
+        {
+          "en": "Keep a draft you can review",
+          "zh": "留下可以回頭核對的草稿"
+        }
+      ],
+      "caption": {
+        "en": "Workflow illustration. Writing uses your own assistant; the local demo uses a prewritten recap and makes no AI call.",
+        "zh": "流程示意。撰寫使用你自己的 AI 助理；本地範例使用預寫回顧，沒有呼叫 AI。"
+      }
+    },
+    {
+      "id": "publish-after-review",
+      "heading": {
+        "en": "Read it first. Then approve the post.",
+        "zh": "先看全文與粉專，再決定要不要發"
+      },
+      "intro": {
+        "en": "If you want to publish, MetaMuse prepares the exact text and destination for your review. You approve that post before anything is sent.",
+        "zh": "想把草稿發到 Facebook 粉專時，先看這次要送出的全文與目的地。由你核對並批准，才會送出。"
+      },
+      "after": "features",
+      "spec": {
+        "columns": [
+          [
+            0
+          ],
+          [
+            1
+          ],
+          [
+            2
+          ],
+          [
+            3
+          ]
+        ],
+        "core": 2,
+        "boundaryAfter": 2
+      },
+      "zones": {
+        "en": [
+          "On your computer",
+          "Your approval",
+          "Facebook Page"
+        ],
+        "zh": [
+          "在你的電腦上",
+          "由你批准",
+          "Facebook 粉專"
+        ]
+      },
+      "steps": [
+        {
+          "title": {
+            "en": "Choose a draft",
+            "zh": "選一份文字草稿"
+          },
+          "note": {
+            "en": "Use the saved text you want to post.",
+            "zh": "選好這次要發布的草稿版本。"
+          },
+          "tone": "neutral",
+          "icon": "doc"
+        },
+        {
+          "title": {
+            "en": "Read the preview",
+            "zh": "核對全文與粉專"
+          },
+          "note": {
+            "en": "Check the full text and destination.",
+            "zh": "看清楚送出全文與目標粉專。"
+          },
+          "tone": "info",
+          "icon": "eye"
+        },
+        {
+          "title": {
+            "en": "You approve",
+            "zh": "你批准這一次"
+          },
+          "note": {
+            "en": "Consent covers this exact post.",
+            "zh": "批准只涵蓋這次核對的內容。"
+          },
+          "tone": "accent",
+          "icon": "shield"
+        },
+        {
+          "title": {
+            "en": "Send and keep receipt",
+            "zh": "發文並留下回執"
+          },
+          "note": {
+            "en": "Check the receipt; reconcile unclear results.",
+            "zh": "保存貼文回執，結果不明先查核。"
+          },
+          "tone": "neutral",
+          "icon": "ledger"
+        }
+      ],
+      "ticks": [
+        {
+          "en": "Choose the saved draft",
+          "zh": "選擇已保存的草稿"
+        },
+        {
+          "en": "Read the exact post",
+          "zh": "核對這次送出的全文"
+        },
+        {
+          "en": "Approve before sending",
+          "zh": "批准後才送出"
+        }
+      ],
+      "caption": {
+        "en": "Requires your Page connection and token. One authorized real test post and read-only receipt reconciliation succeeded across corrected candidate builds. Use 0.1.0a2 or later for the read-back fix; uncertain results never resend.",
+        "zh": "需要先設定你的粉專連線與權杖。一篇獲准的真實測試貼文已完成只讀對帳；測試過程曾更換修正版，請使用包含讀回修正的 0.1.0a2 或後續版本。送達不明時不重送。"
+      }
+    }
+  ]
+}
