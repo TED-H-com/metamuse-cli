@@ -30,6 +30,11 @@ from metamuse.store import Store, utc_now
 
 @dataclass
 class AppContext:
+    """The shared state container for MetaMuse application execution.
+
+    Injected into all core operations to provide access to paths, configuration,
+    the data store, and the job executor.
+    """
     paths: WorkspacePaths
     store: Store
     clock: Callable[[], str] = utc_now
@@ -68,6 +73,17 @@ class AppContext:
 
 
 def application(model: type[m.Model]) -> Callable:
+    """Decorator to define a core application operation.
+
+    Validates inputs against the provided Pydantic model and handles transaction boundaries,
+    ensuring safe database execution and wrapping successful execution in a response Envelope.
+
+    Args:
+        model: The Pydantic model representing the expected request structure.
+
+    Returns:
+        The wrapped operation function that accepts `(ctx, request)`.
+    """
     def decorate(fn: Callable) -> Callable:
         @wraps(fn)
         def call(ctx: AppContext, request: Any = None) -> m.Envelope:
@@ -203,6 +219,17 @@ def inspect_capabilities(ctx: AppContext, request: m.InspectRequest) -> m.Envelo
 
 @application(m.ProjectCreateRequest)
 def create_project(ctx: AppContext, request: m.ProjectCreateRequest) -> m.Envelope:
+    """Create a new project workspace.
+
+    A project groups collections, transcripts, and drafts under one namespace.
+
+    Args:
+        ctx: The application context.
+        request: The parameters for creating a new project.
+
+    Returns:
+        An envelope containing the created project's ID.
+    """
     with ctx.store.transaction() as conn:
 
         def create() -> dict[str, Any]:
@@ -346,6 +373,18 @@ def unsupported() -> m.Envelope:
 
 @application(m.CollectRequest)
 def submit_collect(ctx: AppContext, request: m.CollectRequest) -> m.Envelope:
+    """Enqueue a job to collect resources (e.g., local files, URLs).
+
+    Delegates the specific implementation to the collection module to handle both
+    local files and authorized remote media fetches.
+
+    Args:
+        ctx: The application context.
+        request: The parameters identifying resources to collect.
+
+    Returns:
+        An envelope containing the enqueued job's state or ID.
+    """
     from metamuse import collect
 
     return collect.submit_collect(ctx, request)

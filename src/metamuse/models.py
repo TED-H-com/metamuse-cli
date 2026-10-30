@@ -220,6 +220,11 @@ class ErrorDetail(Model):
 
 
 class CoreError(Exception):
+    """The standard exception for anticipated core errors.
+
+    Holds an ErrorCode, user-facing message, and optionally the next required action
+    so callers can cleanly render predictable failures without internal tracebacks.
+    """
     def __init__(
         self,
         code: ErrorCode,
@@ -262,6 +267,11 @@ class ApprovalPreview(Model):
 
 
 class Envelope(Model):
+    """The standard container for all application responses.
+
+    Provides a consistent format across CLI output and MCP tool results,
+    containing status, data payloads, structured errors, and optional warnings.
+    """
     model_config = ConfigDict(
         extra="forbid",
         strict=True,
