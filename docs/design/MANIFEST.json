@@ -79,13 +79,13 @@
     },
     {
       "path": "contracts/envelope.schema.json",
-      "bytes": 7770,
-      "sha256": "0b9b017c0e95d7e702583ad3b67ea913e2b15c93ea5367de5044d0262819bd8c"
+      "bytes": 7993,
+      "sha256": "6b6debd77162bcf3ee3bf848f8067a9ce10ffcd891238e532ac3c310a0a480d4"
     },
     {
       "path": "contracts/mcp-tools.json",
-      "bytes": 228345,
-      "sha256": "d10edd0bd3bc073a3d0b1680c02ab4a916afa311ccf48e186b09854ea2f3b446"
+      "bytes": 232696,
+      "sha256": "9b6d6b0362ffa0273d07010633b66884499552eb602498312b8c5a475e26237e"
     },
     {
       "path": "contracts/requirements.json",

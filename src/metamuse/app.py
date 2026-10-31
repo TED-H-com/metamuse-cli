@@ -35,6 +35,7 @@ class AppContext:
     Injected into all core operations to provide access to paths, configuration,
     the data store, and the job executor.
     """
+
     paths: WorkspacePaths
     store: Store
     clock: Callable[[], str] = utc_now
@@ -84,6 +85,7 @@ def application(model: type[m.Model]) -> Callable:
     Returns:
         The wrapped operation function that accepts `(ctx, request)`.
     """
+
     def decorate(fn: Callable) -> Callable:
         @wraps(fn)
         def call(ctx: AppContext, request: Any = None) -> m.Envelope:
