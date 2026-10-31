@@ -64,6 +64,8 @@ Start with files on your computer. You can search, save drafts and export withou
 | Ask Muse follow-up questions | Requires 0.1.0a2 and account setup | Select material to share, ask Muse a question, then follow up in the same conversation. A bounded synthetic-input test with a real account succeeded across corrected candidate builds; `0.1.0a2` includes those fixes. |
 | Collect a Facebook post or remote video | Needs extra setup; real-account use is unverified | Additional setup and your approval are required. These collectors have not been verified with real accounts. |
 | Publish a text post to a Facebook Page | Requires 0.1.0a2 and account setup | Approve the exact text and Page, then send and check the receipt. One real test post and read-only reconciliation succeeded across corrected candidate builds; `0.1.0a2` includes the read-back fix. Text-only and experimental; [setup and limits](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/PUBLISHING.md). |
+| Start MCP server | Connect your assistant first | The MCP server can be started using `metamuse mcp`. It exposes tools for collecting, searching, and managing projects and drafts. See [MCP server](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/MCP.md). |
+| List available jobs | Ready with local files | List all running, completed, or failed jobs for a specific project or the whole workspace using `metamuse jobs list`. |
 
 See the [getting started guide](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/GETTING_STARTED.md) to try the local example,
 or [connect your assistant](https://github.com/TED-H-com/metamuse-cli/blob/main/docs/dev/SKILL.md) to use your own material.
