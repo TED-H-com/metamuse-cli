@@ -73,6 +73,11 @@ def _project(parser: Any, *, required: bool = True) -> None:
 
 
 def parser() -> Parser:
+    """Create and configure the main argument parser.
+
+    Returns:
+        The configured argparse parser supporting CLI commands and operations.
+    """
     root = Parser(prog="metamuse")
     root.add_argument("--workspace")
     root.add_argument("--json", action="store_true")
@@ -389,6 +394,14 @@ def _run_foreground(ctx: app.AppContext, accepted: m.Envelope) -> m.Envelope:
 
 
 def dispatch(args: argparse.Namespace) -> m.Envelope | None:
+    """Route parsed arguments to the appropriate application handler.
+
+    Args:
+        args: The parsed command-line arguments.
+
+    Returns:
+        The result envelope to print, or None if the command assumes output control (e.g. MCP).
+    """
     if args.command == "demo":
         from metamuse.demo import run_demo
 
@@ -753,6 +766,12 @@ def _dispatch(ctx: app.AppContext, args: argparse.Namespace) -> m.Envelope | Non
 
 
 def render(result: m.Envelope, *, as_json: bool) -> None:
+    """Format and print the application envelope to the terminal.
+
+    Args:
+        result: The envelope returned from the application boundary.
+        as_json: If True, prints canonical JSON to stdout. Otherwise, formats text output.
+    """
     for warning in result.warnings:
         print(f"Warning: {_terminal_text(warning)}", file=sys.stderr)
     if as_json:
@@ -790,6 +809,16 @@ def _cli_operation(args: argparse.Namespace | None) -> str:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """MetaMuse CLI entry point.
+
+    Initializes logging, parses arguments, executes the requested command, and renders the result.
+
+    Args:
+        argv: Command-line arguments. Defaults to sys.argv.
+
+    Returns:
+        The system exit code based on the execution result.
+    """
     argv = list(sys.argv[1:] if argv is None else argv)
     logging.basicConfig(
         stream=sys.stderr, level=logging.WARNING, format="%(levelname)s: %(message)s"

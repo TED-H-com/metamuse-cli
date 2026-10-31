@@ -294,6 +294,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -704,6 +705,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -1387,6 +1389,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -1791,6 +1794,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -2214,6 +2218,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -2634,6 +2639,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -3064,6 +3070,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -3537,6 +3544,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -3984,6 +3992,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -4424,6 +4433,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -4859,6 +4869,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -5280,6 +5291,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -5852,6 +5864,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -6262,6 +6275,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -6747,6 +6761,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -7186,6 +7201,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -7646,6 +7662,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -8050,6 +8067,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",
@@ -8475,6 +8493,7 @@
             }
           }
         ],
+        "description": "The standard container for all application responses.\n\nProvides a consistent format across CLI output and MCP tool results,\ncontaining status, data payloads, structured errors, and optional warnings.",
         "properties": {
           "contract_version": {
             "const": "1.1",

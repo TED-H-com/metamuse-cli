@@ -50,6 +50,14 @@ The [connected workflow guide (中文)](https://github.com/TED-H-com/metamuse-cl
 collecting one post, Muse follow-ups, a cited draft and Page publication. This complete
 sequence has synthetic integration coverage; real-account acceptance is pending.
 
+Here's an example of setting up a workspace and connecting a Muse account:
+
+```bash
+export WORKSPACE="$HOME/.local/share/metamuse/my-content"
+metamuse --workspace "$WORKSPACE" init
+metamuse --workspace "$WORKSPACE" connect muse --account my-muse --auth-file /path/to/muse.json --enable-network
+```
+
 ## What can I use today?
 
 Start with files on your computer. You can search, save drafts and export without a Muse account. Your assistant handles interpretation and writing once connected.
