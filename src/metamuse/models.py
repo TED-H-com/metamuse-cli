@@ -29,7 +29,7 @@ Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 class Model(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    @field_validator("*", mode="after")
+    @field_validator("text", "rendered_text", "question", "topic", mode="after", check_fields=False)
     @classmethod
     def utf8_fields(cls, value: Any, info: ValidationInfo) -> Any:
         if (info.context or {}).get("stored"):
@@ -66,17 +66,19 @@ def canonical_json(value: Any) -> bytes:
     if isinstance(value, BaseModel):
         value = value.model_dump(mode="json")
 
-    def check(node: Any) -> None:
+    stack = [value]
+    while stack:
+        node = stack.pop()
         if isinstance(node, dict):
-            if any(not isinstance(key, str) for key in node):
-                raise ValueError("JSON object keys must be strings")
-            for child in node.values():
-                check(child)
+            for key, child in node.items():
+                if type(key) is not str:
+                    raise ValueError("JSON object keys must be strings")
+                if type(child) in (dict, list, tuple):
+                    stack.append(child)
         elif isinstance(node, (list, tuple)):
             for child in node:
-                check(child)
-
-    check(value)
+                if type(child) in (dict, list, tuple):
+                    stack.append(child)
     return json.dumps(
         value, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
     ).encode("utf-8")
