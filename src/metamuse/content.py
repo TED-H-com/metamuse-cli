@@ -543,7 +543,14 @@ def search_evidence(ctx: AppContext, request: m.SearchRequest) -> m.Envelope:
             ).fetchone()[0],
         }
         rows = _search_rows(conn, request.project_id, request.query, watermark)
-        snapshot_id = m.payload_digest(rows)
+        h = hashlib.sha256()
+        for r in rows:
+            h.update(str(r["rank"]).encode("utf-8"))
+            h.update(r["id"].encode("utf-8"))
+            h.update(str(r["revision"]).encode("utf-8"))
+            h.update(str(r["rowid"]).encode("utf-8"))
+            h.update(r["content_digest"].encode("utf-8"))
+        snapshot_id = h.hexdigest()
         if cursor and (cursor["count"] != len(rows) or cursor["snapshot_id"] != snapshot_id):
             raise m.CoreError(
                 m.ErrorCode.REFERENCE_INVALID, "Search snapshot membership changed; restart search"
